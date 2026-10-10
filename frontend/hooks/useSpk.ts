@@ -9,13 +9,14 @@ export interface SpkResult {
   insights: string[];
 }
 
-function mapSpk(data: any): SpkResult {
+function mapSpk(data: unknown): SpkResult {
   if (!data) {
     return { score: 0, status: "Kritis", insights: ["Belum ada data yang cukup untuk analisis."] };
   }
   const insights: string[] = [];
-  if (data.breakdown) {
-    const b = data.breakdown;
+  const typedData = data as { score?: number; status?: string; breakdown?: { saving_ratio?: number; needs_vs_wants_ratio?: number; consistency?: number; expense_trend?: number; diversification?: number } };
+  if (typedData.breakdown) {
+    const b = typedData.breakdown;
     if (b.saving_ratio !== undefined) insights.push(`Rasio Tabungan: ${(b.saving_ratio * 100).toFixed(1)}%`);
     if (b.needs_vs_wants_ratio !== undefined) insights.push(`Rasio Kebutuhan vs Keinginan: ${(b.needs_vs_wants_ratio * 100).toFixed(1)}%`);
     if (b.consistency !== undefined) insights.push(`Konsistensi Catatan: ${(b.consistency * 100).toFixed(1)}%`);
@@ -23,15 +24,15 @@ function mapSpk(data: any): SpkResult {
     if (b.diversification !== undefined) insights.push(`Diversifikasi: ${(b.diversification * 100).toFixed(1)}%`);
   }
   if (insights.length === 0) {
-    if (data.score > 0) {
-      insights.push(`Skor keuangan Anda: ${data.score.toFixed(1)} (${data.status})`);
+    if (typedData.score !== undefined && typedData.score > 0) {
+      insights.push(`Skor keuangan Anda: ${typedData.score.toFixed(1)} (${typedData.status})`);
     } else {
       insights.push("Belum ada data yang cukup untuk analisis.");
     }
   }
   return {
-    score: data.score || 0,
-    status: data.status || "Kritis",
+    score: typedData.score || 0,
+    status: (typedData.status as SpkResult["status"]) || "Kritis",
     insights,
   };
 }
@@ -40,12 +41,8 @@ export function useSpkLatest() {
   return useQuery({
     queryKey: queryKeys.spk.latest,
     queryFn: async () => {
-      try {
-        const res = await api.get("/spk/latest");
-        return mapSpk(res.data?.data);
-      } catch {
-        return mapSpk(null);
-      }
+      const res = await api.get("/spk/latest");
+      return mapSpk(res.data?.data);
     },
     staleTime: staleTimeConfig.spk,
   });
@@ -68,12 +65,8 @@ export function useSpkHistory() {
   return useQuery({
     queryKey: queryKeys.spk.history,
     queryFn: async () => {
-      try {
-        const res = await api.get("/spk/history");
-        return res.data?.data || [];
-      } catch {
-        return [];
-      }
+      const res = await api.get("/spk/history");
+      return res.data?.data || [];
     },
     staleTime: staleTimeConfig.spk,
   });

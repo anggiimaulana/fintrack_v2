@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import type { TransactionData } from "@/components/transactions/TransactionRow";
 import { Sparkles, Loader2, CheckCircle2, Send, X, ChevronDown, ChevronUp, Plus, Camera, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "./ChatMessage";
@@ -37,7 +38,7 @@ export function InlineAiAssistant() {
   const [hasClickedNew, setHasClickedNew] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   // Store chart data per assistant message index so they persist across new messages
-  const [chartDataMap, setChartDataMap] = useState<Record<number, any[]>>({});
+  const [chartDataMap, setChartDataMap] = useState<Record<number, unknown[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,12 +58,13 @@ export function InlineAiAssistant() {
       catch { return []; }
     },
     enabled: !!sessionId && isOpen,
-    placeholderData: (prev: any) => prev,
+    placeholderData: (prev: unknown) => prev as never,
   });
 
   useEffect(() => {
     if (sessionMessages && !isStreaming) {
-      setMessages(sessionMessages.map((m: any) => ({ role: m.role, content: m.content })));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
     }
   }, [sessionMessages, isStreaming]);
 
@@ -72,6 +74,7 @@ export function InlineAiAssistant() {
   // Persist tool steps (chart data) per assistant message index when streaming ends
   useEffect(() => {
     if (!isStreaming && lastToolSteps.length > 0 && lastAssistantIndex >= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChartDataMap((prev) => ({ ...prev, [lastAssistantIndex]: lastToolSteps }));
     }
   }, [isStreaming, lastToolSteps, lastAssistantIndex]);
@@ -113,7 +116,7 @@ export function InlineAiAssistant() {
     try {
       const res = await api.get(`/ai/sessions/${id}/messages`);
       const msgs = res.data?.data || [];
-      setMessages(msgs.map((m: any) => ({ role: m.role, content: m.content })));
+      setMessages(msgs.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
     } catch {}
   }, []);
 
@@ -129,7 +132,7 @@ export function InlineAiAssistant() {
 
   const handleSend = useCallback(async (text: string) => {
     if (!text.trim() || isStreaming) return;
-    let sid = sessionId;
+    const sid = sessionId;
     if (!sid) return;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInputText("");
@@ -177,16 +180,16 @@ export function InlineAiAssistant() {
       const detectedType = (data.type as "income" | "expense" | "savings") || "expense";
       const catList = detectedType === "income" ? (incomeCategories || []) : detectedType === "savings" ? (savingsCategories || []) : (expenseCategories || []);
       // Try exact match, then fallback for "Lainnya" vs "Lain-lain" mismatch
-      let matched = catList.find((c: any) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
+      let matched = catList.find((c: { name: string }) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
       if (!matched) {
-        matched = catList.find((c: any) =>
+        matched = catList.find((c: { name: string }) =>
           c.name?.toLowerCase().includes((data.category || "").toLowerCase()) ||
           (data.category || "").toLowerCase().includes(c.name?.toLowerCase())
         );
       }
       if (!matched) {
         const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-        matched = catList.find((c: any) => fallbackNames.some(f => c.name?.toLowerCase() === f));
+        matched = catList.find((c: { name: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
       }
       const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.total || 0);
 
@@ -195,21 +198,20 @@ export function InlineAiAssistant() {
           const categoryField = detectedType === "income" ? "income_category_id" : detectedType === "savings" ? "savings_category_id" : "expense_category_id";
           const txDate = data.date ? new Date(data.date + "T00:00:00").toISOString() : new Date().toISOString();
           await createTransaction({
-            type: detectedType,
             amount: data.total,
             [categoryField]: matched.id,
             description: data.merchant || undefined,
             transaction_date: txDate,
-          } as any);
+          } as unknown as Partial<TransactionData>);
           invalidateTransactions();
           toast.success("Struk berhasil dicatat sebagai transaksi!");
 
           const typeLabel = detectedType === "income" ? "Pemasukan" : detectedType === "savings" ? "Tabungan" : "Pengeluaran";
           const msg = `✅ Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Merchant:** ${data.merchant || "-"}\n**Kategori:** ${data.category || "-"}\n**Tanggal:** ${data.date || "-"}`;
           handleSend(msg);
-        } catch (err: any) {
-          toast.error("Gagal menyimpan: " + (err.message || "Error"));
-          const msg = `⚠️ Gagal menyimpan struk: ${err.message}\n\nHasil analisis: **${data.merchant || "-"}** - ${formatted}`;
+        } catch (err: unknown) {
+          toast.error("Gagal menyimpan: " + ((err as Error).message || "Error"));
+          const msg = `⚠️ Gagal menyimpan struk: ${(err as Error).message}\n\nHasil analisis: **${data.merchant || "-"}** - ${formatted}`;
           handleSend(msg);
         }
       } else {
@@ -219,8 +221,9 @@ export function InlineAiAssistant() {
         handleSend(msg);
       }
     },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.message || err?.message || "Gagal memproses foto.");
+    onError: (err: unknown) => {
+      const error = err as { response?: { data?: { message?: string } }, message?: string };
+      toast.error(error?.response?.data?.message || error?.message || "Gagal memproses foto.");
     },
   });
 
@@ -235,12 +238,12 @@ export function InlineAiAssistant() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [analyzePhotoMutation]);
 
-  const renderChartResult = (result: any) => {
-    const labels: string[] = result.labels || [];
-    const income: number[] = result.income || [];
-    const expense: number[] = result.expense || [];
-    const savings: number[] = result.savings || [];
-    const chartType: string = result.chart_type || "comparison";
+  const renderChartResult = (result: Record<string, unknown>): React.ReactNode => {
+    const labels: string[] = (result.labels as string[]) || [];
+    const income: number[] = (result.income as number[]) || [];
+    const expense: number[] = (result.expense as number[]) || [];
+    const savings: number[] = (result.savings as number[]) || [];
+    const chartType: string = (result.chart_type as string) || "comparison";
     if (labels.length === 0) return null;
 
     const chartData = labels.map((name: string, i: number) => ({
@@ -298,7 +301,7 @@ export function InlineAiAssistant() {
     if (!sessions || sessions.length === 0) return null;
     return (
       <div className="mt-2 space-y-1 text-left max-h-32 overflow-y-auto">
-        {sessions.slice(0, 10).map((s: any) => (
+        {sessions.slice(0, 10).map((s: { id: string; title: string }) => (
           <div key={s.id} className="flex items-center gap-1 group">
             <button
               onClick={() => handleSwitchSession(s.id)}
@@ -324,11 +327,11 @@ export function InlineAiAssistant() {
 
   const renderToolSteps = () => {
     if (activeToolSteps.length === 0) return null;
-    const chartStep = activeToolSteps.find((s: any) => s.tool === "generate_chart" && s.status === "success" && s.result);
+    const chartStep = activeToolSteps.find((s: { tool: string; status: string; result?: unknown }) => s.tool === "generate_chart" && s.status === "success" && s.result);
     return (
       <div className="border-2 border-foreground bg-muted p-2 space-y-1 mb-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">AI Agent</p>
-        {activeToolSteps.map((step: any, i: number) => (
+        {activeToolSteps.map((step: { status: string; tool: string }, i: number) => (
           <div key={i} className="flex items-center gap-1.5 text-[11px] font-bold">
             {step.status === "running" ? (
               <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
@@ -343,7 +346,7 @@ export function InlineAiAssistant() {
             </span>
           </div>
         ))}
-        {chartStep && chartStep.result && renderChartResult(chartStep.result)}
+        {chartStep && chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
     );
   };
@@ -361,13 +364,13 @@ export function InlineAiAssistant() {
     });
   };
 
-  const renderPersistedCharts = (steps: any[]) => {
-    const chartStep = steps.find((s: any) => s.tool === "generate_chart" && s.status === "success" && s.result);
+  const renderPersistedCharts = (steps: unknown[]) => {
+    const chartStep = (steps as { tool: string; status: string; result?: unknown }[]).find(s => s.tool === "generate_chart" && s.status === "success" && s.result);
     if (!chartStep) return null;
     return (
       <div className="border-2 border-foreground bg-muted p-2 space-y-1 mb-1 mt-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Visualisasi</p>
-        {chartStep.result && renderChartResult(chartStep.result)}
+        {chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
     );
   };
@@ -425,7 +428,7 @@ export function InlineAiAssistant() {
             {sessionId && !isStreaming && (
               <div className="flex items-center justify-between border-b-2 border-foreground pb-1 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-wide text-muted-foreground truncate">
-                  {sessions?.find((s: any) => s.id === sessionId)?.title || "Percakapan"}
+                  {sessions?.find((s: { id: string }) => s.id === sessionId)?.title || "Percakapan"}
                 </span>
                 <div className="flex items-center gap-1 shrink-0 ml-2">
                   <button

@@ -38,7 +38,7 @@ export default function LandingPage() {
       </header>
 
       <main className="flex-1">
-        <section className="relative bg-[#1A1A2E] overflow-hidden pt-20 pb-32 border-b-2 border-foreground">
+        <section className="relative bg-surface-dark overflow-hidden pt-20 pb-32 border-b-2 border-foreground">
           <div className="mx-auto max-w-7xl px-4 relative z-10 flex flex-col lg:flex-row items-center gap-12">
             <div className="flex-1 text-center lg:text-left space-y-8">
               <div className="inline-flex items-center border-2 border-primary bg-primary/20 px-3 py-1 text-sm font-bold text-white">
@@ -61,24 +61,24 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="flex-1 w-full max-w-xl lg:max-w-none">
-              <div className="border-2 border-foreground bg-[#1E1E2E] shadow-[6px_6px_0px_0px] shadow-primary/50 overflow-hidden">
-                <div className="h-8 border-b-2 border-foreground bg-[#252540] flex items-center px-4 gap-2">
+              <div className="border-2 border-foreground bg-surface-dark-2 shadow-[6px_6px_0px_0px] shadow-primary/50 overflow-hidden">
+                <div className="h-8 border-b-2 border-foreground bg-surface-dark-3 flex items-center px-4 gap-2">
                   <div className="w-3 h-3 border border-foreground bg-red-500 rounded-full" />
                   <div className="w-3 h-3 border border-foreground bg-amber-500 rounded-full" />
                   <div className="w-3 h-3 border border-foreground bg-green-500 rounded-full" />
                 </div>
-                <div className="flex-1 p-6 bg-[#1E1E2E] flex flex-col gap-4">
+                <div className="flex-1 p-6 bg-surface-dark-2 flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="border-2 border-foreground bg-[#252540] p-4">
+                    <div className="border-2 border-foreground bg-surface-dark-3 p-4">
                       <div className="text-neutral-400 text-xs font-bold uppercase mb-1">Total Pemasukan</div>
                       <div className="text-green-400 font-bold font-mono text-lg">Rp 12.500.000</div>
                     </div>
-                    <div className="border-2 border-foreground bg-[#252540] p-4">
+                    <div className="border-2 border-foreground bg-surface-dark-3 p-4">
                       <div className="text-neutral-400 text-xs font-bold uppercase mb-1">Total Pengeluaran</div>
                       <div className="text-red-400 font-bold font-mono text-lg">Rp 4.200.000</div>
                     </div>
                   </div>
-                  <div className="border-2 border-foreground bg-[#252540] p-4 flex flex-col">
+                  <div className="border-2 border-foreground bg-surface-dark-3 p-4 flex flex-col">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="w-8 h-8 bg-primary flex items-center justify-center">
                         <MessageSquare className="w-4 h-4 text-white" />
@@ -88,8 +88,8 @@ export default function LandingPage() {
                     <div className="bg-primary text-white text-sm p-3 self-end max-w-[80%] mb-4 font-medium">
                       Tolong catat beli kopi 25rb tadi siang
                     </div>
-                    <div className="border-2 border-foreground bg-[#1E1E2E] text-white text-sm p-3 self-start max-w-[80%] font-medium">
-                      Siapp! Pengeluaran Rp 25.000 untuk "Kopi" telah dicatat.
+                    <div className="border-2 border-foreground bg-surface-dark-2 text-white text-sm p-3 self-start max-w-[80%] font-medium">
+                      Siapp! Pengeluaran Rp 25.000 untuk &quot;Kopi&quot; telah dicatat.
                     </div>
                   </div>
                 </div>
@@ -233,7 +233,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t-2 border-foreground bg-[#1A1A2E] text-neutral-400 py-12">
+      <footer className="border-t-2 border-foreground bg-surface-dark text-neutral-400 py-12">
         <div className="mx-auto max-w-7xl px-4 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex flex-col gap-2 items-center md:items-start">
             <span className="text-xl font-black tracking-tight text-white flex items-center gap-2">

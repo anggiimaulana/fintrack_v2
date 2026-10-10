@@ -61,7 +61,7 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
         <FormField
           control={form.control}
           name="name"
-          render={({ field }: any) => (
+          render={({ field }) => (
             <FormItem>
               <FormLabel>Nama Kategori</FormLabel>
               <FormControl>
@@ -75,7 +75,7 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
         <FormField
           control={form.control}
           name="icon"
-          render={({ field }: any) => (
+          render={({ field }) => (
             <FormItem>
               <FormLabel>Pilih Ikon</FormLabel>
               <FormControl>
@@ -89,7 +89,7 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
         <FormField
           control={form.control}
           name="color"
-          render={({ field }: any) => (
+          render={({ field }) => (
             <FormItem>
               <FormLabel>Pilih Warna</FormLabel>
               <FormControl>
@@ -103,12 +103,12 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
         <FormField
           control={form.control}
           name="is_active"
-          render={({ field }: any) => (
+          render={({ field }) => (
             <FormItem>
               <FormLabel>Status</FormLabel>
               <Select
                 disabled={isLoading}
-                onValueChange={(value: any) => field.onChange(value === 'active')}
+                onValueChange={(value: string) => field.onChange(value === 'active')}
                 defaultValue={field.value ? 'active' : 'inactive'}
               >
                 <FormControl>

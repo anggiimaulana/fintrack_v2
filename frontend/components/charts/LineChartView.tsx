@@ -10,13 +10,13 @@ function formatIDR(value: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
 }
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label }: { active?: boolean, payload?: Array<{value: number, color: string, name: string}>, label?: string }) {
   if (!active || !payload?.length) return null;
-  const total = payload.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
+  const total = payload.reduce((sum: number, p: {value: number, color: string, name: string}) => sum + ((p.value as number) || 0), 0);
   return (
     <div className="bg-card border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1">
       <p className="text-muted-foreground mb-1">{label}</p>
-      {payload.map((p: any, i: number) => (
+      {payload.map((p: {value: number, color: string, name: string}, i: number) => (
         <div key={i} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span>{p.name}:</span>

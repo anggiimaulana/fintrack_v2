@@ -3,7 +3,6 @@
 import * as Icons from 'lucide-react'
 import { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 const RELEVANT_ICONS = [
@@ -24,7 +23,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
   return (
     <div className="grid grid-cols-5 gap-2 p-1 border rounded-md">
       {RELEVANT_ICONS.map((iconName) => {
-        const Icon = (Icons as any)[iconName] as LucideIcon
+        const Icon = Icons[iconName as keyof typeof Icons] as LucideIcon
         return (
           <Button
             key={iconName}

@@ -16,22 +16,23 @@ export interface DashboardOverview {
   savingsTrend: number;
 }
 
-export function mapOverview(data: any): DashboardOverview {
+export function mapOverview(data: unknown): DashboardOverview {
   if (!data) {
     return { totalIncome: 0, totalExpense: 0, totalSavings: 0, netBalance: 0, savings: 0, incomeTrend: 0, expenseTrend: 0, savingsTrend: 0 };
   }
-  const income = data.current_month?.income || 0;
-  const expense = data.current_month?.expense || 0;
-  const savings = data.current_month?.savings || 0;
+  const typedData = data as { current_month?: { income: number; expense: number; savings: number; balance: number }; change?: { income_change_pct: number; expense_change_pct: number; savings_change_pct: number } };
+  const income = typedData.current_month?.income || 0;
+  const expense = typedData.current_month?.expense || 0;
+  const savings = typedData.current_month?.savings || 0;
   return {
     totalIncome: income,
     totalExpense: expense,
     totalSavings: savings,
-    netBalance: data.current_month?.balance || (income - expense),
+    netBalance: typedData.current_month?.balance || (income - expense),
     savings: savings,
-    incomeTrend: data.change?.income_change_pct || 0,
-    expenseTrend: data.change?.expense_change_pct || 0,
-    savingsTrend: data.change?.savings_change_pct || 0,
+    incomeTrend: typedData.change?.income_change_pct || 0,
+    expenseTrend: typedData.change?.expense_change_pct || 0,
+    savingsTrend: typedData.change?.savings_change_pct || 0,
   };
 }
 
@@ -61,12 +62,14 @@ export interface ChartDataPoint {
   savings: number;
 }
 
-function mapChartData(data: any): ChartDataPoint[] {
-  if (!data?.labels || !data?.series) return [];
-  const incomeSeries = data.series.find((s: any) => s.name === "Pemasukan");
-  const expenseSeries = data.series.find((s: any) => s.name === "Pengeluaran");
-  const savingsSeries = data.series.find((s: any) => s.name === "Tabungan");
-  return data.labels.map((label: string, i: number) => ({
+function mapChartData(data: unknown): ChartDataPoint[] {
+  if (!data || typeof data !== "object" || !("labels" in data) || !("series" in data)) return [];
+  const typedData = data as { labels: string[]; series: Array<{ name: string; data: number[] }> };
+  if (!typedData.labels || !typedData.series) return [];
+  const incomeSeries = typedData.series.find((s) => s.name === "Pemasukan");
+  const expenseSeries = typedData.series.find((s) => s.name === "Pengeluaran");
+  const savingsSeries = typedData.series.find((s) => s.name === "Tabungan");
+  return typedData.labels.map((label: string, i: number) => ({
     name: label,
     income: incomeSeries?.data?.[i] || 0,
     expense: expenseSeries?.data?.[i] || 0,
@@ -82,7 +85,7 @@ export function useCategoryChart(startDate: string, endDate: string) {
       return (res.data?.data as { labels: string[]; series: Array<{ name: string; data: number[]; color: string }> }) || null;
     },
     staleTime: staleTimeConfig.dashboard,
-    placeholderData: (prev: any) => prev,
+    placeholderData: (prev: unknown) => prev as { labels: string[]; series: Array<{ name: string; data: number[]; color: string }> },
   });
 }
 

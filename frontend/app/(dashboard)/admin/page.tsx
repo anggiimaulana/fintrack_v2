@@ -12,6 +12,14 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/cache-keys'
 import { staleTimeConfig } from '@/lib/cache-invalidation'
 import { format } from 'date-fns'
+interface RecentUser {
+  id: string;
+  full_name: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 import { id } from 'date-fns/locale'
 
 export default function AdminDashboardPage() {
@@ -98,7 +106,7 @@ export default function AdminDashboardPage() {
                   ))
                 ) : (
                   <>
-                    {recentUsers?.map((user: any) => (
+                    {recentUsers?.map((user: RecentUser) => (
                       <TableRow key={user.id}>
                         <TableCell className="font-bold">{user.full_name}</TableCell>
                         <TableCell className="font-medium">{user.email}</TableCell>

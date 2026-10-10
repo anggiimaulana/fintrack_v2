@@ -57,7 +57,7 @@ export default function ChatWindow() {
   const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(null);
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
   // Store chart data per assistant message index so they persist across new messages
-  const [chartDataMap, setChartDataMap] = useState<Record<number, any[]>>({});
+  const [chartDataMap, setChartDataMap] = useState<Record<number, { tool: string; status: string; result?: unknown; error?: string }[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -70,60 +70,8 @@ export default function ChatWindow() {
       catch { return []; }
     },
     enabled: !!currentSessionId,
-    placeholderData: (prev: any) => prev,
+    placeholderData: (prev: unknown) => prev as never,
   });
-
-  const createFromReceiptMutation = useMutation({
-    mutationFn: async (result: any) => {
-      const detectedType = result.type === "income" ? "income" : "expense";
-      const catList = detectedType === "income" ? (incomeCategories || []) : (expenseCategories || []);
-      let matched = catList.find((c: any) =>
-        c.name?.toLowerCase() === (result.category || "").toLowerCase()
-      );
-      if (!matched) {
-        matched = catList.find((c: any) =>
-          c.name?.toLowerCase().includes((result.category || "").toLowerCase()) ||
-          (result.category || "").toLowerCase().includes(c.name?.toLowerCase())
-        );
-      }
-      if (!matched) {
-        const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-        matched = catList.find((c: any) => fallbackNames.some(f => c.name?.toLowerCase() === f));
-      }
-      if (!matched) throw new Error("Kategori tidak ditemukan: " + (result.category || "Unknown"));
-      const payload = {
-        type: detectedType,
-        amount: result.total,
-        expense_category_id: detectedType === "expense" ? matched.id : undefined,
-        income_category_id: detectedType === "income" ? matched.id : undefined,
-        description: result.merchant || "",
-        transaction_date: result.date || new Date().toISOString().split("T")[0],
-        source: "receipt",
-      };
-      const res = await api.post("/ai/receipt/transaction", payload);
-      return res.data?.data;
-    },
-    onSuccess: (tx, result) => {
-      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-      const msg = `\u2705 Struk berhasil dicatat sebagai transaksi **${result.type === "income" ? "Pemasukan" : "Pengeluaran"}** sebesar ${formatted}\n\n**Merchant:** ${result.merchant || "-"}\n**Kategori:** ${result.category || "-"}\n**Tanggal:** ${result.date || "-"}\n**ID Transaksi:** ${tx?.id || "-"}`;
-      handleSend(msg);
-    },
-    onError: (err: any, result) => {
-      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-      handleSend(`\u26A0\uFE0F Gagal menyimpan struk: ${err.message}\n\nHasil analisis: ${result.merchant || "-"} - ${formatted}`);
-    },
-  });
-
-  const handleReceiptResult = (result: any) => {
-    if (result?.success && result?.total) {
-      if (result.category) {
-        createFromReceiptMutation.mutate(result);
-      } else {
-        const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-        handleSend(`\uD83D\uDCCB Hasil scan struk: **${result.merchant || "-"}** - ${formatted}\n\n*Tidak dapat menentukan kategori otomatis. Silakan catat manual di menu Transaksi.*`);
-      }
-    }
-  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -140,7 +88,7 @@ export default function ChatWindow() {
 
   useEffect(() => {
     if (sessionMessages && !isStreaming && activeSessionId !== currentSessionId) {
-      setMessages(sessionMessages.map((m: any) => ({ role: m.role, content: m.content })));
+      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
       setActiveSessionId(currentSessionId);
     }
   }, [sessionMessages, isStreaming, currentSessionId, activeSessionId]);
@@ -183,20 +131,6 @@ export default function ChatWindow() {
       container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
     }
   }, [messages.length, streamingContent]);
-
-  useEffect(() => {
-    if (!pendingAutoSend || isStreaming) return;
-    const msg = pendingAutoSend;
-    setPendingAutoSend(null);
-    createSession.mutateAsync(msg.substring(0, 50)).then((newSession) => {
-      if (newSession) {
-        setCurrentSessionId(newSession.id);
-        setActiveSessionId(newSession.id);
-        updateUrlSession(newSession.id);
-        setTimeout(() => handleSend(msg, newSession.id), 300);
-      }
-    });
-  }, [pendingAutoSend]);
 
   const handleSend = async (message: string, overrideSessionId?: string) => {
     let sessionId: string | null = overrideSessionId || currentSessionId;
@@ -249,10 +183,26 @@ export default function ChatWindow() {
       }
       // Refresh from server
       queryClient.invalidateQueries({ queryKey: ["chat-messages", sessionId] });
-    } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi." }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi. " + (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)) }]);
     }
   };
+
+  useEffect(() => {
+    if (!pendingAutoSend || isStreaming) return;
+    const msg = pendingAutoSend;
+    setPendingAutoSend(null);
+    createSession.mutateAsync(msg.substring(0, 50)).then((newSession) => {
+      if (newSession) {
+        setCurrentSessionId(newSession.id);
+        setActiveSessionId(newSession.id);
+        updateUrlSession(newSession.id);
+        setTimeout(() => handleSend(msg, newSession.id), 300);
+      }
+    });
+  }, [pendingAutoSend]);
+
+  
 
   const switchSession = async (id: string) => {
     if (isStreaming) cancelStream();
@@ -263,11 +213,65 @@ export default function ChatWindow() {
     try {
       const res = await api.get(`/ai/sessions/${id}/messages`);
       const msgs = res.data?.data || [];
-      setMessages(msgs.map((m: any) => ({ role: m.role, content: m.content })));
+      setMessages(msgs.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
     } catch {
       setMessages([]);
     }
   };
+
+  const createFromReceiptMutation = useMutation({
+    mutationFn: async (result: import("./ReceiptUpload").ReceiptResult) => {
+      const detectedType = result.type === "income" ? "income" : "expense";
+      const catList = detectedType === "income" ? (incomeCategories || []) : (expenseCategories || []);
+      let matched = catList.find((c: { name: string }) =>
+        c.name?.toLowerCase() === (result.category || "").toLowerCase()
+      );
+      if (!matched) {
+        matched = catList.find((c: { name: string }) =>
+          c.name?.toLowerCase().includes((result.category || "").toLowerCase()) ||
+          (result.category || "").toLowerCase().includes(c.name?.toLowerCase())
+        );
+      }
+      if (!matched) {
+        const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
+        matched = catList.find((c: { name: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
+      }
+      if (!matched) throw new Error("Kategori tidak ditemukan: " + (result.category || "Unknown"));
+      const payload = {
+        type: detectedType,
+        amount: result.total,
+        expense_category_id: detectedType === "expense" ? matched.id : undefined,
+        income_category_id: detectedType === "income" ? matched.id : undefined,
+        description: result.merchant || "",
+        transaction_date: result.date || new Date().toISOString().split("T")[0],
+        source: "receipt",
+      };
+      const res = await api.post("/ai/receipt/transaction", payload);
+      return res.data?.data;
+    },
+    onSuccess: (tx, result) => {
+      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
+      const msg = `\u2705 Struk berhasil dicatat sebagai transaksi **${result.type === "income" ? "Pemasukan" : "Pengeluaran"}** sebesar ${formatted}\n\n**Merchant:** ${result.merchant || "-"}\n**Kategori:** ${result.category || "-"}\n**Tanggal:** ${result.date || "-"}\n**ID Transaksi:** ${tx?.id || "-"}`;
+      handleSend(msg);
+    },
+    onError: (err: unknown, result: import("./ReceiptUpload").ReceiptResult) => {
+      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
+      handleSend(`\u26A0\uFE0F Gagal menyimpan struk: ${(err instanceof Error ? err.message : String(err))}\n\nHasil analisis: ${result.merchant || "-"} - ${formatted}`);
+    },
+  });
+
+  const handleReceiptResult = (result: import("./ReceiptUpload").ReceiptResult) => {
+    if (result?.success && result?.total) {
+      if (result.category) {
+        createFromReceiptMutation.mutate(result);
+      } else {
+        const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
+        handleSend(`\uD83D\uDCCB Hasil scan struk: **${result.merchant || "-"}** - ${formatted}\n\n*Tidak dapat menentukan kategori otomatis. Silakan catat manual di menu Transaksi.*`);
+      }
+    }
+  };
+
+  
 
   const startEdit = (id: string, currentTitle: string) => {
     setEditingSessionId(id);
@@ -299,12 +303,12 @@ export default function ChatWindow() {
   const renderToolSteps = () => {
     if (activeToolSteps.length === 0) return null;
 
-    const chartStep = activeToolSteps.find((s: any) => s.tool === "generate_chart" && s.status === "success" && s.result);
+    const chartStep = (activeToolSteps as { tool: string; status: string; result?: unknown }[]).find((s) => s.tool === "generate_chart" && s.status === "success" && s.result);
 
     return (
       <div className="border-2 border-foreground bg-muted p-3 space-y-2 mb-2">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">AI Agent</p>
-        {activeToolSteps.map((step: any, i: number) => (
+        {(activeToolSteps as { tool: string; status: string; error?: string; result?: unknown }[]).map((step, i: number) => (
           <div key={`tool-${i}`} className="flex items-center gap-2 text-xs font-bold">
             {step.status === "running" ? (
               <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
@@ -323,17 +327,17 @@ export default function ChatWindow() {
             </span>
           </div>
         ))}
-        {chartStep && chartStep.result && renderChartResult(chartStep.result)}
+        {chartStep && chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
     );
   };
 
-  const renderChartResult = (result: any) => {
-    const labels: string[] = result.labels || [];
-    const income: number[] = result.income || [];
-    const expense: number[] = result.expense || [];
-    const savings: number[] = result.savings || [];
-    const chartType: string = result.chart_type || "comparison";
+  const renderChartResult = (result: Record<string, unknown>) => {
+    const labels: string[] = (result.labels as string[]) || [];
+    const income: number[] = (result.income as number[]) || [];
+    const expense: number[] = (result.expense as number[]) || [];
+    const savings: number[] = (result.savings as number[]) || [];
+    const chartType: string = (result.chart_type as string) || "comparison";
 
     if (labels.length === 0) return null;
 
@@ -410,13 +414,13 @@ export default function ChatWindow() {
     });
   };
 
-  const renderPersistedToolSteps = (steps: any[]) => {
-    const chartStep = steps.find((s: any) => s.tool === "generate_chart" && s.status === "success" && s.result);
+  const renderPersistedToolSteps = (steps: unknown[]) => {
+    const chartStep = (steps as { tool: string; status: string; result?: unknown }[]).find(s => s.tool === "generate_chart" && s.status === "success" && s.result);
     if (!chartStep) return null;
     return (
       <div className="border-2 border-foreground bg-muted p-3 space-y-2 mb-2 mt-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Visualisasi</p>
-        {chartStep.result && renderChartResult(chartStep.result)}
+        {chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
     );
   };
@@ -438,7 +442,7 @@ export default function ChatWindow() {
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {(sessions || []).map((s: any) => (
+              {(sessions || []).map((s: { id: string; title: string; created_at?: string }) => (
                 <div key={s.id} className="flex items-center group">
                   {editingSessionId === s.id ? (
                     <input
@@ -462,7 +466,7 @@ export default function ChatWindow() {
                         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <span className="block truncate">{s.title || "Percakapan"}</span>
-                          <span className="block text-[10px] text-muted-foreground/60 font-normal">{new Date(s.created_at).toLocaleDateString("id-ID", { month: "short", day: "numeric" })}</span>
+                          <span className="block text-[10px] text-muted-foreground/60 font-normal">{new Date(s.created_at ? s.created_at : new Date().toISOString()).toLocaleDateString("id-ID", { month: "short", day: "numeric" })}</span>
                         </div>
                       </button>
                       <button
@@ -509,7 +513,7 @@ export default function ChatWindow() {
             </Button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {(sessions || []).map((s: any) => (
+            {(sessions || []).map((s: { id: string; title: string; created_at?: string }) => (
               <div key={s.id} className="flex items-center group">
                 {editingSessionId === s.id ? (
                   <input
@@ -533,7 +537,7 @@ export default function ChatWindow() {
                       <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <span className="block truncate">{s.title || "Percakapan"}</span>
-                        <span className="block text-[10px] text-muted-foreground/60 font-normal">{new Date(s.created_at).toLocaleDateString("id-ID", { month: "short", day: "numeric" })}</span>
+                        <span className="block text-[10px] text-muted-foreground/60 font-normal">{new Date(s.created_at ? s.created_at : new Date().toISOString()).toLocaleDateString("id-ID", { month: "short", day: "numeric" })}</span>
                       </div>
                     </button>
                     <button

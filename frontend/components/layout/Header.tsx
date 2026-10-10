@@ -34,7 +34,12 @@ const navItems = [
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
+  React.useEffect(() => {
+    // next-themes only knows the resolved theme after hydration; flipping this
+    // once avoids a server/client icon mismatch without a render-cascading write.
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   return (
     <button

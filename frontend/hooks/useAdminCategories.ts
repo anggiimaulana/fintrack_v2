@@ -5,25 +5,31 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/cache-keys'
 import { staleTimeConfig } from '@/lib/cache-invalidation'
 
+export interface AdminCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  description?: string;
+  sort_order?: number;
+  is_active: boolean;
+}
+
 export function useAdminCategories(type: 'income' | 'expense' | 'savings') {
   const queryClient = useQueryClient()
 
   const { data: categories, isLoading } = useQuery({
     queryKey: queryKeys.admin.categories(type),
     queryFn: async () => {
-      try {
-        const response = await api.get(`/categories/${type}`)
-        return response.data?.data || []
-      } catch {
-        return []
-      }
+      const response = await api.get(`/categories/${type}`)
+      return (response.data?.data as AdminCategory[]) || []
     },
     staleTime: staleTimeConfig.categories,
     placeholderData: (prev) => prev,
   })
 
   const createMutation = useMutation({
-    mutationFn: async (newCategory: any) => {
+    mutationFn: async (newCategory: Partial<AdminCategory>) => {
       const response = await api.post(`/admin/categories/${type}`, newCategory)
       return response.data
     },
@@ -34,7 +40,7 @@ export function useAdminCategories(type: 'income' | 'expense' | 'savings') {
   })
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: any) => {
+    mutationFn: async ({ id, ...data }: Partial<AdminCategory> & { id: string }) => {
       const response = await api.put(`/admin/categories/${type}/${id}`, data)
       return response.data
     },

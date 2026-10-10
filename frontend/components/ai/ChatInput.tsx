@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Mic, Camera } from "lucide-react";
+import { Send } from "lucide-react";
 import { VoiceInput } from "./VoiceInput";
-import { ReceiptUpload } from "./ReceiptUpload";
+import { ReceiptUpload, type ReceiptResult } from "./ReceiptUpload";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   isSending: boolean;
-  onReceiptResult?: (result: any) => void;
+  onReceiptResult?: (result: ReceiptResult) => void;
 }
 
 export function ChatInput({ onSend, isSending, onReceiptResult }: ChatInputProps) {
@@ -31,7 +31,7 @@ export function ChatInput({ onSend, isSending, onReceiptResult }: ChatInputProps
     <div className="p-4 bg-card border-t-2 border-foreground">
       <div className="flex items-end gap-2">
         <div className="flex gap-1 pb-1">
-          <VoiceInput onTranscript={(t) => setText((prev) => prev ? prev + " " + t : t)} disabled={isSending} />
+          <VoiceInput onTranscript={(t: string) => setText((prev) => prev ? prev + " " + t : t)} disabled={isSending} />
           <ReceiptUpload onResult={(res) => {
             if (onReceiptResult) {
               onReceiptResult(res);

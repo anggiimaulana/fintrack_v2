@@ -1,8 +1,41 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Mic, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: { transcript: string };
+    };
+  };
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface SpeechRecognition {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type WindowWithSpeech = Window & typeof globalThis & {
+  SpeechRecognition?: new () => SpeechRecognition;
+  webkitSpeechRecognition?: new () => SpeechRecognition;
+};
 interface VoiceInputProps {
   onTranscript: (text: string) => void;
   disabled?: boolean;
@@ -10,16 +43,11 @@ interface VoiceInputProps {
 
 export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
   const [isListening, setIsListening] = useState(false);
-  const [isSupported, setIsSupported] = useState(true);
-  const recognitionRef = useRef<any>(null);
-
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setIsSupported(false);
-    }
-  }, []);
-
+  const [isSupported] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return !!((window as WindowWithSpeech).SpeechRecognition || (window as WindowWithSpeech).webkitSpeechRecognition);
+  });
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const handleToggle = useCallback(() => {
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
@@ -27,7 +55,7 @@ export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as WindowWithSpeech).SpeechRecognition || (window as WindowWithSpeech).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast.error("Browser tidak mendukung input suara. Gunakan Chrome atau Edge.");
       return;
@@ -41,7 +69,7 @@ export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
 
     recognition.onstart = () => setIsListening(true);
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let finalTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -53,7 +81,7 @@ export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       setIsListening(false);
       if (event.error === "not-allowed") {
         toast.error("Izin mikrofon ditolak. Aktifkan di pengaturan browser Anda.");

@@ -32,8 +32,17 @@ async function compressImage(file: File): Promise<File> {
   });
 }
 
+export interface ReceiptResult {
+  total?: number;
+  type?: string;
+  merchant?: string;
+  category?: string;
+  date?: string;
+  [key: string]: unknown;
+}
+
 interface ReceiptUploadProps {
-  onResult: (result: any) => void;
+  onResult: (result: ReceiptResult) => void;
   disabled?: boolean;
 }
 

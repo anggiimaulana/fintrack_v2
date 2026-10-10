@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import api from "@/lib/api";
 
 interface ChatMessage {
@@ -15,14 +15,14 @@ interface StreamEvent {
   step?: string;
   step_label?: string;
   step_status?: string;
-  tool_call?: { tool: string; parameters: Record<string, any> };
-  tool_result?: { tool: string; data?: any; error?: string };
+  tool_call?: { tool: string; parameters: Record<string, unknown> };
+  tool_result?: { tool: string; data?: unknown; error?: string };
 }
 
 interface ToolExecStep {
   tool: string;
   status: "running" | "success" | "error";
-  result?: any;
+  result?: unknown;
   error?: string;
 }
 
@@ -53,9 +53,9 @@ export function useAiChat(source?: string) {
     return () => {
       if (cooldownRef.current) clearInterval(cooldownRef.current);
     };
-  }, [cooldownSeconds > 0]);
+  }, [cooldownSeconds]);
 
-  const queryKey = source ? ["chat-sessions", source] : ["chat-sessions"];
+  const queryKey = useMemo(() => source ? ["chat-sessions", source] : ["chat-sessions"], [source]);
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery({
     queryKey,
@@ -69,7 +69,7 @@ export function useAiChat(source?: string) {
       }
     },
     staleTime: 30_000,
-    placeholderData: (prev: any) => prev,
+    placeholderData: keepPreviousData,
   });
 
   const createSession = useMutation({
@@ -253,8 +253,8 @@ export function useAiChat(source?: string) {
 		setLastToolSteps([...toolStepsRef.current]);
 		setIsStreaming(false);
 		return lastContent || null;
-      } catch (err: any) {
-        if (err.name === "AbortError") {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
           setLastToolSteps([...toolStepsRef.current]);
           setIsStreaming(false);
           return lastContent || null;
@@ -264,7 +264,7 @@ export function useAiChat(source?: string) {
         throw err;
       }
     },
-    [],
+    [queryClient, queryKey, source],
   );
 
   const cancelStream = useCallback(() => {

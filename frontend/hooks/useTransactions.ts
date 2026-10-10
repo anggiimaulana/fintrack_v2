@@ -29,17 +29,13 @@ export function useTransactions(filter: TransactionFilter = {}) {
   return useQuery({
     queryKey: [...queryKeys.transactions.all, filter],
     queryFn: async () => {
-      try {
-        const res = await api.get(`/transactions?${params.toString()}`);
-        return {
-          data: res.data?.data || ([] as TransactionData[]),
-          total: res.data?.total || 0,
-          page: res.data?.page || 1,
-          perPage: res.data?.per_page || 20,
-        };
-      } catch {
-        return { data: [] as TransactionData[], total: 0, page: 1, perPage: 20 };
-      }
+      const res = await api.get(`/transactions?${params.toString()}`);
+      return {
+        data: (res.data?.data ?? []) as TransactionData[],
+        total: res.data?.meta?.total ?? res.data?.total ?? 0,
+        page: res.data?.meta?.page ?? res.data?.page ?? 1,
+        perPage: res.data?.meta?.per_page ?? res.data?.per_page ?? 20,
+      };
     },
     staleTime: staleTimeConfig.transactions,
     placeholderData: (previousData) => previousData,
@@ -50,12 +46,8 @@ export function useTransactionStats(period: string = "current_month") {
   return useQuery({
     queryKey: queryKeys.transactions.stats(period),
     queryFn: async () => {
-      try {
-        const res = await api.get(`/transactions/stats?period=${period}`);
-        return res.data?.data;
-      } catch {
-        return null;
-      }
+      const res = await api.get(`/transactions/stats?period=${period}`);
+      return res.data?.data;
     },
     staleTime: staleTimeConfig.transactions,
   });

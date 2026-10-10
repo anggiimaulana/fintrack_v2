@@ -1,0 +1,47 @@
+$ next build
+▲ Next.js 16.2.9 (Turbopack)
+
+  Creating an optimized production build ...
+
+> Build error occurred
+Error: Turbopack build failed with 3 errors:
+./app/(dashboard)/user/voice/page.tsx:1:41
+You're importing a module that depends on `useEffect` into a React Server Component module. This API is only available in Client Components. To fix, mark the file (or its parent) with the `"use client"` directive.
+    Learn more: https://nextjs.org/docs/app/api-reference/directives/use-client
+> 1 | import { useState, useRef, useCallback, useEffect } from "react";
+    |                                         ^^^^^^^^^
+  2 | import { Mic, Square, Loader2, Volume2, Send, History, Trash2 } from "lucide-react";
+  3 | import { toast } from "sonner";
+  4 | import { Button } from "@/components/ui/button";
+
+Ecmascript file had an error
+
+
+./app/(dashboard)/user/voice/page.tsx:1:20
+You're importing a module that depends on `useRef` into a React Server Component module. This API is only available in Client Components. To fix, mark the file (or its parent) with the `"use client"` directive.
+    Learn more: https://nextjs.org/docs/app/api-reference/directives/use-client
+> 1 | import { useState, useRef, useCallback, useEffect } from "react";
+    |                    ^^^^^^
+  2 | import { Mic, Square, Loader2, Volume2, Send, History, Trash2 } from "lucide-react";
+  3 | import { toast } from "sonner";
+  4 | import { Button } from "@/components/ui/button";
+
+Ecmascript file had an error
+
+
+./app/(dashboard)/user/voice/page.tsx:1:10
+You're importing a module that depends on `useState` into a React Server Component module. This API is only available in Client Components. To fix, mark the file (or its parent) with the `"use client"` directive.
+    Learn more: https://nextjs.org/docs/app/api-reference/directives/use-client
+> 1 | import { useState, useRef, useCallback, useEffect } from "react";
+    |          ^^^^^^^^
+  2 | import { Mic, Square, Loader2, Volume2, Send, History, Trash2 } from "lucide-react";
+  3 | import { toast } from "sonner";
+  4 | import { Button } from "@/components/ui/button";
+
+Ecmascript file had an error
+
+
+    at <unknown> (./app/(dashboard)/user/voice/page.tsx:1:41)
+    at <unknown> (./app/(dashboard)/user/voice/page.tsx:1:20)
+    at <unknown> (./app/(dashboard)/user/voice/page.tsx:1:10)
+[ELIFECYCLE] Command failed with exit code 1.

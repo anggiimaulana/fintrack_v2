@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import { Plus, Search, Pencil, Power, PowerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,10 +14,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+interface ProviderItem {
+  id: string;
+  name: string;
+  supports_fast?: boolean;
+  supports_reasoning?: boolean;
+  display_name: string;
+  base_url: string;
+  is_active: boolean;
+}
+
 export default function AdminProvidersPage() {
   const queryClient = useQueryClient()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingProvider, setEditingProvider] = useState<any>(null)
+  const [editingProvider, setEditingProvider] = useState<ProviderItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [formName, setFormName] = useState('')
   const [formDisplayName, setFormDisplayName] = useState('')
@@ -34,18 +43,18 @@ export default function AdminProvidersPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => { const res = await api.post('/admin/providers', data); return res.data; },
+    mutationFn: async (data: Partial<ProviderItem>) => { const res = await api.post('/admin/providers', data); return res.data; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'providers'] }); },
   })
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: any) => { const res = await api.put(`/admin/providers/${id}`, data); return res.data; },
+    mutationFn: async ({ id, ...data }: { id: string } & Partial<ProviderItem>) => { const res = await api.put(`/admin/providers/${id}`, data); return res.data; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'providers'] }); },
   })
 
   const isMutating = createMutation.isPending || updateMutation.isPending
 
-  const filteredProviders = providers?.filter((p: any) =>
+  const filteredProviders = providers?.filter((p: ProviderItem) =>
     p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
@@ -59,12 +68,12 @@ export default function AdminProvidersPage() {
     setIsDialogOpen(true)
   }
 
-  const handleOpenEdit = (provider: any) => {
+  const handleOpenEdit = (provider: ProviderItem) => {
     setEditingProvider(provider)
     setFormName(provider.name)
     setFormDisplayName(provider.display_name)
-    setFormSupportsFast(provider.supports_fast)
-    setFormSupportsReasoning(provider.supports_reasoning)
+    setFormSupportsFast(provider.supports_fast || false)
+    setFormSupportsReasoning(provider.supports_reasoning || false)
     setIsDialogOpen(true)
   }
 
@@ -93,7 +102,7 @@ export default function AdminProvidersPage() {
     }
   }
 
-  const handleToggleActive = async (provider: any) => {
+  const handleToggleActive = async (provider: ProviderItem) => {
     try {
       await updateMutation.mutateAsync({
         id: provider.id,
@@ -146,7 +155,7 @@ export default function AdminProvidersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredProviders.map((p: any) => (
+              {filteredProviders.map((p: ProviderItem) => (
                 <tr key={p.id} className="border-b border-foreground/20 hover:bg-muted/50 transition-colors">
                   <td className="px-4 py-3 font-bold">{p.name}</td>
                   <td className="px-4 py-3">{p.display_name}</td>

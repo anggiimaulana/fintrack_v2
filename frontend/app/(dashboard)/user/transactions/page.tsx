@@ -6,7 +6,7 @@ import { Plus, Download, Search, ChevronLeft, ChevronRight, Mic, Camera, Sparkle
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { RupiahInput } from "@/components/ui/rupiah-input";
+import { RupiahInput } from "@/components/shared/RupiahInput";
 import { VoiceInput } from "@/components/ai/VoiceInput";
 import { ReceiptScanner } from "@/components/ai/ReceiptScanner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -16,12 +16,26 @@ import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteT
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import api from "@/lib/api";
 
+export interface TransactionItem {
+  id: string;
+  type: "income" | "expense" | "savings";
+  amount: number;
+  transaction_date?: string;
+  date?: string;
+  description?: string;
+  category_name?: string;
+  created_at?: string;
+  expense_category_id?: string;
+  income_category_id?: string;
+  savings_category_id?: string;
+}
+
 interface TransactionRowProps {
-  tx: any;
+  tx: TransactionItem;
   index: number;
   page: number;
   perPage: number;
-  onEdit: (tx: any) => void;
+  onEdit: (tx: TransactionItem) => void;
   onDelete: (id: string) => void;
 }
 
@@ -43,7 +57,7 @@ function TransactionRowData({ tx, index, page, perPage, onEdit, onDelete }: Tran
         <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground flex-wrap">
           <span>{isSavings ? "Tabungan" : tx.category_name}</span>
           <span>&middot;</span>
-          <span>{new Date(tx.transaction_date || tx.date).toLocaleDateString("id-ID")}</span>
+          <span>{new Date((tx.transaction_date || tx.date) as string).toLocaleDateString("id-ID")}</span>
           {tx.created_at && (
             <>
               <span>&middot;</span>
@@ -78,7 +92,7 @@ function TransactionsContent() {
   const [filterType, setFilterType] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingTx, setEditingTx] = useState<any | null>(null);
+  const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
   const [smartInputText, setSmartInputText] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -92,8 +106,9 @@ function TransactionsContent() {
     if (initialStart && initialEnd) {
       return { preset: "custom", startDate: initialStart, endDate: initialEnd, compareStart: "", compareEnd: "", enableCompare: false };
     }
-    const d = computePresetDates(initialPreset as any, now);
-    return { preset: initialPreset as any, startDate: d.start, endDate: d.end, compareStart: "", compareEnd: "", enableCompare: false };
+    const presetType = initialPreset as import('@/components/shared/DateRangeFilter').PresetKey;
+    const d = computePresetDates(presetType, now);
+    return { preset: presetType, startDate: d.start, endDate: d.end, compareStart: "", compareEnd: "", enableCompare: false };
   });
 
   const setDateFilter = useCallback((val: DateRangeValue) => {
@@ -106,7 +121,7 @@ function TransactionsContent() {
   }, [router]);
 
   const { data: txData, isLoading } = useTransactions({
-    type: filterType as any,
+    type: filterType as "income" | "expense" | "savings" | "all" | undefined,
     page,
     perPage: 20,
     search,
@@ -141,7 +156,7 @@ function TransactionsContent() {
     setIsDialogOpen(true);
   };
 
-  const openEditDialog = (tx: any) => {
+  const openEditDialog = (tx: TransactionItem) => {
     setEditingTx(tx);
     setFormType(tx.type);
     setFormAmount(tx.amount);
@@ -155,7 +170,7 @@ function TransactionsContent() {
     if (!formAmount || !formCategoryId) return;
     try {
       const categoryField = formType === "income" ? "income_category_id" : formType === "expense" ? "expense_category_id" : "savings_category_id";
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         type: formType,
         amount: formAmount,
         [categoryField]: formCategoryId,
@@ -258,7 +273,7 @@ function TransactionsContent() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wide text-foreground">Jumlah</label>
-                  <RupiahInput value={formAmount} onChange={setFormAmount} />
+                  <RupiahInput value={formAmount} onChange={(v) => setFormAmount(v || 0)} />
                 </div>
 
                 <div className="space-y-2">
@@ -269,7 +284,7 @@ function TransactionsContent() {
                     className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
                   >
                     <option value="">Pilih kategori</option>
-                    {categories.map((cat: any) => (
+                    {categories.map((cat: { id: string; name: string }) => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
@@ -363,9 +378,12 @@ function TransactionsContent() {
               </div>
             ))
           ) : transactions.length > 0 ? (
-            transactions.map((tx: any, i: number) => (
-              <TransactionRowData key={tx.id} tx={tx} index={i} page={page} perPage={12} onEdit={openEditDialog} onDelete={handleDeleteClick} />
-            ))
+            transactions.map((tx: unknown, i: number) => {
+              const item = tx as TransactionItem;
+              return (
+                <TransactionRowData key={item.id} tx={item} index={i} page={page} perPage={12} onEdit={openEditDialog} onDelete={handleDeleteClick} />
+              );
+            })
           ) : (
             <div className="p-8 text-center text-sm font-bold text-muted-foreground">
               Tidak ada transaksi ditemukan.

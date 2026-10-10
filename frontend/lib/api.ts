@@ -11,22 +11,30 @@ const api = axios.create({
 });
 
 // Single-flight refresh: concurrent 401s trigger at most one refresh call.
-let refreshPromise: Promise<void> | null = null;
+let inFlightRefresh: Promise<void> | null = null;
 
-function refreshSession(): Promise<void> {
-  refreshPromise ??= axios
-    .post("/api/v1/auth/refresh", undefined, { withCredentials: true })
-    .then(() => undefined)
-    .finally(() => {
-      refreshPromise = null;
-    });
-  return refreshPromise;
+/**
+ * Refresh the session, coalescing concurrent callers into a single request.
+ * Exported for testing.
+ */
+export function refreshSession(): Promise<void> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = axios
+      .post("/api/v1/auth/refresh", undefined, { withCredentials: true })
+      .then(() => undefined)
+      .finally(() => {
+        inFlightRefresh = null;
+      });
+  }
+  return inFlightRefresh;
 }
+
+type RetriableConfig = InternalAxiosRequestConfig & { _retried?: boolean };
 
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+    const original = error.config as RetriableConfig | undefined;
 
     if (error.response?.status === 401 && original && !original._retried) {
       original._retried = true;

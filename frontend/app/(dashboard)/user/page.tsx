@@ -1,5 +1,4 @@
 "use client";
-
 import { Suspense, useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -73,8 +72,8 @@ function UserDashboardContent() {
     : undefined;
 
   const { data: overview, isLoading: overviewLoading } = useDashboardOverview(overviewParams);
-  const [txFilterType, setTxFilterType] = useState<string>("all");
-  const { data: txData, isLoading: txLoading } = useTransactions({ perPage: 5, type: txFilterType as any });
+  const [txFilterType, setTxFilterType] = useState<"income" | "expense" | "savings" | "all">("all");
+  const { data: txData, isLoading: txLoading } = useTransactions({ perPage: 5, type: txFilterType });
   const { data: spk, isLoading: spkLoading } = useSpkLatest();
 
   const chartDateRange = dateFilter.startDate && dateFilter.endDate
@@ -171,7 +170,7 @@ function UserDashboardContent() {
           {[{ key: "all", label: "Semua" }, { key: "income", label: "Pemasukan" }, { key: "expense", label: "Pengeluaran" }, { key: "savings", label: "Tabungan" }].map((f) => (
             <button
               key={f.key}
-              onClick={() => setTxFilterType(f.key)}
+              onClick={() => setTxFilterType(f.key as "income" | "expense" | "savings" | "all")}
               className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold cursor-pointer transition-colors ${
                 txFilterType === f.key
                   ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-x-2 border-foreground"

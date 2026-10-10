@@ -26,7 +26,7 @@ export default function SessionsPage() {
       try { const res = await api.get("/ai/sessions"); return res.data?.data || []; }
       catch { return []; }
     },
-    placeholderData: (prev: any) => prev,
+    placeholderData: (prev: Session[] | undefined) => prev,
   });
 
   const createMutation = useMutation({

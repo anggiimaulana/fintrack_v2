@@ -144,7 +144,7 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
       }
       onChange(next);
     },
-    [now, onChange, value.enableCompare, value.compareStart, value.compareEnd, localComparePreset]
+    [now, onChange, value, localComparePreset]
   );
 
   const toggleCompare = useCallback(() => {

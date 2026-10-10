@@ -1,7 +1,8 @@
 # ============================================================
 # FinTrack v2 — local stack (Docker Compose)
-# Fase 1: only the `db` service is defined here.
-# Full stack (db + backend + frontend) is added in Fase 5.
+#   db        PostgreSQL 17 + pgvector      (5435 -> 5432)
+#   backend   Go API                        (8080 -> 8080)
+#   frontend  Next.js                       (3001 -> 3000)
 # ============================================================
 services:
   db:
@@ -21,6 +22,37 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backend:
+    build: ./backend
+    container_name: fintrack_v2_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://fintrack_app:${APP_DB_PASSWORD}@db:5432/fintrack
+      PORT: "8080"
+      CORS_ORIGIN: http://localhost:3001
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_ORIGIN: http://backend:8080
+    container_name: fintrack_v2_frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_ORIGIN: http://backend:8080
+      JWT_SECRET: ${JWT_SECRET}
+      NEXT_PUBLIC_API_URL: /api/v1
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
 
 volumes:
   fintrack_v2_pgdata:

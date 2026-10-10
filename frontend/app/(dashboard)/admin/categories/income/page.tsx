@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CategoryTable } from '@/components/admin/CategoryTable'
 import { CategoryForm } from '@/components/admin/CategoryForm'
-import { useAdminCategories } from '@/hooks/useAdminCategories'
+import { useAdminCategories, AdminCategory } from '@/hooks/useAdminCategories'
 import {
   Dialog,
   DialogContent,
@@ -27,10 +27,10 @@ export default function IncomeCategoriesPage() {
   } = useAdminCategories('income')
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<any>(null)
+  const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const filteredCategories = categories?.filter((c: any) => 
+  const filteredCategories = categories?.filter((c: AdminCategory) => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
 
@@ -39,12 +39,12 @@ export default function IncomeCategoriesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleOpenEdit = (category: any) => {
+  const handleOpenEdit = (category: AdminCategory) => {
     setEditingCategory(category)
     setIsDialogOpen(true)
   }
 
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (values: Partial<AdminCategory>) => {
     try {
       if (editingCategory) {
         await updateCategory({ id: editingCategory.id, ...values })
@@ -112,7 +112,7 @@ export default function IncomeCategoriesPage() {
             </DialogDescription>
           </DialogHeader>
           <CategoryForm
-            initialValues={editingCategory}
+            initialValues={editingCategory || undefined}
             onSubmit={handleSubmit}
             onCancel={() => setIsDialogOpen(false)}
             isLoading={isMutating}

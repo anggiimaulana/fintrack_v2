@@ -15,3 +15,6 @@ database/backups/
 
 # Frontend build artifacts
 frontend/build.log
+
+# Lint scratch
+frontend/lint_out*.txt

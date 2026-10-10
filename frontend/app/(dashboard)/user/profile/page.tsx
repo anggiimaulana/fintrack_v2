@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { User, Mail, Phone, Calendar, Save } from "lucide-react";
+import { useState } from "react";
+import { User, Mail, Phone, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { RupiahInput } from "@/components/ui/rupiah-input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { useSession } from "@/lib/session-context";
@@ -12,29 +11,24 @@ import { useSession } from "@/lib/session-context";
 export default function ProfilePage() {
   const queryClient = useQueryClient();
   const { user: sessionUser } = useSession();
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["profile", "me"],
     queryFn: async () => {
-      try {
-        const res = await api.get("/me");
-        return res.data?.data;
-      } catch {
-        return null;
-      }
+      const res = await api.get("/me");
+      return res.data?.data;
     },
   });
 
-  useEffect(() => {
-    if (profile) {
-      setFullName(profile.full_name || "");
-      setPhone(profile.phone || "");
-      setAvatarUrl(profile.avatar_url || "");
-    }
-  }, [profile]);
+  const [formOverride, setFormOverride] = useState<{ fullName?: string; phone?: string; avatarUrl?: string }>({});
+
+  const fullName = formOverride.fullName ?? profile?.full_name ?? "";
+  const phone = formOverride.phone ?? profile?.phone ?? "";
+  const avatarUrl = formOverride.avatarUrl ?? profile?.avatar_url ?? "";
+
+  const setFullName = (v: string) => setFormOverride((s) => ({ ...s, fullName: v }));
+  const setPhone = (v: string) => setFormOverride((s) => ({ ...s, phone: v }));
+  const setAvatarUrl = (v: string) => setFormOverride((s) => ({ ...s, avatarUrl: v }));
 
   const email = sessionUser?.email ?? profile?.email ?? "";
 

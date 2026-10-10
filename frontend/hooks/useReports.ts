@@ -39,26 +39,21 @@ export function useReports(params?: { period?: string; type?: string; startDate?
   return useQuery({
     queryKey: [...queryKeys.reports.byPeriod(period), qKey],
     queryFn: async () => {
-      try {
-        let url = "/reports";
-        const queryParams = new URLSearchParams();
-        if (params?.type) queryParams.set("type", params.type);
-        if (params?.startDate && params?.endDate) {
-          queryParams.set("start_date", params.startDate);
-          queryParams.set("end_date", params.endDate);
-          if (params.compareStart && params.compareEnd) {
-            queryParams.set("compare_start", params.compareStart);
-            queryParams.set("compare_end", params.compareEnd);
-          }
-        } else {
-          queryParams.set("period", period);
+      const url = "/reports";
+      const queryParams = new URLSearchParams();
+      if (params?.type) queryParams.set("type", params.type);
+      if (params?.startDate && params?.endDate) {
+        queryParams.set("start_date", params.startDate);
+        queryParams.set("end_date", params.endDate);
+        if (params.compareStart && params.compareEnd) {
+          queryParams.set("compare_start", params.compareStart);
+          queryParams.set("compare_end", params.compareEnd);
         }
-        const res = await api.get(`${url}?${queryParams.toString()}`);
-        return res.data?.data as ReportResponse;
-      } catch (err) {
-        console.error("Reports API error:", err);
-        return null;
+      } else {
+        queryParams.set("period", period);
       }
+      const res = await api.get(`${url}?${queryParams.toString()}`);
+      return res.data?.data as ReportResponse;
     },
     staleTime: staleTimeConfig.dashboard,
   });

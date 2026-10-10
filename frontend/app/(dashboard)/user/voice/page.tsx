@@ -7,6 +7,39 @@ import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
 
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: {
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: { transcript: string };
+    };
+    length: number;
+  };
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  maxAlternatives: number;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+}
+
+type WindowWithSpeech = Window & typeof globalThis & {
+  SpeechRecognition?: new () => SpeechRecognition;
+  webkitSpeechRecognition?: new () => SpeechRecognition;
+};
+
 interface VoiceEntry {
   id: string;
   transcript: string;
@@ -19,11 +52,11 @@ export default function VoicePage() {
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
   const [history, setHistory] = useState<VoiceEntry[]>([]);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) setIsSupported(false);
+    const SpeechRecognition = (window as WindowWithSpeech).SpeechRecognition || (window as WindowWithSpeech).webkitSpeechRecognition;
+    if (!SpeechRecognition) setIsSupported(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
   const chatMutation = useMutation({
@@ -40,7 +73,7 @@ export default function VoicePage() {
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as WindowWithSpeech).SpeechRecognition || (window as WindowWithSpeech).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast.error("Browser tidak mendukung input suara. Gunakan Chrome atau Edge.");
       return;
@@ -58,7 +91,7 @@ export default function VoicePage() {
       setInterim("");
     };
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let finalText = "";
       let interimText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -72,7 +105,7 @@ export default function VoicePage() {
       setInterim(interimText);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       setIsListening(false);
       if (event.error === "not-allowed") {
         toast.error("Izin mikrofon ditolak. Aktifkan di pengaturan browser Anda.");

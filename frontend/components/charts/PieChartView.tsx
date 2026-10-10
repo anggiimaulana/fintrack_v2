@@ -13,7 +13,7 @@ function formatIDR(value: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
 }
 
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload }: { active?: boolean, payload?: Array<{ color: string, payload: { name: string, value: number } }> }) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload;
   return (
@@ -44,9 +44,10 @@ export function PieChartView({ data, compact }: PieChartViewProps) {
           paddingAngle={2}
           dataKey="value"
           stroke="none"
-          label={compact ? false : ({ name, percent }: any) =>
-            `${name} ${(percent != null ? (percent * 100) : 0).toFixed(1)}%`
-          }
+          label={compact ? false : (props: unknown) => {
+            const p = props as { name: string, percent?: number };
+            return `${p.name} ${(p.percent != null ? (p.percent * 100) : 0).toFixed(1)}%`;
+          }}
           labelLine={!compact}
         >
           {chartData.map((entry, index) => (

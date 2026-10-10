@@ -7,12 +7,8 @@ export function useGeminiKeys() {
   return useQuery({
     queryKey: queryKeys.geminiKeys.all,
     queryFn: async () => {
-      try {
-        const res = await api.get("/gemini-keys");
-        return res.data?.data || [];
-      } catch {
-        return [];
-      }
+      const res = await api.get("/gemini-keys");
+      return res.data?.data || [];
     },
     staleTime: staleTimeConfig.geminiKeys,
   });

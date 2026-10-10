@@ -35,12 +35,18 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
 
+export interface AdminSubcategory {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
 export default function SubcategoriesPage() {
   const { id: categoryId } = useParams()
   const queryClient = useQueryClient()
   
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingSub, setEditingSub] = useState<any>(null)
+  const [editingSub, setEditingSub] = useState<AdminSubcategory | null>(null)
   const [name, setName] = useState('')
   const [isActive, setIsActive] = useState(true)
 
@@ -61,7 +67,7 @@ export default function SubcategoriesPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: Partial<AdminSubcategory>) => {
       const response = await api.post('/admin/subcategories', { ...data, category_id: categoryId })
       return response.data
     },
@@ -73,7 +79,7 @@ export default function SubcategoriesPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: any) => {
+    mutationFn: async ({ id, ...data }: Partial<AdminSubcategory> & { id: string }) => {
       const response = await api.put(`/admin/subcategories/${id}`, data)
       return response.data
     },
@@ -105,7 +111,7 @@ export default function SubcategoriesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleOpenEdit = (sub: any) => {
+  const handleOpenEdit = (sub: AdminSubcategory) => {
     setEditingSub(sub)
     setName(sub.name)
     setIsActive(sub.is_active)

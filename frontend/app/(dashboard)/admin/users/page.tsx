@@ -13,8 +13,20 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+interface UserStats {
+  id: string;
+  full_name: string;
+  email: string;
+  role?: string;
+  is_active: boolean;
+  created_at: string;
+  total_transactions?: number;
+  last_transaction_date?: string | null;
+}
+
 import {
   Tabs,
+
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs'
@@ -33,12 +45,12 @@ export default function UserManagementPage() {
   const { users, isLoading, toggleUserStatus, isMutating } = useAdminUsers()
   const [searchQuery, setSearchQuery] = useState('')
   const [filter, setFilter] = useState('all')
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, user: any | null }>({
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, user: UserStats | null }>({
     open: false,
     user: null,
   })
 
-  const filteredUsers = users?.filter((user: any) => {
+  const filteredUsers = users?.filter((user: UserStats) => {
     const matchesSearch = 
       user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -70,7 +82,6 @@ export default function UserManagementPage() {
         <h1 className="text-xl font-black uppercase tracking-wide text-foreground">Manajemen User</h1>
         <p className="text-xs font-bold text-muted-foreground">Pantau dan kelola akses pengguna FinTrack</p>
       </div>
-
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />

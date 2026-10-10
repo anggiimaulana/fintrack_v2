@@ -7,17 +7,12 @@ interface ChatMessageProps {
 }
 
 type CodeProps = {
-  node?: any;
+  node?: unknown;
   inline?: boolean;
   className?: string;
   children?: React.ReactNode;
 } & React.HTMLAttributes<HTMLElement>;
 
-type ListProps = {
-  node?: any;
-  ordered?: boolean;
-  children?: React.ReactNode;
-} & React.HTMLAttributes<HTMLElement>;
 
 export function ChatMessage({ role, content }: ChatMessageProps) {
   const isUser = role === "user";
@@ -43,10 +38,10 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              strong: ({ children, ...props }: any) => (
+              strong: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"strong"> & { node?: unknown }) => (
                 <strong className="font-black" {...props}>{children}</strong>
               ),
-              em: ({ children, ...props }: any) => (
+              em: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"em"> & { node?: unknown }) => (
                 <em className="italic" {...props}>{children}</em>
               ),
               code: ({ inline, className, children, ...props }: CodeProps) => {
@@ -63,53 +58,54 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
                   </pre>
                 );
               },
-              ul: ({ children, ...props }: any) => (
+              ul: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"ul"> & { node?: unknown }) => (
                 <ul className="list-disc list-inside space-y-1 my-1" {...props}>{children}</ul>
               ),
-              ol: ({ children, ...props }: any) => (
+              ol: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"ol"> & { node?: unknown }) => (
                 <ol className="list-decimal list-inside space-y-1 my-1" {...props}>{children}</ol>
               ),
-              li: ({ children, ...props }: any) => (
+              li: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"li"> & { node?: unknown }) => (
                 <li className="text-sm font-medium" {...props}>{children}</li>
               ),
-              h1: ({ children, ...props }: any) => (
+              h1: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"h1"> & { node?: unknown }) => (
                 <h1 className="text-lg font-black mt-3 mb-1" {...props}>{children}</h1>
               ),
-              h2: ({ children, ...props }: any) => (
+              h2: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"h2"> & { node?: unknown }) => (
                 <h2 className="text-base font-black mt-2 mb-1" {...props}>{children}</h2>
               ),
-              h3: ({ children, ...props }: any) => (
+              h3: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"h3"> & { node?: unknown }) => (
                 <h3 className="text-sm font-black mt-2 mb-1" {...props}>{children}</h3>
               ),
-              p: ({ children, ...props }: any) => {
+              p: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"p"> & { node?: unknown }) => {
                 const childrenArr = Array.isArray(children) ? children : [children];
-                const hasBlock = childrenArr.some((c: any) =>
-                  c?.type === 'pre' || c?.type === 'table' || c?.type === 'ul' || c?.type === 'ol' || c?.type === 'div'
+                const hasBlock = childrenArr.some((c: unknown) =>
+                  typeof c === "object" && c !== null && "type" in c &&
+                  ((c as Record<string, unknown>).type === 'pre' || (c as Record<string, unknown>).type === 'table' || (c as Record<string, unknown>).type === 'ul' || (c as Record<string, unknown>).type === 'ol' || (c as Record<string, unknown>).type === 'div')
                 );
                 if (hasBlock) return <>{children}</>;
                 return <div className="text-sm font-medium mb-1 last:mb-0" {...props}>{children}</div>;
               },
-              blockquote: ({ children, ...props }: any) => (
+              blockquote: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: unknown }) => (
                 <blockquote className="border-l-4 border-foreground pl-3 my-2 italic text-muted-foreground" {...props}>{children}</blockquote>
               ),
-              table: ({ children, ...props }: any) => (
+              table: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"table"> & { node?: unknown }) => (
                 <div className="overflow-x-auto my-2">
                   <table className="min-w-full border-2 border-foreground text-xs" {...props}>{children}</table>
                 </div>
               ),
-              thead: ({ children, ...props }: any) => (
+              thead: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"thead"> & { node?: unknown }) => (
                 <thead className="bg-muted font-bold" {...props}>{children}</thead>
               ),
-              th: ({ children, ...props }: any) => (
+              th: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"th"> & { node?: unknown }) => (
                 <th className="border border-foreground px-2 py-1 text-left" {...props}>{children}</th>
               ),
-              td: ({ children, ...props }: any) => (
+              td: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"td"> & { node?: unknown }) => (
                 <td className="border border-foreground px-2 py-1 break-words" {...props}>{children}</td>
               ),
-              hr: (props: any) => (
+              hr: ({ node, ...props }: React.ComponentPropsWithoutRef<"hr"> & { node?: unknown }) => (
                 <hr className="my-3 border-t-2 border-foreground/20" {...props} />
               ),
-              a: ({ children, href, ...props }: any) => (
+              a: ({ children, href, node, ...props }: React.ComponentPropsWithoutRef<"a"> & { node?: unknown }) => (
                 <a href={href} className="underline text-primary hover:text-primary/80 font-bold" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
               ),
             }}

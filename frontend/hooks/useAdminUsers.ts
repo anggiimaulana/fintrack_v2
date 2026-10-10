@@ -11,12 +11,8 @@ export function useAdminUsers() {
   const { data: users, isLoading } = useQuery({
     queryKey: queryKeys.admin.users,
     queryFn: async () => {
-      try {
-        const response = await api.get('/admin/users')
-        return response.data?.data || []
-      } catch {
-        return []
-      }
+      const response = await api.get('/admin/users')
+      return response.data?.data || []
     },
     staleTime: staleTimeConfig.admin,
     placeholderData: (prev) => prev,

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Camera, X, Loader2, Upload, ImageIcon, Receipt, ShoppingCart, Sparkles, AlertCircle, CheckCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
+import type { TransactionData } from "@/components/transactions/TransactionRow";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useCreateTransaction } from "@/hooks/useTransactions";
 import { useInvalidateQueries } from "@/lib/cache-invalidation";
@@ -82,10 +83,6 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
   const { invalidateTransactions } = useInvalidateQueries();
   const { mutateAsync: createTransaction } = useCreateTransaction();
 
-  useEffect(() => {
-    if (!open) resetAll();
-  }, [open]);
-
   const resetAll = () => {
     setFile(null);
     setPreview(null);
@@ -94,6 +91,11 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
     setStep("upload");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!open) resetAll();
+  }, [open]);
+
 
   const handleClose = () => {
     if (step === "analyzing" || step === "saving") return;
@@ -150,9 +152,9 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
     const detectedType = (data.type as "income" | "expense" | "savings") || "expense";
     const catList = detectedType === "income" ? (incomeCategories || []) : detectedType === "savings" ? (savingsCategories || []) : (expenseCategories || []);
     // Try exact match, then fallback for "Lainnya" vs "Lain-lain" mismatch
-    let matched = catList.find((c: any) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
+    let matched = catList.find((c: { name: string; id: string }) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
     if (!matched) {
-      matched = catList.find((c: any) =>
+      matched = catList.find((c: { name: string; id: string }) =>
         c.name?.toLowerCase().includes((data.category || "").toLowerCase()) ||
         (data.category || "").toLowerCase().includes(c.name?.toLowerCase())
       );
@@ -160,7 +162,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
     // Final fallback: use the generic category for the type
     if (!matched) {
       const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-      matched = catList.find((c: any) => fallbackNames.some(f => c.name?.toLowerCase() === f));
+      matched = catList.find((c: { name: string; id: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
     }
     const categoryId = matched?.id || "";
     const amount = data.total || 0;
@@ -175,12 +177,12 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
 
     const categoryField = detectedType === "income" ? "income_category_id" : detectedType === "savings" ? "savings_category_id" : "expense_category_id";
     await createTransaction({
-      type: detectedType,
+      type: detectedType as "income" | "expense",
       amount,
       [categoryField]: categoryId,
       description: data.merchant || undefined,
       transaction_date: txDate,
-    } as any);
+    } as unknown as Partial<TransactionData>);
   };
 
   const analyzeMutation = useMutation({
@@ -199,14 +201,14 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
         await doAutoSave(data);
         invalidateTransactions();
         setStep("success");
-      } catch (saveErr: any) {
-        setError(saveErr.message || "Gagal menyimpan transaksi.");
+      } catch (saveErr: unknown) {
+        setError(saveErr instanceof Error ? saveErr.message : "Gagal menyimpan transaksi.");
         setStep("error");
       }
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       setResult(null);
-      const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || "Gagal menganalisis struk.";
+      const msg = err instanceof Error ? err.message : "Gagal menganalisis struk.";
       setError(msg);
       setStep("error");
     },

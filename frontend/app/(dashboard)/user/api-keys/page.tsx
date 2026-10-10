@@ -24,7 +24,26 @@ const PROVIDERS = [
   { name: "other", display_name: "Lainnya" },
 ];
 
+export interface GeminiAPIKey {
+  id: string;
+  alias: string;
+  provider: string;
+  model: string;
+  supports_text: boolean;
+  supports_audio: boolean;
+  supports_vision: boolean;
+  status: string;
+  key_preview?: string;
+  preview?: string;
+  key?: string;
+}
+
+export interface Provider {
+  name: string;
+  display_name: string;
+}
 export default function ApiKeysPage() {
+
   const queryClient = useQueryClient();
   const [alias, setAlias] = useState("");
   const [keyValue, setKeyValue] = useState("");
@@ -34,7 +53,7 @@ export default function ApiKeysPage() {
   const [supportsAudio, setSupportsAudio] = useState(false);
   const [supportsVision, setSupportsVision] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [editingKey, setEditingKey] = useState<any | null>(null);
+  const [editingKey, setEditingKey] = useState<GeminiAPIKey | null>(null);
   const [editAlias, setEditAlias] = useState("");
   const [editKeyValue, setEditKeyValue] = useState("");
   const [editProvider, setEditProvider] = useState("gemini");
@@ -51,7 +70,7 @@ export default function ApiKeysPage() {
       try { const res = await api.get("/gemini-keys"); return res.data?.data || []; }
       catch { return []; }
     },
-    placeholderData: (prev: any) => prev,
+    placeholderData: (prev: GeminiAPIKey[] | undefined) => prev,
   });
 
   const { data: providers } = useQuery({
@@ -66,7 +85,7 @@ export default function ApiKeysPage() {
   const providerOptions = providers?.length > 0 ? providers : PROVIDERS;
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => { const res = await api.post("/gemini-keys", data); return res.data; },
+    mutationFn: async (data: Partial<GeminiAPIKey> & { api_key?: string }) => { const res = await api.post("/gemini-keys", data); return res.data; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["api-keys"] }); },
   });
 
@@ -76,7 +95,7 @@ export default function ApiKeysPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => { const res = await api.patch(`/gemini-keys/${id}`, data); return res.data; },
+    mutationFn: async ({ id, data }: { id: string; data: Partial<GeminiAPIKey> & { api_key?: string } }) => { const res = await api.patch(`/gemini-keys/${id}`, data); return res.data; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["api-keys"] }); },
   });
 
@@ -115,7 +134,7 @@ export default function ApiKeysPage() {
     } catch { toast.error("Gagal menambahkan key."); }
   };
 
-  const openEdit = (key: any) => {
+  const openEdit = (key: GeminiAPIKey) => {
     setEditingKey(key);
     setEditAlias(key.alias);
     setEditKeyValue("");
@@ -135,7 +154,7 @@ export default function ApiKeysPage() {
       return;
     }
     try {
-      const payload: any = { alias: editAlias, provider: editProvider, model: editModel, supports_text: editSupportsText, supports_audio: editSupportsAudio, supports_vision: editSupportsVision };
+      const payload: Partial<GeminiAPIKey> & { api_key?: string } = { alias: editAlias, provider: editProvider, model: editModel, supports_text: editSupportsText, supports_audio: editSupportsAudio, supports_vision: editSupportsVision };
       if (editKeyValue.trim()) payload.api_key = editKeyValue.trim();
       await updateMutation.mutateAsync({
         id: editingKey.id,
@@ -153,7 +172,7 @@ export default function ApiKeysPage() {
     } catch { toast.error("Key tidak valid atau gagal terhubung."); }
   };
 
-  const isAllExhausted = keys?.every((k: any) => k.status !== "active");
+  const isAllExhausted = keys?.every((k: GeminiAPIKey) => k.status !== "active");
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -222,7 +241,7 @@ export default function ApiKeysPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {(keys || []).map((key: any) => (
+              {(keys || []).map((key: GeminiAPIKey) => (
                 <div key={key.id} className="border-2 border-foreground bg-card shadow-[3px_3px_0px_0px] shadow-foreground p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-[4px_4px_0px_0px] hover:shadow-foreground transition-all">
                   <div className="hidden sm:flex text-muted-foreground">
                     <GripVertical className="w-5 h-5" />
@@ -296,11 +315,15 @@ export default function ApiKeysPage() {
                 onChange={(e) => setProvider(e.target.value)}
                 className="w-full border-2 border-foreground bg-background px-3 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
               >
-                {providerOptions.map((p: any) => (
-                  <option key={p.name || p} value={p.name || p}>
-                    {p.display_name || (p.charAt(0).toUpperCase() + p.slice(1))}
+                {providerOptions.map((p: Provider | string) => {
+                  const pName = typeof p === 'string' ? p : p.name;
+                  const pDisplay = typeof p === 'string' ? p : p.display_name;
+                  return (
+                  <option key={pName} value={pName}>
+                    {pDisplay || (pName.charAt(0).toUpperCase() + pName.slice(1))}
                   </option>
-                ))}
+                  );
+                })}
               </select>
             </div>
             <div className="space-y-2">
@@ -386,11 +409,15 @@ export default function ApiKeysPage() {
                 onChange={(e) => setEditProvider(e.target.value)}
                 className="w-full border-2 border-foreground bg-background px-3 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
               >
-                {providerOptions.map((p: any) => (
-                  <option key={p.name || p} value={p.name || p}>
-                    {p.display_name || (p.charAt(0).toUpperCase() + p.slice(1))}
+                {providerOptions.map((p: Provider | string) => {
+                  const pName = typeof p === 'string' ? p : p.name;
+                  const pDisplay = typeof p === 'string' ? p : p.display_name;
+                  return (
+                  <option key={pName} value={pName}>
+                    {pDisplay || (pName.charAt(0).toUpperCase() + pName.slice(1))}
                   </option>
-                ))}
+                  );
+                })}
               </select>
             </div>
             <div className="space-y-2">

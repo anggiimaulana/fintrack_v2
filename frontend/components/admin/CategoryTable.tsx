@@ -47,7 +47,7 @@ export function CategoryTable({ categories, onEdit, onDelete, isLoading, type = 
         </TableHeader>
         <TableBody>
           {categories.map((category) => {
-            const Icon = (Icons as any)[category.icon] as LucideIcon
+            const Icon = Icons[category.icon as keyof typeof Icons] as LucideIcon
             return (
               <TableRow key={category.id}>
                 <TableCell className="font-medium">{category.name}</TableCell>
