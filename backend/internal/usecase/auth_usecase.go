@@ -1,0 +1,217 @@
+package usecase
+
+import (
+	"context"
+	"errors"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/infrastructure/auth"
+)
+
+// Auth error sentinels mapped to HTTP statuses by the handler.
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrAccountInactive    = errors.New("account inactive")
+	ErrPasswordReset      = errors.New("password reset required")
+	ErrInvalidRefresh     = errors.New("invalid refresh token")
+	ErrWeakPassword       = errors.New("password too short")
+	ErrInvalidEmail       = errors.New("invalid email")
+	ErrSelfDeactivate     = errors.New("cannot deactivate own account")
+)
+
+var emailRegex = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
+// TokenPair is returned by login/refresh.
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int
+	User         *domain.Profile
+}
+
+const (
+	accessTTL  = 15 * time.Minute
+	refreshTTL = 30 * 24 * time.Hour
+)
+
+// AuthUsecase implements Go-native authentication: bcrypt passwords, HS256
+// access tokens, and rotating refresh tokens persisted in the database.
+type AuthUsecase struct {
+	userRepo    domain.ProfileRepository
+	refreshRepo domain.RefreshTokenRepository
+	jwtSecret   []byte
+}
+
+func NewAuthUsecase(userRepo domain.ProfileRepository, refreshRepo domain.RefreshTokenRepository, jwtSecret []byte) *AuthUsecase {
+	return &AuthUsecase{userRepo: userRepo, refreshRepo: refreshRepo, jwtSecret: jwtSecret}
+}
+
+func (u *AuthUsecase) issuePair(ctx context.Context, p *domain.Profile, userAgent string) (*TokenPair, error) {
+	access, err := auth.IssueAccessToken(p.ID, string(p.Role), p.Email, u.jwtSecret, accessTTL)
+	if err != nil {
+		return nil, err
+	}
+	raw, hash := auth.NewRefreshToken()
+	rt := &domain.RefreshToken{
+		UserID:    p.ID,
+		TokenHash: hash,
+		ExpiresAt: time.Now().Add(refreshTTL),
+	}
+	if userAgent != "" {
+		rt.UserAgent = &userAgent
+	}
+	if err := u.refreshRepo.Create(ctx, rt); err != nil {
+		return nil, err
+	}
+	return &TokenPair{AccessToken: access, RefreshToken: raw, ExpiresIn: int(accessTTL.Seconds()), User: p}, nil
+}
+
+// Register creates a new user (role 'user') and returns the profile.
+func (u *AuthUsecase) Register(ctx context.Context, email, password, fullName string) (*domain.Profile, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !emailRegex.MatchString(email) {
+		return nil, ErrInvalidEmail
+	}
+	if len(password) < 8 {
+		return nil, ErrWeakPassword
+	}
+
+	existing, _, err := u.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, domain.ErrEmailTaken
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	if fullName == "" {
+		fullName = strings.Split(email, "@")[0]
+	}
+
+	return u.userRepo.Create(ctx, &domain.Profile{
+		Email:    email,
+		FullName: fullName,
+		Role:     domain.RoleUser,
+	}, hash)
+}
+
+// Login verifies credentials and issues a token pair.
+func (u *AuthUsecase) Login(ctx context.Context, email, password, userAgent string) (*TokenPair, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	p, hash, err := u.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if !p.IsActive {
+		return nil, ErrAccountInactive
+	}
+	if hash == "" {
+		return nil, ErrPasswordReset
+	}
+	if !auth.CheckPassword(hash, password) {
+		return nil, ErrInvalidCredentials
+	}
+	return u.issuePair(ctx, p, userAgent)
+}
+
+// Refresh rotates a refresh token. If a revoked token is presented, it is
+// treated as reuse: all of the user's tokens are revoked and an error returned.
+func (u *AuthUsecase) Refresh(ctx context.Context, rawToken, userAgent string) (*TokenPair, error) {
+	if rawToken == "" {
+		return nil, ErrInvalidRefresh
+	}
+	hash := auth.HashRefreshToken(rawToken)
+	existing, err := u.refreshRepo.GetByHash(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil || time.Now().After(existing.ExpiresAt) {
+		return nil, ErrInvalidRefresh
+	}
+	if existing.RevokedAt != nil {
+		// Reuse detected: revoke everything for this user.
+		_ = u.refreshRepo.RevokeAllForUser(ctx, existing.UserID)
+		return nil, ErrInvalidRefresh
+	}
+
+	p, err := u.userRepo.GetByID(ctx, existing.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || !p.IsActive {
+		return nil, ErrInvalidRefresh
+	}
+
+	access, err := auth.IssueAccessToken(p.ID, string(p.Role), p.Email, u.jwtSecret, accessTTL)
+	if err != nil {
+		return nil, err
+	}
+	raw, newHash := auth.NewRefreshToken()
+	newToken := &domain.RefreshToken{
+		UserID:    p.ID,
+		TokenHash: newHash,
+		ExpiresAt: time.Now().Add(refreshTTL),
+	}
+	if userAgent != "" {
+		newToken.UserAgent = &userAgent
+	}
+	if err := u.refreshRepo.Rotate(ctx, existing.ID, newToken); err != nil {
+		return nil, err
+	}
+	return &TokenPair{AccessToken: access, RefreshToken: raw, ExpiresIn: int(accessTTL.Seconds()), User: p}, nil
+}
+
+// Logout revokes the presented refresh token.
+func (u *AuthUsecase) Logout(ctx context.Context, rawToken string) error {
+	if rawToken == "" {
+		return nil
+	}
+	existing, err := u.refreshRepo.GetByHash(ctx, auth.HashRefreshToken(rawToken))
+	if err != nil {
+		return err
+	}
+	if existing == nil || existing.RevokedAt != nil {
+		return nil
+	}
+	// Rotate-free revocation: create no successor.
+	return u.refreshRepo.RevokeAllForUser(ctx, existing.UserID)
+}
+
+// Me returns the current user's profile.
+func (u *AuthUsecase) Me(ctx context.Context, userID uuid.UUID) (*domain.Profile, error) {
+	return u.userRepo.GetByID(ctx, userID)
+}
+
+// UpdateProfile updates the current user's profile fields.
+func (u *AuthUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullName *string, avatarURL *string) (*domain.Profile, error) {
+	p, err := u.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, nil
+	}
+	if fullName != nil {
+		p.FullName = *fullName
+	}
+	if avatarURL != nil {
+		p.AvatarURL = avatarURL
+	}
+	if err := u.userRepo.Update(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
