@@ -5,8 +5,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install pnpm (pin v10 to avoid the strict build-script policy in v11).
-RUN corepack enable pnpm && corepack prepare pnpm@10 --activate
+# Install pnpm 11 to match the committed lockfile + workspace build policy.
+RUN corepack enable pnpm && corepack prepare pnpm@11 --activate
 
 # Copy package management files.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

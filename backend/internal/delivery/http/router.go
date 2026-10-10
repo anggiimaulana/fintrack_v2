@@ -1,6 +1,8 @@
 package http
 
 import (
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +17,14 @@ type RouterConfig struct {
 	JWTSecret    string
 	CORSOrigin   string
 	CookieSecure bool
+}
+
+// envInt reads an integer env var, falling back to def when unset/invalid.
+func envInt(key string, def int64) int64 {
+	if v, err := strconv.ParseInt(os.Getenv(key), 10, 64); err == nil && v > 0 {
+		return v
+	}
+	return def
 }
 
 func SetupRouter(
@@ -52,9 +62,14 @@ func SetupRouter(
 	providerH := handler.NewProviderHandler(providerUC)
 	rh := handler.NewReportHandler(reportUC)
 
+	// Rate limits. Login/register limits are overridable via env so load
+	// testing (k6) can exercise the auth flow without tripping the guard.
+	loginLimit := envInt("RATE_LIMIT_LOGIN", 5)
+	registerLimit := envInt("RATE_LIMIT_REGISTER", 3)
+
 	rateLimitMap := map[string]limiter.Rate{
-		"/api/v1/auth/login":           {Period: 1 * time.Minute, Limit: 5},
-		"/api/v1/auth/register":        {Period: 1 * time.Minute, Limit: 3},
+		"/api/v1/auth/login":           {Period: 1 * time.Minute, Limit: loginLimit},
+		"/api/v1/auth/register":        {Period: 1 * time.Minute, Limit: registerLimit},
 		"/api/v1/auth/refresh":         {Period: 1 * time.Minute, Limit: 10},
 		"/api/v1/spk/calculate":        {Period: 1 * time.Minute, Limit: 30},
 		"/api/v1/gemini-keys/:id/test": {Period: 1 * time.Minute, Limit: 10},

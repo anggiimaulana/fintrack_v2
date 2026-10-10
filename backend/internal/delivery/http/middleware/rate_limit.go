@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -75,6 +76,14 @@ func setRateLimitHeaders(w gin.ResponseWriter, ctx limiter.Context) {
 	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(ctx.Reset, 10))
 }
 
+// defaultLimit reads RATE_LIMIT_DEFAULT (default 100 requests/minute).
+func defaultLimit() int64 {
+	if v, err := strconv.ParseInt(os.Getenv("RATE_LIMIT_DEFAULT"), 10, 64); err == nil && v > 0 {
+		return v
+	}
+	return 100
+}
+
 func RateLimitMiddlewareByPath(rates map[string]limiter.Rate) gin.HandlerFunc {
 	stores := make(map[string]*limiter.Limiter)
 
@@ -91,7 +100,7 @@ func RateLimitMiddlewareByPath(rates map[string]limiter.Rate) gin.HandlerFunc {
 			}
 		}
 		if !ok {
-			rate = limiter.Rate{Period: 1 * time.Minute, Limit: 100}
+			rate = limiter.Rate{Period: 1 * time.Minute, Limit: defaultLimit()}
 		}
 
 		lim, exists := stores[path]
