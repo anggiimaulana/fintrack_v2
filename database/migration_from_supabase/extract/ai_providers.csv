@@ -1,0 +1,12 @@
+id,name,display_name,supports_fast,supports_reasoning,is_active,created_at
+c838c624-8651-458d-90f3-cc039b444abd,gemini,Google Gemini,t,t,t,2026-06-22 00:53:40.095162+00
+c5b2301e-84a4-4b2b-b93f-8c4571360321,openai,OpenAI,t,t,t,2026-06-22 00:53:40.095162+00
+0997737e-783b-47e7-9917-5c8b1a060ba3,groq,Groq,t,f,t,2026-06-22 00:53:40.095162+00
+fb53965e-c132-450d-a837-232abf6315e2,openrouter,OpenRouter,t,t,t,2026-06-22 00:53:40.095162+00
+d4452cd2-510a-4efa-844f-49b6c17c8ae9,claude,Claude (Anthropic),f,t,t,2026-06-22 00:53:40.095162+00
+b2a23072-dc2e-438b-bff4-015c82b1abbd,qwen,Qwen,t,f,t,2026-06-22 00:53:40.095162+00
+4d6e849b-2e22-48df-a909-2d309b381a25,deepseek,DeepSeek,t,t,t,2026-06-22 00:53:40.095162+00
+323ca526-2274-4b96-8014-de18554c3026,mistral,Mistral AI,t,f,t,2026-06-22 00:53:40.095162+00
+b58f8f2c-c59c-4d83-a4cd-a2c3a6d7256a,cohere,Cohere,t,f,t,2026-06-22 00:53:40.095162+00
+faf1a4f2-0491-486f-839c-a00b3842369e,perplexity,Perplexity,t,f,t,2026-06-22 00:53:40.095162+00
+bd49a1ea-e172-4123-bdc0-0d54ca5d72e1,other,Lainnya,t,f,t,2026-06-22 00:53:40.095162+00

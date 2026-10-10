@@ -1,0 +1,10 @@
+id,name,icon,color,description,is_active,sort_order,created_by,created_at,updated_at
+cca57ef0-b985-419e-834c-326fa8f472cb,Tabungan Darurat,shield,#ef4444,Dana darurat untuk kebutuhan mendesak,t,1,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+c685ad4b-2023-40d3-8cfa-32cc7e312041,Investasi,trending-up,#10b981,"Reksadana, saham, emas, dll",t,2,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+08e300ad-145b-4bec-8c63-25b7e51f0e11,Pensiun,clock,#3b5bdb,Dana persiapan pensiun,t,3,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+1c4873ba-7e25-4680-a7c7-572e084044b1,Pendidikan,graduation-cap,#8b5cf6,Biaya pendidikan masa depan,t,4,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+0604c1ac-a0f1-4302-a5c9-710f70d24bdb,Liburan,plane,#f59e0b,Tabungan liburan,t,5,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+5569f4e8-25d5-4578-9c27-6732ed553b16,Rumah,home,#06b6d4,"DP rumah, renovasi, dll",t,6,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+fc613803-b21f-47ab-854e-7ca41844ad4b,Kendaraan,car,#ec4899,Tabungan kendaraan baru,t,7,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+aedf6f14-962c-4b23-8344-0e94e4de6930,Lainnya,piggy-bank,#64748b,Kategori tabungan lainnya,t,8,,2026-06-23 17:03:21.504951+00,2026-06-23 17:03:21.504951+00
+a2bf7053-cd83-489c-bae5-766fc3a56106,Tabungan Harian,circle,#94a3b8,,t,99,,2026-06-24 10:19:43.330902+00,2026-06-24 10:19:43.330902+00

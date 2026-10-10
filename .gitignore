@@ -12,3 +12,6 @@ tester/*
 
 # Database backups (timestamped scratch dumps)
 database/backups/
+
+# Frontend build artifacts
+frontend/build.log

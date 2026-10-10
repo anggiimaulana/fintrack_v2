@@ -1,0 +1,76 @@
+=== OLD ===
+== Per-table row counts ==
+      table_name       | rows 
+-----------------------+------
+ ai_providers          |   11
+ chat_messages         |  114
+ chat_sessions         |   33
+ expense_categories    |   16
+ expense_subcategories |   42
+ gemini_api_keys       |   30
+ income_categories     |   12
+ savings_categories    |    9
+ spk_results           |   58
+ transactions          |  479
+ users                 |    9
+(11 rows)
+
+
+== Transactions: count + sum(amount) per user (non-deleted) ==
+               user_id                | tx_count | total_amount 
+--------------------------------------+----------+--------------
+ 00000000-0000-0000-0000-000000000002 |      130 | 150658000.00
+ 00000000-0000-0000-0000-000000000003 |      130 | 147433000.00
+ 00000000-0000-0000-0000-000000000004 |      130 | 171497000.00
+ 017962fc-c5b9-487c-a171-6915991f20b2 |        2 |    200000.00
+ 4a70824e-8116-4ac8-be58-2837848a6ea0 |       58 |  43631300.00
+ b1b66fa0-13d9-4937-a4b4-09e3e2060f86 |        2 |   6500000.00
+ c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5 |        2 |   5050000.00
+(7 rows)
+
+
+== gemini_api_keys by status ==
+ status | count 
+--------+-------
+ active |    11
+ error  |    19
+(2 rows)
+
+=== NEW ===
+== Per-table row counts ==
+      table_name       | rows 
+-----------------------+------
+ ai_providers          |   11
+ chat_messages         |  114
+ chat_sessions         |   33
+ expense_categories    |   16
+ expense_subcategories |   42
+ gemini_api_keys       |   30
+ income_categories     |   12
+ savings_categories    |    9
+ spk_results           |   58
+ transactions          |  479
+ users                 |    9
+(11 rows)
+
+
+== Transactions: count + sum(amount) per user (non-deleted) ==
+               user_id                | tx_count | total_amount 
+--------------------------------------+----------+--------------
+ 00000000-0000-0000-0000-000000000002 |      130 | 150658000.00
+ 00000000-0000-0000-0000-000000000003 |      130 | 147433000.00
+ 00000000-0000-0000-0000-000000000004 |      130 | 171497000.00
+ 017962fc-c5b9-487c-a171-6915991f20b2 |        2 |    200000.00
+ 4a70824e-8116-4ac8-be58-2837848a6ea0 |       58 |  43631300.00
+ b1b66fa0-13d9-4937-a4b4-09e3e2060f86 |        2 |   6500000.00
+ c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5 |        2 |   5050000.00
+(7 rows)
+
+
+== gemini_api_keys by status ==
+ status | count 
+--------+-------
+ active |    11
+ error  |    19
+(2 rows)
+

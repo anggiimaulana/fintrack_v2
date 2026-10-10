@@ -27,6 +27,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${SCRIPT_DIR}/extract"
 mkdir -p "${OUT_DIR}"
+# psql \copy needs a forward-slash path on Windows.
+OUT_DIR="$(echo "${OUT_DIR}" | sed 's|^/d/|D:/|')"
 
 OLD_PGHOST="${OLD_PGHOST:-localhost}"
 OLD_PGPORT="${OLD_PGPORT:-54322}"
