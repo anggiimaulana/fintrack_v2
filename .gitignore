@@ -18,3 +18,4 @@ frontend/build.log
 
 # Lint scratch
 frontend/lint_out*.txt
+frontend/build_clean.txt
