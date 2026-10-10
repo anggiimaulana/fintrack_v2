@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -10,12 +11,19 @@ import (
 	"github.com/fintrack/backend/pkg/logger"
 )
 
-// SPKQueue deduplicates and serializes SPK recalculation jobs. Each user has at
-// most one pending job; a fixed worker pool drains the queue, so mutation
-// handlers never spawn unbounded goroutines.
+// coalesceWindow is how long a worker waits before recalculating, so a burst of
+// mutations for the same user collapses into a single recalculation.
+const coalesceWindow = 250 * time.Millisecond
+
+// SPKQueue deduplicates and coalesces SPK recalculation jobs. Each user has at
+// most one job in flight; enqueues that arrive while a job is queued or running
+// are folded into a single follow-up run. A fixed worker pool drains the queue,
+// so mutation handlers never spawn unbounded goroutines.
 type SPKQueue struct {
-	pending map[uuid.UUID]bool
 	mu      sync.Mutex
+	pending map[uuid.UUID]bool // queued or running
+	dirty   map[uuid.UUID]bool // enqueue arrived while pending
+
 	jobs    chan uuid.UUID
 	wg      sync.WaitGroup
 	workers int
@@ -31,17 +39,19 @@ func NewSPKQueue(workers int, calculate func(ctx context.Context, userID uuid.UU
 	}
 	return &SPKQueue{
 		pending:   make(map[uuid.UUID]bool),
+		dirty:     make(map[uuid.UUID]bool),
 		jobs:      make(chan uuid.UUID, 256),
 		workers:   workers,
 		calculate: calculate,
 	}
 }
 
-// Enqueue schedules a recalculation for userID, skipping if one is already
-// pending for that user.
+// Enqueue schedules a recalculation for userID. If one is already pending or
+// running, the request is coalesced (marked dirty) instead of queued again.
 func (q *SPKQueue) Enqueue(userID uuid.UUID) {
 	q.mu.Lock()
 	if q.pending[userID] {
+		q.dirty[userID] = true
 		q.mu.Unlock()
 		return
 	}
@@ -51,7 +61,7 @@ func (q *SPKQueue) Enqueue(userID uuid.UUID) {
 	select {
 	case q.jobs <- userID:
 	default:
-		// Queue full: drop the marker so a later mutation can retry.
+		// Queue full: clear the marker so a later mutation can retry.
 		q.mu.Lock()
 		delete(q.pending, userID)
 		q.mu.Unlock()
@@ -74,11 +84,39 @@ func (q *SPKQueue) Start(ctx context.Context) {
 		go func() {
 			defer q.wg.Done()
 			for uid := range q.jobs {
-				q.mu.Lock()
-				delete(q.pending, uid)
-				q.mu.Unlock()
+				for {
+					// Wait until no new mutation arrives for a full window
+					// (debounce), then recalculate exactly once.
+					q.mu.Lock()
+					q.dirty[uid] = false
+					q.mu.Unlock()
 
-				q.calculate(ctx, uid)
+					for {
+						select {
+						case <-ctx.Done():
+						case <-time.After(coalesceWindow):
+						}
+						q.mu.Lock()
+						d := q.dirty[uid]
+						q.dirty[uid] = false
+						q.mu.Unlock()
+						if !d {
+							break
+						}
+					}
+
+					q.calculate(ctx, uid)
+
+					// If mutations landed during the calculation, loop again.
+					q.mu.Lock()
+					d := q.dirty[uid]
+					if !d {
+						delete(q.pending, uid)
+						q.mu.Unlock()
+						break
+					}
+					q.mu.Unlock()
+				}
 			}
 		}()
 	}

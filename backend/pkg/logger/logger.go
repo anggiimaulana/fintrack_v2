@@ -8,7 +8,9 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var Log *zap.Logger
+// Log is the package logger. It defaults to a no-op logger so callers are safe
+// before Init (e.g. in unit tests).
+var Log = zap.NewNop()
 
 func Init(level string) {
 	var zapLevel zapcore.Level

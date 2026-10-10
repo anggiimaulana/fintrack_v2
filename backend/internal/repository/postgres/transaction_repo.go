@@ -23,6 +23,10 @@ func NewTransactionRepo(pool *pgxpool.Pool) *TransactionRepo {
 }
 
 func (r *TransactionRepo) Create(ctx context.Context, tx *domain.Transaction) error {
+	// Normalize NOT NULL columns on the struct so later updates stay valid.
+	tx.Tags = emptyTags(tx.Tags)
+	tx.Source = defaultSource(tx.Source)
+
 	query := `
 		INSERT INTO transactions (
 			user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
@@ -32,13 +36,29 @@ func (r *TransactionRepo) Create(ctx context.Context, tx *domain.Transaction) er
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 		) RETURNING id, created_at, updated_at`
 
-	return r.pool.QueryRow(
+	return q(ctx, r.pool).QueryRow(
 		ctx, query,
 		tx.UserID, tx.Type, tx.Amount, tx.IncomeCategoryID,
 		tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
-		tx.Notes, tx.Tags, tx.TransactionDate,
-		tx.IsRecurring, tx.RecurringInterval, tx.Source,
+		tx.Notes, emptyTags(tx.Tags), tx.TransactionDate,
+		tx.IsRecurring, tx.RecurringInterval, defaultSource(tx.Source),
 	).Scan(&tx.ID, &tx.CreatedAt, &tx.UpdatedAt)
+}
+
+// emptyTags ensures a non-nil slice so the NOT NULL `tags` column is satisfied.
+func emptyTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
+// defaultSource falls back to 'manual' when no source is set.
+func defaultSource(s domain.TransactionSource) domain.TransactionSource {
+	if s == "" {
+		return domain.SourceManual
+	}
+	return s
 }
 
 func (r *TransactionRepo) GetByID(ctx context.Context, id, userID uuid.UUID) (*domain.Transaction, error) {
@@ -183,9 +203,9 @@ func (r *TransactionRepo) Update(ctx context.Context, tx *domain.Transaction, ex
 		WHERE id = $1 AND user_id = $2 AND is_deleted = false`
 	args := []interface{}{
 		tx.ID, tx.UserID, tx.Type, tx.Amount, tx.IncomeCategoryID,
-		tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description, tx.Notes,
-		tx.Tags, tx.TransactionDate, tx.IsRecurring, tx.RecurringInterval,
-		tx.Source,
+		tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
+		tx.Notes, emptyTags(tx.Tags), tx.TransactionDate, tx.IsRecurring, tx.RecurringInterval,
+		defaultSource(tx.Source),
 	}
 	if expectedUpdatedAt != nil {
 		query += ` AND updated_at = $16`

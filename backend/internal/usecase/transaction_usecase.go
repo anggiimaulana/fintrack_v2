@@ -161,6 +161,17 @@ func (u *TransactionUsecase) GetStats(ctx context.Context, userID uuid.UUID, per
 	return u.txRepo.GetStats(ctx, userID, period)
 }
 
+// buildEmbeddingText produces the canonical text embedded for a transaction:
+// "{transaction_date} {type} {category_name} {description} Rp{amount}".
+func buildEmbeddingText(tx *domain.Transaction, category string) string {
+	desc := ""
+	if tx.Description != nil {
+		desc = *tx.Description
+	}
+	return fmt.Sprintf("%s %s %s %s Rp%.0f",
+		tx.TransactionDate.Format("2006-01-02"), tx.Type, category, desc, tx.Amount)
+}
+
 // embedAndStore is best-effort: a failure to embed never fails the mutation.
 func (u *TransactionUsecase) embedAndStore(ctx context.Context, tx *domain.Transaction) {
 	if u.embedding == nil || u.embedRepo == nil || !u.embedding.Enabled() {
@@ -171,13 +182,8 @@ func (u *TransactionUsecase) embedAndStore(ctx context.Context, tx *domain.Trans
 	if u.catNameFunc != nil {
 		category = u.catNameFunc(ctx, tx)
 	}
-	desc := ""
-	if tx.Description != nil {
-		desc = *tx.Description
-	}
 
-	content := fmt.Sprintf("%s %s %s %s Rp%.0f",
-		tx.TransactionDate.Format("2006-01-02"), tx.Type, category, desc, tx.Amount)
+	content := buildEmbeddingText(tx, category)
 
 	vec, err := u.embedding.Embed(ctx, content)
 	if err != nil {
