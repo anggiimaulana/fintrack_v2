@@ -1,0 +1,26 @@
+# ============================================================
+# FinTrack v2 — local stack (Docker Compose)
+# Fase 1: only the `db` service is defined here.
+# Full stack (db + backend + frontend) is added in Fase 5.
+# ============================================================
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: fintrack_v2_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: fintrack
+    ports:
+      - "5435:5432"
+    volumes:
+      - fintrack_v2_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fintrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fintrack_v2_pgdata:

@@ -9,3 +9,6 @@ node_modules/
 tmp/
 tester/*
 !tester/.gitkeep
+
+# Database backups (timestamped scratch dumps)
+database/backups/
