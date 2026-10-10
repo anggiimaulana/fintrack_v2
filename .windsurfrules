@@ -1,0 +1,8 @@
+Follow the Second Brain architecture for FinTrack v2 (structure reflects the ACTUAL repo layout):
+
+- Maintain sterile production code in frontend/, backend/, database/.
+- Place sandbox/debug/test scripts in tester/ (never commit; it is gitignored).
+- Knowledge and docs live in second_brain/; log actions to second_brain/1_Digest/Tugas-Rutin/log_aktivitas.md.
+- Never commit .env, secrets, API keys, or dumps containing new secrets. Only .env.example is committed.
+- Canonical commands: `cd backend && go vet ./... && go test ./... && go build ./...` and `cd frontend && pnpm build && pnpm lint && pnpm test`.
+- Database changes = new numbered migration (database/migrations/000N_*.sql) + regenerate dump. App DB role is least-privilege (no DDL); authorization in Go, not RLS.
