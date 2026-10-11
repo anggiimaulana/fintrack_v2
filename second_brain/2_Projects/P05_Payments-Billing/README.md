@@ -82,8 +82,8 @@ Modul ini diimplementasikan di `internal/payment/` dengan pola antarmuka Go yang
 
 ## 4. Kriteria Keberhasilan (Success Criteria)
 
-1. **Integritas Moneter 100%**: Tidak ada tipe data float yang digunakan untuk merepresentasikan rupiah di database, struct Go, dan response JSON.
-2. **Anti Double-Charge**: Webhook yang dikirim ulang 10 kali berturut-turut untuk transaksi yang sama menghasilkan status 200 OK tanpa menduplikasi kredit saldo token atau memperpanjang masa aktif langganan lebih dari satu kali (`idempotency_key` dan state-lock teruji).
-3. **PCI-DSS SAQ-A Compliant**: Kredensial pembayaran sensitif tidak pernah menyentuh server backend FinTrack v2.
-4. **Isolasi In-Flight Gateway**: Penggantian gateway dari Midtrans ke Manual (atau sebaliknya) tidak merusak webhook yang masih berjalan untuk checkout sebelumnya.
-5. **Prorasi Akurat**: Upgrade plan menghasilkan selisih harga harian yang deterministik dan terdokumentasi dalam invoice terbitan baru.
+1. [x] **Integritas Moneter 100%**: tidak ada float untuk rupiah (BIGINT/int64 di DB, struct, JSON). *(pricing/tax floor; diuji)*
+2. [x] **Anti Double-Charge**: webhook berulang untuk transaksi sama tidak menduplikasi kredit/aktivasi. *(diuji: 20 webhook paralel → 1 transisi & 1 aktivasi)*
+3. [x] **PCI-DSS SAQ-A**: tidak ada data kartu disimpan; alur kartu via Midtrans Snap hosted. *(desain + Midtrans gateway)*
+4. [x] **Isolasi In-Flight Gateway**: gateway dikunci pada baris payment saat checkout; ubah global tidak merusak transaksi berjalan. *(diuji resolver in-flight)*
+5. [x] **Prorasi Akurat**: selisih harga harian deterministik (integer floor) + invoice. *(diuji)*

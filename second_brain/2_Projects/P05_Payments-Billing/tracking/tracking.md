@@ -6,7 +6,7 @@ Status ditandai dengan:
 - 🔄 : Sedang dikerjakan (*In Progress*)
 - ✅ : Selesai dan terverifikasi (*Done*)
 
-> **Status: BERJALAN.** W1 (skema, gateway, midtrans, webhook) selesai. ✅ hanya setelah dibuktikan test nyata.
+> **Status: SELESAI (17/17, 100%).** Semua task ✅ setelah dibuktikan test nyata.
 
 ---
 
@@ -30,7 +30,7 @@ Status ditandai dengan:
 | `TASK-P05-014` | Penegakan Grace Period & Past Due | Sprint 3 | Backend | ✅ | `payment/grace_worker.go` (within grace -> grace; beyond -> past_due soft-limit); test PASS |
 | `TASK-P05-015` | Integrasi Realtime SSE Status Pembayaran | Sprint 3 | Backend | ✅ | `payment/realtime_publisher.go` (channel user_events:{uid}, event payment.settled); test PASS |
 | `TASK-P05-016` | Pencatatan Audit Trail Finansial Komprehensif | Sprint 3 | Backend | ✅ | `payment/audit_interceptor.go` (PAYMENT_CREATE/WEBHOOK_RECEIVE/SETTLED/MANUAL_*/INVOICE_VOID); test PASS |
-| `TASK-P05-017` | Pengujian Integrasi E2E & Stres Idempotensi | Sprint 3 | QA/Lead | ⬜ | `tests/integration/payment_test.go` |
+| `TASK-P05-017` | Pengujian Integrasi E2E & Stres Idempotensi | Sprint 3 | QA/Lead | ✅ | `payment_integration_test.go` — 20 webhook paralel -> tepat 1 transisi & 1 aktivasi (19 idempoten); nomor invoice unik. Test PASS (DB live) |
 
 ---
 

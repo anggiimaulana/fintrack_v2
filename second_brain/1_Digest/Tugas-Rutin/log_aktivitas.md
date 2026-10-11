@@ -4,6 +4,47 @@
 
 ---
 
+## 2026-10-11 — Implementasi P05 Payments & Billing SELESAI (17/17, 100%)
+
+Eksekusi `P05_Payments-Billing/planning/implementation-plan.md` (5 wave). Semua task ✅ setelah
+dibuktikan test nyata.
+
+### W1 — Skema, Gateway, Midtrans, Webhook
+- **TASK-P05-001** ✅ migrasi `0009_payments_invoices.sql` (invoices, payments, settings, invoice_counters + seed); CHECK amount>0 terbukti; replay OK.
+- **TASK-P05-002** ✅ `payment/gateway.go` (interface Gateway + models; uang int64).
+- **TASK-P05-003** ✅ `payment/midtrans.go` (Snap create + basic auth, verify SHA-512 constant-time, check status, cancel); 7 test PASS.
+- **TASK-P05-004** ✅ `handler/payment_handler.go` webhook (MaxBytes 1MB).
+- **TASK-P05-005** ✅ `payment/webhook.go` (pull verification + row-lock idempoten); replay 5x → aktivasi 1x.
+
+### W2 — Invoice, Manual, Review
+- **TASK-P05-006** ✅ invoice_service + NextInvoiceNumber (INV/YYYYMMDD/NNNNN atomic upsert).
+- **TASK-P05-007** ✅ manual.go (transfer instructions + magic-byte proof validation 5MB) + manual_service upload.
+- **TASK-P05-008** ✅ approve/reject (row-lock idempoten, reason wajib) + AdminService. 6 test PASS.
+
+### W3 — Resolver, Prorata, Downgrade, Tax
+- **TASK-P05-009** ✅ registry.ResolveGateway (per-plan > global > manual) + checkout locks gateway; 4 test PASS.
+- **TASK-P05-010** ✅ prorata (billing) + invoice via checkout.
+- **TASK-P05-011** ✅ downgrade schedule/apply (soft-limit).
+- **TASK-P05-012** ✅ tax.go TaxCalculator (settings rate, floor).
+
+### W4 — Dunning, Grace, SSE, Audit
+- **TASK-P05-013** ✅ dunning_worker (H-3/H-1/H-0 + dedup).
+- **TASK-P05-014** ✅ grace_worker (grace → past_due soft-limit).
+- **TASK-P05-015** ✅ realtime_publisher (user_events:{uid}, payment.settled).
+- **TASK-P05-016** ✅ audit_interceptor (named financial events). 6 test PASS.
+
+### W5 — E2E & Concurrency
+- **TASK-P05-017** ✅ **Anti double-credit terbukti:** 20 webhook paralel order yang sama → **tepat 1 transisi & 1 aktivasi** (19 idempoten); invoice `paid`, payment `settled`. Nomor invoice 20× unik.
+- Wiring: payment handler + routes (webhook publik + admin manual approve/reject/pending), registry, services, dunning/grace workers, `SubscriptionActivator` (bridge ke billing + invalidate entitlement), `SettingsRepo`.
+
+### Verifikasi akhir
+- `go vet`/`go build`/`go test ./...` hijau (22 paket ok).
+- Backend rebuild; webhook endpoint terdaftar.
+
+**Catatan deviasi:** `-race` tidak tersedia (tanpa gcc). Integrasi Midtrans diuji dengan mock Snap server (kredensial produksi belum ada).
+
+---
+
 ## 2026-10-11 — Implementasi P04 Subscription & Token Core SELESAI (17/17, 100%)
 
 Eksekusi `P04_Subscription-Token-Core/planning/implementation-plan.md` (5 wave). Semua task ✅

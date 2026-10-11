@@ -45,6 +45,7 @@ func SetupRouter(
 	reportUC *usecase.ReportUsecase,
 	authUC *usecase.AuthUsecase,
 	entitlementH *handler.EntitlementHandler,
+	paymentH *handler.PaymentHandler,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -90,6 +91,11 @@ func SetupRouter(
 	api.Use(rateLimitMw)
 	api.Use(middleware.OriginCheck(config.CORSOrigin))
 	{
+		// Payment webhook is public (no JWT); signature is verified by the gateway.
+		if paymentH != nil {
+			api.POST("/payments/webhook/midtrans", paymentH.MidtransWebhook)
+		}
+
 		auth := api.Group("/auth")
 		{
 			auth.POST("/login", ah.Login)
@@ -183,6 +189,12 @@ func SetupRouter(
 				adminRoutes.POST("/categories/savings", ch.CreateSavings)
 				adminRoutes.PUT("/categories/savings/:id", ch.UpdateSavings)
 				adminRoutes.DELETE("/categories/savings/:id", ch.DeleteSavings)
+
+				if paymentH != nil {
+					adminRoutes.POST("/payments/manual/:id/approve", paymentH.ApproveManual)
+					adminRoutes.POST("/payments/manual/:id/reject", paymentH.RejectManual)
+					adminRoutes.GET("/payments/manual/pending", paymentH.ListPendingManual)
+				}
 
 				adminRoutes.POST("/providers", providerH.Create)
 				adminRoutes.PUT("/providers/:id", providerH.Update)

@@ -26,6 +26,7 @@ import (
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
+	"github.com/fintrack/backend/internal/payment"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/logger"
@@ -202,6 +203,33 @@ func main() {
 	_ = entBroadcaster // used by P05/P06 on plan changes
 	defer stopEntSubscriber()
 
+	// Payments & billing (P05).
+	paymentRepo := postgres.NewPaymentRepo(pool)
+	settingsRepo := postgres.NewSettingsRepo(pool)
+	payRegistry := payment.NewRegistry()
+	payRegistry.Register(payment.NewMidtransGateway(payment.MidtransConfig{
+		ServerKey:    os.Getenv("MIDTRANS_SERVER_KEY"),
+		ClientKey:    os.Getenv("MIDTRANS_CLIENT_KEY"),
+		IsProduction: os.Getenv("MIDTRANS_IS_PRODUCTION") == "true",
+	}))
+	payRegistry.Register(payment.NewManualGateway(
+		os.Getenv("MANUAL_BANK_NAME"), os.Getenv("MANUAL_ACCOUNT_NUMBER"), os.Getenv("MANUAL_ACCOUNT_HOLDER")))
+	payTax := payment.NewTaxCalculator(settingsRepo)
+	_ = payment.NewInvoiceService(paymentRepo, settingsRepo, payTax) // available for P06 checkout endpoints
+	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver)
+	payWebhook := payment.NewWebhookProcessor(paymentRepo, payRegistry, subActivator, txManager)
+	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, nil)
+	payAdmin := payment.NewAdminService(payManual)
+	payHandler := handler.NewPaymentHandler(payWebhook).WithManual(payManual).WithAdmin(payAdmin)
+
+	// Dunning & grace workers.
+	dunningWorker := payment.NewDunningWorker(paymentRepo, nil, time.Hour)
+	graceWorker := payment.NewGraceWorker(paymentRepo, settingsRepo, nil, 30*time.Minute)
+	dunningWorker.Start(bgCtx)
+	graceWorker.Start(bgCtx)
+	defer dunningWorker.Stop()
+	defer graceWorker.Stop()
+
 	providerUC := usecase.NewProviderUsecase(providerRepo)
 	reportUC := usecase.NewReportUsecase(txRepo)
 	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret))
@@ -226,6 +254,7 @@ func main() {
 		reportUC,
 		authUC,
 		entHandler,
+		payHandler,
 	)
 
 	// Start the SPK worker pool.
