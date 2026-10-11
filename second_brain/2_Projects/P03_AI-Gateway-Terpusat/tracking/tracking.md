@@ -3,7 +3,7 @@
 Status tracking tugas implementasi Fase P03.
 - Format status: ⬜ (Belum Dimulai) | 🔄 (Sedang Dikerjakan) | ✅ (Selesai / Terverifikasi)
 
-> **Status saat ini: BELUM DIMULAI.** Seluruh task masih ⬜ — belum ada implementasi kode.
+> **Status saat ini: BERJALAN.** W1 (skema, domain, repo) selesai. Status ✅ hanya diberikan setelah dibuktikan test nyata.
 
 ---
 
@@ -11,9 +11,9 @@ Status tracking tugas implementasi Fase P03.
 
 | Task ID | Nama Tugas | Assignee | Status | Keterangan / Hasil Verifikasi |
 |---|---|---|---|---|
-| TASK-P03-001 | Skema Database & Migrasi `0007_ai_gateway.sql` | Backend | ⬜ | DDL `ai_endpoints`, `ai_routes`, arsip `gemini_api_keys`, seed default |
-| TASK-P03-002 | Domain Modeling & Interface Gateway | Backend | ⬜ | Struct entity, request/response DTO, interface contracts |
-| TASK-P03-003 | Repository SQL Endpoint & Route Cache | Backend | ⬜ | Implementasi repository, AES-GCM decrypt, in-memory cache |
+| TASK-P03-001 | Skema Database & Migrasi `0007_ai_gateway.sql` | Backend | ✅ | Diterapkan ke DB; `ai_endpoints`/`ai_routes` + constraint + index + seed (1 endpoint, 5 route); kolom arsip `gemini_api_keys`; replay idempoten OK |
+| TASK-P03-002 | Domain Modeling & Interface Gateway | Backend | ✅ | `internal/domain/aigateway.go` (entity, DTO, `UseCase`, `TokenUsage`, error sentinel, interface `AIGatewayService`/`CircuitBreaker`/`HealthChecker`); `go build ./internal/domain/...` OK |
+| TASK-P03-003 | Repository SQL Endpoint & Route Cache | Backend | ✅ | `repository/postgres/ai_gateway_repo.go` (load routes join+priority, cache TTL 60s, list/get/update health, `DecryptKey`); 3 test PASS vs DB live |
 | TASK-P03-004 | OpenAI-Compatible HTTP Client Engine | Backend | ⬜ | HTTP client standard, SSE stream reader, usage extractor |
 | TASK-P03-005 | State Machine Circuit Breaker | Backend | ⬜ | Closed/Open/Half-Open state, 5 error threshold, 30s cooldown |
 | TASK-P03-006 | Router Multi-Endpoint & Failover Engine | Backend | ⬜ | Priority fallback chain, kill switch check, routing logic |
