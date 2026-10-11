@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -88,8 +89,17 @@ func (m *memRepo) SetPaymentProof(context.Context, uuid.UUID, string) error { re
 func (m *memRepo) ListPaymentsPendingReview(context.Context, int) ([]*Payment, error) {
 	return nil, nil
 }
-func (m *memRepo) ListInvoicesDueBefore(context.Context, int64) ([]*Invoice, error) {
-	return nil, nil
+func (m *memRepo) ListInvoicesDueBefore(_ context.Context, beforeUnix int64) ([]*Invoice, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	before := time.Unix(beforeUnix, 0).UTC()
+	var out []*Invoice
+	for _, inv := range m.invoices {
+		if inv.DueAt != nil && (inv.Status == InvoiceIssued || inv.Status == InvoicePastDue) && inv.DueAt.Before(before) {
+			out = append(out, inv)
+		}
+	}
+	return out, nil
 }
 
 // noopTx runs fn directly (no real transaction in unit tests).

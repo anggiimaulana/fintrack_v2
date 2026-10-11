@@ -26,10 +26,10 @@ Status ditandai dengan:
 | `TASK-P05-010` | Engine Perhitungan Prorata Upgrade | Sprint 2 | Backend | ✅ | `billing/subscription_management.go` CalculateUpgradeProration (integer floor) + invoice via `payment/checkout.go`; 5 test PASS (P04) + checkout tax test |
 | `TASK-P05-011` | Manajemen Downgrade Akhir Periode | Sprint 2 | Backend | ✅ | `billing/subscription_management.go` ScheduleDowngrade/ApplyScheduledDowngrade (soft-limit, no data loss); test PASS |
 | `TASK-P05-012` | Modul Pajak PPN (Tax Engine) | Sprint 2 | Backend | ✅ | `payment/tax.go` TaxCalculator (rate dari settings, floor); test PASS (0% & 11%) |
-| `TASK-P05-013` | Background Worker Penagihan Dunning (H-3/H-1/H-0) | Sprint 3 | Backend | ⬜ | `internal/payment/dunning_worker.go` |
-| `TASK-P05-014` | Penegakan Grace Period & Past Due | Sprint 3 | Backend | ⬜ | `internal/payment/grace_worker.go` |
-| `TASK-P05-015` | Integrasi Realtime SSE Status Pembayaran | Sprint 3 | Backend | ⬜ | `internal/payment/realtime_publisher.go` |
-| `TASK-P05-016` | Pencatatan Audit Trail Finansial Komprehensif | Sprint 3 | Backend | ⬜ | `internal/payment/audit_interceptor.go` |
+| `TASK-P05-013` | Background Worker Penagihan Dunning (H-3/H-1/H-0) | Sprint 3 | Backend | ✅ | `payment/dunning_worker.go` (H-3/H-1/H-0 buckets + dedup); test PASS |
+| `TASK-P05-014` | Penegakan Grace Period & Past Due | Sprint 3 | Backend | ✅ | `payment/grace_worker.go` (within grace -> grace; beyond -> past_due soft-limit); test PASS |
+| `TASK-P05-015` | Integrasi Realtime SSE Status Pembayaran | Sprint 3 | Backend | ✅ | `payment/realtime_publisher.go` (channel user_events:{uid}, event payment.settled); test PASS |
+| `TASK-P05-016` | Pencatatan Audit Trail Finansial Komprehensif | Sprint 3 | Backend | ✅ | `payment/audit_interceptor.go` (PAYMENT_CREATE/WEBHOOK_RECEIVE/SETTLED/MANUAL_*/INVOICE_VOID); test PASS |
 | `TASK-P05-017` | Pengujian Integrasi E2E & Stres Idempotensi | Sprint 3 | QA/Lead | ⬜ | `tests/integration/payment_test.go` |
 
 ---
