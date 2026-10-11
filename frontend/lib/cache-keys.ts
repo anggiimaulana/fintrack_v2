@@ -39,6 +39,9 @@ export const queryKeys = {
   profile: {
     me: ["profile", "me"] as const,
   },
+  entitlements: {
+    me: ["entitlements", "me"] as const,
+  },
   geminiKeys: {
     all: ["gemini-keys"] as const,
   },

@@ -10,8 +10,9 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 - **File Target**: `backend/internal/middleware/entitlement.go`, `backend/internal/middleware/rbac.go`
 - **Acceptance Criteria**:
   - Request diblokir dengan HTTP 403 Forbidden bila entitlement boolean bernilai false.
-  - Request diblokir dengan HTTP 429 Too Many Requests bila batas numerik tercapai.
+  - Request diblokir dengan HTTP 402 Payment Required bila batas numerik tercapai (koreksi 2026-10-11: sebelumnya tertulis 429; 402 dipertahankan agar tidak ambigu dengan rate limiter yang memakai 429).
   - Latensi evaluasi middleware < 2ms menggunakan Redis pipelined lookups.
+- **Status (2026-10-11, Slice A)**: ✅ SELESAI. Path sebenarnya `backend/internal/delivery/http/middleware/entitlement.go` (bukan `internal/middleware/`). Temuan: middleware sudah ada + bertest sejak P04, tetapi **`NewEntitlementMiddleware` tidak pernah dikonstruksi** → 0 dari 63 rute ter-gate. Kini dikonstruksi di `cmd/server/main.go` dan disuntikkan via `RouterConfig`. Ditambah `upgrade_url`, valve `ENTITLEMENT_ENFORCEMENT`, dan usage resolver (`max_transactions`, `ai_tokens_per_cycle`, `ocr_scans_per_cycle`).
 
 ### TASK-P07-002: Audit & Pemasangan Proteksi Entitlement ke Seluruh Endpoint Legacy P01
 - **Deskripsi**: Pasang middleware otorisasi baru ke seluruh rute transaksi, anggaran, analitik, dan chat AI warisan P01 pada `backend/internal/delivery/http/router.go`.
@@ -21,6 +22,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
   - 100% dari 28 endpoint terdaftar memiliki pengawalan middleware yang sesuai dengan matriks hak akses.
   - Endpoint transaksi gratis dibatasi kuota siklus; transaksi pro/unlimited terbuka sesuai plan.
   - Seluruh rute chat/AI terikat verifikasi saldo token dan fitur `ai_chat`.
+- **Status (2026-10-11, Slice A)**: ✅ SELESAI untuk rute yang **benar-benar ada**. "28 endpoint" pada dokumen lama tidak akurat (banyak endpoint belum dibangun); lihat `teknis/rbac-rollout.md` §3 untuk matriks nyata. Ditegakkan: `POST /transactions` (`max_transactions`), `POST /ai/chat` (`ai_chat` + `ai_tokens_per_cycle`), `POST /ai/receipt` (`ocr_receipt` + `ocr_scans_per_cycle`), `POST /ai/receipt/transaction` (`ocr_receipt`), `POST /ai/voice` (`voice_input`), `GET /reports` (`reports_export`). Rute baca tidak digate. **Belum ditegakkan** (butuh pekerjaan lanjutan): `ai_requests_per_cycle`, `max_categories`, `max_wallets`, `rag_search`, `advanced_budgeting`, `api_access`, `bank_sync`. Bukti: `backend/tests/entitlement_e2e_test.go` (8 skenario lewat router nyata), termasuk uji mutasi yang membuktikan suite gagal bila gate dilepas.
 
 ### TASK-P07-003: Migrasi In-Memory globalCache Lokal ke Redis Distributed Cache Berversi
 - **Deskripsi**: Hapus variabel `globalCache` lokal berbasis memori tunggal pada backend Go. Gantikan dengan service Redis client terstandarisasi yang mendukung namespace berversi (`ft:{env}:{module}:{entity}:{id}`) dan invalidasi instan via bump counter versi.

@@ -24,14 +24,25 @@ func RequireAdmin() gin.HandlerFunc {
 	}
 }
 
+// RequireUser guards end-user routes. It admits every authenticated non-guest
+// role: plain users, admins, and super_admins. Excluding super_admin here (as
+// this function previously did) locked platform owners out of the product
+// surface entirely — transactions, dashboard, AI chat and reports all 403'd for
+// them. Mirrors RequireAdmin, which likewise accepts both admin roles.
 func RequireUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
-		if !exists || (role.(string) != "user" && role.(string) != "admin") {
+		if !exists {
 			response.Forbidden(c, "User access required")
 			c.Abort()
 			return
 		}
-		c.Next()
+		switch role.(string) {
+		case "user", "admin", SuperAdminRole:
+			c.Next()
+		default:
+			response.Forbidden(c, "User access required")
+			c.Abort()
+		}
 	}
 }

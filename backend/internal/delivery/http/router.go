@@ -23,6 +23,13 @@ type RouterConfig struct {
 	// Metrics, when non-nil, enables the /metrics endpoint and request
 	// instrumentation.
 	Metrics *metrics.Registry
+	// Entitlement, when non-nil, enables plan enforcement (feature + limit
+	// gates) on the user-facing routes. Nil disables gating entirely, which is
+	// what tests that predate P07 rely on.
+	Entitlement *middleware.EntitlementMiddleware
+	// Usage supplies the numeric usage for limit checks. Required when
+	// Entitlement is set.
+	Usage *middleware.UsageProviders
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -31,6 +38,38 @@ func envInt(key string, def int64) int64 {
 		return v
 	}
 	return def
+}
+
+// featureGate returns the handlers enforcing a plan feature, or nil when
+// entitlement enforcement is not configured (e.g. in tests that predate P07).
+func featureGate(cfg RouterConfig, featureKey string) []gin.HandlerFunc {
+	if cfg.Entitlement == nil {
+		return nil
+	}
+	return []gin.HandlerFunc{cfg.Entitlement.RequireFeature(featureKey)}
+}
+
+// limitGate returns the handlers enforcing a numeric plan limit.
+func limitGate(cfg RouterConfig, limitKey string) []gin.HandlerFunc {
+	if cfg.Entitlement == nil {
+		return nil
+	}
+	var usage middleware.UsageResolver
+	if cfg.Usage != nil {
+		usage = cfg.Usage.UsageFor(limitKey)
+	}
+	return []gin.HandlerFunc{cfg.Entitlement.WithinLimit(limitKey, usage)}
+}
+
+// gated returns the middleware chain (dropping nil groups) followed by the
+// final route handler. Go only permits `...` on the last argument, so the
+// handler is appended here rather than spread at each call site.
+func gated(handler gin.HandlerFunc, groups ...[]gin.HandlerFunc) []gin.HandlerFunc {
+	out := make([]gin.HandlerFunc, 0, len(groups)+1)
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return append(out, handler)
 }
 
 func SetupRouter(
@@ -130,7 +169,8 @@ func SetupRouter(
 					cached.GET("/gemini-keys", gkh.List)
 					cached.GET("/spk/latest", sh.GetLatest)
 					cached.GET("/spk/history", sh.GetHistory)
-					cached.GET("/reports", rh.Generate)
+					// reports_export: Pro/Business only.
+					cached.GET("/reports", gated(rh.Generate, featureGate(config, "reports_export"))...)
 					cached.GET("/categories/income", ch.ListIncome)
 					cached.GET("/categories/expense", ch.ListExpense)
 					cached.GET("/categories/expense/:categoryId/subcategories", ch.ListSubcategories)
@@ -138,7 +178,8 @@ func SetupRouter(
 				}
 
 				userRoutes.GET("/transactions", th.List)
-				userRoutes.POST("/transactions", th.Create)
+				// max_transactions: Free 100, Pro 5000, Business unlimited.
+				userRoutes.POST("/transactions", gated(th.Create, limitGate(config, "max_transactions"))...)
 				userRoutes.PUT("/transactions/:id", th.Update)
 				userRoutes.DELETE("/transactions/:id", th.Delete)
 
@@ -149,15 +190,23 @@ func SetupRouter(
 
 				ai := userRoutes.Group("/ai")
 				{
-					ai.POST("/chat", aiH.Chat)
+					// ai_chat is in every plan; the token quota is the real gate.
+					ai.POST("/chat", gated(aiH.Chat,
+						featureGate(config, "ai_chat"),
+						limitGate(config, "ai_tokens_per_cycle"))...)
 					ai.POST("/sessions", aiH.CreateSession)
 					ai.GET("/sessions", aiH.ListSessions)
 					ai.PUT("/sessions/:id", aiH.UpdateSession)
 					ai.DELETE("/sessions/:id", aiH.DeleteSession)
 					ai.GET("/sessions/:id/messages", aiH.ListMessages)
-					ai.POST("/receipt", aiH.AnalyzeReceipt)
-					ai.POST("/receipt/transaction", aiH.CreateTransactionFromReceipt)
-					ai.POST("/voice", aiH.ProcessVoice)
+					// OCR: Pro/Business only, bounded by ocr_scans_per_cycle.
+					ai.POST("/receipt", gated(aiH.AnalyzeReceipt,
+						featureGate(config, "ocr_receipt"),
+						limitGate(config, "ocr_scans_per_cycle"))...)
+					ai.POST("/receipt/transaction", gated(aiH.CreateTransactionFromReceipt,
+						featureGate(config, "ocr_receipt"))...)
+					// Voice input: Pro/Business only.
+					ai.POST("/voice", gated(aiH.ProcessVoice, featureGate(config, "voice_input"))...)
 				}
 
 				userRoutes.POST("/spk/calculate", sh.Calculate)

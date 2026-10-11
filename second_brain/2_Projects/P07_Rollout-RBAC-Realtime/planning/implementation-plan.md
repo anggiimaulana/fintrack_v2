@@ -69,9 +69,9 @@ Menerapkan penegakan hak akses terpadu (RBAC + Entitlement + Limit numerik) pada
 - **Langkah:**
   1. Buat middleware `RequireEntitlement(featureKey string)` yang mengekstrak identitas pengguna dari JWT context, memeriksa status aktif fitur pada model entitlement, dan memvalidasi izin terhadap versi cache Redis (`user:entitlement_ver:{uid}`).
   2. Buat middleware `RequireLimit(limitKey string, currentUsageFn func(ctx context.Context, uid string) (int, error))` untuk memvalidasi batas numerik kuota (misal: kuota transaksi bulanan, kuota akun bank).
-  3. Kembalikan respons terstandarisasi: HTTP 403 Forbidden bila entitlement boolean false; HTTP 429 Too Many Requests bila batas numerik terlampaui.
+  3. Kembalikan respons terstandarisasi: HTTP 403 Forbidden bila entitlement boolean false; HTTP 402 Payment Required bila batas numerik terlampaui (koreksi 2026-10-11: sebelumnya tertulis 429).
   4. Optimasi evaluasi hak akses menggunakan Redis pipelined lookups untuk menjamin latensi < 2ms.
-- **Verifikasi (bukti):** Unit test `entitlement_test.go` memverifikasi HTTP 403 saat flag false, HTTP 429 saat batas kuota habis, dan HTTP 200 saat pengguna memiliki hak akses penuh.
+- **Verifikasi (bukti):** Unit test `entitlement_test.go` memverifikasi HTTP 403 saat flag false, HTTP 402 saat batas kuota habis, dan HTTP 200 saat pengguna memiliki hak akses penuh.
 - **Catatan zero-downtime & keamanan:** Fail-closed design untuk operasi sensitif; fallback ke query database jika kunci Redis hilang sementara.
 
 #### TASK-P07-002 — Audit & Pemasangan Proteksi Entitlement ke Seluruh Endpoint Legacy P01
@@ -272,7 +272,7 @@ Menerapkan penegakan hak akses terpadu (RBAC + Entitlement + Limit numerik) pada
 
 | Task ID | Artefak Bukti yang Dihasilkan |
 |---|---|
-| **TASK-P07-001** | Hasil unit test `backend/internal/middleware/entitlement_test.go` (lulus HTTP 403 & 429) |
+| **TASK-P07-001** | Hasil unit test `backend/internal/delivery/http/middleware/entitlement_test.go` (lulus HTTP 403 & 402) |
 | **TASK-P07-002** | Log pengujian integrasi `router_protection_test.go` melingkupi 28 endpoint legacy |
 | **TASK-P07-003** | Log test `cache_versioned_test.go` memverifikasi invalidasi cache via bump counter versi |
 | **TASK-P07-004** | Hasil benchmark concurrency `hub_test.go` dengan 1.000 subscriber SSE tanpa leak |

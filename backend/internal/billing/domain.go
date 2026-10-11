@@ -23,7 +23,30 @@ const (
 	StatusGrace    SubscriptionStatus = "grace"
 	StatusCanceled SubscriptionStatus = "canceled"
 	StatusExpired  SubscriptionStatus = "expired"
+
+	// StatusNone is the sentinel returned when a user has no subscription row
+	// at all. It is deliberately distinct from every lifecycle state so callers
+	// can tell "never subscribed (on the default plan)" apart from "a paid plan
+	// that lapsed". It is not part of the lifecycle state machine.
+	StatusNone SubscriptionStatus = "none"
 )
+
+// GrantsPaidAccess reports whether a subscription in this state still entitles
+// the user to its plan's features.
+//
+// active/trialing are obviously entitled. past_due and grace are deliberate
+// tolerance states — dunning reminds the user and the subscription is only
+// suspended once grace lapses — so access is retained while the user is being
+// asked to pay. canceled and expired confer nothing; the user falls back to the
+// default plan. Unknown values fail closed.
+func (s SubscriptionStatus) GrantsPaidAccess() bool {
+	switch s {
+	case StatusActive, StatusTrialing, StatusPastDue, StatusGrace:
+		return true
+	default:
+		return false
+	}
+}
 
 // LedgerEntryType is the kind of token ledger mutation.
 type LedgerEntryType string

@@ -27,7 +27,7 @@ Otorisasi pada FinTrack v2 memisahkan secara tegas antara **Role Platform** dan 
                │         │                               │
                │         │                      [ Populate Redis Cache ]
                │         ▼                               │
-               └─────────►───────[ Allow / Deny (403/429) ]
+               └─────────►───────[ Allow / Deny (403/402) ]
 ```
 
 ---
@@ -131,42 +131,90 @@ func RequireLimit(entitlementService EntitlementService, limitKey string, countC
 
 ---
 
-## 3. Matriks Audit 28 Endpoint Backend FinTrack v2
+## 3. Matriks Audit Endpoint Backend FinTrack v2 (Slice A — kondisi nyata)
 
-Tabel berikut mendokumentasikan hasil audit kepatuhan seluruh rute API backend, status lama versus perlindungan baru fase P07:
+> **Dikoreksi 2026-10-11.** Versi sebelumnya mendaftar 28 endpoint yang sebagian **tidak ada**
+> di kode (`/budgets`, `/goals`, `/analytics/cashflow`, `/analytics/predict`,
+> `/transactions/export`, `/ai/receipt-scan`, `/ai/token-balance`, `/user/profile`,
+> `/realtime/stream`) dan menyebut **429** untuk limit habis, padahal kode memakai **402**.
+> Tabel di bawah mencerminkan rute yang benar-benar terdaftar di
+> `backend/internal/delivery/http/router.go`.
 
-| No | Metode | Path Endpoint | Proteksi Lama (P01) | Proteksi Baru (P07) | Entitlement / Role Requirement |
-|---|---|---|---|---|---|
-| 1 | `POST` | `/api/v1/auth/register` | Publik | Publik | Publik (Rate limit IP) |
-| 2 | `POST` | `/api/v1/auth/login` | Publik | Publik | Publik (Rate limit IP) |
-| 3 | `POST` | `/api/v1/auth/refresh` | Cookie Auth | Cookie Auth | Auth Only |
-| 4 | `POST` | `/api/v1/auth/logout` | Cookie Auth | Cookie Auth | Auth Only |
-| 5 | `GET` | `/api/v1/user/profile` | Auth | Auth | Any Role |
-| 6 | `PUT` | `/api/v1/user/profile` | Auth | Auth | Any Role |
-| 7 | `GET` | `/api/v1/transactions` | Auth | Auth + Entitlement | Limit: `monthly_transactions` read |
-| 8 | `POST` | `/api/v1/transactions` | Auth | Auth + RequireLimit | Limit: `monthly_transactions` (Free: 100/bln) |
-| 9 | `GET` | `/api/v1/transactions/:id` | Auth | Auth (Ownership) | Any Role + Owner Check |
-| 10 | `PUT` | `/api/v1/transactions/:id` | Auth | Auth (Ownership) | Any Role + Owner Check + Lock 409 |
-| 11 | `DELETE`| `/api/v1/transactions/:id` | Auth | Auth (Ownership) | Any Role + Owner Check |
-| 12 | `POST` | `/api/v1/transactions/export` | Auth | Auth + RequireEntitlement | Feature: `export_csv_excel` (Pro/Enterprise) |
-| 13 | `GET` | `/api/v1/budgets` | Auth | Auth | Any Role |
-| 14 | `POST` | `/api/v1/budgets` | Auth | Auth + RequireLimit | Limit: `max_budgets` (Free: 3, Pro: Unlimited) |
-| 15 | `PUT` | `/api/v1/budgets/:id` | Auth | Auth (Ownership) | Any Role + Owner Check |
-| 16 | `DELETE`| `/api/v1/budgets/:id` | Auth | Auth (Ownership) | Any Role + Owner Check |
-| 17 | `GET` | `/api/v1/goals` | Auth | Auth | Any Role |
-| 18 | `POST` | `/api/v1/goals` | Auth | Auth + RequireLimit | Limit: `max_financial_goals` (Free: 2, Pro: Unl) |
-| 19 | `GET` | `/api/v1/analytics/cashflow`| Auth | Auth | Any Role (Basic Chart) |
-| 20 | `GET` | `/api/v1/analytics/predict` | Auth | Auth + RequireEntitlement | Feature: `advanced_analytics_ml` (Pro) |
-| 21 | `POST` | `/api/v1/ai/chat` | Auth + BYOK Key | Auth + Token Gate | Feature: `ai_advisor` + Token Balance Check |
-| 22 | `POST` | `/api/v1/ai/receipt-scan`| Auth + BYOK Key | Auth + Token Gate | Feature: `ai_receipt_ocr` + Token Balance |
-| 23 | `GET` | `/api/v1/ai/token-balance`| N/A (Belum Ada) | Auth | Any Role |
-| 24 | `GET` | `/api/v1/realtime/stream` | N/A (Belum Ada) | Auth (Cookie) | Any Role |
-| 25 | `GET` | `/api/v1/admin/users` | Auth (Role Admin) | Auth + RequireRole | Role: `super_admin` Only |
-| 26 | `POST` | `/api/v1/admin/plans` | N/A (Belum Ada) | Auth + RequireRole | Role: `super_admin` Only |
-| 27 | `POST` | `/api/v1/admin/ai/endpoints`| N/A (Belum Ada) | Auth + RequireRole | Role: `super_admin` Only |
-| 28 | `POST` | `/api/v1/payments/webhook` | Publik | Header Signature Auth | Validasi HMAC signature Midtrans/Xendit |
+### 3.1 Kontrak blok
 
----
+| Kondisi | Status | `error` | Catatan |
+|---|---|---|---|
+| Fitur tidak ada di paket | **403** | `feature_not_in_plan` | payload memuat `feature_key`, `upgrade_hint`, `upgrade_url` |
+| Kuota habis | **402** | `limit_exceeded` | payload memuat `limit_key`, `limit_value`, `current_usage`, `upgrade_url` |
+| Kunci limit absen di paket | **402** | `limit_not_in_plan` | fail-closed |
+
+**402 dipertahankan (bukan 429)** karena rate limiter sudah memakai 429
+(`internal/delivery/http/middleware/rate_limit.go`); memakai 429 untuk kuota paket akan membuat
+"terlalu cepat" dan "kuota habis" tidak terbedakan bagi klien.
+
+### 3.2 Rute yang ditegakkan (Slice A)
+
+| Metode | Path | Middleware | Kunci |
+|---|---|---|---|
+| `POST` | `/api/v1/transactions` | `WithinLimit` | `max_transactions` |
+| `POST` | `/api/v1/ai/chat` | `RequireFeature` + `WithinLimit` | `ai_chat` / `ai_tokens_per_cycle` |
+| `POST` | `/api/v1/ai/receipt` | `RequireFeature` + `WithinLimit` | `ocr_receipt` / `ocr_scans_per_cycle` |
+| `POST` | `/api/v1/ai/receipt/transaction` | `RequireFeature` | `ocr_receipt` |
+| `POST` | `/api/v1/ai/voice` | `RequireFeature` | `voice_input` |
+| `GET` | `/api/v1/reports` | `RequireFeature` | `reports_export` |
+
+### 3.3 Rute yang sengaja TIDAK ditegakkan
+
+| Kelompok | Alasan |
+|---|---|
+| Semua rute baca (`GET /transactions`, `/dashboard/*`, `/transactions/stats`, `/categories/*`, `/spk/*`, `/ai/sessions*`, `/providers`) | bukan fitur termeter; cache 30s dipertahankan |
+| `POST /ai/sessions` + update/delete sesi | pembukuan sesi, bukan fitur berbayar |
+| `POST /spk/calculate` | tidak ada kunci seed yang cocok; sudah rate-limited 30/menit |
+| `POST /gemini-keys*` (BYOK) | dihapus pada slice D |
+
+### 3.4 Kunci seed yang BELUM ditegakkan (jangan dikira selesai)
+
+| Kunci | Alasan |
+|---|---|
+| `ai_requests_per_cycle` | belum ada penghitung request; `token_periods` hanya punya `used_tokens`/`reserved_tokens`, ledger hanya `reserve/commit/release/adjust` |
+| `max_categories` | kategori dikelola super admin; tidak ada rute tulis kategori untuk user |
+| `max_wallets` | fitur dompet belum ada |
+| `rag_search` | tidak ada endpoint RAG; RAG menyatu di `/ai/chat` (sudah digate `ai_chat`) |
+| `advanced_budgeting`, `api_access`, `bank_sync` | belum ada rute/fitur terkait |
+
+### 3.5 Role
+
+| Guard | Menerima | Dipakai di |
+|---|---|---|
+| `AuthMiddleware` | token valid | grup `protected` |
+| `RequireUser` | `user`, `admin`, `super_admin` | rute user |
+| `RequireAdmin` | `admin`, `super_admin` | grup `/admin` |
+| `RequireSuperAdmin` | `super_admin` (re-check peran hidup, K-14) | grup `/admin` P06 |
+
+> **Perbaikan 2026-10-11:** `RequireUser` sebelumnya **menolak `super_admin`**, sehingga pemilik
+> platform terkunci dari seluruh rute user (transaksi, dashboard, AI, laporan). Kini menerima
+> ketiga role, sejalan dengan `RequireAdmin`.
+
+### 3.6 Perilaku tanpa baris subscription
+
+`GetActivePlanForUser` (`internal/repository/postgres/entitlement_source.go`) kini:
+
+1. **Tidak ada baris `subscriptions`** → fallback ke plan `DEFAULT_PLAN_CODE` (default `free`)
+   dengan status sentinel `billing.StatusNone`. Tanpa ini, 50 dari 52 user dev (yang dibuat sebelum
+   subscription ada) akan langsung 403/402 begitu enforcement dinyalakan.
+2. **Status tidak memberi hak** (`canceled`, `expired`) → juga fallback ke plan default. Sebelumnya
+   baris subscription dibaca **tanpa memfilter status**, sehingga langganan kedaluwarsa tetap
+   mendapat fitur berbayar selamanya.
+3. **Plan default hilang/tak terbaca** → deny-all (fail-closed) + log. Akses tidak pernah
+   dilonggarkan saat error.
+
+Status yang tetap memberi hak: `active`, `trialing`, `past_due`, `grace` (masa tenggang dunning).
+
+### 3.7 Valve rollout
+
+`ENTITLEMENT_ENFORCEMENT` (default **on**). Bila `off`/`false`/`0`, kedua middleware menjadi no-op
+dan menulis satu log peringatan. Ini **bypass operasional**: hanya untuk insiden, jangan
+dinyalakan di produksi dalam kondisi normal.
 
 ## 4. Mekanisme Invalidation Instan Tanpa Logout (K-14)
 

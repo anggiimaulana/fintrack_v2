@@ -2,12 +2,16 @@ package middleware
 
 import (
 	"context"
+	"os"
 	"strconv"
+	"strings"
+	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/entitlement"
+	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -15,15 +19,46 @@ import (
 // of transactions). Used by WithinLimit middleware.
 type UsageResolver func(ctx context.Context, userID uuid.UUID, limitKey string) (int64, error)
 
+// UpgradeURL is where the frontend should send users who hit a plan gate.
+const UpgradeURL = "/user/settings/subscription"
+
 // EntitlementMiddleware enforces feature flags and numeric limits at the
 // backend (the authoritative layer). super_admin bypasses all checks.
 type EntitlementMiddleware struct {
 	resolver *entitlement.Resolver
+	// enabled is false when ENTITLEMENT_ENFORCEMENT=off: the middleware becomes a
+	// no-op (incident rollback valve, see the P07 entitlement spec §3.5).
+	enabled bool
+	// warned tracks whether the disabled-mode warning was already logged, so we
+	// log once rather than on every request.
+	warned atomic.Bool
 }
 
-// NewEntitlementMiddleware builds the middleware.
+// NewEntitlementMiddleware builds the middleware. Enforcement is on unless
+// ENTITLEMENT_ENFORCEMENT is explicitly "off"/"false"/"0".
 func NewEntitlementMiddleware(resolver *entitlement.Resolver) *EntitlementMiddleware {
-	return &EntitlementMiddleware{resolver: resolver}
+	return &EntitlementMiddleware{resolver: resolver, enabled: EnforcementEnabled()}
+}
+
+// EnforcementEnabled reads ENTITLEMENT_ENFORCEMENT (default on).
+func EnforcementEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ENTITLEMENT_ENFORCEMENT"))) {
+	case "off", "false", "0", "no":
+		return false
+	default:
+		return true
+	}
+}
+
+// skip reports whether this request should bypass enforcement.
+func (m *EntitlementMiddleware) skip(c *gin.Context) bool {
+	if m.enabled {
+		return false
+	}
+	if m.warned.CompareAndSwap(false, true) {
+		logger.Warn("ENTITLEMENT_ENFORCEMENT is off: plan checks are disabled")
+	}
+	return true
 }
 
 // isSuperAdmin reports whether the request actor bypasses entitlement checks.
@@ -40,7 +75,7 @@ func isSuperAdmin(c *gin.Context) bool {
 // feature. The response includes the feature key and an upsell hint.
 func (m *EntitlementMiddleware) RequireFeature(featureKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if isSuperAdmin(c) {
+		if m.skip(c) || isSuperAdmin(c) {
 			c.Next()
 			return
 		}
@@ -64,6 +99,7 @@ func (m *EntitlementMiddleware) RequireFeature(featureKey string) gin.HandlerFun
 				"message":      "Fitur ini tidak tersedia pada paket Anda. Silakan tingkatkan paket.",
 				"feature_key":  featureKey,
 				"upgrade_hint": true,
+				"upgrade_url":  UpgradeURL,
 			})
 			c.Abort()
 			return
@@ -76,7 +112,7 @@ func (m *EntitlementMiddleware) RequireFeature(featureKey string) gin.HandlerFun
 // limit for limitKey. Unlimited (-1) always passes.
 func (m *EntitlementMiddleware) WithinLimit(limitKey string, usage UsageResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if isSuperAdmin(c) {
+		if m.skip(c) || isSuperAdmin(c) {
 			c.Next()
 			return
 		}
@@ -100,6 +136,7 @@ func (m *EntitlementMiddleware) WithinLimit(limitKey string, usage UsageResolver
 			c.JSON(402, gin.H{
 				"success": false, "error": "limit_not_in_plan",
 				"message": "Batas ini tidak tersedia pada paket Anda.", "limit_key": limitKey,
+				"upgrade_hint": true, "upgrade_url": UpgradeURL,
 			})
 			c.Abort()
 			return
@@ -129,6 +166,7 @@ func (m *EntitlementMiddleware) WithinLimit(limitKey string, usage UsageResolver
 				"limit_value":   limit,
 				"current_usage": current,
 				"upgrade_hint":  true,
+				"upgrade_url":   UpgradeURL,
 			})
 			c.Abort()
 			return

@@ -260,11 +260,25 @@ func main() {
 	reportUC := usecase.NewReportUsecase(txRepo)
 	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret))
 
+	// Entitlement enforcement (P07 slice A): the middleware existed since P04 but
+	// was never constructed, so plan checks never ran. Wire it now, with usage
+	// resolvers backed by the transaction and token-period repositories.
+	entMiddleware := middleware.NewEntitlementMiddleware(entResolver)
+	entUsage := &middleware.UsageProviders{
+		CountTransactions: txRepo.CountActiveByUser,
+		CurrentTokens:     middleware.TokenPeriodUsage(billingRepo),
+		CountVisionScans: func(ctx context.Context, userID uuid.UUID) (int64, error) {
+			return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix())
+		},
+	}
+
 	routerConfig := deliveryHTTP.RouterConfig{
 		JWTSecret:    jwtSecret,
 		CORSOrigin:   corsOrigin,
 		CookieSecure: cookieSecure,
 		Metrics:      metricsRegistry,
+		Entitlement:  entMiddleware,
+		Usage:        entUsage,
 	}
 
 	// Super Admin portal (P06): one service + handler shared by every route.

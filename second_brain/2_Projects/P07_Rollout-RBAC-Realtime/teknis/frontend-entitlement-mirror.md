@@ -225,3 +225,32 @@ Ketika status langganan berubah melalui SSE event `plan_updated`:
 2. Memanggil `queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.all })`.
 3. Hook `useEntitlements()` otomatis melakukan refetch data hak akses terbaru di latar belakang (< 150ms).
 4. Komponen `<EntitlementGuard>` me-re-render tampilan secara instan: tombol yang tadinya terkunci atau nonaktif seketika berubah menjadi aktif tanpa membutuhkan refresh halaman (*zero full-page reload*).
+
+---
+
+## 9. Status Implementasi (Slice A, 2026-10-11)
+
+Sebagian dokumen di atas bersifat aspirational; berikut kondisi nyata setelah Slice A.
+
+**Sudah ada:**
+
+| Artefak | Path | Catatan |
+|---|---|---|
+| Hook entitlement | `frontend/hooks/use-entitlements.ts` | `useEntitlements()` → `hasFeature`, `withinLimit`, `limitValue`; query key `["entitlements","me"]`; fail-closed saat data null |
+| Hook role | `frontend/hooks/use-role.ts` | Wrapper tipis atas `useSession()`; **tidak** fetch `/me` ulang |
+| Handler error terpusat | `frontend/lib/entitlement-errors.ts` | `isEntitlementError`, `notifyEntitlementError` → toast + aksi menuju `UPGRADE_URL` |
+| Halaman tujuan upsell | `frontend/app/(dashboard)/user/settings/subscription/page.tsx` | Read-only: nama paket, status, daftar fitur, tabel batas (`-1` = "Tak terbatas") |
+| Mirror aksi | `app/(dashboard)/user/transactions/page.tsx` | Tombol "Analisis Struk" & "Export CSV" `disabled` bila fitur tidak ada di paket |
+
+**Nama API yang dipakai (bukan nama di contoh dokumen di atas):** `hasFeature(key)` dan
+`withinLimit(key, current)` — dokumen ini menyebut `isLimitReached`/`getRemainingQuota` yang
+tidak diimplementasikan.
+
+**Kontrak error backend yang dipetakan:** 403 `feature_not_in_plan`; 402 `limit_exceeded` /
+`limit_not_in_plan`. Semua memuat `upgrade_url` (`/user/settings/subscription`).
+
+**Prinsip:** mirror ini **advisory saja**. Backend tetap satu-satunya otoritas; `proxy.ts` menjaga
+rute berbasis role. Pengguna yang melewati UI tetap menerima 403/402 dari API.
+
+**Belum dikerjakan:** refetch latar otomatis saat event `plan_updated` (bergantung pada SSE —
+slice B), dan penyembunyian menu sidebar berbasis entitlement.

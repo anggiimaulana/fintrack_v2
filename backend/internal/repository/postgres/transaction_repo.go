@@ -417,6 +417,18 @@ func (r *TransactionRepo) GetDailyTransactionCount(ctx context.Context, userID u
 	return count, nil
 }
 
+// CountActiveByUser returns the number of live (non-soft-deleted) transactions
+// for a user. Used as the usage value for the `max_transactions` plan limit.
+func (r *TransactionRepo) CountActiveByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
+	err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT COUNT(*) FROM transactions WHERE user_id = $1 AND is_deleted = false`, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count transactions: %w", err)
+	}
+	return count, nil
+}
+
 func (r *TransactionRepo) GetRecentByUser(ctx context.Context, userID uuid.UUID, limit int) ([]domain.Transaction, error) {
 	query := `
 		SELECT id, user_id, type, amount, income_category_id, expense_category_id, savings_category_id,

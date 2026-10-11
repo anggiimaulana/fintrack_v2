@@ -232,17 +232,31 @@ func (r *BillingRepo) getPeriodByStart(ctx context.Context, userID uuid.UUID, ps
 }
 
 func (r *BillingRepo) GetPeriodForUpdate(ctx context.Context, userID uuid.UUID, nowUnix int64) (*billing.TokenPeriod, error) {
+	return r.currentPeriod(ctx, userID, nowUnix, true)
+}
+
+// GetCurrentPeriod reads the current period without locking. Used for
+// pre-flight checks (entitlement usage) where a row lock is inappropriate.
+func (r *BillingRepo) GetCurrentPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (*billing.TokenPeriod, error) {
+	return r.currentPeriod(ctx, userID, nowUnix, false)
+}
+
+// currentPeriod selects the row covering `nowUnix`, optionally locking it.
+// Returns (nil, nil) when no period covers the instant.
+func (r *BillingRepo) currentPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64, forUpdate bool) (*billing.TokenPeriod, error) {
 	now := time.Unix(nowUnix, 0).UTC()
-	p := &billing.TokenPeriod{}
-	err := q(ctx, r.pool).QueryRow(ctx,
-		`SELECT id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at
+	query := `SELECT id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at
          FROM token_periods
          WHERE user_id=$1 AND period_start <= $2 AND period_end >= $2
-         ORDER BY period_start DESC LIMIT 1
-         FOR UPDATE`, userID, now).
+         ORDER BY period_start DESC LIMIT 1`
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	p := &billing.TokenPeriod{}
+	err := q(ctx, r.pool).QueryRow(ctx, query, userID, now).
 		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil // caller creates the period
+		return nil, nil // caller creates the period / treats as zero usage
 	}
 	if err != nil {
 		return nil, err
@@ -255,6 +269,24 @@ func (r *BillingRepo) AdjustPeriod(ctx context.Context, periodID uuid.UUID, used
 		`UPDATE token_periods SET used_tokens = used_tokens + $2, reserved_tokens = reserved_tokens + $3, updated_at = now()
          WHERE id = $1`, periodID, usedDelta, reservedDelta)
 	return err
+}
+
+// CountVisionScansInPeriod counts vision-modality ledger entries for the user's
+// current period. Used as the usage value for the `ocr_scans_per_cycle` limit.
+// A user with no current period has made no scans, so it returns 0.
+func (r *BillingRepo) CountVisionScansInPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (int64, error) {
+	now := time.Unix(nowUnix, 0).UTC()
+	var count int64
+	err := q(ctx, r.pool).QueryRow(ctx, `
+		SELECT COUNT(*) FROM token_ledger l
+		JOIN token_periods p ON p.id = l.period_id
+		WHERE l.user_id = $1 AND l.modality = $2
+		  AND p.period_start <= $3 AND p.period_end >= $3`,
+		userID, string(billing.ModalityVision), now).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *BillingRepo) InsertLedger(ctx context.Context, e *billing.TokenLedgerEntry) error {

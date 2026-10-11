@@ -47,6 +47,10 @@ type TokenRepository interface {
 	GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, periodStart, periodEnd int64, quota int64) (*TokenPeriod, error)
 	// GetPeriodForUpdate locks the current period row (SELECT ... FOR UPDATE).
 	GetPeriodForUpdate(ctx context.Context, userID uuid.UUID, nowUnix int64) (*TokenPeriod, error)
+	// GetCurrentPeriod reads the current period WITHOUT taking a row lock, for
+	// pre-flight checks (e.g. entitlement usage). Returns (nil, nil) when the
+	// user has no period yet — callers treat that as zero usage.
+	GetCurrentPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (*TokenPeriod, error)
 	// AdjustPeriod applies deltas to used/reserved tokens atomically.
 	AdjustPeriod(ctx context.Context, periodID uuid.UUID, usedDelta, reservedDelta int64) error
 	// InsertLedger appends a ledger entry; duplicate idempotency keys return

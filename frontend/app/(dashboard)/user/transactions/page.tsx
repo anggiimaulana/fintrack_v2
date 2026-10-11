@@ -14,6 +14,8 @@ import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/comp
 import { InlineAiAssistant } from "@/components/ai/InlineAiAssistant";
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import { notifyEntitlementError } from "@/lib/entitlement-errors";
 import api from "@/lib/api";
 
 export interface TransactionItem {
@@ -131,6 +133,8 @@ function TransactionsContent() {
   const { mutateAsync: createTransaction, isPending: isCreating } = useCreateTransaction();
   const { mutateAsync: updateTransaction, isPending: isUpdating } = useUpdateTransaction();
   const { mutateAsync: deleteTransaction, isPending: isDeleting } = useDeleteTransaction();
+  // UX mirror only: the backend gate is authoritative (see lib/entitlement-errors).
+  const { hasFeature } = useEntitlements();
 
   const [formType, setFormType] = useState<"expense" | "income" | "savings">("expense");
   const [formAmount, setFormAmount] = useState(0);
@@ -189,8 +193,10 @@ function TransactionsContent() {
       setIsDialogOpen(false);
       setEditingTx(null);
       toast.success(editingTx ? "Transaksi berhasil diperbarui" : "Transaksi berhasil disimpan");
-    } catch {
-      toast.error("Gagal menyimpan transaksi.");
+    } catch (err) {
+      // A plan-gate refusal (402 limit_exceeded) explains itself and links to the
+      // subscription page; only fall back to the generic message otherwise.
+      if (!notifyEntitlementError(err)) toast.error("Gagal menyimpan transaksi.");
     }
   };
 
@@ -228,13 +234,21 @@ function TransactionsContent() {
           <p className="text-xs font-bold text-muted-foreground mt-1">Kelola dan pantau semua riwayat transaksi Anda.</p>
         </div>
           <div className="flex items-center gap-3">
-          <Button variant="outline" className="text-muted-foreground cursor-pointer">
+          <Button
+            variant="outline"
+            className="text-muted-foreground cursor-pointer disabled:cursor-not-allowed"
+            disabled={!hasFeature("reports_export")}
+            title={hasFeature("reports_export") ? undefined : "Ekspor laporan membutuhkan paket Pro atau lebih tinggi."}
+            onClick={() => toast.info("Ekspor laporan belum tersedia pada paket Anda.")}
+          >
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
           <Button
             variant="outline"
-            className="text-amber-600 border-amber-600 hover:bg-amber-50 cursor-pointer"
+            className="text-amber-600 border-amber-600 hover:bg-amber-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasFeature("ocr_receipt")}
+            title={hasFeature("ocr_receipt") ? undefined : "Pindai struk membutuhkan paket Pro atau lebih tinggi."}
             onClick={() => setScannerOpen(true)}
           >
             <Camera className="w-4 h-4 mr-2" />

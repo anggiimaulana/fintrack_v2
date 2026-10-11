@@ -4,6 +4,72 @@
 
 ---
 
+## 2026-10-11 — P07 Slice A: Rollout entitlement & RBAC + 3 bug ditemukan
+
+Slice pertama P07 (Rollout RBAC/Realtime). Hasil sampingan penting: implementasi ini menemukan
+**tiga bug nyata**, dua di antaranya lubang keamanan.
+
+### Perubahan
+- **Enforcement dinyalakan.** `NewEntitlementMiddleware` sebelumnya **tidak pernah dikonstruksi**
+  (0 dari 63 rute ter-gate; hanya `RequireUser`, jadi autentikasi tanpa otorisasi). Kini
+  dikonstruksi di `cmd/server/main.go`, disuntikkan via `RouterConfig`, dan dipasang per-rute.
+  Rute ter-gate: `POST /transactions` (`max_transactions`), `POST /ai/chat` (`ai_chat` +
+  `ai_tokens_per_cycle`), `POST /ai/receipt` (`ocr_receipt` + `ocr_scans_per_cycle`),
+  `POST /ai/receipt/transaction` (`ocr_receipt`), `POST /ai/voice` (`voice_input`),
+  `GET /reports` (`reports_export`). Rute baca dibiarkan agar cache 30s tidak berubah.
+- **Fallback plan default.** `GetActivePlanForUser` kini jatuh ke plan `DEFAULT_PLAN_CODE`
+  (default `free`) bila user tidak punya baris `subscriptions`, dengan sentinel
+  `billing.StatusNone`. Fail-closed tetap bila plan default hilang.
+- **Usage resolver baru** (`middleware/usage_resolvers.go`): `max_transactions` (non-soft-deleted),
+  `ai_tokens_per_cycle` (`used + reserved`), `ocr_scans_per_cycle` (ledger `modality='vision'`).
+  Ditambah `GetCurrentPeriod` read-only (non-locking) di `billing_repo` — `GetPeriodForUpdate`
+  yang ada memakai row-lock, tidak cocok untuk pre-flight check.
+- **Kontrak blok** 403 `feature_not_in_plan` / 402 `limit_exceeded`+`limit_not_in_plan`, keduanya
+  memuat `upgrade_url`. Valve `ENTITLEMENT_ENFORCEMENT` (default on) untuk rollback insiden.
+- **Mirror frontend (advisory-only):** `hooks/use-entitlements.ts`, `hooks/use-role.ts`,
+  `lib/entitlement-errors.ts`, halaman read-only `/user/settings/subscription`, tombol
+  OCR/export dinonaktifkan sesuai paket. `vitest.config.ts` diperluas ke `hooks/**`.
+
+### Bug yang ditemukan & diperbaiki
+1. **Lockout ~96% user (blocker).** Resolver mengembalikan deny-all untuk user tanpa baris
+   `subscriptions`; DB dev punya 52 user vs 2 subscription. Menyalakan enforcement tanpa
+   fallback akan meng-403/402 hampir semua user. → fallback plan `free`.
+2. **`super_admin` terkunci dari rute user.** `RequireUser()` hanya menerima `user`/`admin`,
+   sehingga pemilik platform ditolak 403 di transaksi, dashboard, AI, dan laporan. → menerima
+   ketiga role, sejalan dengan `RequireAdmin()`.
+3. **Langganan kedaluwarsa tetap dapat fitur berbayar.** Query subscription tidak memfilter
+   `status`, jadi baris `expired`/`canceled` terus memberi plan Pro/Business selamanya — eskalasi
+   hak akses begitu enforcement menyala. → `canceled`/`expired` jatuh ke plan default.
+
+### Verifikasi
+- Backend: `go vet ./...` bersih, `go test ./...` hijau, `go build ./...` hijau.
+- Integrasi: `tests/entitlement_e2e_test.go` — 8 skenario lewat **router nyata** (Free 403 di
+  `/reports`, Pro 200, limit 100 → 402, soft-deleted tidak dihitung, periode token tidak ada →
+  diizinkan, tanpa subscription → diperlakukan Free, langganan expired → Free, super_admin bypass,
+  `upgrade_url` ada). Ini penjaga kelas bug "middleware ada tapi tidak ter-wiring".
+- **Uji mutasi:** gate `reports_export` dilepas sementara → suite gagal (200 bukan 403), lalu
+  dikembalikan → hijau. Suite terbukti menangkap regresi, bukan lolos karena kebetulan.
+- Frontend: `pnpm lint` 0 error (62 warning, sama seperti baseline), `pnpm build` hijau
+  (rute `/user/settings/subscription` terdaftar), `pnpm test` 66 lolos (dari 54).
+- `fintrack_test` tanpa seed, jadi suite integrasi menyediakan katalog plan sendiri (idempoten).
+
+### Dokumen dikoreksi
+- `teknis/rbac-rollout.md`: matriks "28 endpoint" diganti matriks rute nyata; 429 → 402; nama
+  kunci nyata (`max_transactions`); perilaku tanpa subscription; daftar kunci yang belum ditegakkan.
+- `planning/tasks.md` + `planning/implementation-plan.md`: AC 429 → 402; status Slice A.
+- `tracking/tracking.md`, `teknis/frontend-entitlement-mirror.md`: status implementasi.
+- Spec & plan: `docs/superpowers/specs/2026-10-11-p07-entitlement-rollout-design.md`,
+  `docs/superpowers/plans/2026-10-11-p07-entitlement-rollout-plan.md`.
+
+### Catatan
+- Belum ditegakkan (butuh pekerjaan lanjutan): `ai_requests_per_cycle` (belum ada penghitung
+  request), `max_categories` (kategori dikelola admin), `max_wallets` (fitur belum ada),
+  `rag_search` (menyatu di `/ai/chat`), `advanced_budgeting`, `api_access`, `bank_sync`.
+- User dengan transaksi sudah di atas batas Free (mis. demo 479 vs 100) ditolak pada
+  `POST /transactions`; rute baca tetap terbuka. Enforcement yang benar, bukan bug.
+
+---
+
 ## 2026-10-11 — P06-020: Suite E2E integrasi super admin + perbaikan race review pembayaran
 
 Penutupan P06-020 ("E2E Validation"). Hasil sampingan penting: suite ini **menemukan bug
