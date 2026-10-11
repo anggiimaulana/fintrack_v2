@@ -39,7 +39,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		response.InternalError(c, "Failed to create provider: "+err.Error())
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.Created(c, "Provider created successfully", provider)
 }
 
@@ -63,6 +63,6 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 		response.NotFound(c, "Provider not found")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Provider updated successfully", provider)
 }

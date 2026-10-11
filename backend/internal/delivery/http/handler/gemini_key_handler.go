@@ -53,7 +53,7 @@ func (h *GeminiKeyHandler) Create(c *gin.Context) {
 		response.InternalError(c, "Failed to create API key")
 		return
 	}
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.Created(c, "API key created successfully", key.ToResponse())
 }
 
@@ -78,7 +78,7 @@ func (h *GeminiKeyHandler) Update(c *gin.Context) {
 		response.NotFound(c, "API key not found")
 		return
 	}
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.OK(c, "API key updated successfully", key.ToResponse())
 }
 
@@ -93,7 +93,7 @@ func (h *GeminiKeyHandler) Delete(c *gin.Context) {
 		response.InternalError(c, "Failed to delete API key")
 		return
 	}
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.OK(c, "API key deleted successfully", nil)
 }
 

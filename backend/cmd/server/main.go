@@ -15,9 +15,11 @@ import (
 	"go.uber.org/zap"
 
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
+	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
 	infraDB "github.com/fintrack/backend/internal/infrastructure/db"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
+	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/usecase"
@@ -77,6 +79,15 @@ func main() {
 		logger.Warn("Redis unavailable — running without cache", zap.Error(redisErr))
 	}
 	defer redisClient.Close()
+
+	// Install the versioned cache engine (Redis when available, else memory).
+	middleware.ConfigureCache(redisClient)
+
+	// Observability: metrics registry (four golden signals + business counters).
+	metricsRegistry := metrics.New()
+
+	// Listen for cross-instance cache-invalidation events.
+	stopCacheSubscriber := middleware.StartCacheInvalidationSubscriber(bgCtx)
 
 	poolCfg := infraDB.PoolConfigFromEnv(os.Getenv, func(key string, def int) int {
 		if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
@@ -153,6 +164,7 @@ func main() {
 		JWTSecret:    jwtSecret,
 		CORSOrigin:   corsOrigin,
 		CookieSecure: cookieSecure,
+		Metrics:      metricsRegistry,
 	}
 
 	r := deliveryHTTP.SetupRouter(
@@ -199,6 +211,7 @@ func main() {
 	logger.Info("Shutting down server...")
 
 	spkQueue.Stop()
+	stopCacheSubscriber()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

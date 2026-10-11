@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ulule/limiter/v3"
 
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
+	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	"github.com/fintrack/backend/internal/usecase"
 )
 
@@ -17,6 +19,9 @@ type RouterConfig struct {
 	JWTSecret    string
 	CORSOrigin   string
 	CookieSecure bool
+	// Metrics, when non-nil, enables the /metrics endpoint and request
+	// instrumentation.
+	Metrics *metrics.Registry
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -45,6 +50,9 @@ func SetupRouter(
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	if config.Metrics != nil {
+		r.Use(config.Metrics.Middleware())
+	}
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.CORS(config.CORSOrigin))
 	r.Use(middleware.RequestLogger())
@@ -181,6 +189,10 @@ func SetupRouter(
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "fintrack-api"})
 	})
+
+	if config.Metrics != nil {
+		r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(config.Metrics.Registry(), promhttp.HandlerOpts{})))
+	}
 
 	return r
 }

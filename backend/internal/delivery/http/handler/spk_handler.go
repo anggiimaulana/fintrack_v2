@@ -41,7 +41,7 @@ func (h *SPKHandler) Calculate(c *gin.Context) {
 		response.InternalError(c, "Failed to calculate SPK")
 		return
 	}
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.OK(c, "SPK calculated successfully", result)
 }
 

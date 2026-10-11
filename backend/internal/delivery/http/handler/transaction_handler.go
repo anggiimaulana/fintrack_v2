@@ -126,7 +126,7 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.Created(c, "Transaction created successfully", tx)
 }
 
@@ -158,7 +158,7 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 		return
 	}
 
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.OK(c, "Transaction updated successfully", tx)
 }
 
@@ -175,7 +175,7 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	middleware.InvalidateUserCache(userID)
+	middleware.InvalidateUserCache(c.Request.Context(), userID)
 	response.OK(c, "Transaction deleted successfully", nil)
 }
 

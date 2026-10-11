@@ -99,7 +99,7 @@ func (h *CategoryHandler) CreateIncome(c *gin.Context) {
 		response.InternalError(c, "Failed to create income category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.Created(c, "Income category created successfully", category)
 }
 
@@ -115,7 +115,7 @@ func (h *CategoryHandler) CreateExpense(c *gin.Context) {
 		response.InternalError(c, "Failed to create expense category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.Created(c, "Expense category created successfully", category)
 }
 
@@ -130,7 +130,7 @@ func (h *CategoryHandler) CreateSubcategory(c *gin.Context) {
 		response.InternalError(c, "Failed to create subcategory")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.Created(c, "Subcategory created successfully", subcategory)
 }
 
@@ -154,7 +154,7 @@ func (h *CategoryHandler) UpdateIncome(c *gin.Context) {
 		response.NotFound(c, "Income category not found")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Income category updated successfully", category)
 }
 
@@ -178,7 +178,7 @@ func (h *CategoryHandler) UpdateExpense(c *gin.Context) {
 		response.NotFound(c, "Expense category not found")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Expense category updated successfully", category)
 }
 
@@ -202,7 +202,7 @@ func (h *CategoryHandler) UpdateSubcategory(c *gin.Context) {
 		response.NotFound(c, "Subcategory not found")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Subcategory updated successfully", subcategory)
 }
 
@@ -216,7 +216,7 @@ func (h *CategoryHandler) DeleteIncome(c *gin.Context) {
 		response.InternalError(c, "Failed to delete income category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Income category deleted successfully", nil)
 }
 
@@ -230,7 +230,7 @@ func (h *CategoryHandler) DeleteExpense(c *gin.Context) {
 		response.InternalError(c, "Failed to delete expense category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Expense category deleted successfully", nil)
 }
 
@@ -244,7 +244,7 @@ func (h *CategoryHandler) DeleteSubcategory(c *gin.Context) {
 		response.InternalError(c, "Failed to delete subcategory")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Subcategory deleted successfully", nil)
 }
 
@@ -273,7 +273,7 @@ func (h *CategoryHandler) CreateSavings(c *gin.Context) {
 		response.InternalError(c, "Failed to create savings category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.Created(c, "Savings category created successfully", category)
 }
 
@@ -297,7 +297,7 @@ func (h *CategoryHandler) UpdateSavings(c *gin.Context) {
 		response.NotFound(c, "Savings category not found")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Savings category updated successfully", category)
 }
 
@@ -311,6 +311,6 @@ func (h *CategoryHandler) DeleteSavings(c *gin.Context) {
 		response.InternalError(c, "Failed to delete savings category")
 		return
 	}
-	middleware.InvalidateAllCache()
+	middleware.InvalidateAllCache(c.Request.Context())
 	response.OK(c, "Savings category deleted successfully", nil)
 }

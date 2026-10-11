@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -67,7 +68,7 @@ func TestInvalidateUserCacheScoped(t *testing.T) {
 	wB := httptest.NewRecorder()
 	routerB.ServeHTTP(wB, httptest.NewRequest(http.MethodGet, "/x?n=9", nil))
 
-	InvalidateUserCache(userA)
+	InvalidateUserCache(context.Background(), userA)
 
 	// A's cache should be gone: changing the query still returns fresh data,
 	// but we assert by checking a fresh GET with the same query is recomputed.
@@ -82,5 +83,34 @@ func TestInvalidateUserCacheScoped(t *testing.T) {
 	routerB.ServeHTTP(wB2, httptest.NewRequest(http.MethodGet, "/x?n=9", nil))
 	if wB2.Body.String() != `{"n":"9"}` {
 		t.Fatalf("unexpected B response: %s", wB2.Body.String())
+	}
+}
+
+// TestCacheMiddleware_HitMissAndVersionBump verifies X-Cache headers and that a
+// user version bump turns a HIT into a MISS (versioned invalidation).
+func TestCacheMiddleware_HitMissAndVersionBump(t *testing.T) {
+	userA := uuid.New()
+	router := setupCacheRouter(userA)
+
+	// First request: MISS (and primes the cache).
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/x?n=1", nil))
+	if got := w1.Header().Get("X-Cache"); got != "MISS" {
+		t.Fatalf("first request: expected X-Cache MISS, got %q", got)
+	}
+
+	// Second request: HIT (served from cache).
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/x?n=1", nil))
+	if got := w2.Header().Get("X-Cache"); got != "HIT" {
+		t.Fatalf("second request: expected X-Cache HIT, got %q", got)
+	}
+
+	// Bump the user's version -> next request must MISS.
+	InvalidateUserCache(context.Background(), userA)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, httptest.NewRequest(http.MethodGet, "/x?n=1", nil))
+	if got := w3.Header().Get("X-Cache"); got != "MISS" {
+		t.Fatalf("after bump: expected X-Cache MISS, got %q", got)
 	}
 }
