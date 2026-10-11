@@ -31,7 +31,7 @@ Seluruh komponen antarmuka FinTrack v2 wajib mengikuti matriks aturan Tailwind C
 
 ## 3. Matriks Hasil Audit Komponen & Perbaikan File
 
-Tim telah melakukan audit menyeluruh pada seluruh komponen UI utama di `frontend/src/components/` dan `frontend/src/app/`:
+Tim telah melakukan audit menyeluruh pada seluruh komponen UI utama di `frontend/components/` dan `frontend/app/`:
 
 | No | Lokasi Komponen / Halaman | Masalah Ditemukan | Tindakan Perbaikan P07 | Status Verifikasi |
 |---|---|---|---|:---:|

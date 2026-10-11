@@ -4,7 +4,7 @@ Dokumen ini mendefinisikan rincian pekerjaan teknis (*work breakdown structure*)
 
 ---
 
-### TASK-P04-001: Skema Migrasi Database 0007_subscription_token_core.sql
+### TASK-P04-001: Skema Migrasi Database 0008_subscription_token_core.sql
 - **Komponen:** Database / Migrations
 - **Tipe:** Engineering / DDL
 - **Deskripsi:** Menulis skrip migrasi SQL PostgreSQL 17 yang mencakup pembuatan tabel `plans`, `plan_entitlements`, `plan_limits`, `subscriptions`, `subscription_events`, `token_periods`, `token_ledger`, dan `pricing_rules`. Seluruh kolom moneter dan kuota wajib menggunakan `BIGINT` atau `INTEGER`. Menyertakan skrip rollback (*down migration*) yang bersih.

@@ -14,9 +14,9 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
   - Latensi evaluasi middleware < 2ms menggunakan Redis pipelined lookups.
 
 ### TASK-P07-002: Audit & Pemasangan Proteksi Entitlement ke Seluruh Endpoint Legacy P01
-- **Deskripsi**: Pasang middleware otorisasi baru ke seluruh rute transaksi, anggaran, analitik, dan chat AI warisan P01 pada `backend/internal/api/routes.go`.
+- **Deskripsi**: Pasang middleware otorisasi baru ke seluruh rute transaksi, anggaran, analitik, dan chat AI warisan P01 pada `backend/internal/delivery/http/router.go`.
 - **Tipe**: Backend / Integration
-- **File Target**: `backend/internal/api/routes.go`, `backend/internal/api/handler/*.go`
+- **File Target**: `backend/internal/delivery/http/router.go`, `backend/internal/api/handler/*.go`
 - **Acceptance Criteria**:
   - 100% dari 28 endpoint terdaftar memiliki pengawalan middleware yang sesuai dengan matriks hak akses.
   - Endpoint transaksi gratis dibatasi kuota siklus; transaksi pro/unlimited terbuka sesuai plan.
@@ -68,7 +68,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-008: Pembangunan Frontend Hook `useRealtimeStream` & Auto-Reconnect
 - **Deskripsi**: Buat React hook `useRealtimeStream` pada frontend Next.js 16. Hook mengelola lifecycle `EventSource`, menangani pemutusan koneksi dengan strategi exponential backoff jitter (1s, 2s, 4s, maks 16s), dan mendistribusikan event ke TanStack Query subscriber.
 - **Tipe**: Frontend / Realtime
-- **File Target**: `frontend/src/hooks/use-realtime-stream.ts`, `frontend/src/providers/realtime-provider.tsx`
+- **File Target**: `frontend/hooks/use-realtime-stream.ts`, `frontend/providers/realtime-provider.tsx`
 - **Acceptance Criteria**:
   - Koneksi otomatis terinisialisasi saat pengguna login dan terputus saat pengguna logout.
   - Reconnect otomatis berfungsi transparan saat server restart tanpa intervensi pengguna.
@@ -77,7 +77,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-009: Implementasi Surgical Cache Invalidation TanStack Query pada Frontend
 - **Deskripsi**: Susun peta registri query key terpusat dan kaitkan dispatcher SSE ke invalidasi bedah. Saat event `payment_received` masuk, hanya query key `['billing', 'invoices']` dan `['subscriptions', 'current']` yang di-invalidate, bukan seluruh root cache.
 - **Tipe**: Frontend / State Management
-- **File Target**: `frontend/src/lib/query-keys.ts`, `frontend/src/lib/realtime-dispatcher.ts`
+- **File Target**: `frontend/lib/query-keys.ts`, `frontend/lib/realtime-dispatcher.ts`
 - **Acceptance Criteria**:
   - Tidak ada pemanggilan liar `queryClient.invalidateQueries()` tanpa queryKey filter spesifik.
   - Perubahan data transaksi instan muncul di layar pengguna lain yang memonitor dalam < 500ms.
@@ -86,7 +86,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-010: Pola Optimistic Update pada Mutasi Transaksi & Anggaran Pengguna
 - **Deskripsi**: Terapkan metode `onMutate`, `onError`, dan `onSettled` pada TanStack Query mutation transaksi (`useCreateTransaction`, `useUpdateTransaction`, `useDeleteTransaction`). Data di antarmuka langsung diperbarui sebelum respon server selesai.
 - **Tipe**: Frontend / UX Performance
-- **File Target**: `frontend/src/hooks/use-transactions.ts`, `frontend/src/hooks/use-budgets.ts`
+- **File Target**: `frontend/hooks/use-transactions.ts`, `frontend/hooks/use-budgets.ts`
 - **Acceptance Criteria**:
   - Latensi persepsi pengguna 0ms saat menambah atau menyunting transaksi.
   - Bila server mengembalikan error (misal HTTP 409 Optimistic Lock conflict atau HTTP 429), rollback state UI ke kondisi semula secara mulus dengan notifikasi toast error.
@@ -94,7 +94,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-011: Standardisasi Komponen `<DataTable>` TanStack Table v8 Universal
 - **Deskripsi**: Lengkapi komponen `components/data-table/data-table.tsx` dengan fitur pagination 20 baris, sorting kolom, multi-filter, search debounce 300ms, serta sinkronisasi state dua arah ke URL query params Next.js App Router (`useSearchParams`).
 - **Tipe**: Frontend / UI Components
-- **File Target**: `frontend/src/components/data-table/data-table.tsx`, `frontend/src/components/data-table/data-table-pagination.tsx`, `frontend/src/components/data-table/data-table-toolbar.tsx`
+- **File Target**: `frontend/components/data-table/data-table.tsx`, `frontend/components/data-table/data-table-pagination.tsx`, `frontend/components/data-table/data-table-toolbar.tsx`
 - **Acceptance Criteria**:
   - URL browser otomatis merefleksikan filter dan halaman saat ini (contoh: `?page=2&sort=created_at&order=desc`).
   - Halaman yang di-refresh atau link yang dibagikan mempertahankan posisi tabel dan filter yang sama persis.
@@ -103,7 +103,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-012: Refactor Seluruh Halaman List Data Lama Menggunakan `<DataTable>`
 - **Deskripsi**: Ganti implementasi tabel kustom atau list statis lama pada halaman Transaksi (`/transactions`), Anggaran (`/budgets`), dan Kategori (`/categories`) dengan komponen baru `<DataTable>`.
 - **Tipe**: Frontend / Refactor
-- **File Target**: `frontend/src/app/(dashboard)/transactions/page.tsx`, `frontend/src/app/(dashboard)/budgets/page.tsx`, `frontend/src/app/(dashboard)/categories/page.tsx`
+- **File Target**: `frontend/app/(dashboard)/transactions/page.tsx`, `frontend/app/(dashboard)/budgets/page.tsx`, `frontend/app/(dashboard)/categories/page.tsx`
 - **Acceptance Criteria**:
   - Seluruh halaman list mengimplementasikan search, pagination 20 baris, dan sorting yang konsisten.
   - Desain visual selaras dengan tabel super admin dashboard P06.
@@ -112,7 +112,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-013: Pembersihan Tuntas Menu & Kode Bring Your Own Key (BYOK)
 - **Deskripsi**: Hapus halaman `/settings/ai-keys`, link navigasi sidebar/navbar, serta dialog form input API Key Gemini user. Pada backend, hapus rute registrasi user key dan buat migrasi database untuk mengarsipkan tabel `gemini_api_keys` (`is_archived = true`).
 - **Tipe**: Fullstack / Deprecation
-- **File Target**: `frontend/src/components/sidebar.tsx`, `frontend/src/app/(dashboard)/settings/ai-keys/`, `backend/internal/api/routes.go`, `backend/database/migrations/0009_archive_byok_keys.sql`
+- **File Target**: `frontend/components/sidebar.tsx`, `frontend/app/(dashboard)/settings/ai-keys/`, `backend/internal/delivery/http/router.go`, `database/migrations/0011_archive_byok_keys.sql`
 - **Acceptance Criteria**:
   - 0 kemunculan antarmuka input API Key pengguna di seluruh frontend.
   - Rute lama `/settings/ai-keys` mengembalikan HTTP 404 atau redirect permanen HTTP 301 ke `/settings/subscription`.
@@ -121,7 +121,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-014: Audit Universal Cursor Pointer & State Interaktivitas UI
 - **Deskripsi**: Lakukan penelusuran seluruh file TSX di folder `components/` dan `app/`. Terapkan kelas `cursor-pointer` pada seluruh elemen interaktif, `cursor-not-allowed` pada elemen disabled, dan pastikan container statis berstatus `cursor-default`.
 - **Tipe**: Frontend / UI Styling
-- **File Target**: Seluruh berkas `.tsx` pada `frontend/src/components/` dan `frontend/src/app/`
+- **File Target**: Seluruh berkas `.tsx` pada `frontend/components/` dan `frontend/app/`
 - **Acceptance Criteria**:
   - Seluruh tombol, link, tab navigasi, checkbox, radio button, dan collapsible header memiliki kursor pointer saat diarahkan pointer mouse.
   - Komponen dinonaktifkan menampilkan kursor not-allowed dan opacity tereduksi.
@@ -156,7 +156,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 ### TASK-P07-018: Standardisasi Prosedur Migrasi Skema Database Expand/Contract
 - **Deskripsi**: Tulis dokumen panduan operasional dan terapkan template migrasi expand/contract untuk skema database masa depan FinTrack v2. Pastikan seluruh migrasi SQL bersifat non-blocking (`ADD COLUMN` nullable, pembuatan indeks concurrent `CREATE INDEX CONCURRENTLY`).
 - **Tipe**: Database / DevOps
-- **File Target**: `backend/database/migrations/README.md`, `second_brain/2_Projects/P07_Rollout-RBAC-Realtime/teknis/zero-downtime-deploy.md`
+- **File Target**: `database/migrations/README.md`, `second_brain/2_Projects/P07_Rollout-RBAC-Realtime/teknis/zero-downtime-deploy.md`
 - **Acceptance Criteria**:
   - Aturan tertulis melarang eksekusi `DROP COLUMN` atau `ALTER TABLE ... NOT NULL` tanpa fase perantara default.
   - Skrip migrasi terbukti dapat dijalankan maju (up) dan mundur (down) tanpa merusak aplikasi versi lama yang sedang berjalan paralel.

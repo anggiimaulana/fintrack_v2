@@ -7,8 +7,8 @@ Daftar tugas implementasi terperinci dengan konvensi format `TASK-P05-NNN`. Mini
 ## Daftar Tugas (TASK-P05-001 .. TASK-P05-017)
 
 ### TASK-P05-001: Skema Migrasi Database Payments & Invoices
-- **Deskripsi**: Menulis skrip migrasi SQL `0007_create_payments_and_invoices.sql` untuk membuat tabel `invoices` dan `payments` beserta indeks relasional dan kekangan unik.
-- **Komponen**: `database/migrations/0007_create_payments_and_invoices.sql`
+- **Deskripsi**: Menulis skrip migrasi SQL `0009_payments_invoices.sql` untuk membuat tabel `invoices` dan `payments` beserta indeks relasional dan kekangan unik.
+- **Komponen**: `database/migrations/0009_payments_invoices.sql`
 - **Kriteria Penerimaan**:
   - Tabel `invoices` memiliki kolom `id`, `invoice_number` (UNIQUE), `user_id`, `subscription_id`, `subtotal_idr` (BIGINT), `tax_idr` (BIGINT), `total_idr` (BIGINT), `status`, `issued_at`, `due_at`, `paid_at`, `voided_at`.
   - Tabel `payments` memiliki kolom `id`, `invoice_id`, `user_id`, `gateway`, `gateway_ref`, `amount_idr` (BIGINT), `status`, `payment_method`, `proof_url`, `idempotency_key` (UNIQUE), `payload_snapshot` (JSONB).

@@ -119,8 +119,20 @@ P02 ──▶ P03 ──▶ P04 ──▶ P05 ──▶ P06
 
 ## 11. Rencana per Fase (dokumen detail)
 
-- P02: `P02_Fondasi-Platform/planning/implementation-plan.md` ← **mulai dari sini**
-- P03–P08: dibuat saat fase bersangkutan dimulai (mengikuti template P02).
+Semua fase memiliki rencana detail:
+
+| Fase | Dokumen |
+|---|---|
+| P02 | `P02_Fondasi-Platform/planning/implementation-plan.md` ← **mulai dari sini** |
+| P03 | `P03_AI-Gateway-Terpusat/planning/implementation-plan.md` |
+| P04 | `P04_Subscription-Token-Core/planning/implementation-plan.md` |
+| P05 | `P05_Payments-Billing/planning/implementation-plan.md` |
+| P06 | `P06_Super-Admin-Dashboard/planning/implementation-plan.md` |
+| P07 | `P07_Rollout-RBAC-Realtime/planning/implementation-plan.md` |
+| P08 | `P08_Hardening-GoLive/planning/implementation-plan.md` |
+
+Setiap rencana fase memuat: tujuan & DoD, urutan wave, detail task (target file, langkah, verifikasi,
+bukti), matriks bukti, perintah verifikasi, rollback, dan handoff ke fase berikutnya.
 
 ## Referensi
 

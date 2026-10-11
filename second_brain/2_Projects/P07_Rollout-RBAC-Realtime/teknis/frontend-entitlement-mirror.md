@@ -13,7 +13,7 @@ Tujuan utama sistem otorisasi frontend adalah:
 
 ## 2. Hook Terpusat: `useEntitlements()`
 
-Frontend mengonsumsi data hak akses pengguna melalui hook React terpadu `frontend/src/hooks/use-entitlements.ts`:
+Frontend mengonsumsi data hak akses pengguna melalui hook React terpadu `frontend/hooks/use-entitlements.ts`:
 
 ```typescript
 import { useQuery } from '@tanstack/react-query';

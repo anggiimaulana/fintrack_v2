@@ -81,21 +81,21 @@ Daftar rincian task teknis untuk pengerjaan Fase P02. Mengikuti format `TASK-P02
 
 ### TASK-P02-010: Custom Hook useDataTableUrlState di Next.js
 - **Deskripsi**: Membuat hook Next.js `use-data-table-url-state.ts` yang membaca `useSearchParams` dan `useRouter` untuk mengelola state tabel (page, per_page, sort, order, search, filters) secara reaktif.
-- **Target Files**: `frontend/src/hooks/use-data-table-url-state.ts`.
+- **Target Files**: `frontend/hooks/use-data-table-url-state.ts`.
 - **Kriteria Penerimaan**:
   - Mengubah halaman atau sortir memperbarui URL query string browser via `router.replace` tanpa refresh penuh.
   - Reload browser menjaga state tabel persis sama dengan parameter URL.
 
 ### TASK-P02-011: Komponen Generic DataTable TanStack Table v8
 - **Deskripsi**: Membangun komponen UI `<DataTable>` di frontend berbasis TanStack Table v8 yang mencakup skeleton loader, sortable header icons, dynamic columns, dan error boundary.
-- **Target Files**: `frontend/src/components/data-table/data-table.tsx`, `frontend/src/components/data-table/data-table-column-header.tsx`.
+- **Target Files**: `frontend/components/data-table/data-table.tsx`, `frontend/components/data-table/data-table-column-header.tsx`.
 - **Kriteria Penerimaan**:
   - Komponen menerima props data, columns, pagination meta, dan loading state.
   - Klik header kolom memicu pengurutan (asc -> desc -> default).
 
 ### TASK-P02-012: Komponen Toolbar & Pagination DataTable
 - **Deskripsi**: Membangun komponen pendukung `<DataTableToolbar>` (dengan input pencarian ter-debounce 300ms) dan `<DataTablePagination>` (dengan selector 10/20/50/100 baris dan info total halaman).
-- **Target Files**: `frontend/src/components/data-table/data-table-toolbar.tsx`, `frontend/src/components/data-table/data-table-pagination.tsx`.
+- **Target Files**: `frontend/components/data-table/data-table-toolbar.tsx`, `frontend/components/data-table/data-table-pagination.tsx`.
 - **Kriteria Penerimaan**:
   - Pengetikan pada search bar mengupdate query param `q` setelah jeda 300ms.
   - Pilihan per-page mengubah limit baris dan me-reset posisi page ke 1.

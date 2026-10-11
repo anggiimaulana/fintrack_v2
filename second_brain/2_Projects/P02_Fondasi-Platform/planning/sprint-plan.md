@@ -47,7 +47,7 @@ Mendirikan fondasi infrastruktur shared Redis, sistem audit log append-only yang
 
 #### Hari 7: Backend Pagination Parser & URL State Hook
 - [ ] TASK-P02-009: Kontrak API Handler Paginated Data Table di Go (`pkg/pagination`).
-- [ ] TASK-P02-010: Custom Hook `useDataTableUrlState` di Next.js (`frontend/src/hooks`).
+- [ ] TASK-P02-010: Custom Hook `useDataTableUrlState` di Next.js (`frontend/hooks`).
 
 #### Hari 8: Generic UI DataTable TanStack Table v8
 - [ ] TASK-P02-011: Komponen Generic `<DataTable>` TanStack Table v8 dengan skeleton loader dan header sorting.

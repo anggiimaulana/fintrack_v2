@@ -37,7 +37,7 @@ Seluruh endpoint backend yang menyajikan data tabular wajib mengembalikan format
 
 ## 3. Komposisi Komponen UI Next.js
 
-Struktur folder komponen di `frontend/src/components/data-table/`:
+Struktur folder komponen di `frontend/components/data-table/`:
 ```
 components/data-table/
 ├── data-table.tsx                # Komponen induk tabel

@@ -4,9 +4,9 @@ Daftar tugas implementasi terperinci untuk Fase P03. Format identifikasi tugas: 
 
 ---
 
-### TASK-P03-001: Skema Database & Migrasi `0006_ai_gateway.sql`
+### TASK-P03-001: Skema Database & Migrasi `0007_ai_gateway.sql`
 - **Scope**:
-  - Buat file migrasi `backend/database/migrations/0006_ai_gateway.sql`.
+  - Buat file migrasi `database/migrations/0007_ai_gateway.sql`.
   - Buat tabel `ai_endpoints`:
     - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
     - `name VARCHAR(100) NOT NULL`

@@ -34,7 +34,7 @@ ft:{env}:{modul}:{entitas}:{id}
 
 ## 3. Registri Query Key Terpusat Frontend (TanStack Query v5)
 
-Untuk mencegah typo dan mempermudah pelacakan invalidasi, seluruh query key frontend dideklarasikan di `frontend/src/lib/query-keys.ts`:
+Untuk mencegah typo dan mempermudah pelacakan invalidasi, seluruh query key frontend dideklarasikan di `frontend/lib/query-keys.ts`:
 
 ```typescript
 export const queryKeys = {
@@ -77,7 +77,7 @@ export const queryKeys = {
 
 ## 4. Pola Surgical Cache Invalidation pada SSE Event Dispatcher
 
-Ketika peramban menerima event SSE melalui koneksi stream, file `frontend/src/lib/realtime-dispatcher.ts` melakukan invalidasi bedah:
+Ketika peramban menerima event SSE melalui koneksi stream, file `frontend/lib/realtime-dispatcher.ts` melakukan invalidasi bedah:
 
 ```typescript
 import { QueryClient } from '@tanstack/react-query';
