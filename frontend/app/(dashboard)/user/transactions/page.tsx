@@ -2,10 +2,10 @@
 
 import { Suspense, useState, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Plus, Download, Search, ChevronLeft, ChevronRight, Mic, Camera, Sparkles, Pencil, Trash2, X, Clock, Send, ArrowUp } from "lucide-react";
+import { Plus, Download, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RupiahInput } from "@/components/shared/RupiahInput";
 import { VoiceInput } from "@/components/ai/VoiceInput";
 import { ReceiptScanner } from "@/components/ai/ReceiptScanner";
@@ -13,89 +13,31 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/components/shared/DateRangeFilter";
 import { InlineAiAssistant } from "@/components/ai/InlineAiAssistant";
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
+import { DataTable } from "@/components/data-table/data-table";
+import { DataTablePagination } from "@/components/data-table/data-table-pagination";
+import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
+import { transactionColumns, type TransactionItem } from "@/components/transactions/TransactionColumns";
+import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { notifyEntitlementError } from "@/lib/entitlement-errors";
 import api from "@/lib/api";
 
-export interface TransactionItem {
-  id: string;
-  type: "income" | "expense" | "savings";
-  amount: number;
-  transaction_date?: string;
-  date?: string;
-  description?: string;
-  category_name?: string;
-  created_at?: string;
-  expense_category_id?: string;
-  income_category_id?: string;
-  savings_category_id?: string;
-}
-
-interface TransactionRowProps {
-  tx: TransactionItem;
-  index: number;
-  page: number;
-  perPage: number;
-  onEdit: (tx: TransactionItem) => void;
-  onDelete: (id: string) => void;
-}
-
-function TransactionRowData({ tx, index, page, perPage, onEdit, onDelete }: TransactionRowProps) {
-  const isIncome = tx.type === "income";
-  const isSavings = tx.type === "savings";
-  const formattedAmount = new Intl.NumberFormat("id-ID", {
-    style: "currency", currency: "IDR", minimumFractionDigits: 0,
-  }).format(tx.amount);
-
-  const rowColor = isSavings ? "text-amber-600" : isIncome ? "text-green-700" : "text-foreground";
-  const prefix = isSavings ? "→" : isIncome ? "+" : "-";
-
-  return (
-    <div className="flex items-center gap-3 px-5 py-3 border-b-2 border-foreground last:border-b-0 hover:bg-muted/50 transition-colors group">
-      <span className="text-xs font-mono font-bold text-muted-foreground w-8 shrink-0">{(page - 1) * perPage + index + 1}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-foreground truncate">{tx.description || tx.category_name || "Transaksi"}</p>
-        <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground flex-wrap">
-          <span>{isSavings ? "Tabungan" : tx.category_name}</span>
-          <span>&middot;</span>
-          <span>{new Date((tx.transaction_date || tx.date) as string).toLocaleDateString("id-ID")}</span>
-          {tx.created_at && (
-            <>
-              <span>&middot;</span>
-              <Clock className="w-3 h-3" />
-              <span>{new Date(tx.created_at).toLocaleDateString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>
-            </>
-          )}
-        </div>
-      </div>
-      <span className={`text-sm font-black font-mono shrink-0 min-w-[100px] text-right ${rowColor}`}>
-        {prefix}{formattedAmount}
-      </span>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => onEdit(tx)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Edit">
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
-        <button onClick={() => onDelete(tx.id)} className="p-1.5 text-muted-foreground hover:text-red-700 hover:bg-red-100 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Hapus">
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function TransactionsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const now = useMemo(() => new Date(), []);
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-  const [page, setPage] = useState(1);
-  const [filterType, setFilterType] = useState<string>("all");
-  const [search, setSearch] = useState("");
+  // List state lives in the URL so it survives refresh and is shareable
+  // (TASK-P07-011 AC). The date range keeps its own params (preset/start/end) so
+  // the two namespaces do not collide.
+  const table = useDataTableUrlState({ perPage: 20 });
+  const page = table.page;
+  const search = table.q;
+  const filterType = table.filters.type || "all";
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
-  const [smartInputText, setSmartInputText] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -125,10 +67,12 @@ function TransactionsContent() {
   const { data: txData, isLoading } = useTransactions({
     type: filterType as "income" | "expense" | "savings" | "all" | undefined,
     page,
-    perPage: 20,
+    perPage: table.perPage,
     search,
     dateFrom: dateFilter.startDate,
     dateTo: dateFilter.endDate,
+    sortBy: (table.sort || undefined) as "date" | "amount" | "category" | undefined,
+    sortOrder: table.order,
   });
   const { mutateAsync: createTransaction, isPending: isCreating } = useCreateTransaction();
   const { mutateAsync: updateTransaction, isPending: isUpdating } = useUpdateTransaction();
@@ -352,7 +296,7 @@ function TransactionsContent() {
             {[{ key: "all", label: "Semua" }, { key: "income", label: "Pemasukan" }, { key: "expense", label: "Pengeluaran" }, { key: "savings", label: "Tabungan" }].map((f) => (
               <button
                 key={f.key}
-                onClick={() => { setFilterType(f.key); setPage(1); }}
+                onClick={() => table.setFilter("type", f.key === "all" ? "" : f.key)}
                 className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold cursor-pointer transition-colors ${
                   filterType === f.key
                     ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-x-2 border-foreground"
@@ -363,82 +307,36 @@ function TransactionsContent() {
               </button>
             ))}
           </div>
-          <div className="relative w-full md:w-64">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
+            <DataTableToolbar
+              search={search}
+              onSearch={(q) => table.setSearch(q)}
               placeholder="Cari transaksi..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="w-full pl-9 pr-4 py-2 text-sm border-2 border-foreground bg-background focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
             />
-          </div>
         </div>
 
-        <div className="divide-y-0">
-          <div className="grid grid-cols-[40px_1fr_140px_80px] gap-3 px-5 py-2.5 bg-muted border-b-2 border-foreground text-xs font-black uppercase tracking-wide text-muted-foreground">
-            <span>#</span>
-            <span>Deskripsi</span>
-            <span className="text-right">Jumlah</span>
-            <span className="text-center">Aksi</span>
-          </div>
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-5 py-3 border-b-2 border-foreground last:border-b-0">
-                <div className="w-8 h-4 bg-muted border-2 border-foreground animate-pulse" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-4 w-48 bg-muted border-2 border-foreground animate-pulse" />
-                  <div className="h-3 w-32 bg-muted border-2 border-foreground animate-pulse" />
-                </div>
-                <div className="h-5 w-28 bg-muted border-2 border-foreground animate-pulse" />
-                <div className="w-16 h-5 bg-muted border-2 border-foreground animate-pulse" />
-              </div>
-            ))
-          ) : transactions.length > 0 ? (
-            transactions.map((tx: unknown, i: number) => {
-              const item = tx as TransactionItem;
-              return (
-                <TransactionRowData key={item.id} tx={item} index={i} page={page} perPage={12} onEdit={openEditDialog} onDelete={handleDeleteClick} />
-              );
-            })
-          ) : (
-            <div className="p-8 text-center text-sm font-bold text-muted-foreground">
-              Tidak ada transaksi ditemukan.
-            </div>
-          )}
-        </div>
+        <DataTable
+          columns={transactionColumns({
+            page,
+            perPage: table.perPage,
+            onEdit: openEditDialog,
+            onDelete: handleDeleteClick,
+          })}
+          data={(transactions || []) as TransactionItem[]}
+          isLoading={isLoading}
+          emptyMessage="Tidak ada transaksi ditemukan."
+          sort={table.sort}
+          order={table.order}
+          onSort={table.setSort}
+        />
 
-        {totalPages > 1 && (
-          <div className="p-4 border-t-2 border-foreground flex justify-between items-center bg-card">
-            <span className="text-xs font-bold text-muted-foreground">
-              Halaman {page} dari {totalPages} ({txData?.total} transaksi)
-            </span>
-            <div className="flex gap-1">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                const start = Math.max(1, Math.min(page - 2, totalPages - 4));
-                const p = start + i;
-                if (p > totalPages) return null;
-                return (
-                  <Button
-                    key={p}
-                    variant={p === page ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPage(p)}
-                    className={p === page ? "bg-primary text-primary-foreground shadow-[2px_2px_0px_0px] shadow-foreground" : ""}
-                  >
-                    {p}
-                  </Button>
-                );
-              })}
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTablePagination
+          page={page}
+          perPage={table.perPage}
+          total={txData?.total ?? 0}
+          totalPages={Math.max(1, Math.ceil((txData?.total ?? 0) / table.perPage))}
+          onPageChange={table.setPage}
+          onPerPageChange={table.setPerPage}
+        />
       </div>
 
       <ConfirmDialog

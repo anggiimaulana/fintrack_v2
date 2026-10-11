@@ -4,6 +4,57 @@
 
 ---
 
+## 2026-10-11 — P07 Slice C: Standar UI, a11y terverifikasi & optimistic update
+
+Slice ketiga P07. Menutup standar UI dengan tooling yang benar-benar memverifikasi, bukan
+klaim. Hasil sampingan: **4 kegagalan kontras nyata** ditemukan lewat perhitungan manual.
+
+### Perubahan
+- **`eslint-plugin-jsx-a11y` aktif.** 40 pelanggaran diperbaiki secara substantif — bukan
+  aturan dimatikan. Termasuk: 23 label tanpa asosiasi kontrol (kini `id`/`htmlFor`), 6 klik pada
+  elemen statis, 6 handler tanpa keyboard listener, 4 `autoFocus`, 1 `aria-role` invalid.
+- **Perbaikan a11y yang bermakna:** dropzone struk & tombol mic dijadikan `<button>` asli
+  (keyboard-operable, bukan sekadar diberi `role`); backdrop dialog jadi elemen saudara sehingga
+  `stopPropagation` tidak lagi diperlukan; prop `role` di `ChatMessage` → `author`; toggle
+  notifikasi memakai `<input type="checkbox">` nyata; `autoFocus` → fokus programatik.
+- **Kontras diperbaiki dengan nilai terukur:** `--muted-foreground` 0.55→0.53 (4.19→4.56);
+  token baru `--primary-strong` untuk teks di `bg-primary/10` (4.27→5.22, dipakai 5 tempat);
+  `red-600`→`red-700` di `red-100` (3.95→5.30); `green-600` di `green-100` (**3.00**)→`green-700`
+  (4.57); `red-600` di `red-600/15` (3.82→5.01).
+- **Cursor pointer:** akarnya komponen dasar — `Button` tidak punya cursor sama sekali dan
+  memakai `disabled:pointer-events-none` yang membuat `cursor-not-allowed` mustahil. Diperbaiki
+  di komponen dasar + 79 elemen native → verifikasi akhir 0 tersisa.
+- **Tabel transaksi:** `<DataTable>` + state di URL (bookmarkable) + debounce 300ms (sebelumnya
+  per ketikan). Komponen baris custom dihapus.
+- **Optimistic update:** update & delete optimistik dengan rollback tiga kelas error; create
+  sengaja non-optimistik.
+
+### Verifikasi
+- `pnpm lint` **0 error** (54 warning, turun dari baseline 62), `pnpm build` hijau,
+  `pnpm test` **102 lolos** (dari 66).
+- Vitest dipecah dua project: `unit` (node, cepat) dan `dom` (jsdom + vitest-axe + jest-dom).
+- axe-core: nol pelanggaran untuk ConfirmDialog, TransactionRow (semua sumber), DataTable
+  (dengan data & kosong), DataTableToolbar.
+- **Uji mutasi** pada rollback optimistic: `restoreLists` dilepas → 3 test gagal → terbukti
+  test menangkap regresi.
+
+### Koreksi jujur
+Klaim awal saya bahwa badge "Scan" gagal kontras (3.07) **SALAH** — kode aslinya
+`amber-700` di atas `amber-100` = **4.51** (lolos). Saya salah mengasumsikan background-nya
+`amber-50`. Perubahan yang tidak perlu dibatalkan. Yang benar-benar gagal adalah
+`muted-foreground` di `muted`, `primary` di `primary/10`, `red-600` di `red-100`,
+`green-600` di `green-100`, dan `red-600` di `red-600/15`.
+
+### Gap yang dicatat (tidak diklaim)
+- **AC "Lighthouse Accessibility ≥ 95" tidak terpenuhi** — Lighthouse tidak ada di repo dan
+  butuh server + browser. Digantikan oleh jsx-a11y + axe + perhitungan kontras manual.
+- **AC "0ms saat menambah" tidak sepenuhnya terpenuhi** — create sengaja non-optimistik karena
+  list dipaginasi + di-sort server-side, jadi posisi baris baru tidak diketahui; menampilkan
+  posisi salah lalu melompat lebih buruk daripada spinner singkat.
+- **TASK-P07-012 hanya sebagian** — `/budgets` dan `/categories` (user) tidak ada di codebase.
+
+---
+
 ## 2026-10-11 — P07 Slice B: Realtime SSE + perbaikan 3 cacat invalidasi (1 bug koneksi)
 
 Slice kedua P07. Membangun transport SSE dari nol dan menutup tiga cacat invalidasi

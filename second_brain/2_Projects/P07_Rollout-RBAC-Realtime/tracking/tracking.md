@@ -5,7 +5,7 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
-> **Status saat ini: SLICE A + B SELESAI (8/18).** Sisa 10 task masih ⬜. (Tanda ✅ pada tabel
+> **Status saat ini: SLICE A + B + C SELESAI (12/18).** Sisa 6 task masih ⬜. (Tanda ✅ pada tabel
 > "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
 >
 > **Slice A — Entitlement & RBAC Rollout (2026-10-11)** mencakup TASK-P07-001 & TASK-P07-002
@@ -16,6 +16,11 @@ Status Legend:
 > plus perbaikan tiga cacat invalidasi entitlement. Lihat
 > `docs/superpowers/specs/2026-10-11-p07-realtime-sse-design.md` dan
 > `docs/superpowers/plans/2026-10-11-p07-realtime-sse-plan.md`.
+>
+> **Slice C — Standar UI, Aksesibilitas & Optimistic Update (2026-10-11)** mencakup
+> TASK-P07-011, 012, 014, 015 (013 → slice D). Lihat
+> `docs/superpowers/specs/2026-10-11-p07-ui-standards-a11y-design.md` dan
+> `docs/superpowers/plans/2026-10-11-p07-ui-standards-a11y-plan.md`.
 
 ---
 
@@ -33,11 +38,11 @@ Status Legend:
 | **TASK-P07-008** | Frontend Hook `useRealtimeStream` & Auto-Reconnect | Frontend Dev 3 | H-06 | ✅ | **Slice B.** `hooks/use-realtime-stream.ts` + `providers/realtime-provider.tsx`. Backoff manual 1s→16s + jitter; `last_event_id` sebagai query param karena EventSource yang dibuat ulang tidak mengirim header otomatis. |
 | **TASK-P07-009** | Registri Query Key & Surgical Cache Invalidation | Frontend Lead | H-06 | ✅ | **Slice B.** `lib/realtime-dispatcher.ts` memetakan event ke query key NYATA (dokumen memakai `billing.*` yang tidak ada). Test memastikan tidak ada `invalidateQueries` tanpa key. |
 | **TASK-P07-010** | Optimistic Updates Mutasi Transaksi & Anggaran | Frontend Dev 1 & 2 | H-07 | ⬜ | Rollback rapi saat terjadi error 409/429. **Sebagian oleh Slice A**: handler error 402/403 entitlement terpusat (`lib/entitlement-errors.ts`) + toast upgrade; optimistic update penuh belum. |
-| **TASK-P07-011** | Standardisasi Komponen `<DataTable>` TanStack v8 | Frontend Dev 1 | H-01 | ⬜ | Sinkronisasi dua arah ke URL search params |
-| **TASK-P07-012** | Refactor Seluruh Halaman List ke `<DataTable>` | Frontend Dev 1 & 2 | H-04 | ⬜ | Halaman transaksi, anggaran, kategori |
+| **TASK-P07-011** | Standardisasi Komponen `<DataTable>` TanStack v8 | Frontend Dev 1 | H-01 | ✅ | **Slice C.** `<DataTable>` dipakai di `/user/transactions` dengan state di URL (`useDataTableUrlState`): page/sort/order/q bookmarkable. Debounce 300ms dari `DataTableToolbar` (sebelumnya search terkirim per ketikan). |
+| **TASK-P07-012** | Refactor Seluruh Halaman List ke `<DataTable>` | Frontend Dev 1 & 2 | H-04 | ✅ | **Slice C (sebagian).** Hanya `/user/transactions` yang dikerjakan: `/budgets` dan `/categories` (user) **tidak ada** di codebase — kategori dikelola admin. Refactor sekaligus menghapus komponen baris custom (kode mati). |
 | **TASK-P07-013** | Pembersihan Tuntas Menu & Kode Legacy BYOK | Fullstack Dev | H-03 | ⬜ | Hapus form/halaman AI keys, arsip DB tabel |
-| **TASK-P07-014** | Audit Universal Cursor Pointer & Styling Hover | Frontend Dev 3 | H-07 | ⬜ | Penerapan kelas `cursor-pointer` di seluruh elemen |
-| **TASK-P07-015** | Audit Aksesibilitas WCAG 2.1 AA & Keyboard Nav | Frontend Dev 3 & QA | H-08 | ⬜ | Target skor Lighthouse Accessibility >= 95 |
+| **TASK-P07-014** | Audit Universal Cursor Pointer & Styling Hover | Frontend Dev 3 | H-07 | ✅ | **Slice C.** Audit menyeluruh: akar masalah di komponen dasar (`Button` tanpa cursor sama sekali + `disabled:pointer-events-none` yang membuat `cursor-not-allowed` mustahil; `SelectTrigger` juga). 79 elemen native diperbaiki; verifikasi akhir 0 tersisa. Laporan di `teknis/cursor-pointer-audit.md`. |
+| **TASK-P07-015** | Audit Aksesibilitas WCAG 2.1 AA & Keyboard Nav | Frontend Dev 3 & QA | H-08 | ✅ | **Slice C (dengan catatan).** `eslint-plugin-jsx-a11y` aktif (40 pelanggaran nyata diperbaiki, bukan aturan dimatikan) + axe-core via Vitest untuk komponen kunci (nol pelanggaran). Kontras dihitung manual dan 4 temuan diperbaiki dengan nilai terverifikasi. **AC "Lighthouse ≥ 95" TIDAK terpenuhi** — Lighthouse tidak ada di repo; ditandai gap, bukan diklaim. |
 | **TASK-P07-016** | Dual Health Gate Endpoint (`/health/live` & `/ready`) | Backend Dev 1 | H-06 | ⬜ | Cek database postgres + redis connectivity |
 | **TASK-P07-017** | Graceful Shutdown 30s & Zero-Downtime Rolling Test | DevOps Engineer | H-07 | ⬜ | Pengujian rolling deploy tanpa 5xx pada 200 RPS |
 | **TASK-P07-018** | Template & Prosedur Migrasi Skema Expand/Contract | Backend Lead & DBA | H-08 | ⬜ | Standardisasi non-blocking migrations |
@@ -125,3 +130,39 @@ Status Legend:
   - **Gap yang dicatat (bukan dikerjakan di sini):** reset kuota tidak terjadwal (lazy saat
     pemakaian AI berikutnya — tidak ada worker rotasi siklus); tidak ada inbox notifikasi durabel.
   - **Valve:** `REALTIME_ENABLED` (default on). Batas 5 koneksi/user.
+
+- **2026-10-11 — Slice C (Standar UI, Aksesibilitas & Optimistic Update) SELESAI.** TASK-P07-011/012/014/015 ✅.
+  - **a11y (C-1):** `eslint-plugin-jsx-a11y` aktif di `pnpm lint`. **40 pelanggaran nyata
+    diperbaiki, bukan aturan dimatikan:** 23 label tanpa asosiasi kontrol, 6 klik pada elemen
+    statis, 6 handler tanpa keyboard listener, 4 `autoFocus`, 1 `aria-role` invalid. Perbaikan
+    substantif: label dihubungkan `id`/`htmlFor`; dropzone struk & tombol mic dijadikan `<button>`
+    asli (bisa diaktifkan keyboard); backdrop dialog dijadikan elemen saudara sehingga
+    `stopPropagation` tidak diperlukan; prop `role` pada `ChatMessage` diganti `author` (agar tidak
+    dibaca sebagai atribut ARIA); `autoFocus` diganti fokus programatik via ref.
+  - **Kontras (C-2):** dihitung manual dari token (axe tidak menguji kontras). **4 temuan nyata**
+    diperbaiki dengan nilai terverifikasi: `--muted-foreground` light 0.55→0.53 (4.19→4.56);
+    token baru `--primary-strong` untuk teks di atas `bg-primary/10` (4.27→5.22) dipakai di 5
+    tempat; `red-600`→`red-700` di `red-100` (3.95→5.30); `green-600` di `green-100` (**3.00**)
+    → `green-700` (4.57); `red-600` di `red-600/15` (3.82→5.01).
+    **Koreksi jujur:** klaim awal bahwa badge Scan gagal (3.07) **SALAH** — kode aslinya
+    `amber-700` di `amber-100` = 4.51 (lolos); perubahan yang tidak perlu dibatalkan.
+  - **Cursor (C-4):** akarnya komponen dasar — `Button` tidak punya `cursor-pointer` sama sekali
+    dan memakai `disabled:pointer-events-none` (membuat `cursor-not-allowed` mustahil);
+    `SelectTrigger` juga. Diperbaiki di komponen dasar + 79 elemen native. Verifikasi akhir:
+    **0 tersisa**.
+  - **Tabel (C-7/C-8):** `/user/transactions` memakai `<DataTable>` dengan state di URL
+    (`page`/`sort`/`order`/`q` bookmarkable) dan debounce 300ms (sebelumnya search terkirim tiap
+    ketikan). Komponen baris custom dihapus (kode mati) — warning lint turun 67→54, di bawah
+    baseline 62.
+  - **Optimistic update (C-9/C-10):** update & delete optimistik dengan rollback; **create sengaja
+    tidak optimistik** (list dipaginasi + di-sort server-side → posisi baris baru tidak diketahui).
+    Rollback menangani 409, 402/403 (via `notifyEntitlementError`), dan error generik.
+  - **Bukti:** `pnpm lint` 0 error, `pnpm build` hijau, `pnpm test` **102 lolos** (dari 66);
+    nol pelanggaran axe untuk ConfirmDialog, TransactionRow (semua sumber), DataTable,
+    DataTableToolbar. **Uji mutasi** pada rollback: `restoreLists` dilepas → 3 test gagal
+    ("rolls back to the previous snapshot on a 409 conflict", dst) → terbukti menangkap regresi.
+  - **GAP yang dicatat, tidak diklaim:**
+    1. **AC-015 "Lighthouse Accessibility ≥ 95" TIDAK terpenuhi** — Lighthouse tidak ada di repo
+       (butuh server + browser). Digantikan: jsx-a11y + axe + perhitungan kontras manual.
+    2. **AC-010 "0ms saat menambah" tidak sepenuhnya terpenuhi** — create sengaja non-optimistik.
+    3. **TASK-P07-012 hanya sebagian** — `/budgets` & `/categories` (user) tidak ada.

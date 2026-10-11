@@ -80,3 +80,53 @@ Semua komponen dialog (tambah transaksi, rincian langganan, konfirmasi hapus) me
 - Menggunakan palet token Tailwind dengan rasio kontras >= 4.5:1 terhadap latar belakang kartu/body.
 - Teks deskripsi sekunder (`text-muted-foreground`) divalidasi memiliki rasio kontras minimal 4.8:1 pada mode gelap (`#A1A1AA` di atas `#09090B`) dan mode terang (`#71717A` di atas `#FFFFFF`).
 - Badge status (Lunas = hijau, Pending = kuning/oranye, Gagal = merah) menggunakan kombinasi latar belakang pastel dengan teks kontras tinggi (misal `bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300`).
+
+---
+
+## Status Implementasi (Slice C, 2026-10-11)
+
+### Akar masalah: komponen dasar, bukan 79 perbaikan titik
+
+Audit awal menemukan **79 elemen interaktif tanpa kelas `cursor-*`**. Menelusuri
+penyebabnya menunjukkan masalahnya sistemik:
+
+| Komponen | Masalah |
+|---|---|
+| `components/ui/button.tsx` | **tidak punya `cursor-pointer` sama sekali**, dan memakai `disabled:pointer-events-none` — yang membuat `cursor-not-allowed` mustahil ditampilkan |
+| `components/ui/select.tsx` (`SelectTrigger`) | tidak punya `cursor-pointer` |
+| `components/ui/switch.tsx` | sudah benar (`cursor-pointer` + `disabled:cursor-not-allowed`) |
+
+Karena `Button` dipakai di mana-mana, memperbaiki komponen dasar menyelesaikan
+mayoritas temuan sekaligus.
+
+### Konvensi yang diterapkan
+
+| Elemen | Kelas |
+|---|---|
+| Interaktif (`button`, `a`, `[role=button]`, baris tabel ber-`onRowClick`, checkbox, switch, tab, `SelectTrigger`) | `cursor-pointer` |
+| Disabled | `cursor-not-allowed` + `opacity-50` |
+| Statis | tidak ditambah kelas kursor |
+
+`disabled:pointer-events-none` pada Button diganti `disabled:cursor-not-allowed`
+(ditambah `disabled:shadow-none` agar efek tekan neo-brutalist tidak muncul saat
+nonaktif).
+
+### Perbaikan pada elemen native
+
+Selain komponen dasar, **79 elemen native** (`<button>`, `<a>`) di seluruh
+`components/` dan `app/` ditambahi `cursor-pointer` bila belum punya kelas
+kursor. Beberapa sekaligus diperbaiki aksesibilitasnya:
+
+- Tombol ikon tanpa accessible name: mic di `/user/voice` (tambah `aria-label`
+  dinamis + `aria-pressed`), hapus sesi di `ChatWindow`, palet warna di
+  `ColorPicker` (tambah `aria-label` + `aria-pressed`).
+- Tombol tutup pada dialog dibuat eksplisit.
+
+### Verifikasi
+
+Skrip audit (menelusuri tag pembuka JSX dengan sadar-string/brace) dijalankan
+ulang setelah perbaikan: **0 elemen interaktif tanpa kelas `cursor-*`**.
+
+> Catatan metode: audit otomatis ini melengkapi `eslint-plugin-jsx-a11y`, yang
+> memeriksa *perilaku* (handler keyboard, label), bukan *kursor*. Keduanya
+> diperlukan; tidak ada satu pun yang menangkap keduanya.
