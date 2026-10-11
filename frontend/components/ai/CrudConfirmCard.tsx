@@ -34,7 +34,7 @@ export function CrudConfirmCard({
       <div className="bg-white border border-primary-200 rounded-lg p-4 shadow-sm w-full max-w-sm">
         <div className="flex justify-between items-start mb-2">
           <h3 className="font-semibold text-neutral-900">Konfirmasi Transaksi</h3>
-          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-600">
+          <button onClick={onCancel} className="cursor-pointer text-neutral-400 hover:text-neutral-600">
             ✕
           </button>
         </div>

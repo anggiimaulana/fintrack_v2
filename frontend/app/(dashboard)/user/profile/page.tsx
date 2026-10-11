@@ -80,10 +80,11 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+              <label htmlFor="profile-full-name" className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
                 <User className="w-4 h-4" /> Nama Lengkap
               </label>
               <input
+                id="profile-full-name"
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -93,10 +94,11 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+              <label htmlFor="profile-email" className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
                 <Mail className="w-4 h-4" /> Email
               </label>
               <input
+                id="profile-email"
                 type="email"
                 value={email}
                 disabled
@@ -106,10 +108,11 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+              <label htmlFor="profile-phone" className="text-xs font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
                 <Phone className="w-4 h-4" /> Nomor Telepon
               </label>
               <input
+                id="profile-phone"
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}

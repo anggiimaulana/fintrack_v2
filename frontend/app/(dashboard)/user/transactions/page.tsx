@@ -76,7 +76,7 @@ function TransactionRowData({ tx, index, page, perPage, onEdit, onDelete }: Tran
         <button onClick={() => onEdit(tx)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Edit">
           <Pencil className="w-3.5 h-3.5" />
         </button>
-        <button onClick={() => onDelete(tx.id)} className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-100 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Hapus">
+        <button onClick={() => onDelete(tx.id)} className="p-1.5 text-muted-foreground hover:text-red-700 hover:bg-red-100 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Hapus">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -286,13 +286,14 @@ function TransactionsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-foreground">Jumlah</label>
-                  <RupiahInput value={formAmount} onChange={(v) => setFormAmount(v || 0)} />
+                  <label htmlFor="tx-form-amount" className="text-xs font-bold uppercase tracking-wide text-foreground">Jumlah</label>
+                  <RupiahInput id="tx-form-amount" value={formAmount} onChange={(v) => setFormAmount(v || 0)} />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-foreground">Kategori</label>
+                  <label htmlFor="tx-form-category" className="text-xs font-bold uppercase tracking-wide text-foreground">Kategori</label>
                   <select
+                    id="tx-form-category"
                     value={formCategoryId}
                     onChange={(e) => setFormCategoryId(e.target.value)}
                     className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
@@ -305,8 +306,9 @@ function TransactionsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-foreground">Tanggal</label>
+                  <label htmlFor="tx-form-date" className="text-xs font-bold uppercase tracking-wide text-foreground">Tanggal</label>
                   <input
+                    id="tx-form-date"
                     type="date"
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
@@ -315,8 +317,9 @@ function TransactionsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-foreground">Catatan (Opsional)</label>
+                  <label htmlFor="tx-form-notes" className="text-xs font-bold uppercase tracking-wide text-foreground">Catatan (Opsional)</label>
                   <textarea
+                    id="tx-form-notes"
                     rows={2}
                     placeholder="Makan siang bersama teman..."
                     value={formDescription}

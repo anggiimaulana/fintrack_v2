@@ -27,8 +27,10 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
         <button
           key={color}
           type="button"
+          aria-label={`Pilih warna ${color}`}
+          aria-pressed={value === color}
           className={cn(
-            "h-8 w-8 rounded-full border-2 transition-transform hover:scale-110",
+            "h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer",
             value === color ? "border-neutral-900 scale-110" : "border-transparent"
           )}
           style={{ backgroundColor: color }}

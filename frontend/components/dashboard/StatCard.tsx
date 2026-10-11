@@ -17,7 +17,7 @@ export function StatCard({ title, amount, trend, icon: Icon, variant }: StatCard
   const variantStyles = {
     success: "bg-green-100 text-green-700",
     danger: "bg-red-100 text-red-700",
-    primary: "bg-primary/10 text-primary",
+    primary: "bg-primary/10 text-primary-strong",
     neutral: "bg-neutral-100 text-neutral-700",
   };
 

@@ -28,10 +28,20 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => !loading && onOpenChange(false)}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      {/* Backdrop: a sibling behind the dialog, so a click inside the dialog
+          never reaches it and no stopPropagation plumbing is needed. */}
       <div
-        className="border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/60"
+        onClick={() => !loading && onOpenChange(false)}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Konfirmasi tindakan"
+        className="relative border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md"
       >
         <div className="p-6 text-center">
           <div className={`w-14 h-14 border-2 border-foreground flex items-center justify-center mx-auto mb-4 ${

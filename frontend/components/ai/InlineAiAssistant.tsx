@@ -357,7 +357,7 @@ export function InlineAiAssistant() {
       const hasChart = msgChartData && msgChartData.length > 0 && msg.role === "assistant";
       return (
         <div key={i}>
-          <ChatMessage role={msg.role} content={msg.content} />
+          <ChatMessage author={msg.role} content={msg.content} />
           {hasChart && !isStreaming && renderPersistedCharts(msgChartData)}
         </div>
       );
@@ -473,7 +473,7 @@ export function InlineAiAssistant() {
             {isStreaming && activeToolSteps.length > 0 && renderToolSteps()}
             
             {isStreaming && streamingContent && (
-              <ChatMessage role="assistant" content={streamingContent} />
+              <ChatMessage author="assistant" content={streamingContent} />
             )}
             {isStreaming && !streamingContent && toolSteps.length === 0 && (
               <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
@@ -527,7 +527,7 @@ export function InlineAiAssistant() {
                   {isStreaming && (
                     <button
                       onClick={cancelStream}
-                      className="p-1.5 border-2 border-foreground bg-red-100 text-red-600 hover:bg-red-200 cursor-pointer"
+                      className="p-1.5 border-2 border-foreground bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>

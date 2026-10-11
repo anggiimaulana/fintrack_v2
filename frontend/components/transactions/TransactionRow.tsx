@@ -31,7 +31,7 @@ export function TransactionRow({ transaction }: TransactionRowProps) {
 
   const getSourceBadge = (source: string) => {
     switch(source) {
-      case "ai": return <div className="flex items-center gap-1 px-1.5 py-0.5 border border-foreground text-[10px] font-bold bg-primary/10 text-primary"><Sparkles className="w-3 h-3" /> AI</div>;
+      case "ai": return <div className="flex items-center gap-1 px-1.5 py-0.5 border border-foreground text-[10px] font-bold bg-primary/10 text-primary-strong"><Sparkles className="w-3 h-3" /> AI</div>;
       case "voice": return <div className="flex items-center gap-1 px-1.5 py-0.5 border border-foreground text-[10px] font-bold bg-secondary text-secondary-foreground"><Mic className="w-3 h-3" /> Voice</div>;
       case "receipt": return <div className="flex items-center gap-1 px-1.5 py-0.5 border border-foreground text-[10px] font-bold bg-amber-100 text-amber-700"><Camera className="w-3 h-3" /> Scan</div>;
       default: return null;
@@ -67,7 +67,7 @@ export function TransactionRow({ transaction }: TransactionRowProps) {
           <button className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Edit">
             <Pencil className="w-4 h-4" />
           </button>
-          <button className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-100 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Hapus">
+          <button className="p-1.5 text-muted-foreground hover:text-red-700 hover:bg-red-100 border-2 border-transparent hover:border-foreground cursor-pointer transition-all" title="Hapus">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>

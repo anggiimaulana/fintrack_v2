@@ -2,7 +2,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 interface ChatMessageProps {
-  role: string;
+  /** Message author. Named `author` (not `role`) to avoid being read as the ARIA role attribute. */
+  author: string;
   content: string;
 }
 
@@ -14,8 +15,8 @@ type CodeProps = {
 } & React.HTMLAttributes<HTMLElement>;
 
 
-export function ChatMessage({ role, content }: ChatMessageProps) {
-  const isUser = role === "user";
+export function ChatMessage({ author, content }: ChatMessageProps) {
+  const isUser = author === "user";
 
   // Strip complete and partial tool call blocks (security: never expose internal tool JSON to user)
   const cleanContent = content
@@ -106,7 +107,7 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
                 <hr className="my-3 border-t-2 border-foreground/20" {...props} />
               ),
               a: ({ children, href, node, ...props }: React.ComponentPropsWithoutRef<"a"> & { node?: unknown }) => (
-                <a href={href} className="underline text-primary hover:text-primary/80 font-bold" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                <a href={href} className="cursor-pointer underline text-primary hover:text-primary/80 font-bold" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
               ),
             }}
           >

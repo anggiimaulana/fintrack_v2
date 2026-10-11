@@ -227,10 +227,19 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={handleClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop as a sibling behind the dialog (no stopPropagation needed). */}
       <div
-        className="border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/60"
+        onClick={handleClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pindai struk"
+        className="relative border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b-2 border-foreground bg-muted shrink-0">
@@ -257,13 +266,16 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
           {/* ── STEP: Upload ── */}
+          {/* Upload dropzone: a real <button className="cursor-pointer"> so it is reachable and activatable
+              by keyboard (Enter/Space) as well as pointer and drag-and-drop. */}
           {step === "upload" && (
-            <div
+            <button
+              type="button"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onClick={() => fileInputRef.current?.click()}
-              className={`p-12 text-center cursor-pointer transition-all ${
+              className={`w-full p-12 text-center cursor-pointer transition-all ${
                 dragOver ? "bg-primary/5 scale-[1.01]" : "hover:bg-muted/30"
               }`}
             >
@@ -283,7 +295,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
               <Button variant="outline" size="sm" className="mt-5 pointer-events-none">
                 <Camera className="w-4 h-4 mr-2" /> Pilih File
               </Button>
-            </div>
+            </button>
           )}
 
           {/* ── STEP: Preview (before analyze) ── */}
@@ -335,10 +347,10 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {step === "error" && (
             <div className="p-6">
               <div className="border-2 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-red-700 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-bold text-red-700">Gagal</p>
-                  <p className="text-xs text-red-600 mt-1 whitespace-pre-wrap">{error}</p>
+                  <p className="text-xs text-red-700 mt-1 whitespace-pre-wrap">{error}</p>
                 </div>
               </div>
 
@@ -367,10 +379,10 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {step === "success" && result && (
             <div className="p-6">
               <div className="flex items-center gap-3 px-4 py-3 border-2 border-green-500 bg-green-50 mb-5">
-                <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+                <CheckCircle className="w-5 h-5 text-green-700 shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-green-700">Transaksi berhasil disimpan!</p>
-                  <p className="text-xs text-green-600">Data struk telah otomatis dicatat.</p>
+                  <p className="text-xs text-green-700">Data struk telah otomatis dicatat.</p>
                 </div>
               </div>
 

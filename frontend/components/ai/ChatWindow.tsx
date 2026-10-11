@@ -48,6 +48,12 @@ export default function ChatWindow() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  // Focus the rename field when it appears. Programmatic focus rather than the
+  // `autoFocus` prop: same UX, and it does not steal focus on first render.
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingSessionId) renameInputRef.current?.focus();
+  }, [editingSessionId]);
   const [editTitle, setEditTitle] = useState("");
   const [aiMode, setAiMode] = useState<"fast" | "reasoning">("fast");
   const { categories: incomeCategories } = useAdminCategories("income");
@@ -407,7 +413,7 @@ export default function ChatWindow() {
 
       return (
         <div key={index}>
-          <ChatMessage role={msg.role} content={displayContent} />
+          <ChatMessage author={msg.role} content={displayContent} />
           {hasChart && !isStreaming && renderPersistedToolSteps(msgChartData)}
         </div>
       );
@@ -429,7 +435,7 @@ export default function ChatWindow() {
     <div className="flex h-[calc(100vh-120px)]">
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
+          <div role="presentation" className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="relative w-64 bg-muted border-r-2 border-foreground flex flex-col overflow-hidden animate-in slide-in-from-left duration-200">
             <div className="p-3 border-b-2 border-foreground">
               <Button
@@ -446,7 +452,7 @@ export default function ChatWindow() {
                 <div key={s.id} className="flex items-center group">
                   {editingSessionId === s.id ? (
                     <input
-                      autoFocus
+                      ref={renameInputRef}
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                       onBlur={() => saveEdit(s.id)}
@@ -471,7 +477,7 @@ export default function ChatWindow() {
                       </button>
                       <button
                         onClick={() => startEdit(s.id, s.title || "")}
-                        className="p-1.5 text-muted-foreground hover:text-primary transition-all shrink-0"
+                        className="p-1.5 text-muted-foreground hover:text-primary transition-all shrink-0 cursor-pointer"
                         title="Edit nama"
                       >
                         <PenLine className="w-3 h-3" />
@@ -480,7 +486,8 @@ export default function ChatWindow() {
                   )}
                   <button
                     onClick={() => setConfirmDeleteSessionId(s.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all"
+                    aria-label="Hapus sesi"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -517,7 +524,7 @@ export default function ChatWindow() {
               <div key={s.id} className="flex items-center group">
                 {editingSessionId === s.id ? (
                   <input
-                    autoFocus
+                    ref={renameInputRef}
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     onBlur={() => saveEdit(s.id)}
@@ -542,7 +549,7 @@ export default function ChatWindow() {
                     </button>
                     <button
                       onClick={() => startEdit(s.id, s.title || "")}
-                      className="p-1.5 text-muted-foreground hover:text-primary transition-all shrink-0"
+                      className="p-1.5 text-muted-foreground hover:text-primary transition-all shrink-0 cursor-pointer"
                       title="Edit nama"
                     >
                       <PenLine className="w-3 h-3" />
@@ -551,7 +558,8 @@ export default function ChatWindow() {
                 )}
                 <button
                   onClick={() => setConfirmDeleteSessionId(s.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all"
+                  aria-label="Hapus sesi"
+                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>

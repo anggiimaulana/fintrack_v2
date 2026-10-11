@@ -47,7 +47,7 @@ export function SpkWidget({ score, status, insights, isLoading, hasData }: SpkWi
   const getStatusStyle = () => {
     switch (status) {
       case "Sangat Baik": return "bg-green-100 text-green-700 border-green-300";
-      case "Baik": return "bg-primary/10 text-primary border-primary/30";
+      case "Baik": return "bg-primary/10 text-primary-strong border-primary/30";
       case "Cukup": return "bg-amber-100 text-amber-700 border-amber-300";
       case "Boros": return "bg-orange-100 text-orange-700 border-orange-300";
       case "Kritis": return "bg-red-100 text-red-700 border-red-300";

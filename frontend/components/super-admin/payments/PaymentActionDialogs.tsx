@@ -147,7 +147,6 @@ export function PaymentRejectDialog({
               onChange={(e) => setReason(e.target.value)}
               required
               disabled={isLoading}
-              autoFocus
             />
           </div>
 

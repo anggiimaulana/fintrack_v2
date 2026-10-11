@@ -109,7 +109,7 @@ export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
       variant="ghost"
       size="icon"
       className={`border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
-        isListening ? "bg-red-100 text-red-600 border-red-600" : "text-muted-foreground"
+        isListening ? "bg-red-100 text-red-700 border-red-600" : "text-muted-foreground"
       }`}
       title={isListening ? "Stop recording" : "Voice Input"}
       onClick={handleToggle}

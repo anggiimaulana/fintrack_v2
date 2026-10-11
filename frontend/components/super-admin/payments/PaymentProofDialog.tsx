@@ -33,7 +33,7 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
       <DialogTrigger asChild>
         <button
           type="button"
-          className="group relative inline-flex items-center gap-2 overflow-hidden rounded border border-border bg-card p-1 text-left transition hover:border-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          className="cursor-pointer group relative inline-flex items-center gap-2 overflow-hidden rounded border border-border bg-card p-1 text-left transition hover:border-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           aria-label="Lihat bukti transfer"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -58,7 +58,7 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
               asChild
               className="gap-1.5"
             >
-              <a href={proofUrl} target="_blank" rel="noopener noreferrer">
+              <a className="cursor-pointer" href={proofUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3.5 w-3.5" />
                 Buka Tab Baru
               </a>

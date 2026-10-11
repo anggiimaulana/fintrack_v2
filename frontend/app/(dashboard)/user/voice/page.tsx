@@ -159,9 +159,11 @@ export default function VoicePage() {
         <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6 text-center">
           <button
             onClick={handleToggle}
+            aria-label={isListening ? "Berhenti merekam suara" : "Mulai merekam suara"}
+            aria-pressed={isListening}
             className={`w-24 h-24 mx-auto border-2 border-foreground flex items-center justify-center transition-all cursor-pointer ${
               isListening
-                ? "bg-red-100 text-red-600 border-red-600 shadow-[4px_4px_0px_0px] shadow-red-600 animate-pulse scale-105"
+                ? "bg-red-100 text-red-700 border-red-700 shadow-[4px_4px_0px_0px] shadow-red-700 animate-pulse scale-105"
                 : "bg-background text-foreground shadow-[4px_4px_0px_0px] shadow-foreground hover:bg-muted"
             }`}
           >

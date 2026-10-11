@@ -208,12 +208,12 @@ export default function AdminProvidersPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide">Nama</label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="gemini" required disabled={!!editingProvider} />
+              <label htmlFor="provider-name" className="text-xs font-bold uppercase tracking-wide">Nama</label>
+              <Input id="provider-name" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="gemini" required disabled={!!editingProvider} />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide">Display Name</label>
-              <Input value={formDisplayName} onChange={(e) => setFormDisplayName(e.target.value)} placeholder="Google Gemini" required />
+              <label htmlFor="provider-display-name" className="text-xs font-bold uppercase tracking-wide">Display Name</label>
+              <Input id="provider-display-name" value={formDisplayName} onChange={(e) => setFormDisplayName(e.target.value)} placeholder="Google Gemini" required />
             </div>
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2 cursor-pointer">

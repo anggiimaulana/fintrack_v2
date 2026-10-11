@@ -17,9 +17,9 @@ export default function LandingPage() {
             </span>
           </div>
           <nav className="hidden md:flex gap-6">
-            <a href="#fitur" className="text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Fitur</a>
-            <a href="#cara-kerja" className="text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Cara Kerja</a>
-            <a href="#harga" className="text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Harga</a>
+            <a href="#fitur" className="cursor-pointer text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Fitur</a>
+            <a href="#cara-kerja" className="cursor-pointer text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Cara Kerja</a>
+            <a href="#harga" className="cursor-pointer text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide">Harga</a>
           </nav>
           <div className="hidden md:flex items-center gap-3">
             <Button variant="outline" asChild>
@@ -243,10 +243,10 @@ export default function LandingPage() {
             <span className="text-sm font-medium">Catat. Tanya. Kelola. Semuanya dalam satu perintah.</span>
           </div>
           <div className="flex gap-6 text-sm font-bold">
-            <a href="#fitur" className="hover:text-white transition-colors uppercase tracking-wide">Fitur</a>
-            <a href="#tentang" className="hover:text-white transition-colors uppercase tracking-wide">Tentang</a>
-            <a href="#kontak" className="hover:text-white transition-colors uppercase tracking-wide">Kontak</a>
-            <a href="#privasi" className="hover:text-white transition-colors uppercase tracking-wide">Kebijakan Privasi</a>
+            <a href="#fitur" className="cursor-pointer hover:text-white transition-colors uppercase tracking-wide">Fitur</a>
+            <a href="#tentang" className="cursor-pointer hover:text-white transition-colors uppercase tracking-wide">Tentang</a>
+            <a href="#kontak" className="cursor-pointer hover:text-white transition-colors uppercase tracking-wide">Kontak</a>
+            <a href="#privasi" className="cursor-pointer hover:text-white transition-colors uppercase tracking-wide">Kebijakan Privasi</a>
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 mt-8 pt-8 border-t border-neutral-800 text-sm font-bold text-center md:text-left uppercase tracking-wide">

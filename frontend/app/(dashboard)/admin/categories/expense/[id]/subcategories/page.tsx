@@ -175,8 +175,9 @@ export default function SubcategoriesPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nama Sub-kategori</label>
+                <label htmlFor="subcat-name" className="text-sm font-medium">Nama Sub-kategori</label>
                 <Input
+                  id="subcat-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Contoh: Makan Siang, Bensin"
@@ -184,12 +185,12 @@ export default function SubcategoriesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Status</label>
+                <label htmlFor="subcat-status" className="text-sm font-medium">Status</label>
                 <Select
                   onValueChange={(val) => setIsActive(val === 'active')}
                   defaultValue={isActive ? 'active' : 'inactive'}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="subcat-status">
                     <SelectValue placeholder="Pilih status" />
                   </SelectTrigger>
                   <SelectContent>

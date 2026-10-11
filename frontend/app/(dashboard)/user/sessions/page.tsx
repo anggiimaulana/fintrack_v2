@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, MessageSquare, Trash2, Edit2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,13 @@ interface Session {
 export default function SessionsPage() {
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Focus the rename field when it appears. Programmatic focus instead of the
+  // `autoFocus` prop: same UX, explicit intent, and it does not hijack focus on
+  // page load (the input only mounts on demand).
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingId) renameInputRef.current?.focus();
+  }, [editingId]);
   const [editTitle, setEditTitle] = useState("");
   const [newTitle, setNewTitle] = useState("");
 
@@ -98,8 +105,8 @@ export default function SessionsPage() {
                     type="text"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
+                    ref={renameInputRef}
                     className="flex-1 border-2 border-foreground bg-background px-3 py-1.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
-                    autoFocus
                   />
                   <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: s.id, title: editTitle })} disabled={!editTitle.trim()}>
                     <Check className="w-4 h-4" />

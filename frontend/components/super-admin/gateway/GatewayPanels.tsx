@@ -363,7 +363,7 @@ export function EndpointsPanel() {
         )
       case 'open':
         return (
-          <Badge className="bg-red-600/15 text-red-600 dark:text-red-400 border-red-600/30 font-mono text-[11px]">
+          <Badge className="bg-red-600/15 text-red-700 dark:text-red-400 border-red-600/30 font-mono text-[11px]">
             open
           </Badge>
         )

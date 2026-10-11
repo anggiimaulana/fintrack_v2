@@ -71,6 +71,7 @@ export function CancelSubscriptionDialog({
               >
                 <input
                   id="cancel-immediate"
+                  aria-label="Berhenti sekarang (Immediate)"
                   type="checkbox"
                   checked={immediate}
                   onChange={(e) => setImmediate(e.target.checked)}

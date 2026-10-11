@@ -37,6 +37,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-strong: var(--primary-strong);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
@@ -60,10 +61,13 @@
   --popover-foreground: oklch(0.15 0.02 260);
   --primary: oklch(0.55 0.24 260);
   --primary-foreground: oklch(0.98 0 0);
+  /* Text colour for primary-tinted surfaces (e.g. bg-primary/10). The base
+     --primary only reaches 4.27:1 there, below the 4.5:1 AA threshold. */
+  --primary-strong: oklch(0.5 0.24 260);
   --secondary: oklch(0.92 0 0);
   --secondary-foreground: oklch(0.15 0.02 260);
   --muted: oklch(0.95 0 0);
-  --muted-foreground: oklch(0.55 0 0);
+  --muted-foreground: oklch(0.53 0 0);
   --accent: oklch(0.75 0.18 80);
   --accent-foreground: oklch(0.15 0.02 260);
   --destructive: oklch(0.58 0.24 25);
@@ -99,6 +103,7 @@
   --popover-foreground: oklch(0.95 0 0);
   --primary: oklch(0.65 0.24 260);
   --primary-foreground: oklch(0.12 0.01 260);
+  --primary-strong: oklch(0.72 0.2 260);
   --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.2 0 0);

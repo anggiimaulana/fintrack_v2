@@ -129,12 +129,12 @@ export function TokenLedgerTable({
       <div className="grid gap-3 rounded-md border bg-card p-3 text-xs md:grid-cols-6 sm:grid-cols-3">
         {/* entry_type */}
         <div className="space-y-1">
-          <label className="text-muted-foreground font-semibold">Tipe Entri</label>
+          <label htmlFor="ledger-filter-entry-type" className="text-muted-foreground font-semibold">Tipe Entri</label>
           <Select
             value={entryType || 'all'}
             onValueChange={(val) => onFilterChange('entry_type', val === 'all' ? '' : val)}
           >
-            <SelectTrigger className="h-8 text-xs" aria-label="Filter tipe entri">
+            <SelectTrigger className="h-8 text-xs" id="ledger-filter-entry-type" aria-label="Filter tipe entri">
               <SelectValue placeholder="Semua Tipe" />
             </SelectTrigger>
             <SelectContent>
@@ -150,12 +150,12 @@ export function TokenLedgerTable({
 
         {/* modality */}
         <div className="space-y-1">
-          <label className="text-muted-foreground font-semibold">Modalitas</label>
+          <label htmlFor="ledger-filter-modality" className="text-muted-foreground font-semibold">Modalitas</label>
           <Select
             value={modality || 'all'}
             onValueChange={(val) => onFilterChange('modality', val === 'all' ? '' : val)}
           >
-            <SelectTrigger className="h-8 text-xs" aria-label="Filter modalitas">
+            <SelectTrigger className="h-8 text-xs" id="ledger-filter-modality" aria-label="Filter modalitas">
               <SelectValue placeholder="Semua Modalitas" />
             </SelectTrigger>
             <SelectContent>
@@ -171,9 +171,10 @@ export function TokenLedgerTable({
 
         {/* user_id */}
         <div className="space-y-1">
-          <label className="text-muted-foreground font-semibold">User ID (UUID)</label>
+          <label htmlFor="ledger-filter-user" className="text-muted-foreground font-semibold">User ID (UUID)</label>
           <div className="flex gap-1">
             <Input
+              id="ledger-filter-user"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               onBlur={() => onFilterChange('user_id', userInput.trim())}
@@ -191,8 +192,9 @@ export function TokenLedgerTable({
 
         {/* start_date */}
         <div className="space-y-1">
-          <label className="text-muted-foreground font-semibold">Dari Tanggal</label>
+          <label htmlFor="ledger-filter-from" className="text-muted-foreground font-semibold">Dari Tanggal</label>
           <Input
+            id="ledger-filter-from"
             type="date"
             value={startDate}
             onChange={(e) => onFilterChange('start_date', e.target.value)}
@@ -203,8 +205,9 @@ export function TokenLedgerTable({
 
         {/* end_date */}
         <div className="space-y-1">
-          <label className="text-muted-foreground font-semibold">Sampai Tanggal</label>
+          <label htmlFor="ledger-filter-to" className="text-muted-foreground font-semibold">Sampai Tanggal</label>
           <Input
+            id="ledger-filter-to"
             type="date"
             value={endDate}
             onChange={(e) => onFilterChange('end_date', e.target.value)}

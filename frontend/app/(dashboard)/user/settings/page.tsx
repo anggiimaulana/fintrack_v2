@@ -13,6 +13,11 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswords, setShowPasswords] = useState(false);
+  // Notification toggles are local UI state (no backend endpoint yet) — kept so
+  // the switches are real, labelled, keyboard-operable controls.
+  const [notificationPrefs, setNotificationPrefs] = useState([true, true, false]);
+  const setNotificationPref = (index: number, value: boolean) =>
+    setNotificationPrefs((prev) => prev.map((v, i) => (i === index ? value : v)));
 
   const updatePasswordMutation = useMutation({
     mutationFn: async (data: { current_password: string; new_password: string }) => {
@@ -69,10 +74,11 @@ export default function SettingsPage() {
           ) : (
             <form onSubmit={handleChangePassword} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-foreground">Password Saat Ini</label>
+                <label htmlFor="settings-current-password" className="text-xs font-bold uppercase tracking-wide text-foreground">Password Saat Ini</label>
                 <div className="relative">
                   <input
                     type={showPasswords ? "text" : "password"}
+                    id="settings-current-password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Masukkan password saat ini"
@@ -82,10 +88,11 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-foreground">Password Baru</label>
+                <label htmlFor="settings-new-password" className="text-xs font-bold uppercase tracking-wide text-foreground">Password Baru</label>
                 <input
                   type={showPasswords ? "text" : "password"}
-                  value={newPassword}
+                  id="settings-new-password"
+                    value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Minimal 6 karakter"
                   className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
@@ -94,10 +101,11 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-foreground">Konfirmasi Password Baru</label>
+                <label htmlFor="settings-confirm-password" className="text-xs font-bold uppercase tracking-wide text-foreground">Konfirmasi Password Baru</label>
                 <input
                   type={showPasswords ? "text" : "password"}
-                  value={confirmPassword}
+                  id="settings-confirm-password"
+                    value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Ulangi password baru"
                   className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
@@ -143,7 +151,17 @@ export default function SettingsPage() {
                   <p className="text-sm font-bold text-foreground">{item.label}</p>
                   <p className="text-xs font-bold text-muted-foreground">{item.desc}</p>
                 </div>
-                <div className="w-10 h-6 border-2 border-foreground bg-muted relative cursor-pointer">
+                {/* A real checkbox: gives the label a control to associate with
+                    and makes the toggle keyboard-operable (the visual switch is
+                    a styled sibling, so the input is visually hidden). */}
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  aria-label={item.label}
+                  checked={notificationPrefs[i]}
+                  onChange={(e) => setNotificationPref(i, e.target.checked)}
+                />
+                <div aria-hidden="true" className="w-10 h-6 border-2 border-foreground bg-muted relative cursor-pointer">
                   <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-muted-foreground" />
                 </div>
               </label>

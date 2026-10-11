@@ -182,7 +182,7 @@ export function SuperAdminSidebar() {
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <button
-              className="flex items-center gap-3 w-full px-4 py-2 text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all"
+              className="cursor-pointer flex items-center gap-3 w-full px-4 py-2 text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all"
             >
               <LogOut size={18} />
               <span>Keluar</span>

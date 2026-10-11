@@ -190,8 +190,9 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
       {value.preset === "custom" && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-xs font-bold text-muted-foreground">Dari</label>
+            <label htmlFor="drf-from" className="text-xs font-bold text-muted-foreground">Dari</label>
             <input
+              id="drf-from"
               type="date"
               value={value.startDate}
               onChange={(e) => onChange({ ...value, startDate: e.target.value })}
@@ -200,8 +201,9 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
           </div>
           <ArrowRight className="w-4 h-4 text-muted-foreground" />
           <div className="flex items-center gap-2">
-            <label className="text-xs font-bold text-muted-foreground">Ke</label>
+            <label htmlFor="drf-to" className="text-xs font-bold text-muted-foreground">Ke</label>
             <input
+              id="drf-to"
               type="date"
               value={value.endDate}
               onChange={(e) => onChange({ ...value, endDate: e.target.value })}

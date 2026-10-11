@@ -136,7 +136,7 @@ export function FeatureFlagsTab({
                     >
                       {isEnabled ? 'Aktif' : 'Nonaktif'}
                     </span>
-                    <span className="text-[11px] px-2 py-0.5 font-mono bg-primary/10 text-primary border border-primary/20">
+                    <span className="text-[11px] px-2 py-0.5 font-mono bg-primary/10 text-primary-strong border border-primary/20">
                       Rollout {flag.rollout}%
                     </span>
                   </div>
