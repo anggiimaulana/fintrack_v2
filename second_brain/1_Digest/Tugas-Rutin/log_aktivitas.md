@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-10-11 — Brainstorming & Analisis: Platform Berlangganan + AI Gateway Terpusat (P02–P08)
+
+Ringkasan: sesi brainstorming (skill `brainstorming`, jalur **architectural**) atas 5 pilar permintaan pemilik
+produk — (1) kunci AI terpusat via 9router, (2) subscription & sistem token, (3) dashboard/manajemen super
+admin, (4) RBAC berbasis entitlement, (5) standar data-table/caching realtime/zero-downtime. Belum ada
+kode yang ditulis; seluruh keluaran berupa dokumen.
+
+### Keputusan terkunci (K-01..K-30)
+- Tenancy per-user (B2C); role hanya `super_admin` + `user` (admin lama dipromosikan).
+- Token: semua fitur AI; harga dinamis (base per 1k + markup kali/persen + pengali modality).
+- Siklus **per-hari** (TZ Asia/Jakarta), reset tiap siklus, tanpa rollover; renewal **hybrid**.
+- Upgrade **instan prorated**; downgrade **akhir siklus**, soft-limit (tanpa hapus data).
+- Switch payment gateway: global + override per-plan (berlaku checkout baru; in-flight tetap gateway asalnya).
+- Entitlement = fitur (bool) + limit numerik; penegakan **backend**; realtime via **cache berversi** (bukan JWT).
+- AI gateway: pool multi-endpoint 9router + failover + circuit breaker + kill switch; embedding dikunci 768d.
+- Ledger token **append-only** (reserve→commit/release) + idempotency; uang = **integer rupiah**.
+- Infra: **tambah Redis** (cache bersama + pub/sub). DataTable: TanStack Table v8 + URL state.
+- Zero downtime: migrasi **expand/contract** + rolling deploy + feature flag.
+- Pendekatan: **hibrida A+B** (incremental Strangler Fig + modul baru bersih ber-interface).
+
+### Dokumen yang ditulis
+- `0_Inbox/ide/2026-10-11_Subscription-AI-Gateway/` (6 file: ringkasan, analisis, kritik & saran best-practice, keputusan, pertanyaan terbuka, peta jalan).
+- `4_Resources/Dokumen-Spesifikasi/` — BRD, PRD, dan Diagram (Use Case, Flowchart, Sequence, Activity, ERD).
+- `2_Projects/` — 7 fase baru: P02 Fondasi Platform, P03 AI Gateway Terpusat, P04 Subscription & Token Core, P05 Payments & Billing, P06 Super Admin Dashboard, P07 Rollout RBAC/Realtime, P08 Hardening & Go-Live (masing-masing `analisis/planning/rules/teknis/tracking`).
+- `3_Areas/` — diisi 5 area lama + tambah `billing-pembayaran/` & `ai-gateway/` (kebijakan + runbook).
+- README indeks diperbarui: `0_Inbox`, `2_Projects`, `3_Areas`, `4_Resources`.
+
+### Kritik & saran (diterima semua)
+Uang integer; ledger transaksional; blast radius kunci terpusat; kualifikasi "realtime"; cache invalidation;
+downgrade tidak hapus data; jangan percaya callback klien; PCI-DSS SAQ-A; konvensi prorata eksplisit;
+audit append-only; UU PDP No. 27/2022; zero downtime realistis; observability; YAGNI.
+
+### Langkah berikutnya
+Spec self-review → review oleh pemilik produk → transisi ke rencana implementasi (writing-plans).
+
+---
+
 ## 2026-10-11 — Eksekusi Migrasi FinTrack v2 SELESAI (Plan `fintrack-v2-migration`)
 
 Ringkasan: repo baru `D:/project/finance/fintrack_v2` dibangun dari nol (Go + PostgreSQL murni + Next.js), data lama dimigrasi penuh, seluruh verifikasi hijau. Repo lama & volume Supabase lama **tidak disentuh**.
