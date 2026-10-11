@@ -3,7 +3,10 @@
 Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 secara berkala menggunakan status simbolik standar:
 - ⬜ : Belum dimulai (*To Do*)
 - 🔄 : Sedang dikerjakan (*In Progress*)
-- ✅ : Selesai dan terverifikasi (*Done*)
+- ✅ : Selesai dan terverifikasi (*Done* — kode ada, test hijau)
+
+> **Status saat ini: BELUM DIMULAI.** Seluruh task masih ⬜ — belum ada implementasi kode.
+> Status diperbarui saat eksekusi berjalan.
 
 ---
 
@@ -11,41 +14,38 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 
 | Total Tugas | Belum Dimulai (⬜) | Sedang Dikerjakan (🔄) | Selesai (✅) | Persentase Selesai |
 |---|---|---|---|---|
-| **17** | **14** | **1** | **2** | **11.7%** |
+| **17** | **17** | **0** | **0** | **0%** |
 
 ---
 
 ## Tabel Status Tugas (TASK-P04-001 .. TASK-P04-017)
 
-| Task ID | Komponen | Judul Pekerjaan | Assignee | Status | Target Selesai | Catatan / Verifikasi |
-|---|---|---|---|:---:|---|---|
-| **TASK-P04-001** | Database | Skema Migrasi DDL `0007_subscription_token_core.sql` | Backend Core | ✅ | 2026-10-19 | Skema tabel lengkap, integer moneter & kuota, DDL replayable |
-| **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ✅ | 2026-10-20 | Seeder idempoten terverifikasi dengan batasan kuota default |
-| **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | 🔄 | 2026-10-20 | Struct enum status langganan dan ledger types dalam penulisan |
-| **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ⬜ | 2026-10-21 | Implementasi query `SELECT ... FOR UPDATE` |
-| **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | 2026-10-22 | Alur validasi kuota siklus & isolasi reservasi |
-| **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ⬜ | 2026-10-23 | Integrasi callback pasca-eksekusi AI Gateway |
-| **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Worker | ⬜ | 2026-10-23 | Pembersih reservasi kedaluwarsa interval 15 menit |
-| **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ⬜ | 2026-10-26 | Formula harga dinamis IDR dengan bobot modalitas |
-| **TASK-P04-009** | Entitlement | Domain Model & Aggregation Repository Resolver | Backend Core | ⬜ | 2026-10-26 | Resolver fitur boolean dan limit kuota numerik |
-| **TASK-P04-010** | Entitlement | Versioned Cache Manager L1 (In-Memory) & L2 (Redis) | Backend Core | ⬜ | 2026-10-27 | Pola cache key `entitlement:u:{uid}:v:{ver}` |
-| **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ⬜ | 2026-10-27 | Sinkronisasi pembersihan L1 lokal < 50ms |
-| **TASK-P04-012** | Entitlement | Gin Middleware `RequireFeature` & `WithinLimit` | Backend Core | ⬜ | 2026-10-28 | HTTP guard dengan bypass super_admin |
-| **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ⬜ | 2026-10-28 | Penyajian DTO untuk TanStack Query frontend |
-| **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ⬜ | 2026-10-29 | Transisi status langganan dan log `subscription_events` |
-| **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ⬜ | 2026-10-29 | Kalkulasi kredit sisa hari dan proteksi data user |
-| **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | QA Engineer | ⬜ | 2026-10-30 | Pengujian goroutines paralel anti-race condition |
-| **TASK-P04-017** | Observability | Prometheus Metrics, Tracing & Handoff Kontrak P05/P06 | DevOps / Lead | ⬜ | 2026-10-30 | Metrik latensi cache, gauge langganan, interface handoff |
+| Task ID | Komponen | Judul Pekerjaan | Assignee | Status | Catatan |
+|---|---|---|---|:---:|---|
+| **TASK-P04-001** | Database | Skema Migrasi DDL `0007_subscription_token_core.sql` | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Worker | ⬜ | Belum dikerjakan |
+| **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-009** | Entitlement | Domain Model & Aggregation Repository Resolver | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-010** | Entitlement | Versioned Cache Manager L1 (In-Memory) & L2 (Redis) | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-012** | Entitlement | Gin Middleware `RequireFeature` & `WithinLimit` | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | QA Engineer | ⬜ | Belum dikerjakan |
+| **TASK-P04-017** | Observability | Prometheus Metrics, Tracing & Handoff Kontrak P05/P06 | DevOps / Lead | ⬜ | Belum dikerjakan |
 
 ---
 
 ## Log Pembaruan Terkini
 
-- **2026-10-19:**
-  - Desain skema basis data dan penyusunan migrasi DDL selesai (`TASK-P04-001`). Seluruh tabel relasional, constraint, dan index terdefinisi.
-  - Seeder bawaan untuk paket Free, Pro, Business dan konfigurasi pricing awal terpasang (`TASK-P04-002`).
-- **2026-10-20:**
-  - Pengerjaan domain entity dan value objects pada modul `internal/billing/domain/` dimulai (`TASK-P04-003`).
+- **2026-10-11**: Perencanaan & spesifikasi teknis fase P04 disusun (17 task, analisis K-P04-01..K-P04-20).
+  **Implementasi belum dimulai.**
 
 ---
 

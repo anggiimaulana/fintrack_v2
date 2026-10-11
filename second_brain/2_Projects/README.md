@@ -31,10 +31,17 @@ P02 ──▶ P03 ──▶ P04 ──▶ P05 ──▶ P06
                  P08
 ```
 
+## Rencana Implementasi
+
+- **Master plan (semua fase):** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
+- **Plan detail per fase:** `PXX_*/planning/implementation-plan.md`
+  (mulai: [`P02_Fondasi-Platform/planning/implementation-plan.md`](P02_Fondasi-Platform/planning/implementation-plan.md))
+
 ## Struktur Proyek
 
 ```
 2_Projects/
+├── IMPLEMENTATION-PLAN.md      # Rencana implementasi tingkat program (P02–P08)
 ├── P01_FinTrack_v2/            # Migrasi stack (selesai)
 ├── P02_Fondasi-Platform/
 ├── P03_AI-Gateway-Terpusat/

@@ -18,23 +18,23 @@ Mendirikan fondasi infrastruktur shared Redis, sistem audit log append-only yang
 ### Minggu 1: Backend Foundation, Caching & Compliance
 
 #### Hari 1: Shared Infrastructure Redis
-- [x] TASK-P02-001: Provisioning Redis Container & Healthcheck di `docker-compose.yml`.
-- [x] TASK-P02-002: Client Pool & Lifecycle Manager Redis di Go (`internal/infra/redis`).
+- [ ] TASK-P02-001: Provisioning Redis Container & Healthcheck di `docker-compose.yml`.
+- [ ] TASK-P02-002: Client Pool & Lifecycle Manager Redis di Go (`internal/infra/redis`).
 
 #### Hari 2: Versioned Caching Engine
-- [x] TASK-P02-003: Versioned Cache Middleware & Engine (format key `cache:u:{user_id}:v{ver}:...`).
+- [ ] TASK-P02-003: Versioned Cache Middleware & Engine (format key `cache:u:{user_id}:v{ver}:...`).
 - Implementasi unit test untuk memvalidasi kenaikan versi user membersihkan cache lama secara logis.
 
 #### Hari 3: Multi-Instance Pub/Sub Invalidation
-- [x] TASK-P02-004: Redis Pub/Sub Broadcaster untuk channel `cache:invalidate`.
+- [ ] TASK-P02-004: Redis Pub/Sub Broadcaster untuk channel `cache:invalidate`.
 - Pengujian simulasi 2 instance worker yang menerima signal invalidasi global.
 
 #### Hari 4: Audit Logging Storage & Constraints
-- [x] TASK-P02-005: Migrasi Database Tabel Append-Only `audit_logs` (`0005_create_audit_logs.sql`).
+- [ ] TASK-P02-005: Migrasi Database Tabel Append-Only `audit_logs` (`0005_create_audit_logs.sql`).
 - Uji trigger PostgreSQL untuk memastikan statement UPDATE/DELETE ditolak secara mutlak.
 
 #### Hari 5: Asynchronous Audit Worker & Sanitasi Data
-- [x] TASK-P02-006: Modul `internal/audit` & Asynchronous Worker Queue dengan masking data sensitif (UU PDP).
+- [ ] TASK-P02-006: Modul `internal/audit` & Asynchronous Worker Queue dengan masking data sensitif (UU PDP).
 - Benchmark throughput worker channel Go untuk memastikan latensi API tetap < 1ms.
 
 ---
@@ -42,23 +42,23 @@ Mendirikan fondasi infrastruktur shared Redis, sistem audit log append-only yang
 ## Minggu 2: Feature Flags, UI DataTable, & Observability
 
 #### Hari 6: Dynamic Feature Flag Engine
-- [x] TASK-P02-007: Migrasi Database Tabel `feature_flags` (`0006_create_feature_flags.sql`).
-- [x] TASK-P02-008: Modul `internal/featureflag` & Evaluator Engine dengan cache Redis L2 dan fallback fail-closed.
+- [ ] TASK-P02-007: Migrasi Database Tabel `feature_flags` (`0006_create_feature_flags.sql`).
+- [ ] TASK-P02-008: Modul `internal/featureflag` & Evaluator Engine dengan cache Redis L2 dan fallback fail-closed.
 
 #### Hari 7: Backend Pagination Parser & URL State Hook
-- [x] TASK-P02-009: Kontrak API Handler Paginated Data Table di Go (`pkg/pagination`).
-- [x] TASK-P02-010: Custom Hook `useDataTableUrlState` di Next.js (`frontend/src/hooks`).
+- [ ] TASK-P02-009: Kontrak API Handler Paginated Data Table di Go (`pkg/pagination`).
+- [ ] TASK-P02-010: Custom Hook `useDataTableUrlState` di Next.js (`frontend/src/hooks`).
 
 #### Hari 8: Generic UI DataTable TanStack Table v8
-- [x] TASK-P02-011: Komponen Generic `<DataTable>` TanStack Table v8 dengan skeleton loader dan header sorting.
+- [ ] TASK-P02-011: Komponen Generic `<DataTable>` TanStack Table v8 dengan skeleton loader dan header sorting.
 - Pengujian rendering tabel dengan mockup 100 baris data keuangan.
 
 #### Hari 9: Toolbar, Facet Filtering, & Metrics Instrumentasi
-- [x] TASK-P02-012: Komponen Toolbar (search debounce 300ms) & Pagination selector (10/20/50/100 baris).
-- [x] TASK-P02-013: Instrumentasi Prometheus Metrics di Backend Go (`internal/middleware/metrics.go`).
+- [ ] TASK-P02-012: Komponen Toolbar (search debounce 300ms) & Pagination selector (10/20/50/100 baris).
+- [ ] TASK-P02-013: Instrumentasi Prometheus Metrics di Backend Go (`internal/middleware/metrics.go`).
 
 #### Hari 10: Pengujian Integrasi End-to-End & Sprint Review
-- [x] TASK-P02-014: Integrasi Verifikasi End-to-End Fondasi Platform.
+- [ ] TASK-P02-014: Integrasi Verifikasi End-to-End Fondasi Platform.
 - Audit checklist zero downtime, verifikasi memory leak Redis, dan handover siap untuk Fase P03 (AI Gateway).
 
 ---

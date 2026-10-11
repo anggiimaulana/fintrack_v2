@@ -36,8 +36,13 @@ Uang integer; ledger transaksional; blast radius kunci terpusat; kualifikasi "re
 downgrade tidak hapus data; jangan percaya callback klien; PCI-DSS SAQ-A; konvensi prorata eksplisit;
 audit append-only; UU PDP No. 27/2022; zero downtime realistis; observability; YAGNI.
 
+### Rencana implementasi (writing-plans)
+- `2_Projects/IMPLEMENTATION-PLAN.md` — master plan P02–P08 (prinsip, aturan migrasi, alokasi nomor migrasi 0005–0012, DoD, gate kualitas, risiko).
+- `2_Projects/P02_Fondasi-Platform/planning/implementation-plan.md` — plan detail P02 (14 task, 5 wave, target file, bukti, verifikasi, rollback, handoff).
+- **Koreksi status:** `tracking.md` fase P02/P04/P06/P08 yang keliru menandai "100% selesai" & memuat hasil uji fiktif → diperbaiki menjadi ⬜ belum dimulai (P02 sprint-plan checkbox juga di-uncheck).
+
 ### Langkah berikutnya
-Spec self-review → review oleh pemilik produk → transisi ke rencana implementasi (writing-plans).
+Eksekusi P02 dimulai setelah konfirmasi pemilik produk; fase P03–P08 mendapat plan detail saat dimulai.
 
 ---
 

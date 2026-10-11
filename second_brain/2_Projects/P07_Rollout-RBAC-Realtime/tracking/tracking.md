@@ -5,6 +5,9 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
+> **Status saat ini: BELUM DIMULAI.** Seluruh task implementasi masih ⬜. (Tanda ✅ pada tabel
+> "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
+
 ---
 
 ## 1. Status Task WBS (Work Breakdown Structure)

@@ -6,6 +6,8 @@ Status ditandai dengan:
 - 🔄 : Sedang dikerjakan (*In Progress*)
 - ✅ : Selesai dan terverifikasi (*Done*)
 
+> **Status saat ini: BELUM DIMULAI.** Seluruh task masih ⬜ — belum ada implementasi kode.
+
 ---
 
 ## Tabel Status Tugas
