@@ -31,6 +31,10 @@ type Config struct {
 	// HalfOpenMaxProbes is the number of concurrent probes allowed in
 	// half-open (default 1).
 	HalfOpenMaxProbes int
+	// OnStateChange, when set, is invoked after a state transition. It is called
+	// WITHOUT the breaker lock held, so the callback may safely call back into
+	// the breaker (State, Failures, ...) without deadlocking.
+	OnStateChange func(endpointID string, from, to State)
 }
 
 // DefaultConfig returns the documented defaults.
@@ -120,20 +124,24 @@ func (b *Breaker) Allow(id string) bool {
 // RecordSuccess records a successful call, closing the breaker.
 func (b *Breaker) RecordSuccess(id string) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	st := b.get(id)
+	from := st.state
 	st.state = StateClosed
 	st.failures = 0
 	st.probesInFlight = 0
+	b.mu.Unlock()
+
+	// Notify outside the lock: the callback may read breaker state.
+	if from != StateClosed {
+		b.notify(id, from, StateClosed)
+	}
 }
 
 // RecordFailure records a failed call and transitions the state.
 func (b *Breaker) RecordFailure(id string) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	st := b.get(id)
+	from := st.state
 	switch st.state {
 	case StateClosed:
 		st.failures++
@@ -151,6 +159,24 @@ func (b *Breaker) RecordFailure(id string) {
 		// Already open; keep the window but refresh the timestamp is not
 		// desired (would extend cooldown indefinitely). Leave as-is.
 	}
+	to := st.state
+	b.mu.Unlock()
+
+	if from != to {
+		b.notify(id, from, to)
+	}
+}
+
+// notify invokes the configured callback outside the breaker lock.
+func (b *Breaker) notify(endpointID string, from, to State) {
+	if b.cfg.OnStateChange == nil {
+		return
+	}
+	func() {
+		// A panicking callback must not take down the caller's request path.
+		defer func() { _ = recover() }()
+		b.cfg.OnStateChange(endpointID, from, to)
+	}()
 }
 
 // State returns the current state name for the endpoint.

@@ -21,11 +21,13 @@ type WebhookProcessor struct {
 	registry *Registry
 	activate SubscriptionActivator
 	tx       TxRunner
+	// emitter publishes realtime domain events (never nil; no-op by default).
+	emitter RealtimeEmitter
 }
 
 // NewWebhookProcessor builds the processor.
 func NewWebhookProcessor(repo Repository, registry *Registry, activate SubscriptionActivator, tx TxRunner) *WebhookProcessor {
-	return &WebhookProcessor{repo: repo, registry: registry, activate: activate, tx: tx}
+	return &WebhookProcessor{repo: repo, registry: registry, activate: activate, tx: tx, emitter: noopEmitter{}}
 }
 
 // ProcessResult reports what the processor did (for logging/tests).
@@ -66,6 +68,7 @@ func (p *WebhookProcessor) Process(ctx context.Context, gatewayName string, payl
 
 	// 3) Idempotent application under a row lock.
 	var result ProcessResult
+	var settled *Payment
 	err = p.tx.RunInTx(ctx, func(txCtx context.Context) error {
 		pay, err := p.repo.GetPaymentByGatewayRefForUpdate(txCtx, res.GatewayRef)
 		if err != nil {
@@ -102,6 +105,8 @@ func (p *WebhookProcessor) Process(ctx context.Context, gatewayName string, payl
 					}
 				}
 			}
+			pay.Status = PaymentSettled
+			settled = pay
 		}
 
 		result = ProcessResult{Status: res.Status, PaymentID: pay.ID.String()}
@@ -109,6 +114,11 @@ func (p *WebhookProcessor) Process(ctx context.Context, gatewayName string, payl
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Emitted after the transaction commits, so the client never receives an
+	// event for a payment that was rolled back.
+	if settled != nil && !result.AlreadyProcessed {
+		emitPaymentReceived(ctx, p.emitter, settled, "")
 	}
 	return &result, nil
 }

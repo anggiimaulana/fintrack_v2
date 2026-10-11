@@ -19,6 +19,7 @@ import (
 	"github.com/fintrack/backend/internal/featureflag"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/pkg/contracts"
 )
 
 // Service bundles the dependencies shared by all admin handlers.
@@ -32,6 +33,12 @@ type Service struct {
 	killSwitch *KillSwitchStore
 	flags      *featureflag.Service
 	encKey     []byte
+	// entInvalidator bumps the entitlement cache version (per user and per
+	// plan). Without it a plan or subscription change is invisible until the
+	// resolver's 24h TTL lapses.
+	entInvalidator EntitlementInvalidator
+	// emitter publishes realtime domain events (nil-safe: checks before use).
+	emitter RealtimeEmitter
 
 	now func() time.Time
 }
@@ -61,6 +68,34 @@ func WithEncryptionKey(key []byte) Option { return func(s *Service) { s.encKey =
 
 // WithCache installs a Redis-backed cache engine.
 func WithCache(c *infraRedis.CacheEngine) Option { return func(s *Service) { s.cache = c } }
+
+// EntitlementInvalidator invalidates cached entitlements. *entitlement.Broadcaster
+// satisfies it; a narrow interface keeps the admin package free of a hard
+// dependency on the entitlement transport.
+type EntitlementInvalidator interface {
+	// InvalidateUser makes one user's cached entitlements stale and notifies
+	// peer instances.
+	InvalidateUser(ctx context.Context, userID uuid.UUID)
+	// InvalidatePlan makes every subscriber of a plan stale (O(1)).
+	InvalidatePlan(ctx context.Context, planID string)
+}
+
+// WithEntitlementInvalidator installs the entitlement cache invalidator.
+func WithEntitlementInvalidator(inv EntitlementInvalidator) Option {
+	return func(s *Service) { s.entInvalidator = inv }
+}
+
+// RealtimeEmitter publishes domain events to connected clients. Declared
+// narrowly so the admin package does not depend on the transport.
+type RealtimeEmitter interface {
+	PublishUser(ctx context.Context, userID uuid.UUID, ev contracts.Event)
+	PublishAdmins(ctx context.Context, ev contracts.Event)
+}
+
+// WithRealtimeEmitter installs the realtime emitter (plan_updated broadcasts).
+func WithRealtimeEmitter(e RealtimeEmitter) Option {
+	return func(s *Service) { s.emitter = e }
+}
 
 // WithClock overrides the clock (tests).
 func WithClock(now func() time.Time) Option { return func(s *Service) { s.now = now } }

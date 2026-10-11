@@ -28,6 +28,9 @@ type LedgerService struct {
 	quota   QuotaResolver
 	pricing *PricingEngine
 	now     func() time.Time
+	// onCycleReset is called when a new token period is created for a user
+	// (i.e. a new billing cycle started). Optional; used to emit quota_reset.
+	onCycleReset func(ctx context.Context, userID uuid.UUID, start, end time.Time, quota int64)
 }
 
 // NewLedgerService builds the ledger service.
@@ -37,6 +40,14 @@ func NewLedgerService(tokens TokenRepository, tx TxRunner, quota QuotaResolver, 
 
 // WithClock overrides the time source (tests).
 func (s *LedgerService) WithClock(now func() time.Time) *LedgerService { s.now = now; return s }
+
+// OnCycleReset registers a callback invoked when a new token period is created.
+// It fires only on creation — not on every period lookup — so consumers see one
+// reset per cycle rather than one per AI call.
+func (s *LedgerService) OnCycleReset(fn func(ctx context.Context, userID uuid.UUID, start, end time.Time, quota int64)) *LedgerService {
+	s.onCycleReset = fn
+	return s
+}
 
 // Reservation is the handle returned by Reserve.
 type Reservation struct {
@@ -219,6 +230,10 @@ func (s *LedgerService) ensurePeriodLocked(ctx context.Context, userID uuid.UUID
 	}
 	if _, err := s.tokens.GetOrCreatePeriod(ctx, userID, start.Unix(), end.Unix(), quota); err != nil {
 		return nil, err
+	}
+	// A new period means a new cycle began for this user.
+	if s.onCycleReset != nil {
+		s.onCycleReset(ctx, userID, start, end, quota)
 	}
 	return s.tokens.GetPeriodForUpdate(ctx, userID, s.now().Unix())
 }

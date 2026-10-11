@@ -88,3 +88,46 @@ func (p *PubSub) Subscribe(ctx context.Context, channel string, handler func(msg
 
 // ensure the underlying client type is referenced (compile-time guard).
 var _ = (*goredis.Client)(nil)
+
+// SubscribePattern listens on a glob pattern (e.g. "realtime:u:*") and invokes
+// handler with the concrete channel and payload for each message. Used where the
+// set of channels is unbounded — subscribing per user would mean churning
+// subscriptions as clients connect and disconnect.
+func (p *PubSub) SubscribePattern(ctx context.Context, pattern string, handler func(channel, msg string)) (stop func()) {
+	if !p.Enabled() {
+		return func() {}
+	}
+
+	sub := p.client.Raw().PSubscribe(ctx, pattern)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer sub.Close()
+		ch := sub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							logger.Error("pubsub pattern handler panic", zap.Any("recover", r))
+						}
+					}()
+					handler(msg.Channel, msg.Payload)
+				}()
+			}
+		}
+	}()
+
+	return func() {
+		_ = sub.Close()
+		wg.Wait()
+	}
+}

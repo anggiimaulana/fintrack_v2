@@ -166,3 +166,86 @@ func TestBreaker_ConcurrentAllowIsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestBreaker_OnStateChangeFiresOnOpen verifies the transition callback runs
+// when the breaker trips open.
+func TestBreaker_OnStateChangeFiresOnOpen(t *testing.T) {
+	var transitions []string
+	cfg := DefaultConfig()
+	cfg.FailureThreshold = 2
+	cfg.OnStateChange = func(id string, from, to State) {
+		transitions = append(transitions, id+":"+string(from)+"->"+string(to))
+	}
+	b := New(cfg)
+
+	b.RecordFailure("ep1")
+	if len(transitions) != 0 {
+		t.Fatalf("no transition expected after 1 failure, got %v", transitions)
+	}
+	b.RecordFailure("ep1")
+	if len(transitions) != 1 || transitions[0] != "ep1:closed->open" {
+		t.Fatalf("expected closed->open, got %v", transitions)
+	}
+}
+
+// TestBreaker_OnStateChangeNoDeadlock is the important one: the callback must be
+// invoked WITHOUT the breaker lock held, so a callback that queries breaker state
+// (a natural thing to do when reporting) cannot deadlock.
+func TestBreaker_OnStateChangeNoDeadlock(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.FailureThreshold = 1
+	var b *Breaker
+	cfg.OnStateChange = func(id string, from, to State) {
+		// These all take the breaker lock; if notify() ran inside the lock this
+		// would hang and the test would time out.
+		_ = b.State(id)
+		_ = b.Failures(id)
+	}
+	b = New(cfg)
+
+	done := make(chan struct{})
+	go func() {
+		b.RecordFailure("ep1")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RecordFailure deadlocked: callback ran while the lock was held")
+	}
+	if b.State("ep1") != string(StateOpen) {
+		t.Fatalf("state = %s, want open", b.State("ep1"))
+	}
+}
+
+// TestBreaker_OnStateChangeNotFiredOnRepeatedOpen verifies staying open does not
+// re-fire (no duplicate alerts while the breaker remains tripped).
+func TestBreaker_OnStateChangeNotFiredOnRepeatedOpen(t *testing.T) {
+	calls := 0
+	cfg := DefaultConfig()
+	cfg.FailureThreshold = 1
+	cfg.OnStateChange = func(string, State, State) { calls++ }
+	b := New(cfg)
+
+	b.RecordFailure("ep1") // closed -> open
+	b.RecordFailure("ep1") // already open
+	b.RecordFailure("ep1") // already open
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 transition callback, got %d", calls)
+	}
+}
+
+// TestBreaker_OnStateChangePanicIsContained verifies a panicking callback cannot
+// break the caller's request path.
+func TestBreaker_OnStateChangePanicIsContained(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.FailureThreshold = 1
+	cfg.OnStateChange = func(string, State, State) { panic("boom") }
+	b := New(cfg)
+
+	b.RecordFailure("ep1") // must not propagate the panic
+	if b.State("ep1") != string(StateOpen) {
+		t.Fatal("breaker state must still be updated")
+	}
+}

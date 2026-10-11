@@ -206,3 +206,39 @@ export function useCreateTransaction() {
                                             [ UI Menampilkan Badge Pro ]
                                             (Selesai dalam < 400ms)
 ```
+
+---
+
+## 7. Status Implementasi (Slice B, 2026-10-11)
+
+### 7.1 Koreksi: query key yang dipakai adalah key NYATA
+
+Contoh di dokumen ini memakai `queryKeys.billing.subscription`, `billing.invoices`,
+`billing.tokens`, `transactions.summary`, dan `superAdmin.gateways` — **key-key itu tidak ada**
+di `frontend/lib/cache-keys.ts`. Pemetaan yang benar-benar diimplementasikan
+(`frontend/lib/realtime-dispatcher.ts`):
+
+| Event | Query key yang di-invalidasi |
+|---|---|
+| `payment_received` | `entitlements.me`, `dashboard.all` |
+| `plan_updated` | `entitlements.me`, `dashboard.all` |
+| `quota_reset` | `entitlements.me`, `transactions.all`, `dashboard.all`, `reports.all` |
+| `ai_endpoint_down` | `superAdmin.gatewayEndpoints`, `superAdmin.metricsOverview()` |
+| `manual_approval_needed` | `superAdmin.paymentsReview()`, `superAdmin.metricsOverview()` |
+
+Event tak dikenal → **tidak ada** invalidasi (bukan fallback ke root cache). Ada test yang
+memastikan setiap pemanggilan `invalidateQueries` membawa `queryKey` spesifik — tidak ada
+invalidasi tanpa filter (memenuhi TASK-P07-009).
+
+### 7.2 Perbaikan invalidasi backend (bug yang ditemukan)
+
+Tiga cacat membuat perubahan paket/fitur baru terasa setelah TTL 24 jam:
+
+| # | Lokasi | Masalah | Perbaikan |
+|---|---|---|---|
+| 4a | `admin/subscriptions.go` | Membump scope versi `"u:"` (untuk cache HTTP) sedangkan resolver entitlement memakai `"ent:"` → cache entitlement tidak invalid | `invalidateUser` kini juga memanggil `entBroadcaster.InvalidateUser` (bump `"ent:"` + siar ke peer). `BumpUserVersion` lama **dipertahankan** karena masih dipakai cache HTTP |
+| 4b | `admin/plans.go` | Menulis ulang `plan_entitlements`/`plan_limits` **tanpa invalidasi apa pun** → semua subscriber plan memakai entitlement basi sampai 24 jam | Ditambahkan komponen versi plan pada kunci cache (`entitlement:u:{id}:v{userVer}`, dengan `PlanVersion` disimpan di payload dan divalidasi saat cache hit). Satu bump `ent:plan:{planID}` menginvalidasi semua subscriber, O(1) |
+| 4c | `cmd/server/main.go` | `entBroadcaster` tidak pernah dipanggil (`_ = entBroadcaster`) → tidak ada invalidasi lintas-instance | Broadcaster disuntikkan ke admin Service (`WithEntitlementInvalidator`) dan dipakai pada kedua jalur |
+
+Ada **uji mutasi** yang membuktikan suite gagal bila pemeriksaan versi plan dilepas — jadi
+perbaikan 4b benar-benar terjaga, bukan lolos karena kebetulan.

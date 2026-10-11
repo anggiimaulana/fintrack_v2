@@ -33,6 +33,21 @@ func NewBroadcaster(ps *infraRedis.PubSub, r *Resolver) *Broadcaster {
 	return &Broadcaster{ps: ps, r: r}
 }
 
+// InvalidateUser makes one user's cached entitlements stale and notifies peers.
+// Named to satisfy admin.EntitlementInvalidator.
+func (b *Broadcaster) InvalidateUser(ctx context.Context, userID uuid.UUID) {
+	b.PublishInvalidate(ctx, userID)
+}
+
+// InvalidatePlan makes every subscriber of a plan stale in one O(1) bump.
+// Named to satisfy admin.EntitlementInvalidator.
+func (b *Broadcaster) InvalidatePlan(ctx context.Context, planID string) {
+	if b.r == nil {
+		return
+	}
+	b.r.InvalidatePlan(ctx, planID)
+}
+
 // PublishInvalidate bumps the user's version and notifies peers.
 func (b *Broadcaster) PublishInvalidate(ctx context.Context, userID uuid.UUID) {
 	if b.r != nil {

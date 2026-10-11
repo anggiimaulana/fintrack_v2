@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "next-themes";
 import { SessionProvider } from "@/lib/session-context";
+import { RealtimeProvider } from "@/providers/realtime-provider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -30,7 +31,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
-          {children}
+          <RealtimeProvider>
+            {children}
+          </RealtimeProvider>
         </SessionProvider>
         <Toaster
           position="bottom-right"

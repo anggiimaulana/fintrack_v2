@@ -136,3 +136,64 @@ func TestResolver_L1TTLExpiry(t *testing.T) {
 		t.Fatalf("L1 entry should have expired (calls=%d)", src.calls)
 	}
 }
+
+// TestResolver_InvalidatePlanRefreshesSubscribers verifies the fix for the bug
+// where editing a plan's entitlements left every subscriber on stale data until
+// the 24h TTL lapsed. One plan-level bump must invalidate all of them.
+func TestResolver_InvalidatePlanRefreshesSubscribers(t *testing.T) {
+	src := newSource()
+	cache := infraRedis.NewCacheEngine(nil) // in-memory backend
+	r := NewResolver(src, cache)
+	ctx := context.Background()
+
+	// Two users on the same plan.
+	u1, u2 := uuid.New(), uuid.New()
+	if _, err := r.Resolve(ctx, u1); err != nil {
+		t.Fatalf("resolve u1: %v", err)
+	}
+	if _, err := r.Resolve(ctx, u2); err != nil {
+		t.Fatalf("resolve u2: %v", err)
+	}
+	callsAfterWarm := src.calls
+
+	// The plan's features change (e.g. super admin disables OCR).
+	src.features = map[string]bool{"ai_chat": true, "ocr_receipt": false}
+	r.InvalidatePlan(ctx, src.plan.ID.String())
+
+	for _, u := range []uuid.UUID{u1, u2} {
+		got, err := r.Resolve(ctx, u)
+		if err != nil {
+			t.Fatalf("re-resolve %s: %v", u, err)
+		}
+		if got.Feature("ocr_receipt") {
+			t.Fatalf("user %s still sees stale entitlement after plan edit", u)
+		}
+	}
+	if src.calls <= callsAfterWarm {
+		t.Fatal("plan invalidation must force a re-resolve for affected users")
+	}
+}
+
+// TestResolver_PlanVersionRecorded verifies the resolved payload carries the
+// plan version it was built against, which is what makes the staleness check
+// possible on a cache hit.
+func TestResolver_PlanVersionRecorded(t *testing.T) {
+	src := newSource()
+	cache := infraRedis.NewCacheEngine(nil)
+	r := NewResolver(src, cache)
+	ctx := context.Background()
+
+	// Bump the plan version once, then resolve: the payload must record it.
+	r.InvalidatePlan(ctx, src.plan.ID.String())
+
+	res, err := r.Resolve(ctx, uuid.New())
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if res.PlanID == "" {
+		t.Fatal("resolved payload must carry the plan id")
+	}
+	if res.PlanVersion == 0 {
+		t.Fatalf("plan version not recorded (got %d)", res.PlanVersion)
+	}
+}

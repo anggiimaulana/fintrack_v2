@@ -14,12 +14,17 @@ import (
 // Resolved is the effective entitlement for a user.
 type Resolved struct {
 	UserID   uuid.UUID        `json:"user_id"`
+	PlanID   string           `json:"plan_id,omitempty"`
 	PlanCode string           `json:"plan_code"`
 	PlanName string           `json:"plan_name"`
 	Status   string           `json:"status"`
 	Features map[string]bool  `json:"features"`
 	Limits   map[string]int64 `json:"limits"`
-	Version  int64            `json:"version"`
+	// Version is the user's entitlement version at resolve time.
+	Version int64 `json:"version"`
+	// PlanVersion is the plan's version this payload was built against; a
+	// mismatch on read means the plan was edited and the payload is stale.
+	PlanVersion int64 `json:"plan_version,omitempty"`
 }
 
 // Feature reports whether a feature is enabled.

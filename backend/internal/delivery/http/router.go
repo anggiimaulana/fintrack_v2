@@ -13,6 +13,7 @@ import (
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
+	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/usecase"
 )
 
@@ -85,6 +86,7 @@ func SetupRouter(
 	reportUC *usecase.ReportUsecase,
 	authUC *usecase.AuthUsecase,
 	entitlementH *handler.EntitlementHandler,
+	realtimeH *realtime.Handler,
 	paymentH *handler.PaymentHandler,
 	superAdminH *admin.Handler,
 	roleResolver middleware.RoleResolver,
@@ -151,6 +153,11 @@ func SetupRouter(
 		{
 			protected.GET("/me", ah.GetProfile)
 			protected.PUT("/me", ah.UpdateProfile)
+			// Realtime SSE stream. Registered outside the cached group: a
+			// long-lived stream must never be wrapped in the 30s response cache.
+			if realtimeH != nil {
+				protected.GET("/realtime/stream", realtimeH.Stream)
+			}
 			if entitlementH != nil {
 				protected.GET("/me/entitlements", entitlementH.Me)
 			}

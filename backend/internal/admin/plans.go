@@ -192,6 +192,10 @@ func (h *Handler) CreatePlan(c *gin.Context) {
 		return
 	}
 
+	// A new plan may be assigned to users immediately; clear any cached
+	// entitlement state keyed to it.
+	h.invalidatePlan(ctx, id)
+
 	h.audit(c, "create", "plan", id.String(), nil,
 		map[string]any{"code": req.Code, "name": req.Name, "price_monthly_idr": monthly})
 	response.Created(c, "Paket berhasil dibuat", gin.H{"id": id})
@@ -272,6 +276,11 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 		return
 	}
 
+	// Editing entitlements/limits affects every subscriber of this plan.
+	// A single O(1) version bump invalidates them all, instead of leaving every
+	// user on stale entitlements until the 24h TTL lapses.
+	h.invalidatePlan(ctx, id)
+
 	after, _ := h.planSnapshot(ctx, h.svc.pool, id)
 	h.audit(c, "update", "plan", id.String(), before, after)
 	response.OK(c, "Paket berhasil diperbarui", nil)
@@ -318,6 +327,13 @@ func (h *Handler) planSnapshot(ctx contextT, q querier, id uuid.UUID) (map[strin
 	err := q.QueryRow(ctx, `
 		SELECT to_jsonb(p) FROM plans p WHERE id = $1`, id).Scan(&m)
 	return m, err
+}
+
+// invalidatePlan drops cached entitlements for every subscriber of a plan.
+func (h *Handler) invalidatePlan(ctx contextT, planID uuid.UUID) {
+	if h.svc.entInvalidator != nil {
+		h.svc.entInvalidator.InvalidatePlan(ctx, planID.String())
+	}
 }
 
 func applyEntitlements(ctx contextT, tx pgx.Tx, planID uuid.UUID, m map[string]bool) error {

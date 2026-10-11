@@ -15,6 +15,8 @@ type ManualService struct {
 	tx       TxRunner
 	// store persists proof bytes and returns a retrievable URL/path.
 	store ProofStore
+	// emitter publishes realtime domain events (never nil; no-op by default).
+	emitter RealtimeEmitter
 }
 
 // ProofStore persists uploaded proof files.
@@ -24,7 +26,7 @@ type ProofStore interface {
 
 // NewManualService builds the manual service.
 func NewManualService(repo Repository, activate SubscriptionActivator, tx TxRunner, store ProofStore) *ManualService {
-	return &ManualService{repo: repo, activate: activate, tx: tx, store: store}
+	return &ManualService{repo: repo, activate: activate, tx: tx, store: store, emitter: noopEmitter{}}
 }
 
 // UploadProof validates and stores a proof file, then moves the payment to
@@ -65,6 +67,10 @@ func (s *ManualService) UploadProof(ctx context.Context, paymentID, userID uuid.
 	}
 	pay.ProofURL = &url
 	pay.Status = PaymentPendingReview
+
+	// Tell admins there is a transfer to review. Best-effort: a failure here
+	// must not fail the upload (the payment row is already updated).
+	emitManualApprovalNeeded(ctx, s.emitter, pay, "", "")
 	return pay, nil
 }
 
@@ -84,6 +90,7 @@ func (s *ManualService) Reject(ctx context.Context, paymentID uuid.UUID, reason 
 
 func (s *ManualService) review(ctx context.Context, paymentID uuid.UUID, approve bool, reason string) (*Payment, error) {
 	var out *Payment
+	var approved *Payment
 	err := s.tx.RunInTx(ctx, func(txCtx context.Context) error {
 		// Row lock: concurrent admins reviewing the same payment serialize here.
 		// The loser re-reads the committed state and fails with ErrInvalidState.
@@ -114,6 +121,7 @@ func (s *ManualService) review(ctx context.Context, paymentID uuid.UUID, approve
 				}
 			}
 			pay.Status = PaymentSettled
+			approved = pay
 		} else {
 			if err := s.repo.UpdatePaymentStatus(txCtx, pay.ID, PaymentFailed, nil, nil, map[string]any{"rejected": true, "reason": reason}); err != nil {
 				return err
@@ -125,6 +133,10 @@ func (s *ManualService) review(ctx context.Context, paymentID uuid.UUID, approve
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Emitted after commit so no event escapes for a rolled-back approval.
+	if approved != nil {
+		emitPaymentReceived(ctx, s.emitter, approved, "")
 	}
 	return out, nil
 }

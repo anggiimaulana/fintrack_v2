@@ -166,3 +166,48 @@ Bila jaringan klien terputus (misalnya koneksi WiFi tidak stabil atau laptop mem
    - Key: `ft:prod:realtime:buffer:{user_id}` (Redis ZSET dengan score timestamp, TTL 10 menit).
 5. Server mengirimkan kembali seluruh event yang memiliki ID lebih besar dari `Last-Event-ID` secara berurutan (*replay backlog*) sebelum melanjutkan penyiaran pesan baru.
 6. Hal ini menjamin status UI tidak kehilangan event penting (*zero event drop*) selama durasi putus di bawah 10 menit.
+
+---
+
+## 6. Status Implementasi (Slice B, 2026-10-11)
+
+Dokumen di atas adalah spesifikasi; berikut koreksi terhadap kenyataan setelah implementasi.
+
+### 6.1 Koreksi terhadap spesifikasi
+
+| Spesifikasi di atas | Kenyataan di kode | Alasan |
+|---|---|---|
+| Cookie `fintrack_token` | **`ft_at`** (httpOnly, `middleware.AccessCookieName`) | Nama cookie proyek sudah `ft_at`; `AuthMiddleware` sudah membacanya, jadi SSE tidak butuh mekanisme token baru |
+| Channel `realtime:events:*` | **`realtime:u:{userID}`** (per user) + **`realtime:admins`** (satu channel admin) | Event admin (`ai_endpoint_down`, `manual_approval_needed`) tidak tertuju ke satu user. Satu channel admin lebih sederhana daripada publish per-admin |
+| Key buffer `ft:prod:realtime:buffer:{user_id}` (ZSET) | **`realtime:buf:{userID}`** (ZSET, TTL 10 menit, maks 200 entri) | Konsisten dengan namespace cache proyek yang tidak memakai prefix env |
+| Endpoint `/api/v1/realtime/stream` | ✅ sesuai | Didaftarkan di luar grup `cached` agar tidak tersentuh cache 30s |
+| Heartbeat 15s `: ping` | ✅ sesuai | |
+| Resume `Last-Event-ID` | ✅ header **atau** query `last_event_id` | Klien melakukan backoff manual, sehingga `EventSource` yang dibuat ulang tidak lagi mengirim header otomatis |
+| Reconnect exponential backoff | ✅ 1s→2s→4s→8s→16s + jitter | Dikelola manual di `useRealtimeStream` |
+
+### 6.2 `quota_reset` tidak terjadwal
+
+`quota_reset` dipancarkan **hanya** ketika `GetOrCreatePeriod` benar-benar membuat periode baru
+(`LedgerService.OnCycleReset`). **Tidak ada worker rotasi siklus** di codebase — cleaner worker
+hanya melepas reservasi kedaluwarsa. Akibatnya reset terdeteksi saat user berikutnya memakai AI,
+bukan tepat tengah malam tanggal siklus. Worker rotasi terjadwal adalah pekerjaan lanjutan.
+
+### 6.3 Degradasi tanpa Redis
+
+Tanpa `REDIS_URL`: publish jatuh ke hub lokal (single-instance tetap streaming), ring-buffer
+tidak tersedia sehingga resume `Last-Event-ID` dilewati (klien hanya menerima event baru).
+Ini keterbatasan yang didokumentasikan, bukan error.
+
+### 6.4 Valve & batas
+
+- `REALTIME_ENABLED` (default on); `off` → endpoint 503 + publisher no-op.
+- Maksimum **5 koneksi per user**; koneksi ke-6 menutup yang tertua (setiap koneksi memegang
+  satu goroutine + ticker heartbeat).
+- Klien lambat: event di-drop untuk klien itu (buffer penuh) daripada memblokir broadcaster;
+  klien menyusul pada fetch berikutnya.
+
+### 6.5 Bukan tujuan
+
+Tidak ada inbox notifikasi durabel. SSE adalah akselerator UX, bukan sumber kebenaran: bila
+admin offline, `manual_approval_needed` hilang, tetapi datanya tetap di DB dan muncul saat
+halaman review dibuka.

@@ -5,12 +5,17 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
-> **Status saat ini: SLICE A SELESAI (2/18).** Sisa 16 task masih ⬜. (Tanda ✅ pada tabel
+> **Status saat ini: SLICE A + B SELESAI (8/18).** Sisa 10 task masih ⬜. (Tanda ✅ pada tabel
 > "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
 >
 > **Slice A — Entitlement & RBAC Rollout (2026-10-11)** mencakup TASK-P07-001 & TASK-P07-002
 > plus mirror frontend. Lihat `docs/superpowers/specs/2026-10-11-p07-entitlement-rollout-design.md`
 > dan `docs/superpowers/plans/2026-10-11-p07-entitlement-rollout-plan.md`.
+>
+> **Slice B — Realtime SSE & Cache Invalidation (2026-10-11)** mencakup TASK-P07-004 … TASK-P07-009
+> plus perbaikan tiga cacat invalidasi entitlement. Lihat
+> `docs/superpowers/specs/2026-10-11-p07-realtime-sse-design.md` dan
+> `docs/superpowers/plans/2026-10-11-p07-realtime-sse-plan.md`.
 
 ---
 
@@ -21,12 +26,12 @@ Status Legend:
 | **TASK-P07-001** | Middleware Entitlement & Limit di Backend Go | Backend Dev 1 | H-01 | ✅ | **Slice A.** Middleware sudah ada sejak P04 tetapi **tidak pernah dikonstruksi** → 0/63 rute ter-gate. Kini dikonstruksi di `cmd/server/main.go`, disuntikkan via `RouterConfig`, plus `upgrade_url` + valve `ENTITLEMENT_ENFORCEMENT` + 3 usage resolver. Bukti: `middleware/entitlement_test.go` (+6 test), `tests/entitlement_e2e_test.go`. |
 | **TASK-P07-002** | Pasang Proteksi Entitlement ke 28 Endpoint Legacy | Backend Dev 1 & 2 | H-02 | ✅ | **Slice A.** 6 rute nyata ter-gate (bukan 28 — dokumen lama menyebut endpoint yang belum dibangun). Rute baca dibiarkan. 7 kunci seed belum dapat ditegakkan (tercatat di `teknis/rbac-rollout.md` §3.4). Uji mutasi membuktikan suite gagal bila gate dilepas. |
 | **TASK-P07-003** | Migrasi globalCache In-Memory ke Redis Berversi | Backend Dev 2 | H-01 | ⬜ | Arsitektur namespace `ft:{env}:{module}:{entity}:{id}` |
-| **TASK-P07-004** | Modul Hub SSE `internal/realtime/` | Backend Dev 3 | H-02 | ⬜ | Handler streaming HTTP/2 SSE |
-| **TASK-P07-005** | Jembatan Redis Pub/Sub Distribusi SSE Multi-Pod | Backend Dev 3 | H-03 | ⬜ | Channel `realtime:events:{channel}` |
-| **TASK-P07-006** | Resiliensi SSE: Cookie Auth, 15s Heartbeat, Resume | Backend Dev 3 | H-04 | ⬜ | Validasi ring-buffer redis & `Last-Event-ID` |
-| **TASK-P07-007** | Standardisasi Skema JSON Event Domain SSE | Backend Lead | H-04 | ⬜ | Kontrak `contracts/events.go` |
-| **TASK-P07-008** | Frontend Hook `useRealtimeStream` & Auto-Reconnect | Frontend Dev 3 | H-06 | ⬜ | Exponential backoff jitter & cookie auth |
-| **TASK-P07-009** | Registri Query Key & Surgical Cache Invalidation | Frontend Lead | H-06 | ⬜ | Mengeliminasi invalidasi global tanpa filter |
+| **TASK-P07-004** | Modul Hub SSE `internal/realtime/` | Backend Dev 3 | H-02 | ✅ | **Slice B.** Modul `internal/realtime/` (hub, client, buffer, publisher, subscriber, handler). Endpoint `GET /api/v1/realtime/stream`, auth cookie `ft_at`, header SSE benar, batas 5 koneksi/user. |
+| **TASK-P07-005** | Jembatan Redis Pub/Sub Distribusi SSE Multi-Pod | Backend Dev 3 | H-03 | ✅ | **Slice B.** Fan-out Redis: channel `realtime:u:{id}` + `realtime:admins`; `SubscribePattern` baru di pubsub; degradasi ke hub lokal bila Redis mati. |
+| **TASK-P07-006** | Resiliensi SSE: Cookie Auth, 15s Heartbeat, Resume | Backend Dev 3 | H-04 | ✅ | **Slice B.** Heartbeat `: ping` 15s, resume `Last-Event-ID` (header atau query `last_event_id`), ring-buffer Redis `realtime:buf:{id}` TTL 10 menit. **Temuan:** header tidak di-flush saat connect → klien menunggu 15s; diperbaiki, waktu test integrasi turun 91.7s → 2.9s. |
+| **TASK-P07-007** | Standardisasi Skema JSON Event Domain SSE | Backend Lead | H-04 | ✅ | **Slice B.** Kontrak di `pkg/contracts/events.go` (paket daun, tanpa impor internal) + 5 payload. Producer nyata: payment webhook/approve, upload bukti, perubahan langganan/plan, siklus token, breaker gateway. |
+| **TASK-P07-008** | Frontend Hook `useRealtimeStream` & Auto-Reconnect | Frontend Dev 3 | H-06 | ✅ | **Slice B.** `hooks/use-realtime-stream.ts` + `providers/realtime-provider.tsx`. Backoff manual 1s→16s + jitter; `last_event_id` sebagai query param karena EventSource yang dibuat ulang tidak mengirim header otomatis. |
+| **TASK-P07-009** | Registri Query Key & Surgical Cache Invalidation | Frontend Lead | H-06 | ✅ | **Slice B.** `lib/realtime-dispatcher.ts` memetakan event ke query key NYATA (dokumen memakai `billing.*` yang tidak ada). Test memastikan tidak ada `invalidateQueries` tanpa key. |
 | **TASK-P07-010** | Optimistic Updates Mutasi Transaksi & Anggaran | Frontend Dev 1 & 2 | H-07 | ⬜ | Rollback rapi saat terjadi error 409/429. **Sebagian oleh Slice A**: handler error 402/403 entitlement terpusat (`lib/entitlement-errors.ts`) + toast upgrade; optimistic update penuh belum. |
 | **TASK-P07-011** | Standardisasi Komponen `<DataTable>` TanStack v8 | Frontend Dev 1 | H-01 | ⬜ | Sinkronisasi dua arah ke URL search params |
 | **TASK-P07-012** | Refactor Seluruh Halaman List ke `<DataTable>` | Frontend Dev 1 & 2 | H-04 | ⬜ | Halaman transaksi, anggaran, kategori |
@@ -94,3 +99,29 @@ Status Legend:
   - **Efek yang perlu diketahui:** user dengan transaksi sudah di atas batas Free (mis. user demo
     479 vs 100) akan ditolak pada `POST /transactions`; rute baca tetap terbuka. Ini enforcement
     yang benar, valve tersedia bila mengganggu.
+
+- **2026-10-11 — Slice B (Realtime SSE & Cache Invalidation) SELESAI.** TASK-P07-004 … TASK-P07-009 ✅.
+  - **Transport:** modul `internal/realtime/` (hub, client, buffer, publisher, subscriber, handler).
+    Endpoint `GET /api/v1/realtime/stream` di luar grup `cached`; auth memakai `AuthMiddleware`
+    yang sudah ada (cookie `ft_at`). Heartbeat 15s; resume `Last-Event-ID` (header atau query).
+  - **Fan-out:** channel `realtime:u:{userID}` untuk event user dan `realtime:admins` untuk event
+    admin. Tanpa Redis, publish jatuh ke hub lokal (single-instance tetap jalan).
+  - **Lima producer nyata:** `payment_received` (webhook settled + approve manual),
+    `manual_approval_needed` (upload bukti), `plan_updated` (perubahan langganan/plan),
+    `quota_reset` (periode token baru dibuat), `ai_endpoint_down` (circuit breaker terbuka).
+  - **Frontend:** dispatcher murni + hook `EventSource` dengan backoff manual 1s→16s + jitter +
+    provider yang memasang stream hanya saat terautentikasi.
+  - **Bug yang ditemukan & diperbaiki:**
+    1. **Header SSE tidak di-flush saat connect** → klien menunggu sampai heartbeat pertama
+       (15s) sebelum melihat stream terbuka; `onopen` browser juga tidak menyala. Terdeteksi dari
+       durasi test integrasi yang kelipatan tepat 15s (91.7s → 2.9s setelah perbaikan).
+    2. **Tiga cacat invalidasi entitlement** (4a/4b/4c) — lihat `teknis/cache-invalidation.md` §7.2.
+       Yang paling berdampak: mengubah fitur sebuah plan **tidak menginvalidasi apa pun**, jadi
+       semua subscriber memakai entitlement basi sampai 24 jam.
+  - **Bukti:** `go vet`/`go test`/`go build` hijau; `tests/realtime_e2e_test.go` 6 skenario lewat
+    router + Redis nyata (auth 401, disabled 503, delivery, isolasi antar user, event admin tidak
+    bocor ke user biasa, resume backlog); uji mutasi membuktikan test invalidasi plan menangkap
+    regresi. Frontend: `pnpm lint` 0 error, `pnpm build` hijau, `pnpm test` 81 lolos (dari 66).
+  - **Gap yang dicatat (bukan dikerjakan di sini):** reset kuota tidak terjadwal (lazy saat
+    pemakaian AI berikutnya — tidak ada worker rotasi siklus); tidak ada inbox notifikasi durabel.
+  - **Valve:** `REALTIME_ENABLED` (default on). Batas 5 koneksi/user.

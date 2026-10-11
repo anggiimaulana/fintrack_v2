@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/internal/admin"
+	"github.com/fintrack/backend/internal/aigateway/breaker"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
@@ -28,8 +29,10 @@ import (
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/usecase"
+	"github.com/fintrack/backend/pkg/contracts"
 	"github.com/fintrack/backend/pkg/logger"
 )
 
@@ -140,9 +143,35 @@ func main() {
 	defer stopKillSwitchWatch()
 
 	// Centralized AI gateway (P03). Attached to the AI usecase when enabled.
-	aiGateway := gateway.New(aiGatewayRepo, gateway.Config{
+	// Realtime SSE (P07 slice B): hub for local streams, Redis pub/sub for
+	// cross-instance fan-out, ring-buffer for Last-Event-ID resume.
+	realtimeHub := realtime.NewHub()
+	realtimePubSub := infraRedis.NewPubSub(redisClient)
+	realtimeBuffer := realtime.NewBuffer(redisClient)
+	realtimePublisher := realtime.NewPublisher(realtimePubSub, realtimeHub, realtimeBuffer)
+	realtimeHandler := realtime.NewHandler(realtimeHub, realtimeBuffer)
+	stopRealtimeSub := realtime.NewSubscriber(realtimePubSub, realtimeHub).Start(bgCtx)
+	defer stopRealtimeSub()
+	defer realtimeHub.CloseAll()
+
+	var aiGateway *gateway.Service
+	aiGateway = gateway.New(aiGatewayRepo, gateway.Config{
 		EncryptionKey: encryptionKey,
 		KillSwitch:    func(uc domain.UseCase) bool { return killSwitch.Enabled(string(uc)) },
+		Breaker: breaker.Config{
+			OnStateChange: func(endpointID string, from, to breaker.State) {
+				if to != breaker.StateOpen {
+					return
+				}
+				realtimePublisher.PublishAdmins(bgCtx, contracts.NewEvent(
+					contracts.EventAIEndpointDown, time.Now().Unix(),
+					contracts.AIEndpointDownPayload{
+						EndpointID:   endpointID,
+						FailureCount: aiGateway.Breaker().Failures(endpointID),
+						Status:       string(to),
+					}))
+			},
+		},
 	})
 	healthChecker := gateway.NewHealthChecker(aiGatewayRepo, gateway.HealthConfig{Interval: 60 * time.Second, Timeout: 5 * time.Second})
 	healthChecker.Start(bgCtx)
@@ -226,7 +255,6 @@ func main() {
 	entHandler := handler.NewEntitlementHandler(entResolver)
 	entBroadcaster := entitlement.NewBroadcaster(infraRedis.NewPubSub(redisClient), entResolver)
 	stopEntSubscriber := entBroadcaster.StartSubscriber(bgCtx)
-	_ = entBroadcaster // used by P05/P06 on plan changes
 	defer stopEntSubscriber()
 
 	// Payments & billing (P05).
@@ -247,6 +275,9 @@ func main() {
 	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, nil)
 	payAdmin := payment.NewAdminService(payManual)
 	payHandler := handler.NewPaymentHandler(payWebhook).WithManual(payManual).WithAdmin(payAdmin)
+	// Realtime producers (P07 slice B).
+	payWebhook.SetEmitter(realtimePublisher)
+	payManual.SetEmitter(realtimePublisher)
 
 	// Dunning & grace workers.
 	dunningWorker := payment.NewDunningWorker(paymentRepo, nil, time.Hour)
@@ -289,6 +320,8 @@ func main() {
 		admin.WithFeatureFlags(flagSvc),
 		admin.WithEncryptionKey(encryptionKey),
 		admin.WithCache(cacheEngine),
+		admin.WithEntitlementInvalidator(entBroadcaster),
+		admin.WithRealtimeEmitter(realtimePublisher),
 	)
 	superAdminH := admin.NewHandler(adminSvc)
 	adminRoleResolver := admin.NewRoleResolver(pool, cacheEngine)
@@ -306,6 +339,7 @@ func main() {
 		reportUC,
 		authUC,
 		entHandler,
+		realtimeHandler,
 		payHandler,
 		superAdminH,
 		adminRoleResolver,

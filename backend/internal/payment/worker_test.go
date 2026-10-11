@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/contracts"
 )
 
 // recNotifier captures notifications.
@@ -102,12 +104,12 @@ func TestGraceWorker_Transitions(t *testing.T) {
 	}
 }
 
-// TestRealtimePublisher_Disabled verifies graceful no-op without Redis.
-func TestRealtimePublisher_Disabled(t *testing.T) {
-	p := NewRealtimePublisher(nil)
-	if err := p.PublishPaymentSettled(context.Background(), "u1", PaymentEvent{AmountIDR: 100}); err == nil {
-		t.Fatal("expected error when pub/sub disabled")
-	}
+// TestNoopEmitter_IsSafe verifies emitting without a wired transport is a no-op
+// (the default state in tests and when REALTIME_ENABLED=off).
+func TestNoopEmitter_IsSafe(t *testing.T) {
+	var e RealtimeEmitter = noopEmitter{}
+	e.PublishUser(context.Background(), uuid.New(), contracts.Event{Event: contracts.EventPaymentReceived})
+	e.PublishAdmins(context.Background(), contracts.Event{Event: contracts.EventManualApprovalNeeded})
 }
 
 // TestAuditInterceptor_NilSafe verifies nil recorder is safe.

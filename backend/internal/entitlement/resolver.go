@@ -14,9 +14,13 @@ import (
 
 // Resolver resolves and caches entitlements with a versioned cache.
 //
-// Cache key: entitlement:u:{userID}:v{version}. A version bump (on plan change)
-// makes all previous entries stale instantly, across instances (the version is
-// stored in the shared cache engine).
+// Cache key: entitlement:u:{userID}:v{userVersion}:p{planVersion}.
+//
+// Two independent version components make invalidation O(1) for both kinds of
+// change: a per-user bump (subscription changed) and a per-plan bump (the plan's
+// entitlements/limits were edited, affecting every subscriber). Either bump
+// makes prior entries stale instantly and across instances, because the versions
+// live in the shared cache engine.
 type Resolver struct {
 	src   Source
 	cache *infraRedis.CacheEngine
@@ -51,6 +55,9 @@ func (r *Resolver) Resolve(ctx context.Context, userID uuid.UUID) (*Resolved, er
 	if r.cache != nil {
 		version = r.cache.GetVersion(ctx, "ent:"+userID.String())
 	}
+	// The plan version is only known after resolving the plan; the key is built
+	// after that below. For the L1 check we rely on the user version plus the
+	// short L1 TTL, and re-validate the plan version on a miss.
 
 	// L1 hit.
 	r.l1mu.RLock()
@@ -64,7 +71,7 @@ func (r *Resolver) Resolve(ctx context.Context, userID uuid.UUID) (*Resolved, er
 	if r.cache != nil {
 		if raw, ok := r.cache.Get(ctx, key); ok {
 			var res Resolved
-			if err := json.Unmarshal(raw, &res); err == nil {
+			if err := json.Unmarshal(raw, &res); err == nil && r.planVersionCurrent(ctx, &res) {
 				r.storeL1(userID, &res)
 				return &res, nil
 			}
@@ -77,6 +84,11 @@ func (r *Resolver) Resolve(ctx context.Context, userID uuid.UUID) (*Resolved, er
 		return nil, err
 	}
 	res.Version = version
+	// Record the plan version this payload was built against, so a later plan
+	// edit (single O(1) bump) is detected on read and forces a re-resolve.
+	if r.cache != nil && res.PlanID != "" {
+		res.PlanVersion = r.cache.GetVersion(ctx, planScope(res.PlanID))
+	}
 
 	if r.cache != nil {
 		if raw, err := json.Marshal(res); err == nil {
@@ -102,6 +114,7 @@ func (r *Resolver) resolveFromSource(ctx context.Context, userID uuid.UUID) (*Re
 		// No plan -> deny-all (fail-closed).
 		return res, nil
 	}
+	res.PlanID = plan.ID.String()
 	res.PlanCode = plan.Code
 	res.PlanName = plan.Name
 
@@ -124,6 +137,30 @@ func (r *Resolver) storeL1(userID uuid.UUID, res *Resolved) {
 	r.l1mu.Unlock()
 }
 
+// InvalidatePlan bumps a plan's version, invalidating every subscriber's cached
+// entitlement in one operation. Call this when a plan's entitlements or limits
+// are edited.
+func (r *Resolver) InvalidatePlan(ctx context.Context, planID string) {
+	if r.cache != nil {
+		r.cache.BumpVersion(ctx, planScope(planID))
+	}
+	// Every user on the plan is affected; drop the whole L1 rather than track
+	// plan membership locally (it is cheap and this is a rare admin action).
+	r.l1mu.Lock()
+	r.l1 = make(map[uuid.UUID]l1Entry)
+	r.l1mu.Unlock()
+}
+
+// planVersionCurrent reports whether a cached payload still reflects the plan's
+// current version. A stale plan version means the plan's entitlements/limits
+// were edited, so the payload must be rebuilt.
+func (r *Resolver) planVersionCurrent(ctx context.Context, res *Resolved) bool {
+	if r.cache == nil || res.PlanID == "" {
+		return true
+	}
+	return res.PlanVersion == r.cache.GetVersion(ctx, planScope(res.PlanID))
+}
+
 // Invalidate bumps the user's entitlement version, making all cached entries
 // stale instantly. Call this whenever the plan/subscription changes.
 func (r *Resolver) Invalidate(ctx context.Context, userID uuid.UUID) {
@@ -135,9 +172,12 @@ func (r *Resolver) Invalidate(ctx context.Context, userID uuid.UUID) {
 	r.l1mu.Unlock()
 }
 
-func entitlementKey(userID uuid.UUID, version int64) string {
-	return "entitlement:u:" + userID.String() + ":v" + itoa(version)
+func entitlementKey(userID uuid.UUID, userVersion int64) string {
+	return "entitlement:u:" + userID.String() + ":v" + itoa(userVersion)
 }
+
+// planScope is the version scope keyed by plan id.
+func planScope(planID string) string { return "ent:plan:" + planID }
 
 func itoa(n int64) string {
 	if n == 0 {

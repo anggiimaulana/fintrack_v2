@@ -4,6 +4,63 @@
 
 ---
 
+## 2026-10-11 — P07 Slice B: Realtime SSE + perbaikan 3 cacat invalidasi (1 bug koneksi)
+
+Slice kedua P07. Membangun transport SSE dari nol dan menutup tiga cacat invalidasi
+entitlement yang membuat perubahan paket baru terasa setelah 24 jam.
+
+### Perubahan
+- **Modul `backend/internal/realtime/`** (baru): `hub.go` (registry koneksi, batas 5/user,
+  eviction terlama, cleanup saat ctx cancel), `buffer.go` (ring-buffer Redis ZSET
+  `realtime:buf:{id}`, TTL 10 menit), `publisher.go` (+`redis_sub`), `handler.go`.
+- **Kontrak event** di `pkg/contracts/events.go` — paket daun, tanpa impor internal, agar
+  producer di modul mana pun bisa memancarkan event tanpa siklus impor.
+- **Endpoint** `GET /api/v1/realtime/stream` (di luar grup `cached`); auth memakai
+  `AuthMiddleware` yang sudah ada (cookie `ft_at`), bukan mekanisme token baru.
+- **Fan-out Redis**: channel `realtime:u:{userID}` + `realtime:admins`; `SubscribePattern`
+  ditambahkan ke pubsub. Tanpa Redis, publish jatuh ke hub lokal.
+- **Lima producer**: `payment_received`, `manual_approval_needed`, `plan_updated`,
+  `quota_reset`, `ai_endpoint_down`. Hook `breaker.Config.OnStateChange` baru, di-invoke
+  **setelah** lock breaker dilepas.
+- **Frontend**: `lib/realtime-dispatcher.ts`, `hooks/use-realtime-stream.ts`,
+  `providers/realtime-provider.tsx`. Backoff manual 1s→16s + jitter (opsi A), `last_event_id`
+  sebagai query param karena `EventSource` yang dibuat ulang tidak mengirim header otomatis.
+- **Valve** `REALTIME_ENABLED` (default on).
+
+### Bug yang ditemukan & diperbaiki
+1. **Header SSE tidak di-flush saat connect.** `c.Status(200)` tidak mengirim header sampai
+   penulisan pertama, jadi klien menunggu sampai heartbeat pertama — **15 detik** — sebelum
+   melihat stream terbuka; `onopen` di browser juga tidak menyala. Ditemukan dari durasi test
+   integrasi yang kelipatan tepat 15s. Setelah `flusher.Flush()`: **91.7s → 2.9s**.
+2. **Invalidasi entitlement dari jalur admin memakai scope cache yang salah** (`"u:"` vs
+   `"ent:"`), sehingga perubahan paket per-user tidak invalid.
+3. **Mengubah fitur/limit sebuah plan tidak menginvalidasi apa pun** → seluruh subscriber plan
+   memakai entitlement basi sampai 24 jam. Diperbaiki dengan komponen versi plan pada kunci
+   cache: satu bump `ent:plan:{id}` menginvalidasi semua subscriber, O(1).
+4. **`entBroadcaster` tidak pernah dipanggil** di `main.go` → tidak ada invalidasi lintas-instance.
+
+### Verifikasi
+- Backend: `go vet ./...` bersih, `go test ./...` hijau, `go build ./...` hijau.
+- Integrasi: `tests/realtime_e2e_test.go` — 6 skenario lewat router + Redis nyata (401 tanpa
+  token, 503 saat disabled, delivery event, isolasi antar user, event admin tidak bocor ke user
+  biasa, resume backlog via `Last-Event-ID`).
+- **Uji mutasi** pada perbaikan 4b: pemeriksaan versi plan dilepas → suite gagal
+  ("still sees stale entitlement after plan edit") → terbukti menangkap regresi.
+- Unit test baru: hub (isolasi, eviction, cleanup, slow-client), breaker hook (transisi,
+  **anti-deadlock** — callback memanggil `State()` di dalam lock akan hang), invalidasi plan.
+- Frontend: `pnpm lint` 0 error (62 warning = baseline), `pnpm build` hijau, `pnpm test`
+  81 lolos (dari 66).
+
+### Catatan
+- **Gap:** `quota_reset` tidak terjadwal. Tidak ada worker rotasi siklus di codebase (cleaner
+  hanya melepas reservasi kedaluwarsa); event dipancarkan saat periode baru benar-benar dibuat,
+  yaitu ketika user berikutnya memakai AI. Siklus terjadwal = pekerjaan lanjutan.
+- Tidak ada inbox notifikasi durabel: SSE akselerator UX, bukan sumber kebenaran.
+- `LedgerService` ternyata **tidak dikonstruksi di `main.go`** (hanya dipakai test/cleaner);
+  jalur produksi yang memanggil `Reserve` belum ada. Dicatat sebagai temuan, bukan dikerjakan.
+
+---
+
 ## 2026-10-11 — P07 Slice A: Rollout entitlement & RBAC + 3 bug ditemukan
 
 Slice pertama P07 (Rollout RBAC/Realtime). Hasil sampingan penting: implementasi ini menemukan
