@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict gumYbsqnqpPCfHc5aqxeEJUVtipNQ0Tp32XC64lLbc7AjR2W66TPrkejMoUvD71
+\restrict 97av16SVrYvbaW6sFiuk9dAz0ddgkjFMKJ5FrUwzxS9GTsGuOM90jK4VxDUF2g9
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg12+2)
--- Dumped by pg_dump version 18.2
+-- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg12+2)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -34,6 +34,38 @@ COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access met
 
 
 --
+-- Name: audit_logs_block_mutation(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.audit_logs_block_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'table audit_logs is append-only (no % allowed)', TG_OP
+        USING ERRCODE = 'restrict_violation';
+END;
+$$;
+
+
+ALTER FUNCTION public.audit_logs_block_mutation() OWNER TO postgres;
+
+--
+-- Name: token_ledger_block_mutation(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.token_ledger_block_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'table token_ledger is append-only (no % allowed)', TG_OP
+        USING ERRCODE = 'restrict_violation';
+END;
+$$;
+
+
+ALTER FUNCTION public.token_ledger_block_mutation() OWNER TO postgres;
+
+--
 -- Name: update_updated_at(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -54,6 +86,32 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: ai_endpoints; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.ai_endpoints (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    base_url text NOT NULL,
+    api_key_encrypted text,
+    provider text DEFAULT '9router'::text NOT NULL,
+    priority integer DEFAULT 1 NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    health text DEFAULT 'unknown'::text NOT NULL,
+    last_check_at timestamp with time zone,
+    last_error text,
+    modalities text[] DEFAULT '{chat,vision,voice,embedding,reasoning}'::text[] NOT NULL,
+    weight integer DEFAULT 100 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ai_endpoints_health_check CHECK ((health = ANY (ARRAY['healthy'::text, 'unhealthy'::text, 'unknown'::text]))),
+    CONSTRAINT ai_endpoints_status_check CHECK ((status = ANY (ARRAY['active'::text, 'degraded'::text, 'inactive'::text, 'suspended'::text])))
+);
+
+
+ALTER TABLE public.ai_endpoints OWNER TO postgres;
+
+--
 -- Name: ai_providers; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -69,6 +127,49 @@ CREATE TABLE public.ai_providers (
 
 
 ALTER TABLE public.ai_providers OWNER TO postgres;
+
+--
+-- Name: ai_routes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.ai_routes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    use_case text NOT NULL,
+    endpoint_id uuid NOT NULL,
+    model text DEFAULT ''::text NOT NULL,
+    combo text DEFAULT 'default'::text NOT NULL,
+    priority integer DEFAULT 1 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    timeout_ms integer DEFAULT 30000 NOT NULL,
+    max_retries integer DEFAULT 2 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ai_routes_use_case_check CHECK ((use_case = ANY (ARRAY['chat'::text, 'vision'::text, 'voice'::text, 'embedding'::text, 'reasoning'::text])))
+);
+
+
+ALTER TABLE public.ai_routes OWNER TO postgres;
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    actor_id uuid,
+    action text NOT NULL,
+    entity text NOT NULL,
+    entity_id text,
+    before jsonb,
+    after jsonb,
+    ip text,
+    user_agent text,
+    request_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.audit_logs OWNER TO postgres;
 
 --
 -- Name: chat_messages; Type: TABLE; Schema: public; Owner: postgres
@@ -146,6 +247,27 @@ CREATE TABLE public.expense_subcategories (
 ALTER TABLE public.expense_subcategories OWNER TO postgres;
 
 --
+-- Name: feature_flags; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.feature_flags (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    is_enabled boolean DEFAULT false NOT NULL,
+    rollout integer DEFAULT 0 NOT NULL,
+    rules jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT feature_flags_rollout_check CHECK (((rollout >= 0) AND (rollout <= 100)))
+);
+
+
+ALTER TABLE public.feature_flags OWNER TO postgres;
+
+--
 -- Name: gemini_api_keys; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -166,6 +288,8 @@ CREATE TABLE public.gemini_api_keys (
     last_error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_archived boolean DEFAULT true NOT NULL,
+    archived_at timestamp with time zone DEFAULT now(),
     CONSTRAINT gemini_api_keys_status_check CHECK ((status = ANY (ARRAY['active'::text, 'quota_exceeded'::text, 'error'::text, 'inactive'::text])))
 );
 
@@ -191,6 +315,171 @@ CREATE TABLE public.income_categories (
 
 
 ALTER TABLE public.income_categories OWNER TO postgres;
+
+--
+-- Name: invoice_counters; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.invoice_counters (
+    day date NOT NULL,
+    seq bigint DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE public.invoice_counters OWNER TO postgres;
+
+--
+-- Name: invoices; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.invoices (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    invoice_number character varying(64) NOT NULL,
+    user_id uuid NOT NULL,
+    subscription_id uuid,
+    subtotal_idr bigint DEFAULT 0 NOT NULL,
+    tax_idr bigint DEFAULT 0 NOT NULL,
+    total_idr bigint DEFAULT 0 NOT NULL,
+    status character varying(16) DEFAULT 'issued'::character varying NOT NULL,
+    notes text,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    due_at timestamp with time zone,
+    paid_at timestamp with time zone,
+    voided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT invoices_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'issued'::character varying, 'paid'::character varying, 'past_due'::character varying, 'voided'::character varying])::text[]))),
+    CONSTRAINT invoices_subtotal_idr_check CHECK ((subtotal_idr >= 0)),
+    CONSTRAINT invoices_tax_idr_check CHECK ((tax_idr >= 0)),
+    CONSTRAINT invoices_total_idr_check CHECK ((total_idr >= 0))
+);
+
+
+ALTER TABLE public.invoices OWNER TO postgres;
+
+--
+-- Name: payment_events; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.payment_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    payment_id uuid NOT NULL,
+    actor_id uuid,
+    event text NOT NULL,
+    reason text,
+    amount_idr bigint DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.payment_events OWNER TO postgres;
+
+--
+-- Name: payments; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.payments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    invoice_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    gateway character varying(32) NOT NULL,
+    gateway_ref character varying(128),
+    amount_idr bigint NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    payment_method character varying(64),
+    proof_url text,
+    idempotency_key character varying(128) NOT NULL,
+    payload_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamp with time zone,
+    review_reason text,
+    refund_amount_idr bigint DEFAULT 0 NOT NULL,
+    refund_reason text,
+    refund_ref character varying(128),
+    refunded_at timestamp with time zone,
+    CONSTRAINT payments_amount_idr_check CHECK ((amount_idr > 0)),
+    CONSTRAINT payments_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'pending_review'::character varying, 'settled'::character varying, 'failed'::character varying, 'expired'::character varying, 'refunded'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.payments OWNER TO postgres;
+
+--
+-- Name: plan_entitlements; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.plan_entitlements (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    plan_id uuid NOT NULL,
+    feature_key character varying(64) NOT NULL,
+    is_enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.plan_entitlements OWNER TO postgres;
+
+--
+-- Name: plan_limits; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.plan_limits (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    plan_id uuid NOT NULL,
+    limit_key character varying(64) NOT NULL,
+    limit_value bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.plan_limits OWNER TO postgres;
+
+--
+-- Name: plans; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.plans (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    code character varying(32) NOT NULL,
+    name character varying(64) NOT NULL,
+    description text,
+    price_monthly_idr bigint DEFAULT 0 NOT NULL,
+    price_yearly_idr bigint DEFAULT 0 NOT NULL,
+    billing_period_days integer DEFAULT 30 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    is_public boolean DEFAULT true NOT NULL,
+    fallback_gateway character varying(32) DEFAULT 'midtrans'::character varying NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.plans OWNER TO postgres;
+
+--
+-- Name: pricing_rules; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.pricing_rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    rule_name character varying(64) NOT NULL,
+    base_per_1k_idr bigint DEFAULT 300 NOT NULL,
+    markup_multiplier numeric(6,4) DEFAULT 1.2500 NOT NULL,
+    markup_percent integer DEFAULT 0 NOT NULL,
+    modality_multipliers jsonb DEFAULT '{"chat": 1.0, "voice": 3.0, "vision": 2.5, "embedding": 0.5, "reasoning": 2.0}'::jsonb NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.pricing_rules OWNER TO postgres;
 
 --
 -- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: postgres
@@ -232,6 +521,21 @@ CREATE TABLE public.savings_categories (
 ALTER TABLE public.savings_categories OWNER TO postgres;
 
 --
+-- Name: settings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.settings (
+    key text NOT NULL,
+    value jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    description text DEFAULT ''::text NOT NULL
+);
+
+
+ALTER TABLE public.settings OWNER TO postgres;
+
+--
 -- Name: spk_results; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -248,6 +552,94 @@ CREATE TABLE public.spk_results (
 
 
 ALTER TABLE public.spk_results OWNER TO postgres;
+
+--
+-- Name: subscription_events; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.subscription_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subscription_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    event_type character varying(64) NOT NULL,
+    previous_state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    new_state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    reason text,
+    actor_id uuid,
+    ip_address character varying(45),
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.subscription_events OWNER TO postgres;
+
+--
+-- Name: subscriptions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.subscriptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    plan_id uuid NOT NULL,
+    status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    current_period_start timestamp with time zone NOT NULL,
+    current_period_end timestamp with time zone,
+    cancel_at_period_end boolean DEFAULT false NOT NULL,
+    canceled_at timestamp with time zone,
+    gateway character varying(32) DEFAULT 'manual'::character varying NOT NULL,
+    gateway_subscription_id character varying(128),
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT subscriptions_status_check CHECK (((status)::text = ANY ((ARRAY['trialing'::character varying, 'active'::character varying, 'past_due'::character varying, 'grace'::character varying, 'canceled'::character varying, 'expired'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.subscriptions OWNER TO postgres;
+
+--
+-- Name: token_ledger; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.token_ledger (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    period_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    reservation_id uuid,
+    entry_type character varying(32) NOT NULL,
+    amount bigint NOT NULL,
+    modality character varying(32) DEFAULT 'chat'::character varying NOT NULL,
+    cost_idr bigint DEFAULT 0 NOT NULL,
+    idempotency_key character varying(64) NOT NULL,
+    reference_id character varying(128),
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT token_ledger_entry_type_check CHECK (((entry_type)::text = ANY ((ARRAY['reserve'::character varying, 'commit'::character varying, 'release'::character varying, 'grant'::character varying, 'adjust'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.token_ledger OWNER TO postgres;
+
+--
+-- Name: token_periods; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.token_periods (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    period_start timestamp with time zone NOT NULL,
+    period_end timestamp with time zone NOT NULL,
+    quota_tokens bigint NOT NULL,
+    used_tokens bigint DEFAULT 0 NOT NULL,
+    reserved_tokens bigint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_token_balance CHECK (((used_tokens >= 0) AND (reserved_tokens >= 0)))
+);
+
+
+ALTER TABLE public.token_periods OWNER TO postgres;
 
 --
 -- Name: transaction_embeddings; Type: TABLE; Schema: public; Owner: postgres
@@ -317,11 +709,20 @@ CREATE TABLE public.users (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'user'::text])))
+    CONSTRAINT users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'user'::text, 'super_admin'::text])))
 );
 
 
 ALTER TABLE public.users OWNER TO postgres;
+
+--
+-- Data for Name: ai_endpoints; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.ai_endpoints (id, name, base_url, api_key_encrypted, provider, priority, status, health, last_check_at, last_error, modalities, weight, created_at, updated_at) FROM stdin;
+d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	\N	9router	1	active	unhealthy	2026-10-11 11:07:29.722279+00	Get "http://localhost:20128/v1/models": dial tcp [::1]:20128: connect: connection refused	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-11 11:07:29.722512+00
+\.
+
 
 --
 -- Data for Name: ai_providers; Type: TABLE DATA; Schema: public; Owner: postgres
@@ -339,6 +740,66 @@ b2a23072-dc2e-438b-bff4-015c82b1abbd	qwen	Qwen	t	f	t	2026-06-22 00:53:40.095162+
 b58f8f2c-c59c-4d83-a4cd-a2c3a6d7256a	cohere	Cohere	t	f	t	2026-06-22 00:53:40.095162+00
 faf1a4f2-0491-486f-839c-a00b3842369e	perplexity	Perplexity	t	f	t	2026-06-22 00:53:40.095162+00
 bd49a1ea-e172-4123-bdc0-0d54ca5d72e1	other	Lainnya	t	f	t	2026-06-22 00:53:40.095162+00
+\.
+
+
+--
+-- Data for Name: ai_routes; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.ai_routes (id, use_case, endpoint_id, model, combo, priority, is_active, timeout_ms, max_retries, created_at, updated_at) FROM stdin;
+0f455b17-4680-489b-9619-dff47da78230	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gpt-4o-mini	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+d30b7d9f-b127-4914-9f20-cde39f1d141d	vision	d07ebaae-0344-4fc9-be4c-0446464f9690	gpt-4o-mini	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+1d1c9b51-1ca1-4832-a0b0-2c6cb3044e76	voice	d07ebaae-0344-4fc9-be4c-0446464f9690	whisper-1	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+fd824b61-9246-4c14-97fe-b5ea9657ea76	embedding	d07ebaae-0344-4fc9-be4c-0446464f9690	text-embedding-004	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+401134d9-72ce-4d1f-8171-88c0ed9f345f	reasoning	d07ebaae-0344-4fc9-be4c-0446464f9690	deepseek-r1	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+\.
+
+
+--
+-- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.audit_logs (id, actor_id, action, entity, entity_id, before, after, ip, user_agent, request_id, created_at) FROM stdin;
+3772919e-1da0-4641-b39e-b8d049dcd184	\N	create	test	1	\N	{"a": 1}	\N	\N	\N	2026-10-11 08:25:53.725799+00
+fc6a9432-cf76-4749-938d-c7e7952b9b05	\N	create	test	1	\N	\N	\N	\N	\N	2026-10-11 08:26:00.63625+00
+a5ee9b95-92f1-43d6-856d-10b92615162c	\N	create	itest	audit-itest-3222d916-c4af-4b32-a417-9e9aaaad05a4	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-11 08:28:22.375188+00
+cebc446a-8558-4f1c-854a-712a479b3704	\N	create	itest	audit-itest-fcd68b65-f0d9-473e-a858-ec2420d5828a	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-11 08:29:33.491652+00
+f055cb8a-de8b-4d5c-9e3c-2f166c70eb71	\N	create	foundation_itest	p02-e2e-382896f2-f702-4f8c-a38a-d713655649ed	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-11 08:37:51.309846+00
+63f02877-c586-405a-85d3-e2ad5f9b74fa	\N	create	foundation_itest	p02-e2e-d3139041-d85b-4b6a-acb7-6fc62d5a6014	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-11 08:38:09.862963+00
+e5bb605b-b39d-4a83-b249-be1c75a184ee	\N	create	itest	audit-itest-09f042fe-34e3-4e15-ab87-ac81d163f5f3	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-11 09:23:32.862647+00
+8dcd7c0d-a6d2-4d17-8497-00836334391d	\N	create	foundation_itest	p02-e2e-d3164538-2880-4c3c-b8c9-be10c68fb41e	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-11 09:23:36.520576+00
+5f2cafd6-3e80-4740-89ba-ebf336058622	\N	create	itest	audit-itest-b7c8db46-da26-494f-9a4c-d247b9117165	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-11 09:47:21.848658+00
+02d294a2-cdad-4f3c-9e14-7af31947c13f	\N	create	foundation_itest	p02-e2e-288d2df7-0d1d-4e1c-976c-00111f7e18a1	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-11 09:47:25.700695+00
+8409ccbe-d455-49dd-9fbd-5c54dad86fae	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	bulk	{"tax_rate_percent": 0, "invoice_due_hours": 24, "grace_period_hours": 72, "payment_gateway_default": "manual"}	{"tax_rate_percent": 11, "grace_period_hours": 24}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:29:01.321427+00
+f55cbd6e-4246-4206-a2aa-d24209814d8a	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	bulk	{"tax_rate_percent": 11, "invoice_due_hours": 24, "grace_period_hours": 24, "payment_gateway_default": "manual"}	{"tax_rate_percent": 11, "grace_period_hours": 24}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:34:22.092951+00
+9ac2c951-38d7-4b75-9b30-6bacbaefdeb2	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:34:22.092951+00
+1ce4ef86-0d65-4b85-9d34-35687d603fd7	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:34:22.092951+00
+2505980f-cb3e-414a-ad89-6d7f22380a83	661ae48b-19ed-476e-8fd3-4968fa105c28	approve	payment	91ac63f8-22dd-4fc5-85f2-aed52b54766d	\N	{"status": "settled", "amount_idr": 111000}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:34:58.074251+00
+1f91b965-3b1b-4e51-8fe6-da673d62a5e5	661ae48b-19ed-476e-8fd3-4968fa105c28	reject	payment	2829cb66-acfe-472d-a1ca-93a4fd3e6815	\N	{"reason": "bukti tidak jelas", "status": "failed"}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:35:17.948872+00
+82ade862-ea12-4e75-97ae-e35a0e398cfc	661ae48b-19ed-476e-8fd3-4968fa105c28	refund	payment	91ac63f8-22dd-4fc5-85f2-aed52b54766d	{"refund_amount_idr": 0}	{"reason": "partial", "status": "settled", "refund_amount_idr": 50000}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:35:17.948872+00
+e659f403-d535-4110-ad12-d8cd33d1a94b	661ae48b-19ed-476e-8fd3-4968fa105c28	extend	subscription	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	\N	{"days": 30, "reason": "smoke"}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:35:21.449781+00
+0b263f8f-b980-4852-97ce-65f32dc591a7	661ae48b-19ed-476e-8fd3-4968fa105c28	force_downgrade	subscription	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	{"plan_code": "free"}	{"plan_code": "free"}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:35:21.449781+00
+c484bea2-c5db-4dfe-af3c-975d8a47c6af	661ae48b-19ed-476e-8fd3-4968fa105c28	cancel	subscription	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	\N	{"status": "canceled", "immediate": false, "cancel_at_period_end": true}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:35:21.449781+00
+b2179dc6-bd05-479c-ab7a-3f6c07e44fa4	661ae48b-19ed-476e-8fd3-4968fa105c28	create	plan	2f309db0-c0eb-41e8-ba04-2b2372bd2179	\N	{"code": "smoke_plan", "name": "Smoke Plan", "price_monthly_idr": 49000}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:29.343894+00
+72a7c7ca-9316-4fb2-bc72-8462f8d370b1	661ae48b-19ed-476e-8fd3-4968fa105c28	update	plan	2f309db0-c0eb-41e8-ba04-2b2372bd2179	{"id": "2f309db0-c0eb-41e8-ba04-2b2372bd2179", "code": "smoke_plan", "name": "Smoke Plan", "is_active": true, "is_public": false, "created_at": "2026-10-11T10:36:29.070286+00:00", "sort_order": 99, "updated_at": "2026-10-11T10:36:29.070286+00:00", "description": null, "fallback_gateway": "manual", "price_yearly_idr": 0, "price_monthly_idr": 49000, "billing_period_days": 30}	{"id": "2f309db0-c0eb-41e8-ba04-2b2372bd2179", "code": "smoke_plan", "name": "Smoke Plan v2", "is_active": true, "is_public": false, "created_at": "2026-10-11T10:36:29.070286+00:00", "sort_order": 99, "updated_at": "2026-10-11T10:36:31.857302+00:00", "description": null, "fallback_gateway": "manual", "price_yearly_idr": 0, "price_monthly_idr": 59000, "billing_period_days": 30}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:32.343772+00
+509154fa-2fb8-42bc-b3fc-b3f4abbe013c	661ae48b-19ed-476e-8fd3-4968fa105c28	deactivate	plan	2f309db0-c0eb-41e8-ba04-2b2372bd2179	\N	{"is_active": false}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:32.343772+00
+e64b1136-b385-4ec6-bac3-49d196b04f9c	661ae48b-19ed-476e-8fd3-4968fa105c28	update	feature_flag	feature_ai_gateway_centralized	{"key": "feature_ai_gateway_centralized", "name": "AI Gateway Centralized", "rules": {}, "rollout": 0, "is_enabled": false, "description": ""}	{"key": "feature_ai_gateway_centralized", "name": "feature_ai_gateway_centralized", "rules": {}, "rollout": 25, "is_enabled": false, "description": ""}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:37.337169+00
+071992ef-ef3e-4356-9ac9-8a74060b21d5	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	bulk	{"tax_rate_percent": 11, "invoice_due_hours": 24, "grace_period_hours": 24, "payment_gateway_default": "manual"}	{"tax_rate_percent": 11, "invoice_due_hours": 72, "grace_period_hours": 48, "payment_gateway_default": "manual"}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:37.837481+00
+683a212a-fd42-4168-9e5f-9270b5b7d2fe	661ae48b-19ed-476e-8fd3-4968fa105c28	update	feature_flag	feature_ai_gateway_centralized	{"key": "feature_ai_gateway_centralized", "name": "feature_ai_gateway_centralized", "rules": {}, "rollout": 25, "is_enabled": false, "description": ""}	{"key": "feature_ai_gateway_centralized", "name": "AI Gateway Centralized", "rules": {}, "rollout": 25, "is_enabled": true, "description": ""}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:36:55.336958+00
+90ecf27f-bc24-4e3b-9ebf-b4fccc279824	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": true}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:38:27.826904+00
+440ab073-a864-4110-b0da-96537af6058e	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": false}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:38:28.327372+00
+782c513f-715b-4441-9bac-771fc438de9f	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": true}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:41:26.826243+00
+61e9c1a6-bc8b-416f-9713-61942ed52f8c	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:46:19.58558+00
+2e37ecac-1323-437e-9334-bcfe022100b2	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:46:31.085154+00
+b7eb3cc3-7fca-40f2-b636-d455db2dc229	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": false}	172.21.0.1	curl/8.21.0	\N	2026-10-11 10:46:31.085154+00
+073e9361-23d7-4038-ab97-bd8362ebde8c	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": true}	172.21.0.4	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-11 10:49:54.556832+00
+81721889-34d5-4d41-b4f3-6b38dc105845	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": false}	172.21.0.4	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-11 10:49:58.05691+00
+ab50fa24-7559-4264-8173-41e976916aa5	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": true}	172.21.0.4	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-11 10:50:21.055222+00
+bb8658e4-942f-439d-8c9a-07226f20e008	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "global", "enabled": false}	172.21.0.4	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-11 10:50:27.554195+00
+d77e29db-4e5d-422d-854c-21c4eab41fd2	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	bulk	{"tax_rate_percent": 11, "invoice_due_hours": 72, "grace_period_hours": 48, "payment_gateway_default": "manual"}	{"tax_rate_percent": 11, "grace_period_hours": 24}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:50:53.822723+00
+93d9205c-156d-4d20-8742-ca26fce2fa07	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:50:53.822723+00
+e13013a3-0152-4cab-afe2-8fa6ea457bfe	661ae48b-19ed-476e-8fd3-4968fa105c28	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	172.21.0.1	curl/8.5.0	\N	2026-10-11 10:50:53.822723+00
 \.
 
 
@@ -502,6 +963,9 @@ dd176f2d-7407-4eb8-ac78-0fe646ae5892	4a70824e-8116-4ac8-be58-2837848a6ea0	Catat 
 8ca648d9-25b5-4dcb-b6b1-fbfce1633898	4a70824e-8116-4ac8-be58-2837848a6ea0	Tolong cadar.	transactions	2026-06-24 10:18:13.988597+00	2026-06-24 10:18:20.604257+00
 ea561555-f72c-432f-babf-f4fcbb26af18	4a70824e-8116-4ac8-be58-2837848a6ea0	50.000	transactions	2026-06-24 10:19:24.849512+00	2026-06-24 10:19:47.250382+00
 f9d681cb-2a8a-480e-b739-82730423eace	4a70824e-8116-4ac8-be58-2837848a6ea0	Catat pemasukan 100k dari gaji (bonus), dan pengel...	transactions	2026-06-24 11:44:03.794955+00	2026-06-24 11:44:39.5609+00
+c86f60e3-9d68-4ba2-912a-f6754e8d0a44	00000000-0000-0000-0000-000000000002	Percakapan baru	chatbot	2026-10-11 09:04:16.767296+00	2026-10-11 09:04:16.767296+00
+49aa741c-84e9-473f-b9ce-8102df4acd63	00000000-0000-0000-0000-000000000002	Percakapan baru	chatbot	2026-10-11 09:04:25.02996+00	2026-10-11 09:04:25.02996+00
+ec97f534-f085-47f5-a6a2-7090d7e83fa1	c5d4f372-d0b9-43de-9cbc-c4003d704101	Percakapan baru	chatbot	2026-10-11 10:38:27.889751+00	2026-10-11 10:38:27.889751+00
 \.
 
 
@@ -580,40 +1044,54 @@ f21003a0-2791-4083-aeab-5164cd7e1f00	c0020001-0000-0000-0000-00000000000c	Admini
 
 
 --
+-- Data for Name: feature_flags; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.feature_flags (id, key, name, description, is_enabled, rollout, rules, updated_by, created_at, updated_at) FROM stdin;
+44508266-727e-4471-a121-abec98c1de59	ff_test	t		f	0	{}	\N	2026-10-11 08:28:34.554088+00	2026-10-11 08:28:34.554088+00
+ba339f08-ff2b-479b-9449-959dcdba74dd	ff_e2e_e3e26c77-67fc-4a04-aeb3-dcb2a7d9dd83	e2e		f	100	{}	\N	2026-10-11 08:37:51.355412+00	2026-10-11 08:37:51.366246+00
+583cd7c4-b96d-41f9-98c3-49bb526140b9	ff_e2e_97fc0861-5b4a-4b4c-b123-a6176d26b55a	e2e		f	100	{}	\N	2026-10-11 08:38:09.905832+00	2026-10-11 08:38:09.916476+00
+90b1b225-4393-43f9-96e4-23cb4c102a11	ff_e2e_4deafea7-0bc4-4734-a19f-0fee305feb51	e2e		f	100	{}	\N	2026-10-11 09:23:36.713525+00	2026-10-11 09:23:36.727806+00
+cd3e780c-30e8-48c9-a802-7bae50a6a3b3	ff_e2e_5a22c078-69df-479b-8532-5134a93fb90a	e2e		f	100	{}	\N	2026-10-11 09:47:25.747812+00	2026-10-11 09:47:25.75639+00
+39c767ef-a6de-4921-ba13-5043ee1c43b6	feature_ai_gateway_centralized	AI Gateway Centralized		t	25	{}	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 09:04:14.991917+00	2026-10-11 10:36:55.259656+00
+\.
+
+
+--
 -- Data for Name: gemini_api_keys; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.gemini_api_keys (id, user_id, alias, encrypted_key, key_preview, priority, status, provider, model, supports_text, supports_audio, supports_vision, last_used_at, last_error, created_at, updated_at) FROM stdin;
-5fb33b4f-5790-44fa-b9b0-3a0c75feaa39	4a70824e-8116-4ac8-be58-2837848a6ea0	qroq-2	5763080f240dc1af8914813fcc2d01e49888c7a9e23219f9ae56d2e24ee5d89637c6472ef2a155c5532ac590c30c8700e1f1ae5f4797d582f7f9f71d66fe9e556509959e6d19385b86dcdb51f605a03192e0ea46	gsk_xl4N...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 6005, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:46:14.841296+00	2026-06-24 08:37:06.095157+00
-ce9bf853-e14a-4429-89f0-1a59413f80c7	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-3	a4c01c4e409f39dd77b732e58fc46b17ffd0a6995808845d92929302c6cef64187be7a587762f6ff5071dc48c0484de88cd984eba228be676706c5303f0d551705c9d514d88033e10420a5266b2c4c77242256b2	gsk_QjKx...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3446, Requested 6816. Please try again in 16.965s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:57:51.460444+00	2026-06-24 08:37:22.739082+00
-2c617585-ac5e-4feb-aeaa-edde0fbf06fa	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Vision	85707d2d43d33ee036c0dbc02191762abb7c64571e857ccef012b636814d9870caffa29b9992eceb1e9cfc10a07669770adea46aaae51b4ba6ee30a2be712d32610b77c91c9a1d29a87506e218d12950d8	AQ.Ab8RN...	0	error	gemini	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API returned 429: {\n  "error": {\n    "code": 429,\n    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\\nPlease retry in 49.036789088s.",\n    "status": "RESOURCE_EXHAUSTED",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.Help",\n        "links": [\n          {\n            "description": "Learn more about Gemini API quotas",\n            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.QuotaFailure",\n        "violations": [\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",\n            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",\n            "quotaDimensions": {\n              "model": "gemini-2.0-flash",\n              "location": "global"\n            }\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.RetryInfo",\n        "retryDelay": "49s"\n      }\n    ]\n  }\n}\n	2026-06-24 00:29:20.634705+00	2026-06-24 01:02:09.592382+00
-5b76ec7a-9201-47f6-a811-53a151b02bd8	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Spech-Openrouter	256f1b19d9d629744791570b3d01d790414792988a7af7175e5ac7d354aa7b88adfe9d7e5843a1ecdca0d11eaa136b87ae7909f9b96462d45a891431a45e575106690c48fb5281befc8d2d3288952bad7a851dff295f2aecf9970124be7c0ddee1587e39d9	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	f	\N	API returned 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 00:30:45.161406+00	2026-06-24 01:26:38.347531+00
-7bb4a6b6-8509-401a-bd07-b885c13be581	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-1	4cd09710ce9d55f41c1d0973cb8ddc4d780294b95488a43ecee4559cfc0eb0698e56ac539287e22561e552720878d4888ec0abce2c203dc4812e5dc5fb6f748746dfd15c3066bbd7271a2437a2e709d3aee1a174	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp 172.64.149.20:443: i/o timeout	2026-06-24 00:33:40.940043+00	2026-06-24 03:39:45.738574+00
-5f5dd1fc-9b5e-4117-8653-8377c4af06ec	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-1	0a2298c6751c19d9ae34358c5407fac990935d7a2927a1ca405a442408b2b5bb81bd4ef03a29bb39466e5efdcf62174f4631ef230d4ea66689033bff9b3c8f1c536e3f94e83108681b48db277117a0fd4c5f0af4	gsk_UYvH...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7316, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 09:53:03.670206+00	2026-06-24 08:36:55.503163+00
-0d4efeb6-92d2-455e-bcde-c0b4f56e4967	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text	088add67f8c7537e4169b7cf3d207de224e618cae2a91ae3de308e11bba2be61b73a56fa03996d198d9bde8b0ac5432469ee56009716c1f447d6b26de713403179b094eec704abb85b3ee74a353ed509cd2478ab	gsk_UYvH...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 5712, Requested 6816. Please try again in 33.959999999s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-24 04:58:50.771186+00	2026-06-24 05:48:35.388759+00
-e0b015ff-484f-4571-944f-5a5824731a3c	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-groq-2	046b25dde392e333105bb4c1a5ed1f55c26e138cd7b195a67e3207ccf4ff567ed9b81b81f3ca2b9e4b1a40c2f9233c9925adc389e6c04988ededb745415aa354f9bb7c4c3e4e6c628ea51d4238ae3fe5962e5037	gsk_CVcw...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API returned 400: {"error":{"message":"invalid image data","type":"invalid_request_error"}}\n	2026-06-24 04:55:07.291691+00	2026-06-24 05:48:36.141548+00
-8fd75ee1-48d4-4800-b9aa-71afc9de4be6	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-4	196d04c1096ff9beead21b16357cfc22924c4e453cabf802c3764ff6ff7fa7605a3eb165f8f9529dead525f23cae98ccd2b3cc0b713f1f29763237925ca9da70886365ac6a0d42c80013b5ab3daa5ea98b48a09c	gsk_8oOV...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3414, Requested 6816. Please try again in 16.725s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:58:18.262193+00	2026-06-24 01:26:37.739592+00
-d41745a7-e4a2-4f0e-93f9-c3c60ea3b404	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-2	502eff94d078b559c36337693cfadccf4de492969467cfbc480b2033963a98ea3ee7930f697109d5019975673345d694a17c9a25347388d25f392c5569d88c90ad8be77329500e57be60a2cb930e8db8e0cac356	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": context canceled	2026-06-24 00:34:12.973761+00	2026-06-24 03:40:24.168945+00
-d65d18bc-692d-4da7-9037-c300ad87c32d	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-gemini	018803bf903d02157cfbf9aa65b564730d8576e2d08ca31c128826b11df034853fc6d2b76fa97c8066cddc75ef3989aceb4064c64fb53ee105d776fa7979dc9991a203a16ded46b23608c64fbdc42a9d1a305a8317b866dfcaf42a4b9fb240a1826caa32a8	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API call failed: Post "https://openrouter.ai/api/v1/chat/completions": dial tcp 104.18.3.115:443: i/o timeout	2026-06-24 04:09:21.721337+00	2026-06-24 04:10:47.407233+00
-f7ba526a-c322-4e37-a584-8caef6057c69	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text-3	32098892e323f1b66c9f5e4f27c8050b552817fb8f7f20f98551cfd2906d5b7f030873c6d384be53a2de45a251ad61ae676609e78f3fe2570fe65387181b84d01ccd7892d20218525cddbcc47e0cfb05aa1956c1	gsk_UYvH...	0	error	groq	llama-3.3-70b-versatile	t	t	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp: lookup api.groq.com: no such host	2026-06-24 06:55:23.985075+00	2026-06-24 06:59:35.861118+00
-1286556a-f7fd-4260-850a-697497b1819d	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-2	f21a5d99a0bd2eea63b4e61025702a170bf9c24adc61ed72ac92efe63f0156bab46e92297242c167da8c728b32ade8a8d170ffa51c9f10be7ef37b544e1153bfe27e045f0a6a82277fdc2553583d4f5d77e73315	gsk_UYvH...	0	error	groq	whisper-large-v3	t	f	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:56:15.080435+00	2026-06-24 07:00:07.566594+00
-154ea035-ffe5-45ff-a6b1-794c70a93893	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-2	e4dca7f8e1f4a2e7cadb141607cc01d69f92a132d33722cb1fd519e65b59ac859aac91da2ff4e2bb01955e97f612c12f9d6807af4fd4206fae7cf8a6b059c68c0579818d64ec691ad25c7090ce14e0798e5dbf0c	gsk_UYvH...	0	error	groq	whisper-large-v3	t	t	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:57:32.862938+00	2026-06-24 07:02:17.358781+00
-f26f9e05-e667-496e-93a3-83d83657c740	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-vision	90770e94fec33edfaee4290a97a68db62d373618bf040f15cdfb7c6d25664d2259af04a18f44470e3f4760b7c8a7f0e62ea7f96d2aa19d9dffe5ab39fa6b151ac88386951307e7653b286f87322f0892a65d89a3f7756cfc54af4da14bb407d7729f7f8127	sk-or-v1...	0	active	openrouter	meta-llama/llama-4-scout-17b-16e-instruct	t	f	t	\N	\N	2026-06-24 06:39:11.394271+00	2026-06-24 08:36:02.201166+00
-f0522b02-4491-4e74-9922-e373866d6b3f	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text-audio	ff3d34d07c0567362643982e25572666dcfe3835b31edb71c53dc2830f2349e921d015f4ecab02f79e57c5db2b9536eb31ee702732f87555c5669ce800254439da9494d641fa9817281155de03863fb2de10f2e1c60c36a1bbcc7af4866d90bf424a6d3e10	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	t	\N	API returned status 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:37:06.423782+00	2026-06-24 08:36:33.896103+00
-11277590-ded9-4adb-a0f6-b05341928e92	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-3	7d3b2e8b9d0a0d68690eff8b4d21d539042569e04b342fd2d33649df1b8123f4d9939aa49f873232d9fcd591da7dd63eb1977d44f0ffd682429d6ff72570318b33590022b0a2ae8ae1e105c83d0a622358226938	gsk_UYvH...	0	active	groq	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	\N	2026-06-24 06:58:45.194783+00	2026-06-24 08:38:12.821925+00
-a502f8e3-0b6e-4c70-bd6e-2a32f7cc3198	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-text-image	bdd1f9f050087b54e3eedc472200655d88f873b8bfcaf8726db024fdbadf186d11ba7d6a91adb97712ad19af94955da208561022626c7c01ea3815d5767a516df2997d073cd72606e3b6b1b69b5e4cac38bada93	gsk_UYvH...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 06:57:57.310314+00	2026-06-24 08:38:43.723453+00
-a1cf3cb4-b7b1-48f9-b9a2-300b5383c7c2	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-audio	1e600481afa94d7e6410632af0c1279805cc79969f14538b76cca9ae2666e6b14b8dea584be5f04449bc5b23a0e8d93456bc2536ff1cc489f38ab654b3c762778464d276ee5a1a65a6ec1f06702353e568edee875066e9ffd96e0dce172d3440f228250c55	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	API returned status 400: {"error":{"message":"google/gemini-2.0-flash-lite-preview-02-05:free is not a valid model ID","code":400},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:38:34.291422+00	2026-06-24 10:14:58.463416+00
-401d23c5-aa1d-4a16-84fe-26170d56d7fc	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text	c755066a39680b228b3ca1db4140b238120701cca7a7f0aba171d2befc4397227456fadae4afb4c1112de96a890f8c1809da0d27fc37110ceb954cb6f2ad49ca60c5f22879b8528c019b46b0b985b5705d28a5457e28fe9e8995fbc8e7f267da97f18f466a	sk-or-v1...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 06:37:42.907786+00	2026-06-24 08:36:10.746241+00
-7f8c5af8-71a8-46b4-8043-df42cbd45289	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-1	8df8f085efad4d2e8e5632ac362d69b4e90588b89fea12519c5cde9c2cdd93a11a31c4ebc2f60616f7248122ee966fe9d5e98c011e1a02b34551eefe02b2e4e9da8d476bb9dacd5f4c7d7a40561bef279de31b80	gsk_QjKx...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:39:37.801277+00	2026-06-24 08:39:37.801277+00
-847acfaa-7572-418a-9796-42d48d6e14b2	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-2	461e6e0592aea8411d3a8e87056554c65ca762f18371a46d3a40c231f0152ee8dc0b2803068973addec9626f4a9208819784f33276fbdbb610a9cab2a6bef8876e67f3f5982ec3243876913919accf49b3e2516e	gsk_xl4N...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:40:12.46659+00	2026-06-24 08:40:12.46659+00
-c98fb385-dc93-4eef-a8f0-5236bdf2e9ec	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-gemini3	efb303c04da4ea9af6478dcc01c87cfa09630e8957f197e802160ba2d6436bf70ef0798d8a97e0cf451e882874d1e6ed6c45690f5d1b0e596f8730773f59df1e5604459dd71fc5efd8f5f2a730c543efba914ce40a296d11bb3c717572db91a5a12cab8a17	sk-or-v1...	0	active	openrouter	google/gemini-3-flash-preview	f	f	t	\N	\N	2026-06-24 08:41:47.35886+00	2026-06-24 08:41:47.35886+00
-79f39a70-6d48-4d2c-8afe-289f94ca3104	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-3	4679403d467b73f7bbf16bed92cae4908caa1c932de113cb4e0fdab9a5f1756a6e9432e2a2f1fefb790987989412bcdc58a208932bc0edc245a2080b9cac1008646c395983485c11152296bbdfb7bff36c8d064bb569cdc8a0abde949014a1a3dac4fe4eae	sk-or-v1...	0	active	openrouter	openai/whisper-1	t	f	f	\N	\N	2026-06-24 08:48:52.355313+00	2026-06-24 08:48:52.355313+00
-8e95d6bf-1c4b-46ad-8141-99b2539e096b	4a70824e-8116-4ac8-be58-2837848a6ea0	cohere-openrouter	f0286fe80144f9e9bc2686e39551d9bec4fa30fb51aff866867b0564038b70d9de6c36825a0e6c0bb1193fc922c24b2c9d6db838a7e7a7a0a82b2f4c4cf4a5df018ba06ad3a28a6446d31a90d7e988cce6f55a764ae4cc52785a073bc1b05ba4be3934257c	sk-or-v1...	0	active	openrouter	cohere/north-mini-code:free	t	f	f	\N	\N	2026-06-24 09:13:33.387515+00	2026-06-24 09:13:33.387515+00
-c6ed47d1-ad26-4779-b975-c2781f8beb91	4a70824e-8116-4ac8-be58-2837848a6ea0	memotron-openrouter	074d1c0a4452705cf6cbe627f596f21a4e06deef7a99102ef6ac8c621765b3dcdb95f533d5ed437f2cc966b6aad5af038c9a6ec53705ea91532280ac4e3f402cb9758b16b5c241a260c59fde5723dcdd35314004a15db0353ffa1b7a4c49e68b3b142437d4	sk-or-v1...	0	active	openrouter	nvidia/nemotron-3.5-content-safety:free	f	f	t	\N	\N	2026-06-24 09:14:40.335311+00	2026-06-24 09:14:40.335311+00
-fdca29b0-c398-4531-a702-357bd2a91855	4a70824e-8116-4ac8-be58-2837848a6ea0	nemotron-3-nano-openrouter	876ce8e6cee74444556e8e536609cc7818310d2d757451fa0298e19c88150cf0341d0a5097a0df99e56bf7df3f5df0b46dddff5dc9897bc04c199ed430c7ef672b0b3183389024ce286db30939bfbc1f72d396ed0259bebbee0512c90b67a0eac72b642348	sk-or-v1...	0	active	openrouter	nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free	f	t	f	\N	\N	2026-06-24 09:15:20.484168+00	2026-06-24 09:16:00.936809+00
-563484b1-e00e-409a-a575-c688051f4c4b	4a70824e-8116-4ac8-be58-2837848a6ea0	nvidia-openrouter	350370f855f1b0538a62a13ba980be5f0961ecd0b3f0d4547a70cef9fc3ac2d7f81c03a34493ac126a9934c6285971bd3e5bdaa3314f2ed0847627adee7202d9cb5c47d9c8a4300845064af8b3f2aefbba056f96a3c49a230913fd7cda21b8055036c2380f	sk-or-v1...	0	active	openrouter	nvidia/llama-nemotron-rerank-vl-1b-v2:free	f	f	t	\N	\N	2026-06-24 09:13:57.701403+00	2026-06-24 09:18:03.019695+00
-ea453e7c-5927-4f1f-8694-ee01946f85ed	b1b66fa0-13d9-4937-a4b4-09e3e2060f86	key-gemini	4177b995a0ba57f6ab4e378d2db64dda711ad95e7424fb9ea32786ff4877c191f89f89528316e79b2fc5e4c69789e3cfea12f9d7fdb9f35c293d916a	AIzaSyDu...	0	error	gemini	gemini-2.0-flash	t	t	t	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:17:38.743963+00	2026-06-24 12:18:11.554127+00
-92d175b7-e67f-47c8-9a5a-82506ba9c008	c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5	Gemini Key	f0331fc90c6be11c8447c71c50be62ee72898e816a00eb3deebb560d38627359cb3f14d85c	dummy-ke...	0	error	gemini	gemini-2.0-flash	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:33:43.002184+00	2026-06-24 12:34:46.955083+00
+COPY public.gemini_api_keys (id, user_id, alias, encrypted_key, key_preview, priority, status, provider, model, supports_text, supports_audio, supports_vision, last_used_at, last_error, created_at, updated_at, is_archived, archived_at) FROM stdin;
+5fb33b4f-5790-44fa-b9b0-3a0c75feaa39	4a70824e-8116-4ac8-be58-2837848a6ea0	qroq-2	5763080f240dc1af8914813fcc2d01e49888c7a9e23219f9ae56d2e24ee5d89637c6472ef2a155c5532ac590c30c8700e1f1ae5f4797d582f7f9f71d66fe9e556509959e6d19385b86dcdb51f605a03192e0ea46	gsk_xl4N...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 6005, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:46:14.841296+00	2026-06-24 08:37:06.095157+00	t	2026-10-11 08:41:28.714383+00
+ce9bf853-e14a-4429-89f0-1a59413f80c7	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-3	a4c01c4e409f39dd77b732e58fc46b17ffd0a6995808845d92929302c6cef64187be7a587762f6ff5071dc48c0484de88cd984eba228be676706c5303f0d551705c9d514d88033e10420a5266b2c4c77242256b2	gsk_QjKx...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3446, Requested 6816. Please try again in 16.965s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:57:51.460444+00	2026-06-24 08:37:22.739082+00	t	2026-10-11 08:41:28.714383+00
+2c617585-ac5e-4feb-aeaa-edde0fbf06fa	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Vision	85707d2d43d33ee036c0dbc02191762abb7c64571e857ccef012b636814d9870caffa29b9992eceb1e9cfc10a07669770adea46aaae51b4ba6ee30a2be712d32610b77c91c9a1d29a87506e218d12950d8	AQ.Ab8RN...	0	error	gemini	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API returned 429: {\n  "error": {\n    "code": 429,\n    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\\nPlease retry in 49.036789088s.",\n    "status": "RESOURCE_EXHAUSTED",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.Help",\n        "links": [\n          {\n            "description": "Learn more about Gemini API quotas",\n            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.QuotaFailure",\n        "violations": [\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",\n            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",\n            "quotaDimensions": {\n              "model": "gemini-2.0-flash",\n              "location": "global"\n            }\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.RetryInfo",\n        "retryDelay": "49s"\n      }\n    ]\n  }\n}\n	2026-06-24 00:29:20.634705+00	2026-06-24 01:02:09.592382+00	t	2026-10-11 08:41:28.714383+00
+5b76ec7a-9201-47f6-a811-53a151b02bd8	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Spech-Openrouter	256f1b19d9d629744791570b3d01d790414792988a7af7175e5ac7d354aa7b88adfe9d7e5843a1ecdca0d11eaa136b87ae7909f9b96462d45a891431a45e575106690c48fb5281befc8d2d3288952bad7a851dff295f2aecf9970124be7c0ddee1587e39d9	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	f	\N	API returned 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 00:30:45.161406+00	2026-06-24 01:26:38.347531+00	t	2026-10-11 08:41:28.714383+00
+7bb4a6b6-8509-401a-bd07-b885c13be581	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-1	4cd09710ce9d55f41c1d0973cb8ddc4d780294b95488a43ecee4559cfc0eb0698e56ac539287e22561e552720878d4888ec0abce2c203dc4812e5dc5fb6f748746dfd15c3066bbd7271a2437a2e709d3aee1a174	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp 172.64.149.20:443: i/o timeout	2026-06-24 00:33:40.940043+00	2026-06-24 03:39:45.738574+00	t	2026-10-11 08:41:28.714383+00
+5f5dd1fc-9b5e-4117-8653-8377c4af06ec	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-1	0a2298c6751c19d9ae34358c5407fac990935d7a2927a1ca405a442408b2b5bb81bd4ef03a29bb39466e5efdcf62174f4631ef230d4ea66689033bff9b3c8f1c536e3f94e83108681b48db277117a0fd4c5f0af4	gsk_UYvH...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7316, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 09:53:03.670206+00	2026-06-24 08:36:55.503163+00	t	2026-10-11 08:41:28.714383+00
+0d4efeb6-92d2-455e-bcde-c0b4f56e4967	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text	088add67f8c7537e4169b7cf3d207de224e618cae2a91ae3de308e11bba2be61b73a56fa03996d198d9bde8b0ac5432469ee56009716c1f447d6b26de713403179b094eec704abb85b3ee74a353ed509cd2478ab	gsk_UYvH...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 5712, Requested 6816. Please try again in 33.959999999s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-24 04:58:50.771186+00	2026-06-24 05:48:35.388759+00	t	2026-10-11 08:41:28.714383+00
+e0b015ff-484f-4571-944f-5a5824731a3c	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-groq-2	046b25dde392e333105bb4c1a5ed1f55c26e138cd7b195a67e3207ccf4ff567ed9b81b81f3ca2b9e4b1a40c2f9233c9925adc389e6c04988ededb745415aa354f9bb7c4c3e4e6c628ea51d4238ae3fe5962e5037	gsk_CVcw...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API returned 400: {"error":{"message":"invalid image data","type":"invalid_request_error"}}\n	2026-06-24 04:55:07.291691+00	2026-06-24 05:48:36.141548+00	t	2026-10-11 08:41:28.714383+00
+8fd75ee1-48d4-4800-b9aa-71afc9de4be6	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-4	196d04c1096ff9beead21b16357cfc22924c4e453cabf802c3764ff6ff7fa7605a3eb165f8f9529dead525f23cae98ccd2b3cc0b713f1f29763237925ca9da70886365ac6a0d42c80013b5ab3daa5ea98b48a09c	gsk_8oOV...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3414, Requested 6816. Please try again in 16.725s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:58:18.262193+00	2026-06-24 01:26:37.739592+00	t	2026-10-11 08:41:28.714383+00
+d41745a7-e4a2-4f0e-93f9-c3c60ea3b404	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-2	502eff94d078b559c36337693cfadccf4de492969467cfbc480b2033963a98ea3ee7930f697109d5019975673345d694a17c9a25347388d25f392c5569d88c90ad8be77329500e57be60a2cb930e8db8e0cac356	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": context canceled	2026-06-24 00:34:12.973761+00	2026-06-24 03:40:24.168945+00	t	2026-10-11 08:41:28.714383+00
+d65d18bc-692d-4da7-9037-c300ad87c32d	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-gemini	018803bf903d02157cfbf9aa65b564730d8576e2d08ca31c128826b11df034853fc6d2b76fa97c8066cddc75ef3989aceb4064c64fb53ee105d776fa7979dc9991a203a16ded46b23608c64fbdc42a9d1a305a8317b866dfcaf42a4b9fb240a1826caa32a8	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API call failed: Post "https://openrouter.ai/api/v1/chat/completions": dial tcp 104.18.3.115:443: i/o timeout	2026-06-24 04:09:21.721337+00	2026-06-24 04:10:47.407233+00	t	2026-10-11 08:41:28.714383+00
+f7ba526a-c322-4e37-a584-8caef6057c69	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text-3	32098892e323f1b66c9f5e4f27c8050b552817fb8f7f20f98551cfd2906d5b7f030873c6d384be53a2de45a251ad61ae676609e78f3fe2570fe65387181b84d01ccd7892d20218525cddbcc47e0cfb05aa1956c1	gsk_UYvH...	0	error	groq	llama-3.3-70b-versatile	t	t	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp: lookup api.groq.com: no such host	2026-06-24 06:55:23.985075+00	2026-06-24 06:59:35.861118+00	t	2026-10-11 08:41:28.714383+00
+1286556a-f7fd-4260-850a-697497b1819d	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-2	f21a5d99a0bd2eea63b4e61025702a170bf9c24adc61ed72ac92efe63f0156bab46e92297242c167da8c728b32ade8a8d170ffa51c9f10be7ef37b544e1153bfe27e045f0a6a82277fdc2553583d4f5d77e73315	gsk_UYvH...	0	error	groq	whisper-large-v3	t	f	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:56:15.080435+00	2026-06-24 07:00:07.566594+00	t	2026-10-11 08:41:28.714383+00
+154ea035-ffe5-45ff-a6b1-794c70a93893	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-2	e4dca7f8e1f4a2e7cadb141607cc01d69f92a132d33722cb1fd519e65b59ac859aac91da2ff4e2bb01955e97f612c12f9d6807af4fd4206fae7cf8a6b059c68c0579818d64ec691ad25c7090ce14e0798e5dbf0c	gsk_UYvH...	0	error	groq	whisper-large-v3	t	t	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:57:32.862938+00	2026-06-24 07:02:17.358781+00	t	2026-10-11 08:41:28.714383+00
+f26f9e05-e667-496e-93a3-83d83657c740	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-vision	90770e94fec33edfaee4290a97a68db62d373618bf040f15cdfb7c6d25664d2259af04a18f44470e3f4760b7c8a7f0e62ea7f96d2aa19d9dffe5ab39fa6b151ac88386951307e7653b286f87322f0892a65d89a3f7756cfc54af4da14bb407d7729f7f8127	sk-or-v1...	0	active	openrouter	meta-llama/llama-4-scout-17b-16e-instruct	t	f	t	\N	\N	2026-06-24 06:39:11.394271+00	2026-06-24 08:36:02.201166+00	t	2026-10-11 08:41:28.714383+00
+f0522b02-4491-4e74-9922-e373866d6b3f	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text-audio	ff3d34d07c0567362643982e25572666dcfe3835b31edb71c53dc2830f2349e921d015f4ecab02f79e57c5db2b9536eb31ee702732f87555c5669ce800254439da9494d641fa9817281155de03863fb2de10f2e1c60c36a1bbcc7af4866d90bf424a6d3e10	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	t	\N	API returned status 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:37:06.423782+00	2026-06-24 08:36:33.896103+00	t	2026-10-11 08:41:28.714383+00
+11277590-ded9-4adb-a0f6-b05341928e92	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-3	7d3b2e8b9d0a0d68690eff8b4d21d539042569e04b342fd2d33649df1b8123f4d9939aa49f873232d9fcd591da7dd63eb1977d44f0ffd682429d6ff72570318b33590022b0a2ae8ae1e105c83d0a622358226938	gsk_UYvH...	0	active	groq	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	\N	2026-06-24 06:58:45.194783+00	2026-06-24 08:38:12.821925+00	t	2026-10-11 08:41:28.714383+00
+a502f8e3-0b6e-4c70-bd6e-2a32f7cc3198	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-text-image	bdd1f9f050087b54e3eedc472200655d88f873b8bfcaf8726db024fdbadf186d11ba7d6a91adb97712ad19af94955da208561022626c7c01ea3815d5767a516df2997d073cd72606e3b6b1b69b5e4cac38bada93	gsk_UYvH...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 06:57:57.310314+00	2026-06-24 08:38:43.723453+00	t	2026-10-11 08:41:28.714383+00
+a1cf3cb4-b7b1-48f9-b9a2-300b5383c7c2	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-audio	1e600481afa94d7e6410632af0c1279805cc79969f14538b76cca9ae2666e6b14b8dea584be5f04449bc5b23a0e8d93456bc2536ff1cc489f38ab654b3c762778464d276ee5a1a65a6ec1f06702353e568edee875066e9ffd96e0dce172d3440f228250c55	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	API returned status 400: {"error":{"message":"google/gemini-2.0-flash-lite-preview-02-05:free is not a valid model ID","code":400},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:38:34.291422+00	2026-06-24 10:14:58.463416+00	t	2026-10-11 08:41:28.714383+00
+401d23c5-aa1d-4a16-84fe-26170d56d7fc	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text	c755066a39680b228b3ca1db4140b238120701cca7a7f0aba171d2befc4397227456fadae4afb4c1112de96a890f8c1809da0d27fc37110ceb954cb6f2ad49ca60c5f22879b8528c019b46b0b985b5705d28a5457e28fe9e8995fbc8e7f267da97f18f466a	sk-or-v1...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 06:37:42.907786+00	2026-06-24 08:36:10.746241+00	t	2026-10-11 08:41:28.714383+00
+7f8c5af8-71a8-46b4-8043-df42cbd45289	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-1	8df8f085efad4d2e8e5632ac362d69b4e90588b89fea12519c5cde9c2cdd93a11a31c4ebc2f60616f7248122ee966fe9d5e98c011e1a02b34551eefe02b2e4e9da8d476bb9dacd5f4c7d7a40561bef279de31b80	gsk_QjKx...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:39:37.801277+00	2026-06-24 08:39:37.801277+00	t	2026-10-11 08:41:28.714383+00
+847acfaa-7572-418a-9796-42d48d6e14b2	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-2	461e6e0592aea8411d3a8e87056554c65ca762f18371a46d3a40c231f0152ee8dc0b2803068973addec9626f4a9208819784f33276fbdbb610a9cab2a6bef8876e67f3f5982ec3243876913919accf49b3e2516e	gsk_xl4N...	0	active	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:40:12.46659+00	2026-06-24 08:40:12.46659+00	t	2026-10-11 08:41:28.714383+00
+c98fb385-dc93-4eef-a8f0-5236bdf2e9ec	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-gemini3	efb303c04da4ea9af6478dcc01c87cfa09630e8957f197e802160ba2d6436bf70ef0798d8a97e0cf451e882874d1e6ed6c45690f5d1b0e596f8730773f59df1e5604459dd71fc5efd8f5f2a730c543efba914ce40a296d11bb3c717572db91a5a12cab8a17	sk-or-v1...	0	active	openrouter	google/gemini-3-flash-preview	f	f	t	\N	\N	2026-06-24 08:41:47.35886+00	2026-06-24 08:41:47.35886+00	t	2026-10-11 08:41:28.714383+00
+79f39a70-6d48-4d2c-8afe-289f94ca3104	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-3	4679403d467b73f7bbf16bed92cae4908caa1c932de113cb4e0fdab9a5f1756a6e9432e2a2f1fefb790987989412bcdc58a208932bc0edc245a2080b9cac1008646c395983485c11152296bbdfb7bff36c8d064bb569cdc8a0abde949014a1a3dac4fe4eae	sk-or-v1...	0	active	openrouter	openai/whisper-1	t	f	f	\N	\N	2026-06-24 08:48:52.355313+00	2026-06-24 08:48:52.355313+00	t	2026-10-11 08:41:28.714383+00
+8e95d6bf-1c4b-46ad-8141-99b2539e096b	4a70824e-8116-4ac8-be58-2837848a6ea0	cohere-openrouter	f0286fe80144f9e9bc2686e39551d9bec4fa30fb51aff866867b0564038b70d9de6c36825a0e6c0bb1193fc922c24b2c9d6db838a7e7a7a0a82b2f4c4cf4a5df018ba06ad3a28a6446d31a90d7e988cce6f55a764ae4cc52785a073bc1b05ba4be3934257c	sk-or-v1...	0	active	openrouter	cohere/north-mini-code:free	t	f	f	\N	\N	2026-06-24 09:13:33.387515+00	2026-06-24 09:13:33.387515+00	t	2026-10-11 08:41:28.714383+00
+c6ed47d1-ad26-4779-b975-c2781f8beb91	4a70824e-8116-4ac8-be58-2837848a6ea0	memotron-openrouter	074d1c0a4452705cf6cbe627f596f21a4e06deef7a99102ef6ac8c621765b3dcdb95f533d5ed437f2cc966b6aad5af038c9a6ec53705ea91532280ac4e3f402cb9758b16b5c241a260c59fde5723dcdd35314004a15db0353ffa1b7a4c49e68b3b142437d4	sk-or-v1...	0	active	openrouter	nvidia/nemotron-3.5-content-safety:free	f	f	t	\N	\N	2026-06-24 09:14:40.335311+00	2026-06-24 09:14:40.335311+00	t	2026-10-11 08:41:28.714383+00
+fdca29b0-c398-4531-a702-357bd2a91855	4a70824e-8116-4ac8-be58-2837848a6ea0	nemotron-3-nano-openrouter	876ce8e6cee74444556e8e536609cc7818310d2d757451fa0298e19c88150cf0341d0a5097a0df99e56bf7df3f5df0b46dddff5dc9897bc04c199ed430c7ef672b0b3183389024ce286db30939bfbc1f72d396ed0259bebbee0512c90b67a0eac72b642348	sk-or-v1...	0	active	openrouter	nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free	f	t	f	\N	\N	2026-06-24 09:15:20.484168+00	2026-06-24 09:16:00.936809+00	t	2026-10-11 08:41:28.714383+00
+563484b1-e00e-409a-a575-c688051f4c4b	4a70824e-8116-4ac8-be58-2837848a6ea0	nvidia-openrouter	350370f855f1b0538a62a13ba980be5f0961ecd0b3f0d4547a70cef9fc3ac2d7f81c03a34493ac126a9934c6285971bd3e5bdaa3314f2ed0847627adee7202d9cb5c47d9c8a4300845064af8b3f2aefbba056f96a3c49a230913fd7cda21b8055036c2380f	sk-or-v1...	0	active	openrouter	nvidia/llama-nemotron-rerank-vl-1b-v2:free	f	f	t	\N	\N	2026-06-24 09:13:57.701403+00	2026-06-24 09:18:03.019695+00	t	2026-10-11 08:41:28.714383+00
+ea453e7c-5927-4f1f-8694-ee01946f85ed	b1b66fa0-13d9-4937-a4b4-09e3e2060f86	key-gemini	4177b995a0ba57f6ab4e378d2db64dda711ad95e7424fb9ea32786ff4877c191f89f89528316e79b2fc5e4c69789e3cfea12f9d7fdb9f35c293d916a	AIzaSyDu...	0	error	gemini	gemini-2.0-flash	t	t	t	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:17:38.743963+00	2026-06-24 12:18:11.554127+00	t	2026-10-11 08:41:28.714383+00
+92d175b7-e67f-47c8-9a5a-82506ba9c008	c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5	Gemini Key	f0331fc90c6be11c8447c71c50be62ee72898e816a00eb3deebb560d38627359cb3f14d85c	dummy-ke...	0	error	gemini	gemini-2.0-flash	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:33:43.002184+00	2026-06-24 12:34:46.955083+00	t	2026-10-11 08:41:28.714383+00
 \.
 
 
@@ -634,6 +1112,141 @@ b15820dc-cc00-46d3-8dbd-f79939af1feb	Joki	circle	#94a3b8	\N	t	99	\N	2026-06-23 1
 215edd8a-b1bd-4fae-8fcc-06084874f5ac	Tabungan	circle	#94a3b8	\N	t	99	\N	2026-06-24 02:43:45.782137+00	2026-06-24 02:43:45.782137+00
 973aeb59-2752-43ff-935a-5b8606bee14e	Honor Mengajar	circle	#94a3b8	\N	t	99	\N	2026-06-24 05:47:59.500583+00	2026-06-24 05:47:59.500583+00
 00b93a1d-a326-4d4b-9e7f-e8a17a0e4b0b	Nabung	circle	#94a3b8	\N	t	99	\N	2026-06-24 10:14:59.74882+00	2026-06-24 10:14:59.74882+00
+870646f7-0720-4465-8e1c-f680da2b7064	IT Cat dcec9fc1-6f54-4c58-9fbc-14824c260094	x	#000000	\N	t	0	\N	2026-10-11 08:29:34.266291+00	2026-10-11 08:29:34.266291+00
+6fb9dd50-7ee8-45d3-a8b5-17087d04d38e	IT Lock c6ee0877-4717-40d7-b75c-fe2bbce21bda	x	#000000	\N	t	0	\N	2026-10-11 08:29:34.328689+00	2026-10-11 08:29:34.328689+00
+9485504c-93d5-4bbe-ae0f-bd3afa344af2	IT Race ba3afacf-3c43-4f34-bd27-9fafd8fd60db	x	#000000	\N	t	0	\N	2026-10-11 08:29:34.388172+00	2026-10-11 08:29:34.388172+00
+a7317060-aa3f-4941-a300-63af3f97384d	IT Cat 1f997259-dcd9-45d2-9026-1ecf75a350b5	x	#000000	\N	t	0	\N	2026-10-11 08:56:51.300393+00	2026-10-11 08:56:51.300393+00
+bea82b1c-4fe3-4bb2-9558-470d4c42678c	IT Lock 1305a5cd-7fec-44ee-94e4-c740f691a983	x	#000000	\N	t	0	\N	2026-10-11 08:56:51.344208+00	2026-10-11 08:56:51.344208+00
+1eae6ae9-07dd-4dce-846e-42a706676de4	IT Race a44b33fd-ddac-4ea2-b21d-ef11a9d490f7	x	#000000	\N	t	0	\N	2026-10-11 08:56:51.393306+00	2026-10-11 08:56:51.393306+00
+11fe7f6c-905d-415f-9a2f-4c0223cc52ab	IT Cat 08d046d4-ca16-4b22-a0ba-55cffa82bee4	x	#000000	\N	t	0	\N	2026-10-11 09:20:33.698738+00	2026-10-11 09:20:33.698738+00
+0bfc7f7c-721c-4a06-b33c-9c034ec2ca0e	IT Lock e6c627ad-da13-4e69-8de3-3de17db64d7e	x	#000000	\N	t	0	\N	2026-10-11 09:20:33.750132+00	2026-10-11 09:20:33.750132+00
+83906886-643e-4131-b80b-040d77ef99f9	IT Race 0bd89766-b296-4cad-b659-d4a859a72522	x	#000000	\N	t	0	\N	2026-10-11 09:20:33.804794+00	2026-10-11 09:20:33.804794+00
+5f02ee00-3177-42cc-99a8-f728a50ad2f4	IT Cat e4a1c47f-6427-4fb6-a344-be8882fe4d26	x	#000000	\N	t	0	\N	2026-10-11 09:23:37.791861+00	2026-10-11 09:23:37.791861+00
+e3c56c33-a9f6-4f23-8a03-0fc87e9f46be	IT Lock 3e6f4d34-4421-495c-bfc9-d01c4d58a801	x	#000000	\N	t	0	\N	2026-10-11 09:23:37.855254+00	2026-10-11 09:23:37.855254+00
+e9b0e23c-43d1-460d-b09a-d19d401c9c21	IT Race bfd2e051-de8b-451a-92e1-475c767523ad	x	#000000	\N	t	0	\N	2026-10-11 09:23:37.91313+00	2026-10-11 09:23:37.91313+00
+38d65284-a424-4340-a215-cb72ee86958f	IT Cat a573b743-bdd0-4801-a82b-55c559047c4d	x	#000000	\N	t	0	\N	2026-10-11 09:47:26.67263+00	2026-10-11 09:47:26.67263+00
+6cba8b11-d4ee-4388-88e3-53624f631e11	IT Lock eed93a52-5065-435a-bfa4-c99a5b33ce79	x	#000000	\N	t	0	\N	2026-10-11 09:47:26.72956+00	2026-10-11 09:47:26.72956+00
+dc1fba09-62e6-41e2-941f-fbe924067c7b	IT Race d44b4e99-2cc9-4d2c-ab5b-59dd0a07f45c	x	#000000	\N	t	0	\N	2026-10-11 09:47:26.784619+00	2026-10-11 09:47:26.784619+00
+\.
+
+
+--
+-- Data for Name: invoice_counters; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.invoice_counters (day, seq) FROM stdin;
+\.
+
+
+--
+-- Data for Name: invoices; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.invoices (id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr, status, notes, issued_at, due_at, paid_at, voided_at, created_at, updated_at) FROM stdin;
+49ec9f02-db52-4acb-a544-dc7d09c9d622	INV-SMOKE-0001	c5d4f372-d0b9-43de-9cbc-c4003d704101	\N	100000	11000	111000	paid	\N	2026-10-11 10:34:33.021936+00	\N	2026-10-11 10:34:57.57501+00	\N	2026-10-11 10:34:33.021936+00	2026-10-11 10:34:57.57501+00
+\.
+
+
+--
+-- Data for Name: payment_events; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.payment_events (id, payment_id, actor_id, event, reason, amount_idr, metadata, created_at) FROM stdin;
+c6213a7a-f40d-4723-b7f6-de9765179a9e	91ac63f8-22dd-4fc5-85f2-aed52b54766d	661ae48b-19ed-476e-8fd3-4968fa105c28	approve	\N	0	{}	2026-10-11 10:34:57.595504+00
+5bc03ab2-d7d5-4144-9e67-d44a5d2dcda4	2829cb66-acfe-472d-a1ca-93a4fd3e6815	661ae48b-19ed-476e-8fd3-4968fa105c28	reject	bukti tidak jelas	0	{}	2026-10-11 10:35:17.471008+00
+96cf91d4-5b24-429a-b4cf-516754456972	91ac63f8-22dd-4fc5-85f2-aed52b54766d	661ae48b-19ed-476e-8fd3-4968fa105c28	refund	partial	50000	{"reference": "", "refunded_total": 50000}	2026-10-11 10:35:17.565479+00
+\.
+
+
+--
+-- Data for Name: payments; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.payments (id, invoice_id, user_id, gateway, gateway_ref, amount_idr, status, payment_method, proof_url, idempotency_key, payload_snapshot, created_at, updated_at, reviewed_by, reviewed_at, review_reason, refund_amount_idr, refund_reason, refund_ref, refunded_at) FROM stdin;
+2829cb66-acfe-472d-a1ca-93a4fd3e6815	49ec9f02-db52-4acb-a544-dc7d09c9d622	c5d4f372-d0b9-43de-9cbc-c4003d704101	manual	REF-SMOKE-2	111000	failed	bank_transfer	https://example.test/proof2.png	smoke-idem-2	{"reason": "bukti tidak jelas", "rejected": true}	2026-10-11 10:35:16.654118+00	2026-10-11 10:35:17.468518+00	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:35:17.468518+00	bukti tidak jelas	0	\N	\N	\N
+91ac63f8-22dd-4fc5-85f2-aed52b54766d	49ec9f02-db52-4acb-a544-dc7d09c9d622	c5d4f372-d0b9-43de-9cbc-c4003d704101	manual	REF-SMOKE-1	111000	settled	bank_transfer	https://example.test/proof.png	smoke-idem-1	{"approved": true}	2026-10-11 10:34:33.021936+00	2026-10-11 10:35:17.565479+00	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:34:57.588391+00	\N	50000	partial	\N	2026-10-11 10:35:17.565479+00
+\.
+
+
+--
+-- Data for Name: plan_entitlements; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.plan_entitlements (id, plan_id, feature_key, is_enabled, created_at, updated_at) FROM stdin;
+843690ec-88b9-4f91-ade9-b3bb2796bbee	a0000000-0000-0000-0000-000000000001	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+e45c6459-3aae-4bcb-a409-160ddcdc8e18	a0000000-0000-0000-0000-000000000001	ocr_receipt	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d0878baa-b8a7-485a-880d-c8edf09dc29c	a0000000-0000-0000-0000-000000000001	voice_input	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+12da3b84-55a8-4a8b-99aa-6f76c6511b3c	a0000000-0000-0000-0000-000000000001	rag_search	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+dd2af0b1-7e2a-458e-9229-bb847cc08e97	a0000000-0000-0000-0000-000000000001	reports_export	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+21153ecf-b462-4983-8f54-883756803451	a0000000-0000-0000-0000-000000000001	advanced_budgeting	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+b01c4105-df0e-4bde-84b9-bee9adbb9bbc	a0000000-0000-0000-0000-000000000001	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d3f8082b-345e-4a44-8dab-b84a3faec3f7	a0000000-0000-0000-0000-000000000001	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+3d919d02-2fef-411c-af84-1270322b252e	a0000000-0000-0000-0000-000000000002	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+a24ad394-f62f-4546-8935-8897ace654ce	a0000000-0000-0000-0000-000000000002	ocr_receipt	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+f9099af8-c015-460b-9d0a-7e2a2435805f	a0000000-0000-0000-0000-000000000002	voice_input	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+746004ea-9a07-452e-a424-71d4282e9826	a0000000-0000-0000-0000-000000000002	rag_search	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d36394e0-afda-40c9-826d-6ddd7ce0342d	a0000000-0000-0000-0000-000000000002	reports_export	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+e9d72bbe-e6c4-488d-8f13-030f9f54782e	a0000000-0000-0000-0000-000000000002	advanced_budgeting	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+1348b56a-ca5d-4b30-b522-1d7969b124d9	a0000000-0000-0000-0000-000000000002	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+b60ea4c3-8e73-41f0-b1d7-9fc70d71e0bf	a0000000-0000-0000-0000-000000000002	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+2bd662de-6b63-4351-bcec-2be824c147a2	a0000000-0000-0000-0000-000000000003	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+2b0652fc-c815-4941-ba2e-d6a74916087c	a0000000-0000-0000-0000-000000000003	ocr_receipt	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+0e6750f4-b0b0-4bfa-a6ed-a9ae5c61a65f	a0000000-0000-0000-0000-000000000003	voice_input	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+333c61c1-cec5-40d0-87e6-bf79ce40b001	a0000000-0000-0000-0000-000000000003	rag_search	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+dcb4f52b-2c1e-42ca-956c-2fb37d11b77d	a0000000-0000-0000-0000-000000000003	reports_export	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+c6396b94-3f97-4112-808b-4290ec1a4799	a0000000-0000-0000-0000-000000000003	advanced_budgeting	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+643f2eeb-1f71-4bc2-bfdc-94efaf2f7ce1	a0000000-0000-0000-0000-000000000003	api_access	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+c1be1e58-3ac6-4745-9dc4-f9728158b677	a0000000-0000-0000-0000-000000000003	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+cff59216-47ba-4f4a-8b53-28a31257cce3	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat	t	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
+b7ce0105-072c-46be-9c57-14d7713c2880	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_vision	f	2026-10-11 10:36:31.857302+00	2026-10-11 10:36:31.857302+00
+\.
+
+
+--
+-- Data for Name: plan_limits; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.plan_limits (id, plan_id, limit_key, limit_value, created_at, updated_at) FROM stdin;
+2d0e74cd-31e0-4ad9-82dc-7b8ffbd7c503	a0000000-0000-0000-0000-000000000001	ai_tokens_per_cycle	5000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+18f9725b-f943-4970-b8fc-596fad46c7ca	a0000000-0000-0000-0000-000000000001	ai_requests_per_cycle	50	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+8b76e4c7-cbdd-462d-a46f-0ba99f427147	a0000000-0000-0000-0000-000000000001	max_transactions	100	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+be74aa5e-cdb4-4043-9e15-cc8b7242b0f8	a0000000-0000-0000-0000-000000000001	max_categories	5	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+ff6b87a2-1f7b-458d-bcba-155adac5d530	a0000000-0000-0000-0000-000000000001	max_wallets	1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+4084ced6-4a9a-4be3-89a6-f8ce73951e43	a0000000-0000-0000-0000-000000000001	ocr_scans_per_cycle	0	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+b38caade-5137-4e53-9285-21f74c0e2f02	a0000000-0000-0000-0000-000000000002	ai_tokens_per_cycle	150000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+26bbb1fa-9d1e-4a4a-82de-d1ed386a8dbf	a0000000-0000-0000-0000-000000000002	ai_requests_per_cycle	2000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+9ccdd7e3-af20-4f3f-ae00-ea814d45fb3a	a0000000-0000-0000-0000-000000000002	max_transactions	5000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+b2437b73-2ba6-4174-ac21-d7c593f81964	a0000000-0000-0000-0000-000000000002	max_categories	30	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+17872a70-b848-4b78-89a3-fed2e90e1c86	a0000000-0000-0000-0000-000000000002	max_wallets	5	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+c95d8931-5eff-4e56-8fd8-482b09898589	a0000000-0000-0000-0000-000000000002	ocr_scans_per_cycle	100	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+721c6ddf-5166-4be2-8418-a3504e560c96	a0000000-0000-0000-0000-000000000003	ai_tokens_per_cycle	1000000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+305aa19d-4320-4cee-b84b-e7c0b9d0074d	a0000000-0000-0000-0000-000000000003	ai_requests_per_cycle	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+4256c4c9-2471-4ee2-9dcb-5aeaf8224e25	a0000000-0000-0000-0000-000000000003	max_transactions	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+5289567a-aea0-4b11-9d90-a6872367cba3	a0000000-0000-0000-0000-000000000003	max_categories	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+8e94da06-daf9-4eea-9346-d75119067458	a0000000-0000-0000-0000-000000000003	max_wallets	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+08a0e555-92f5-48a1-8737-a36a50489aae	a0000000-0000-0000-0000-000000000003	ocr_scans_per_cycle	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+cef4be0b-bffb-4cfa-891e-5f67e516dff4	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat_daily	250	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
+\.
+
+
+--
+-- Data for Name: plans; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.plans (id, code, name, description, price_monthly_idr, price_yearly_idr, billing_period_days, is_active, is_public, fallback_gateway, sort_order, created_at, updated_at) FROM stdin;
+a0000000-0000-0000-0000-000000000001	free	Free	Paket gratis untuk mulai mencatat keuangan.	0	0	30	t	t	manual	1	2026-10-11 09:10:16.646119+00	2026-10-11 09:10:18.048859+00
+a0000000-0000-0000-0000-000000000002	pro	Pro	Untuk pengguna aktif dengan kebutuhan AI.	39000	390000	30	t	t	midtrans	2	2026-10-11 09:10:16.646119+00	2026-10-11 09:10:18.048859+00
+a0000000-0000-0000-0000-000000000003	business	Business	Untuk power user dan usaha kecil.	129000	1290000	30	t	t	midtrans	3	2026-10-11 09:10:16.646119+00	2026-10-11 09:10:18.048859+00
+2f309db0-c0eb-41e8-ba04-2b2372bd2179	smoke_plan	Smoke Plan v2	\N	59000	0	30	f	f	manual	99	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.967382+00
+\.
+
+
+--
+-- Data for Name: pricing_rules; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.pricing_rules (id, rule_name, base_per_1k_idr, markup_multiplier, markup_percent, modality_multipliers, is_active, created_at, updated_at) FROM stdin;
+9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	default	300	1.2500	0	{"chat": 1.0, "voice": 3.0, "vision": 2.5, "embedding": 0.5, "reasoning": 2.0}	t	2026-10-11 09:10:16.668208+00	2026-10-11 09:10:18.070593+00
 \.
 
 
@@ -2821,6 +3434,42 @@ f519d8af-6b7e-42e9-a15f-4988dd17422f	00000000-0000-0000-0000-000000000002	f5fe1f
 0f96507f-d1dd-4468-ae82-5445279d2463	00000000-0000-0000-0000-000000000002	8697437f6eebee77fcdf2a44632c18bab239ea197520004fc86813ff9fec66fa	2026-11-09 19:52:02.802188+00	\N	\N	2026-10-10 19:52:02.802933+00	\N	Grafana k6/2.3.0
 9095b840-6caa-4b75-931d-a6eb71840bff	00000000-0000-0000-0000-000000000002	f37e4dfebdb9f45901169f05826341247f62a4ba0c0b4d19034c9928cc230172	2026-11-09 19:52:02.832977+00	\N	\N	2026-10-10 19:52:02.833371+00	\N	Grafana k6/2.3.0
 ae55986a-4502-4551-a003-b6f3ecf4ffa5	00000000-0000-0000-0000-000000000002	ce20e03d0eb1103f1931a1e9069ca81df0d02f716c70ac447156dc4cc1614c72	2026-11-09 19:52:28.566834+00	\N	\N	2026-10-10 19:52:28.567159+00	\N	Grafana k6/2.3.0
+d3d8503b-f8ce-40ed-86c7-52c72d93f432	00000000-0000-0000-0000-000000000002	09db9912957873efe5e0c6e20424493fe738cc3991010c74b166cc1af434ea6b	2026-11-09 19:55:02.071781+00	\N	\N	2026-10-10 19:55:02.072091+00	\N	curl/8.21.0
+28cdfb08-7b0e-401d-9d6c-a45f51219071	00000000-0000-0000-0000-000000000003	fd5cfd7563b51ee02a2fd8f7ddb7893261d3bd12dcfff8a0c92e6a847d221fac	2026-11-09 19:55:02.324093+00	\N	\N	2026-10-10 19:55:02.324415+00	\N	curl/8.21.0
+cfc0bf61-ce82-4f10-8cef-15fbcd76fa44	4c40f185-5d03-466b-8acc-c81ba80137ec	9030df9a1cc6ed70365405496e76a6b6fbd8e87adfae76e7c2116d0d135d1be5	2026-11-10 08:29:34.192351+00	2026-10-11 08:29:34.209009+00	b3dd1f6a-a5d9-4892-8489-e79e8a915073	2026-10-11 08:29:34.193632+00	2026-10-11 08:29:34.209009+00	test-agent
+b3dd1f6a-a5d9-4892-8489-e79e8a915073	4c40f185-5d03-466b-8acc-c81ba80137ec	2fba2c40f8bd2e852d2b7b71c41d80449a7c4206f426965a83d955083b6609fd	2026-11-10 08:29:34.209213+00	2026-10-11 08:29:34.22087+00	\N	2026-10-11 08:29:34.209009+00	\N	test-agent
+cb5aa01f-23b8-4e3b-8c0a-de22cf3ed614	00000000-0000-0000-0000-000000000002	d4c527aa96155e4a24bf19a396da298adcfbaf8b0678a9fc51d6555ba83b53b4	2026-11-10 08:39:42.698468+00	\N	\N	2026-10-11 08:39:42.699661+00	\N	curl/8.21.0
+7085f626-c421-40bc-b078-c6e29de86dcc	75076450-d14a-46dd-9135-ff752e814a08	cef6ae7aa8f65e9e7b5d0aaea2de5485168ce2a6d92d8bb3b2897b55c317d589	2026-11-10 08:56:51.241135+00	2026-10-11 08:56:51.252126+00	996febaa-a95d-4f99-a87b-c71daaf7cef1	2026-10-11 08:56:51.24309+00	2026-10-11 08:56:51.252126+00	test-agent
+996febaa-a95d-4f99-a87b-c71daaf7cef1	75076450-d14a-46dd-9135-ff752e814a08	46fe1a9ca645a12b5f69d95897b0d0700e563a71964370b13c9123162c46a879	2026-11-10 08:56:51.251452+00	2026-10-11 08:56:51.262628+00	\N	2026-10-11 08:56:51.252126+00	\N	test-agent
+caffd43e-52e8-41e4-b4ad-27a0cdc6a401	00000000-0000-0000-0000-000000000002	15b90b57e4645456d9c88418958b3b267ce9e60cb528420858cde40b28acddc4	2026-11-10 09:04:05.774568+00	\N	\N	2026-10-11 09:04:05.775509+00	\N	curl/8.21.0
+46fc876b-12a2-4cc5-8950-6f56a81ad1a3	00000000-0000-0000-0000-000000000002	ac5cb05a55882c1ff5598f48a5476f98a644138d0409dff5e67f115ba999fe86	2026-11-10 09:04:16.667176+00	\N	\N	2026-10-11 09:04:16.668129+00	\N	curl/8.21.0
+b172eef5-f3d5-4446-bf4f-4a5838ea7a7e	00000000-0000-0000-0000-000000000002	ab36149d02288276eb038cc0ada9e15664b7df7dc1e6fb66a9ec245875279180	2026-11-10 09:04:24.943942+00	\N	\N	2026-10-11 09:04:24.944404+00	\N	curl/8.21.0
+b38ba61e-74af-4eb7-b1b7-45d1b300b4e6	b736ceea-b25f-4b4e-8423-ee8b2848cab4	780778432df0088ce4a092fab29cf728c7a0d8726ad7ce33dca6ae432889860e	2026-11-10 09:20:33.634933+00	2026-10-11 09:20:33.6477+00	0762667f-dc58-47ba-ad62-95cd5afe0bd4	2026-10-11 09:20:33.637571+00	2026-10-11 09:20:33.6477+00	test-agent
+0762667f-dc58-47ba-ad62-95cd5afe0bd4	b736ceea-b25f-4b4e-8423-ee8b2848cab4	cef6b23982dd7343aeb462a5f0f97c16120294b78b8319a97d9f6ef5ee2d8376	2026-11-10 09:20:33.647381+00	2026-10-11 09:20:33.658181+00	\N	2026-10-11 09:20:33.6477+00	\N	test-agent
+fabe7eb9-21ef-4730-a11f-39ce010a16bb	742426f5-1bc6-426b-b816-3f7666b35b6a	d548f607868357d7490585c712dba3a29eb1afe84c905b783ba77c5b5601858e	2026-11-10 09:23:37.715196+00	2026-10-11 09:23:37.729385+00	a23bc20a-9912-4718-b499-e6770321c6bc	2026-10-11 09:23:37.720401+00	2026-10-11 09:23:37.729385+00	test-agent
+a23bc20a-9912-4718-b499-e6770321c6bc	742426f5-1bc6-426b-b816-3f7666b35b6a	6911f788d1d640d89298e52f65e3f23f15a1c3c2f7f73a1fdf14b90c1bbc46fb	2026-11-10 09:23:37.72901+00	2026-10-11 09:23:37.743261+00	\N	2026-10-11 09:23:37.729385+00	\N	test-agent
+058002d1-76ae-4c4f-b180-a672ac3cae47	00000000-0000-0000-0000-000000000002	ceae9913ad07fbc6ecaaa719d7ff3711425fda6887e7a18b074f6743c577cfe0	2026-11-10 09:25:21.392446+00	\N	\N	2026-10-11 09:25:21.393314+00	\N	curl/8.21.0
+28a07167-6b8b-403d-9d85-03e9ad35304e	00000000-0000-0000-0000-000000000002	4f9284e55bcdf1d6a93de9ac0c452544177a4616b3521fd229dbd4074eaab394	2026-11-10 09:25:30.02846+00	\N	\N	2026-10-11 09:25:30.028864+00	\N	curl/8.21.0
+b7c04a65-0e2a-488d-a354-1a7e808cdaa3	43d42446-5689-45f3-9a21-73b435ae0ccf	603bc7f1eb3895b08cf08002d66fbc43b32c8a3e1e1b8c782b5f9d236a033bb2	2026-11-10 09:47:26.603584+00	2026-10-11 09:47:26.621167+00	ee323b3f-b6d4-486c-8a32-a67f87913ad7	2026-10-11 09:47:26.611143+00	2026-10-11 09:47:26.621167+00	test-agent
+ee323b3f-b6d4-486c-8a32-a67f87913ad7	43d42446-5689-45f3-9a21-73b435ae0ccf	a4ca3514e47a4200359951113137d91012c2195485aa096118a79dfa707fc18e	2026-11-10 09:47:26.62147+00	2026-10-11 09:47:26.632415+00	\N	2026-10-11 09:47:26.621167+00	\N	test-agent
+5e594728-0936-44d4-b640-0255d4b7b535	661ae48b-19ed-476e-8fd3-4968fa105c28	4ed7c0d35fc5e0ebb8f930fb03d138209432628438a7a1f143f874276fc6596d	2026-11-10 10:23:50.827083+00	\N	\N	2026-10-11 10:23:50.828197+00	\N	curl/8.5.0
+3cecff4a-979c-4a4e-9ef8-4fea22094248	c5d4f372-d0b9-43de-9cbc-c4003d704101	277a0cab7e5647077b8b10de6677e1910fba347fab89cdf25f5116cc75225359	2026-11-10 10:23:52.237319+00	\N	\N	2026-10-11 10:23:52.237959+00	\N	curl/8.5.0
+671cb9e9-7982-466f-9e2c-a4826ca78ee0	661ae48b-19ed-476e-8fd3-4968fa105c28	4a6e399b91cebd2042ebaadd3f2ad86d4978d3ed3686c563dd03237134a5a191	2026-11-10 10:24:27.243034+00	\N	\N	2026-10-11 10:24:27.244107+00	\N	curl/8.5.0
+62b69cdf-675e-48b8-b971-e1364215bd3d	c5d4f372-d0b9-43de-9cbc-c4003d704101	50deebafa66fecc7124cd219e89d82b956868b7ffcdb65233e9b3e0c1a271fcf	2026-11-10 10:24:28.258014+00	\N	\N	2026-10-11 10:24:28.258349+00	\N	curl/8.5.0
+6fd3e1ff-6c46-482f-ac0b-099d69c1ba2e	661ae48b-19ed-476e-8fd3-4968fa105c28	8756c68db707f641fde98f27bc35bdbad526ca0eedc3760160388906a6020299	2026-11-10 10:24:33.74793+00	\N	\N	2026-10-11 10:24:33.748255+00	\N	curl/8.5.0
+618ef8a4-2024-4c7b-b62c-06da06faf49e	c5d4f372-d0b9-43de-9cbc-c4003d704101	dea830db7df53c8ac682cf5fe6ac1b439d397d8bd4f1e9989e14f28a8a73f32c	2026-11-10 10:24:34.76973+00	\N	\N	2026-10-11 10:24:34.770019+00	\N	curl/8.5.0
+85ca1630-a73b-4591-9ac5-8994222693c0	661ae48b-19ed-476e-8fd3-4968fa105c28	50ba4cf1bc86d850d3150a36bdf6c04b2d32c06fb6e947a9f6d175956174f294	2026-11-10 10:29:00.284133+00	\N	\N	2026-10-11 10:29:00.285286+00	\N	curl/8.5.0
+91115922-f9fe-414f-9991-f0baace4c4e3	c5d4f372-d0b9-43de-9cbc-c4003d704101	339954b9b5588d9fbad3a5670a415dd5b59d374c5c9f3fb7376c4a07df726254	2026-11-10 10:29:01.486157+00	\N	\N	2026-10-11 10:29:01.486503+00	\N	curl/8.5.0
+633772e3-e340-4cde-a2d4-c55be27ba2e2	661ae48b-19ed-476e-8fd3-4968fa105c28	7889b77c027ea8b88af6c23a5933bc084fd4f96bc5704be644938a6cacc77abe	2026-11-10 10:34:20.93519+00	\N	\N	2026-10-11 10:34:20.936334+00	\N	curl/8.5.0
+26f3da5f-9957-48df-a5de-0085ace227bc	c5d4f372-d0b9-43de-9cbc-c4003d704101	918fad0bfd2049a392933fbf2b2976a8cc15e81b857a7eab65997026d7ab0949	2026-11-10 10:34:22.263344+00	\N	\N	2026-10-11 10:34:22.263656+00	\N	curl/8.5.0
+b71fad72-6047-4d06-a421-77959386af47	c5d4f372-d0b9-43de-9cbc-c4003d704101	136e2a50c84702a72ebdb24cfe2fd09bbb2efdb8bdda17468351aab9dfeca887	2026-11-10 10:41:37.525444+00	\N	\N	2026-10-11 10:41:37.527629+00	\N	curl/8.21.0
+8280c821-c90c-4efa-8fa8-73c87956443c	661ae48b-19ed-476e-8fd3-4968fa105c28	df690c39ce76079a0d21c03d5f89e9fb93a4a3ac7e5e49c9d628fc8e5a062089	2026-11-10 10:46:18.978428+00	\N	\N	2026-10-11 10:46:18.979427+00	\N	curl/8.21.0
+25a3cc30-0667-4910-a12f-755ddf9d2512	c5d4f372-d0b9-43de-9cbc-c4003d704101	bbb29ac440c2de1be1f180734939580d53aaad9a5a6fd72cd4540ebca36be4a5	2026-11-10 10:46:19.4481+00	\N	\N	2026-10-11 10:46:19.448414+00	\N	curl/8.21.0
+2f103fa5-d3e6-4058-9638-b64699573bed	661ae48b-19ed-476e-8fd3-4968fa105c28	0739699fa70e5192b1ea990de3a265bfd438179633161a261f1840e59df3f419	2026-11-10 10:48:28.695267+00	\N	\N	2026-10-11 10:48:28.695596+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+133b1063-0af8-40b7-a719-a860b067696a	c5d4f372-d0b9-43de-9cbc-c4003d704101	7dc7b533096c411f3a6da770ee391074d7bc7021d6c77121d94d393796eade7a	2026-11-10 10:50:32.47005+00	\N	\N	2026-10-11 10:50:32.47108+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+fc05a626-bd67-453b-bc67-e270f6f53fb7	661ae48b-19ed-476e-8fd3-4968fa105c28	ad69e07eaddb9b77b32dc801877b09f5bbe34680a66d74dc0db6b120a2148cb1	2026-11-10 10:50:52.928952+00	\N	\N	2026-10-11 10:50:52.929991+00	\N	curl/8.5.0
+beaa023d-6f52-4f2b-a20b-9ee3aac59f8a	c5d4f372-d0b9-43de-9cbc-c4003d704101	cd6d610080699465c79837f190477ae80aa3cc7590f607c70edcbf6aa14c9d69	2026-11-10 10:50:54.463803+00	\N	\N	2026-10-11 10:50:54.46409+00	\N	curl/8.5.0
+e239a51f-18df-4245-9b24-abdd99211e28	661ae48b-19ed-476e-8fd3-4968fa105c28	92bada04d396210fd9597f081cd873122ff85eb2245107d9993940ca25040904	2026-11-10 11:01:46.171524+00	\N	\N	2026-10-11 11:01:46.172654+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 \.
 
 
@@ -2838,6 +3487,20 @@ c685ad4b-2023-40d3-8cfa-32cc7e312041	Investasi	trending-up	#10b981	Reksadana, sa
 fc613803-b21f-47ab-854e-7ca41844ad4b	Kendaraan	car	#ec4899	Tabungan kendaraan baru	t	7	\N	2026-06-23 17:03:21.504951+00	2026-06-23 17:03:21.504951+00
 aedf6f14-962c-4b23-8344-0e94e4de6930	Lainnya	piggy-bank	#64748b	Kategori tabungan lainnya	t	8	\N	2026-06-23 17:03:21.504951+00	2026-06-23 17:03:21.504951+00
 a2bf7053-cd83-489c-bae5-766fc3a56106	Tabungan Harian	circle	#94a3b8	\N	t	99	\N	2026-06-24 10:19:43.330902+00	2026-06-24 10:19:43.330902+00
+\.
+
+
+--
+-- Data for Name: settings; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.settings (key, value, updated_by, updated_at, description) FROM stdin;
+feature_flags	{}	\N	2026-10-11 10:15:35.082271+00	Toggle fitur eksperimental global
+payment_gateway_default	"manual"	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:36:37.380568+00	Gateway pembayaran default (midtrans|manual)
+invoice_due_hours	72	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:36:37.380568+00	Jam jatuh tempo invoice sejak diterbitkan
+grace_period_hours	24	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:50:53.659533+00	Jam masa tenggang sebelum fitur dibekukan
+tax_rate_percent	11	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:50:53.659533+00	Persentase PPN/PPN (integer, 0-100)
+ai_kill_switch	{"chat": false, "global": false}	\N	2026-10-11 10:50:53.794592+00	Status Emergency Kill Switch AI Gateway per modalitas
 \.
 
 
@@ -2904,6 +3567,233 @@ cb13ee9e-f08a-4c32-b43a-709bb9c8d670	4a70824e-8116-4ac8-be58-2837848a6ea0	36.29	
 7fac51dc-6bc7-4345-a002-33f03b6eaa26	4a70824e-8116-4ac8-be58-2837848a6ea0	37.41	Boros	{"consistency": 12.9, "saving_ratio": 100, "expense_trend": 0, "needs_vs_wants": 15.35, "diversification": 16.34}	2026-06-02	2026-07-02	2026-07-02 05:17:55.130317+00
 f7f14873-2ef7-485d-bf47-3d813be4d7f8	4a70824e-8116-4ac8-be58-2837848a6ea0	37.86	Boros	{"consistency": 12.9, "saving_ratio": 100, "expense_trend": 0, "needs_vs_wants": 16.78, "diversification": 17.28}	2026-06-02	2026-07-02	2026-07-02 05:18:52.921066+00
 2f8f54ca-9b0d-4481-9df2-d54d7a809a42	4a70824e-8116-4ac8-be58-2837848a6ea0	38.30	Boros	{"consistency": 12.9, "saving_ratio": 100, "expense_trend": 0, "needs_vs_wants": 18.18, "diversification": 18.2}	2026-06-02	2026-07-02	2026-07-02 05:19:07.146132+00
+8fac9fb3-804f-4d48-bcb0-18d0246302ee	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 08:29:34.555117+00
+6e1fe6ec-b5c8-4b15-aa03-192f8f4f2e5c	6118d78b-7009-4895-a343-face014428d5	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 08:56:51.494821+00
+d5d40d2d-34a1-4b7d-9e97-331a4cd45dc4	5ae1be02-8c17-48a7-9ebc-62af712f9b32	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 09:20:33.913845+00
+24bf64d9-c32a-4453-940f-607428ec2b7a	e54c6948-ac57-46ef-8202-a6828c84c454	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 09:23:38.038947+00
+60fa5dfd-a819-4835-a652-d1ec47f7f0e4	7a5eac40-9951-4b8f-9649-5a294028dc94	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 09:47:26.892825+00
+\.
+
+
+--
+-- Data for Name: subscription_events; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.subscription_events (id, subscription_id, user_id, event_type, previous_state, new_state, reason, actor_id, ip_address, user_agent, created_at) FROM stdin;
+4ee3cdd8-0ce0-496e-8c6b-61adeb6590d4	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	c5d4f372-d0b9-43de-9cbc-c4003d704101	extended	{"reason": "smoke", "extended_days": 30}	{"status": "active"}	smoke	661ae48b-19ed-476e-8fd3-4968fa105c28	\N	\N	2026-10-11 10:35:21.091488+00
+b302487f-c96f-4f36-a7d5-881a6a99cee9	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	c5d4f372-d0b9-43de-9cbc-c4003d704101	force_downgrade	{"plan_code": "free"}	{"plan_code": "free"}	smoke	661ae48b-19ed-476e-8fd3-4968fa105c28	\N	\N	2026-10-11 10:35:21.198877+00
+d74409c2-0dd0-4bf7-a571-a370f8a11d45	7ac6e366-8a37-4d1a-a10b-a334add9a1a9	c5d4f372-d0b9-43de-9cbc-c4003d704101	canceled	{}	{"status": "canceled", "immediate": false, "cancel_at_period_end": true}	smoke	661ae48b-19ed-476e-8fd3-4968fa105c28	\N	\N	2026-10-11 10:35:21.294822+00
+\.
+
+
+--
+-- Data for Name: subscriptions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, gateway, gateway_subscription_id, metadata, created_at, updated_at) FROM stdin;
+f0d86f47-704c-4fb0-aba9-e993639cdf53	00000000-0000-0000-0000-000000000002	a0000000-0000-0000-0000-000000000001	active	2026-10-11 09:25:21.802063+00	2026-11-10 09:25:21.802063+00	f	\N	manual	\N	{}	2026-10-11 09:25:21.802063+00	2026-10-11 09:25:21.802063+00
+7ac6e366-8a37-4d1a-a10b-a334add9a1a9	c5d4f372-d0b9-43de-9cbc-c4003d704101	a0000000-0000-0000-0000-000000000001	active	2026-10-11 10:35:16.654118+00	2026-12-10 10:35:16.654118+00	t	2026-10-11 10:35:21.294822+00	manual	\N	{}	2026-10-11 10:35:16.654118+00	2026-10-11 10:35:21.294822+00
+\.
+
+
+--
+-- Data for Name: token_ledger; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at) FROM stdin;
+ab8a7ab9-61a6-4beb-b0fd-f5fd3e1ee36e	f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	\N	grant	100	chat	0	test-trigger-1	\N	\N	2026-10-11 09:09:53.985961+00
+6b43a759-e4ca-47f4-8011-c8bb06edc0f3	2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-2d095794-5232-406a-96ca-8b068bd5b77f	\N	\N	2026-10-11 09:11:55.697656+00
+9f10a7c4-15a2-4ab0-a09f-dfae27d156af	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-5c5db3f5-614d-42af-a44c-3c9a9ac72248	\N	\N	2026-10-11 09:15:13.900753+00
+4174a255-8657-49c5-80f3-70e7196bae95	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	reserve	300	chat	0	itest-res-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:13.973281+00
+f1b96a6a-c784-46f2-a1b0-2c772d161ad5	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	commit	120	chat	45	itest-com-4174a255-8657-49c5-80f3-70e7196bae95	\N	\N	2026-10-11 09:15:14.003195+00
+7b5bdc67-7217-4a9c-abde-456517892dad	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	reserve	200	vision	0	itest-res2-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:14.030375+00
+3491473a-c292-4da3-854c-28bd5afd0314	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	release	-200	vision	0	itest-rel-7b5bdc67-7217-4a9c-abde-456517892dad	\N	\N	2026-10-11 09:15:14.043306+00
+fe1d787e-efc0-470d-ab5c-61fdf3ee856e	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	reserve	250	chat	0	itest-clean-93237f05-47f6-450b-8018-3ab9b433a1c5	\N	\N	2026-10-11 09:15:14.192422+00
+85c025ae-dce4-41e9-b21b-b197d06d62dd	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	6b43a759-e4ca-47f4-8011-c8bb06edc0f3	release	-100	chat	0	cleanup:6b43a759-e4ca-47f4-8011-c8bb06edc0f3	\N	\N	2026-10-11 09:15:14.218358+00
+f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-7667adb7-ea63-4ba0-88f1-572d878e15cc	\N	\N	2026-10-11 09:16:18.286069+00
+ccc21b17-15a2-40f3-8194-9b60e03b2e48	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	reserve	300	chat	0	itest-res-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.341555+00
+8e180681-901a-4581-adcb-4dcde3ff6a13	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	commit	120	chat	45	itest-com-ccc21b17-15a2-40f3-8194-9b60e03b2e48	\N	\N	2026-10-11 09:16:18.363488+00
+f926401c-ba88-4c72-bb22-8b8579028471	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	reserve	200	vision	0	itest-res2-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.385729+00
+d35fa89a-ffa3-4b03-98de-ed43c9a5db8d	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	release	-200	vision	0	itest-rel-f926401c-ba88-4c72-bb22-8b8579028471	\N	\N	2026-10-11 09:16:18.394909+00
+05978f05-48e5-4452-bf41-a9e397def6ab	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	reserve	250	chat	0	itest-clean-e51250cd-facf-4bd7-a23d-27b8bfc0864a	\N	\N	2026-10-11 09:16:18.523369+00
+f2d34a50-f5bb-45d4-b5d9-57fee29cdb44	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	9f10a7c4-15a2-4ab0-a09f-dfae27d156af	release	-100	chat	0	cleanup:9f10a7c4-15a2-4ab0-a09f-dfae27d156af	\N	\N	2026-10-11 09:16:18.551242+00
+e9b8fe04-6022-4467-80af-4bacd33b9b77	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	release	-250	chat	0	cleanup:fe1d787e-efc0-470d-ab5c-61fdf3ee856e	\N	\N	2026-10-11 09:16:18.562392+00
+01ca435d-c642-45c3-9f14-8359dbbb851c	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	release	-250	chat	0	cleanup:05978f05-48e5-4452-bf41-a9e397def6ab	\N	\N	2026-10-11 09:16:18.582509+00
+93e6d1ee-8c51-4373-a6f9-d018555a4951	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-a6e0fb42-d387-4ab0-9046-918d411fbc8f	\N	\N	2026-10-11 09:20:32.856806+00
+6596beb8-6234-4037-b450-142d184cc173	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	reserve	300	chat	0	itest-res-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:33.974717+00
+4063e1f9-d332-46bf-8707-4d04d511081c	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	commit	120	chat	45	itest-com-6596beb8-6234-4037-b450-142d184cc173	\N	\N	2026-10-11 09:20:33.996172+00
+b3179fc5-52bf-4d47-952d-e51f0545b579	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	reserve	200	vision	0	itest-res2-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:34.009568+00
+c66d62ae-06e6-4948-9883-73586f328ec4	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	release	-200	vision	0	itest-rel-b3179fc5-52bf-4d47-952d-e51f0545b579	\N	\N	2026-10-11 09:20:34.019018+00
+129382e1-91df-4ff9-b1f6-2abf0b03d0d8	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	reserve	250	chat	0	itest-clean-c539a480-fbc6-4cf3-bea3-839807c7e8ad	\N	\N	2026-10-11 09:20:34.129819+00
+da104410-dd77-43ee-a919-d29d48b58b53	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	release	-100	chat	0	cleanup:f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	\N	\N	2026-10-11 09:20:34.151061+00
+1061cb56-b5b8-42ff-ad2a-cad0f7c677f0	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	release	-250	chat	0	cleanup:129382e1-91df-4ff9-b1f6-2abf0b03d0d8	\N	\N	2026-10-11 09:20:34.166346+00
+84b1c699-b3da-4725-b174-1a0a1c1291ea	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-8	\N	\N	2026-10-11 09:22:40.012881+00
+8a54a113-57fb-4f5f-8bd3-78a026594aef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-16	\N	\N	2026-10-11 09:22:40.07227+00
+678a0e09-f260-4659-a896-67e9d3f9e7ef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-20	\N	\N	2026-10-11 09:22:40.072378+00
+422a9e4b-c226-4039-84db-e7d6999f44e6	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-5	\N	\N	2026-10-11 09:22:40.078447+00
+c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-38	\N	\N	2026-10-11 09:22:40.083909+00
+a6100d1f-0d21-4e39-a2f2-7eb1758014d8	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-7	\N	\N	2026-10-11 09:22:40.0753+00
+e7466dc6-6428-4955-a8d2-b16eee6be3cc	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-39	\N	\N	2026-10-11 09:22:40.092486+00
+a368ccc8-069a-4ed4-b0e2-c8419e01a555	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-4	\N	\N	2026-10-11 09:22:40.10975+00
+1e028d4c-6672-427e-94a3-39d9dc9a1c8d	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-25	\N	\N	2026-10-11 09:22:40.118472+00
+57187bab-e33d-49c3-9da3-b1c1596d56e7	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-30	\N	\N	2026-10-11 09:22:40.081069+00
+b8d28f66-97f1-4c12-9b36-6beec196ec52	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-0	\N	\N	2026-10-11 09:22:40.227525+00
+c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-1	\N	\N	2026-10-11 09:22:40.244859+00
+b6ae5911-8514-4723-ba2a-af35b962bf99	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-2	\N	\N	2026-10-11 09:22:40.25197+00
+322a98d8-bab7-45a6-80d9-3016b34b52d2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-3	\N	\N	2026-10-11 09:22:40.260418+00
+2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-4	\N	\N	2026-10-11 09:22:40.26713+00
+24d51382-5b82-4b83-804c-47bada6606f3	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-5	\N	\N	2026-10-11 09:22:40.274448+00
+769665b1-4439-4aad-bb35-417e6864c848	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-6	\N	\N	2026-10-11 09:22:40.281309+00
+48a6d620-4045-4969-9456-ca6a50d941a2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	48a6d620-4045-4969-9456-ca6a50d941a2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-7	\N	\N	2026-10-11 09:22:40.292198+00
+9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-8	\N	\N	2026-10-11 09:22:40.299851+00
+5e85c061-dea0-41a5-9ae6-c02d3435d49b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-9	\N	\N	2026-10-11 09:22:40.306748+00
+f338223f-7c34-4ac9-8360-557efdd82678	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	commit	100	chat	0	commit-c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6-0	\N	\N	2026-10-11 09:22:40.353639+00
+30d83acc-232f-41d2-9b0e-dd4ea95ed3d6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-1	\N	\N	2026-10-11 09:22:40.361864+00
+3fe9af7c-3a46-4099-bbb6-a46335317fb2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	commit	100	chat	0	commit-322a98d8-bab7-45a6-80d9-3016b34b52d2-1	\N	\N	2026-10-11 09:22:40.370979+00
+60f68d14-7e4b-4f24-98d9-0b25db70b3c4	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-0	\N	\N	2026-10-11 09:22:40.383284+00
+2a411a77-34c4-42d7-9e04-68d6512ed20c	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	commit	100	chat	0	commit-769665b1-4439-4aad-bb35-417e6864c848-1	\N	\N	2026-10-11 09:22:40.393864+00
+614a2f56-7294-4a40-a470-7fc327f349eb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	commit	100	chat	0	commit-5e85c061-dea0-41a5-9ae6-c02d3435d49b-0	\N	\N	2026-10-11 09:22:40.387357+00
+777f1549-578a-4cf1-8702-f60d68a2c0f2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-1	\N	\N	2026-10-11 09:22:40.401118+00
+e1b2e044-a312-413b-92e1-350cd9f1d991	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	commit	100	chat	0	commit-b6ae5911-8514-4723-ba2a-af35b962bf99-1	\N	\N	2026-10-11 09:22:40.414157+00
+36607016-59cc-49ae-913d-f4641938328b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	commit	100	chat	0	commit-b8d28f66-97f1-4c12-9b36-6beec196ec52-0	\N	\N	2026-10-11 09:22:40.41977+00
+a8745626-318b-4810-bf38-c4683de43cfb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-0	\N	\N	2026-10-11 09:22:40.401119+00
+36797fed-cee4-4cb3-b158-53a4e9f3a446	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-6221055c-f0b6-408c-a62a-6d209c393b96	\N	\N	2026-10-11 09:23:36.830075+00
+84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-39	\N	\N	2026-10-11 09:23:38.212052+00
+2f114616-69dd-41ad-b813-a7455b94ebc0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-33	\N	\N	2026-10-11 09:23:38.259321+00
+07971ddd-e662-4185-a3dd-3e873ade7bc2	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-31	\N	\N	2026-10-11 09:23:38.234378+00
+21490f3b-a4cc-4f3e-a674-28c9456adddf	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-22	\N	\N	2026-10-11 09:23:38.232525+00
+0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-23	\N	\N	2026-10-11 09:23:38.265152+00
+f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-37	\N	\N	2026-10-11 09:23:38.268029+00
+cbf45039-62a4-405b-866e-bed83bb0d3f0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-3	\N	\N	2026-10-11 09:23:38.24436+00
+a0187d13-bf11-417c-be37-639dd9b3c2d6	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-32	\N	\N	2026-10-11 09:23:38.304104+00
+369af912-46d0-422d-b0b2-6ba1bdcabc2a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-20	\N	\N	2026-10-11 09:23:38.229609+00
+5118fd28-3c35-4bfe-90b7-13385b6d1774	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-27	\N	\N	2026-10-11 09:23:38.319919+00
+6f47f204-3fa6-43c0-ace0-e19792d1de62	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-0	\N	\N	2026-10-11 09:23:38.466216+00
+253ce815-ea9f-4eed-bddc-6eb0574b0a84	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	253ce815-ea9f-4eed-bddc-6eb0574b0a84	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-1	\N	\N	2026-10-11 09:23:38.487249+00
+4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-2	\N	\N	2026-10-11 09:23:38.495497+00
+6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-3	\N	\N	2026-10-11 09:23:38.503884+00
+3b325f60-e3d4-4fc1-871f-23f157115433	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-4	\N	\N	2026-10-11 09:23:38.512694+00
+375d7f58-0a0c-46b0-b453-e68480b4e398	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-5	\N	\N	2026-10-11 09:23:38.520024+00
+5f844e77-bff0-4434-bde5-3f6981a241bc	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	5f844e77-bff0-4434-bde5-3f6981a241bc	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-6	\N	\N	2026-10-11 09:23:38.527341+00
+91a42438-f102-4577-9bed-a70c6e107fd5	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-7	\N	\N	2026-10-11 09:23:38.533867+00
+2f49b5e2-2e11-4364-9623-8fb72c23579b	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-8	\N	\N	2026-10-11 09:23:38.54287+00
+37f37a3d-5fa0-4e63-bf28-3c8af5043cae	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-9	\N	\N	2026-10-11 09:23:38.550079+00
+ba95c8bd-2063-43af-a361-e49edf9d51b2	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-0	\N	\N	2026-10-11 09:23:38.608932+00
+0b01ad31-36a2-4933-8f93-dd2682bb8c97	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-0	\N	\N	2026-10-11 09:23:38.617729+00
+e2590c0d-ad29-4c94-99d9-80775b135a31	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-1	\N	\N	2026-10-11 09:23:38.624647+00
+085685a3-c6e1-4ee4-8bc9-f89a2c476756	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	commit	100	chat	0	commit-37f37a3d-5fa0-4e63-bf28-3c8af5043cae-0	\N	\N	2026-10-11 09:23:38.634113+00
+49623aa2-c3d2-45e3-b4be-d4f31051cb5a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-1	\N	\N	2026-10-11 09:23:38.639751+00
+fcba3f6d-9a3e-48e4-9e6b-afc79e0de044	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-0	\N	\N	2026-10-11 09:23:38.647488+00
+8af46e21-d17f-4c7f-b5d9-56428d0553bf	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-1	\N	\N	2026-10-11 09:23:38.648086+00
+983252c9-128b-451b-be0a-bd24524f1b58	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	commit	100	chat	0	commit-91a42438-f102-4577-9bed-a70c6e107fd5-1	\N	\N	2026-10-11 09:23:38.678181+00
+63ffac44-3715-4649-a598-5c07c04de36d	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	commit	100	chat	0	commit-6f47f204-3fa6-43c0-ace0-e19792d1de62-1	\N	\N	2026-10-11 09:23:38.656564+00
+395e1a7e-3999-48f1-b6c9-53eeb7bfc325	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	commit	100	chat	0	commit-375d7f58-0a0c-46b0-b453-e68480b4e398-0	\N	\N	2026-10-11 09:23:38.662151+00
+e2d314f4-f415-4f61-b05b-2cf93a6e089c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	reserve	300	chat	0	itest-res-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.803404+00
+8e5902aa-38fd-4265-b768-0896340df887	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	commit	120	chat	45	itest-com-e2d314f4-f415-4f61-b05b-2cf93a6e089c	\N	\N	2026-10-11 09:23:38.828442+00
+966c2336-6d4f-4789-a161-cde30354db6c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	reserve	200	vision	0	itest-res2-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.843254+00
+9474994b-1098-4877-a75f-311e26d0c227	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	release	-200	vision	0	itest-rel-966c2336-6d4f-4789-a161-cde30354db6c	\N	\N	2026-10-11 09:23:38.853368+00
+0b9c21d8-4a8d-4281-947f-2d09613e9cf1	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	reserve	250	chat	0	itest-clean-d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	\N	\N	2026-10-11 09:23:39.048647+00
+6ea1cc49-326b-4891-8a2b-ad1c1d1601c4	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	93e6d1ee-8c51-4373-a6f9-d018555a4951	release	-100	chat	0	cleanup:93e6d1ee-8c51-4373-a6f9-d018555a4951	\N	\N	2026-10-11 09:23:39.118342+00
+bbada801-6979-46cb-82d0-feddd9b8f9c0	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	release	-100	chat	0	cleanup:84b1c699-b3da-4725-b174-1a0a1c1291ea	\N	\N	2026-10-11 09:23:39.132643+00
+a84140bd-7b1c-49e5-9b00-5fadbf22126f	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	release	-100	chat	0	cleanup:8a54a113-57fb-4f5f-8bd3-78a026594aef	\N	\N	2026-10-11 09:23:39.152235+00
+0b95c0f5-9d99-49a9-83d5-525909104d82	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	release	-100	chat	0	cleanup:678a0e09-f260-4659-a896-67e9d3f9e7ef	\N	\N	2026-10-11 09:23:39.166184+00
+02bb3a56-9205-4ab9-bd21-37ca1cb9f577	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	release	-100	chat	0	cleanup:a6100d1f-0d21-4e39-a2f2-7eb1758014d8	\N	\N	2026-10-11 09:23:39.18006+00
+4490bd72-17ab-4d9c-839a-7f7f7e9232c3	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	release	-100	chat	0	cleanup:422a9e4b-c226-4039-84db-e7d6999f44e6	\N	\N	2026-10-11 09:23:39.1926+00
+361fb82a-2f5b-42d7-82f5-7fdfeb047d21	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	release	-100	chat	0	cleanup:57187bab-e33d-49c3-9da3-b1c1596d56e7	\N	\N	2026-10-11 09:23:39.208664+00
+6dc99c11-b1a2-4589-b6e1-984206463d02	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	release	-100	chat	0	cleanup:c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	\N	\N	2026-10-11 09:23:39.2211+00
+43bbada8-0bc3-49b5-8f82-83b5f8276894	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	release	-100	chat	0	cleanup:e7466dc6-6428-4955-a8d2-b16eee6be3cc	\N	\N	2026-10-11 09:23:39.238051+00
+f924fc5d-2e9e-4927-aa81-6b452f661d40	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	release	-100	chat	0	cleanup:a368ccc8-069a-4ed4-b0e2-c8419e01a555	\N	\N	2026-10-11 09:23:39.25021+00
+f22bf14c-84ab-445f-834c-8ea7405cb81c	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	release	-100	chat	0	cleanup:1e028d4c-6672-427e-94a3-39d9dc9a1c8d	\N	\N	2026-10-11 09:23:39.261173+00
+7e27d132-8713-497c-98d6-398c5ef4ca4f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	release	-100	chat	0	cleanup:84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	\N	\N	2026-10-11 09:23:39.296323+00
+a05187bd-ca16-4e92-928c-790c69df3f3d	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	release	-100	chat	0	cleanup:369af912-46d0-422d-b0b2-6ba1bdcabc2a	\N	\N	2026-10-11 09:23:39.306909+00
+d2ee9ad0-dad4-433b-bf4a-960b0a03308f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	release	-100	chat	0	cleanup:21490f3b-a4cc-4f3e-a674-28c9456adddf	\N	\N	2026-10-11 09:23:39.316008+00
+8b513c2e-ed8f-417b-a993-b51bbf4beab1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	release	-100	chat	0	cleanup:07971ddd-e662-4185-a3dd-3e873ade7bc2	\N	\N	2026-10-11 09:23:39.325722+00
+0439d074-c008-4a68-8133-545c1137760c	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	release	-100	chat	0	cleanup:cbf45039-62a4-405b-866e-bed83bb0d3f0	\N	\N	2026-10-11 09:23:39.333978+00
+c172271d-877b-4570-a36b-4a892d05e3e4	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	release	-100	chat	0	cleanup:2f114616-69dd-41ad-b813-a7455b94ebc0	\N	\N	2026-10-11 09:23:39.343734+00
+4dd1b0a9-34c2-46d8-9908-e5f23ced5219	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	release	-100	chat	0	cleanup:0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	\N	\N	2026-10-11 09:23:39.352201+00
+8d58055e-24ff-4039-ace7-c2e0b37c6c0e	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	release	-100	chat	0	cleanup:f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	\N	\N	2026-10-11 09:23:39.361419+00
+05aaec20-4bcd-4a36-967e-83aecdcf8ccd	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	release	-100	chat	0	cleanup:a0187d13-bf11-417c-be37-639dd9b3c2d6	\N	\N	2026-10-11 09:23:39.371412+00
+9dca86c4-ee96-4319-b2d5-f101883e2d0a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	release	-100	chat	0	cleanup:5118fd28-3c35-4bfe-90b7-13385b6d1774	\N	\N	2026-10-11 09:23:39.382393+00
+9f4db381-11c2-46a6-aa7b-e27975c0c8cb	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	release	-250	chat	0	cleanup:0b9c21d8-4a8d-4281-947f-2d09613e9cf1	\N	\N	2026-10-11 09:23:39.42263+00
+f14dae17-4511-4357-b50c-26462501abaf	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-58af872e-a089-4801-9f7a-8e0aa3c7c3d7	\N	\N	2026-10-11 09:47:25.829118+00
+f63f0a48-ea11-4baa-ad30-939a85fa3020	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-5	\N	\N	2026-10-11 09:47:27.000612+00
+628ad811-fc09-42d9-92b5-98e843f5dad9	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-25	\N	\N	2026-10-11 09:47:27.023164+00
+281e9640-dd17-4705-b8cd-fd56a8d5d35d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-20	\N	\N	2026-10-11 09:47:27.032435+00
+daa8ff87-fdd2-44ae-8313-7a1b047c0e94	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-34	\N	\N	2026-10-11 09:47:27.034872+00
+d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-16	\N	\N	2026-10-11 09:47:27.04188+00
+32ad2c62-e9fd-40eb-a63b-acb705bb6469	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-29	\N	\N	2026-10-11 09:47:27.057142+00
+9a1f6bc1-56f4-4fb4-85fa-782b1095b685	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-7	\N	\N	2026-10-11 09:47:27.055977+00
+f0a99d48-5e72-4834-afbd-3f426958dd4b	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-12	\N	\N	2026-10-11 09:47:27.047892+00
+f4ec0efb-c970-45fc-aeb0-0f242bbed7df	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-3	\N	\N	2026-10-11 09:47:27.078806+00
+85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-11	\N	\N	2026-10-11 09:47:27.070272+00
+8712c2cc-c14b-4c77-b9a9-540094579af1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	8712c2cc-c14b-4c77-b9a9-540094579af1	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-0	\N	\N	2026-10-11 09:47:27.202302+00
+cefce473-376b-4d8e-bec0-76ae27b6ed47	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-1	\N	\N	2026-10-11 09:47:27.221071+00
+b3d034de-118a-4aab-b37e-846ad5e33cad	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	b3d034de-118a-4aab-b37e-846ad5e33cad	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-2	\N	\N	2026-10-11 09:47:27.228592+00
+262036f2-2876-4e76-8cbe-bda6d2079db0	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-3	\N	\N	2026-10-11 09:47:27.237849+00
+81873929-d5a4-4040-b3c0-7759c3a4dafb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-4	\N	\N	2026-10-11 09:47:27.245568+00
+3ad0fba2-1141-4661-9390-39368b497e7c	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-5	\N	\N	2026-10-11 09:47:27.253011+00
+df7252b8-0168-4267-a24d-40286d1c0933	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-6	\N	\N	2026-10-11 09:47:27.259624+00
+a2b67738-20d9-4529-8448-76e36ccd2b28	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-7	\N	\N	2026-10-11 09:47:27.266659+00
+2c77fd24-09ff-4b84-b404-9deb8301e8fb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-8	\N	\N	2026-10-11 09:47:27.272906+00
+c6f03282-3853-41a9-9899-5637ec0016e8	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-9	\N	\N	2026-10-11 09:47:27.280008+00
+68a5aca9-3594-4bb5-bfe6-46ad4adcc2a2	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-1	\N	\N	2026-10-11 09:47:27.326748+00
+92c41b61-2cae-47dd-a9d4-8c3eea749275	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	commit	100	chat	0	commit-cefce473-376b-4d8e-bec0-76ae27b6ed47-1	\N	\N	2026-10-11 09:47:27.338016+00
+2cfa57d8-36ab-455e-8c02-0c420172e086	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-0	\N	\N	2026-10-11 09:47:27.369965+00
+c9b066eb-8ccb-44ca-a71b-a63615f61f55	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	commit	100	chat	0	commit-df7252b8-0168-4267-a24d-40286d1c0933-0	\N	\N	2026-10-11 09:47:27.369889+00
+0d9d0cf0-6e36-44d5-ad79-2b8c7473696f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	commit	100	chat	0	commit-3ad0fba2-1141-4661-9390-39368b497e7c-0	\N	\N	2026-10-11 09:47:27.373385+00
+41b3f9ea-4679-4290-91b4-8c50061ed35d	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	commit	100	chat	0	commit-262036f2-2876-4e76-8cbe-bda6d2079db0-0	\N	\N	2026-10-11 09:47:27.386348+00
+657c916f-85b0-4bc8-a670-0d1f37fbf7f1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-1	\N	\N	2026-10-11 09:47:27.367044+00
+dc6bc7f6-132a-46a6-b05c-df867fee907f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-0	\N	\N	2026-10-11 09:47:27.382371+00
+50fbad21-a5cf-42b7-bf83-9fd31f9b0d84	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	commit	100	chat	0	commit-a2b67738-20d9-4529-8448-76e36ccd2b28-0	\N	\N	2026-10-11 09:47:27.414601+00
+67a413da-53f9-4e71-9858-0ca620f722c9	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	commit	100	chat	0	commit-2c77fd24-09ff-4b84-b404-9deb8301e8fb-1	\N	\N	2026-10-11 09:47:27.380569+00
+35b6a641-65a4-40ff-b1ca-eb0d987e38ad	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	reserve	300	chat	0	itest-res-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.527764+00
+9ef270f6-c90f-4081-b7c2-dab10937781e	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	commit	120	chat	45	itest-com-35b6a641-65a4-40ff-b1ca-eb0d987e38ad	\N	\N	2026-10-11 09:47:27.551225+00
+a3b4b542-771b-4115-bde7-69efe25c1247	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	reserve	200	vision	0	itest-res2-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.565558+00
+5e1636ff-a711-41c1-81a2-aa82f4bde16b	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	release	-200	vision	0	itest-rel-a3b4b542-771b-4115-bde7-69efe25c1247	\N	\N	2026-10-11 09:47:27.574584+00
+510f9e21-a555-4d29-b271-89ae658fec98	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	reserve	250	chat	0	itest-clean-7cd26518-df13-4981-a5af-d7442f09f44b	\N	\N	2026-10-11 09:47:27.686057+00
+278fc9a7-15b1-4e82-b842-2796dff27454	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	36797fed-cee4-4cb3-b158-53a4e9f3a446	release	-100	chat	0	cleanup:36797fed-cee4-4cb3-b158-53a4e9f3a446	\N	\N	2026-10-11 09:47:27.730439+00
+b0ad585d-6f03-46a4-8ef9-fce31a712e3f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	release	-100	chat	0	cleanup:f63f0a48-ea11-4baa-ad30-939a85fa3020	\N	\N	2026-10-11 09:47:27.770729+00
+0824f611-ad39-4ec7-b6e7-0c4aefb335a3	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	release	-100	chat	0	cleanup:628ad811-fc09-42d9-92b5-98e843f5dad9	\N	\N	2026-10-11 09:47:27.780545+00
+28c44760-3ca7-4128-81f4-fa94aab61c23	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	release	-100	chat	0	cleanup:281e9640-dd17-4705-b8cd-fd56a8d5d35d	\N	\N	2026-10-11 09:47:27.789765+00
+0399171b-8126-4c91-bfb8-995e5e84db33	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	release	-100	chat	0	cleanup:daa8ff87-fdd2-44ae-8313-7a1b047c0e94	\N	\N	2026-10-11 09:47:27.798256+00
+2bf4e326-1787-4724-83a2-549575ce6d50	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	release	-100	chat	0	cleanup:d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	\N	\N	2026-10-11 09:47:27.807275+00
+f8cd5f13-00d2-42f1-9f8f-93fd5353c9ea	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	release	-100	chat	0	cleanup:f0a99d48-5e72-4834-afbd-3f426958dd4b	\N	\N	2026-10-11 09:47:27.816301+00
+61e756ca-1058-47f7-8f75-e8226260567d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	release	-100	chat	0	cleanup:9a1f6bc1-56f4-4fb4-85fa-782b1095b685	\N	\N	2026-10-11 09:47:27.824416+00
+b1d017de-27ec-4e6d-96cd-40218ddf0e5d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	release	-100	chat	0	cleanup:32ad2c62-e9fd-40eb-a63b-acb705bb6469	\N	\N	2026-10-11 09:47:27.833793+00
+c2c854ad-bd19-498c-8e33-4e3ac09cc73f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	release	-100	chat	0	cleanup:85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	\N	\N	2026-10-11 09:47:27.842056+00
+1850e8ce-ca5a-482d-b43b-f3888c44156e	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	release	-100	chat	0	cleanup:f4ec0efb-c970-45fc-aeb0-0f242bbed7df	\N	\N	2026-10-11 09:47:27.850866+00
+8071f6aa-cfba-4b10-89a4-3e58c242c0e7	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	release	-250	chat	0	cleanup:510f9e21-a555-4d29-b271-89ae658fec98	\N	\N	2026-10-11 09:47:27.873382+00
+\.
+
+
+--
+-- Data for Name: token_periods; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.token_periods (id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at) FROM stdin;
+f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	2026-10-11 09:09:53.985961+00	2026-11-10 09:09:53.985961+00	1000	0	0	2026-10-11 09:09:53.985961+00	2026-10-11 09:09:53.985961+00
+2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	2026-10-11 09:11:55+00	2026-11-10 09:11:55+00	1000	0	100	2026-10-11 09:11:55.687113+00	2026-10-11 09:11:55.708329+00
+6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	2026-10-11 09:23:36+00	2026-11-10 09:23:36+00	1000	0	0	2026-10-11 09:23:36.81847+00	2026-10-11 09:23:39.118342+00
+2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:15:13.973281+00	2026-10-11 09:15:14.043306+00
+5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	2026-10-11 09:15:13+00	2026-11-10 09:15:13+00	1000	0	0	2026-10-11 09:15:13.88794+00	2026-10-11 09:15:14.218358+00
+16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:22:40.227525+00	2026-10-11 09:22:40.401119+00
+e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:16:18.341555+00	2026-10-11 09:16:18.394909+00
+7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	2026-10-11 09:16:18+00	2026-11-10 09:16:18+00	1000	0	0	2026-10-11 09:16:18.276053+00	2026-10-11 09:16:18.551242+00
+aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:15:14.192422+00	2026-10-11 09:16:18.562392+00
+5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:16:18.523369+00	2026-10-11 09:16:18.582509+00
+262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:20:33.974717+00	2026-10-11 09:20:34.019018+00
+e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:22:40.012881+00	2026-10-11 09:23:39.261173+00
+a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	2026-10-11 09:20:32+00	2026-11-10 09:20:32+00	1000	0	0	2026-10-11 09:20:32.844535+00	2026-10-11 09:20:34.151061+00
+50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:20:34.129819+00	2026-10-11 09:20:34.166346+00
+fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:47:27.202302+00	2026-10-11 09:47:27.380569+00
+a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:47:27.527764+00	2026-10-11 09:47:27.574584+00
+58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	2026-10-11 09:47:25+00	2026-11-10 09:47:25+00	1000	0	0	2026-10-11 09:47:25.817333+00	2026-10-11 09:47:27.730439+00
+7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:38.212052+00	2026-10-11 09:23:39.382393+00
+7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:39.048647+00	2026-10-11 09:23:39.42263+00
+0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:23:38.466216+00	2026-10-11 09:23:38.662151+00
+c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.000612+00	2026-10-11 09:47:27.850866+00
+835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.686057+00	2026-10-11 09:47:27.873382+00
+ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:23:38.803404+00	2026-10-11 09:23:38.853368+00
 \.
 
 
@@ -3399,6 +4289,116 @@ f0d0c4b2-66f0-4028-b028-87bbc85409a3	4a70824e-8116-4ac8-be58-2837848a6ea0	expens
 ce1beb4f-6a0d-40f1-a5f4-8ab50847288f	4a70824e-8116-4ac8-be58-2837848a6ea0	expense	130000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Bhisa Shuttle	\N	{}	2026-06-12	f	\N	manual	f	\N	2026-07-02 05:18:52.895889+00	2026-07-02 05:18:52.895889+00
 0d0e7340-91eb-44a6-bf6a-dd37c0036e60	4a70824e-8116-4ac8-be58-2837848a6ea0	expense	130000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Bhisa	\N	{}	2026-06-12	f	\N	manual	f	\N	2026-07-02 05:19:07.128228+00	2026-07-02 05:19:07.128228+00
 a33b5884-4da9-44b1-b14f-7818ca8b3316	4a70824e-8116-4ac8-be58-2837848a6ea0	income	5000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	pemasukan dari gaji	\N	{}	2026-07-02	f	\N	ai	f	\N	2026-07-02 05:19:55.841858+00	2026-07-02 05:19:55.841858+00
+59c5ca2c-0b86-4d1e-8c34-b0609d33edbd	f1438acd-95eb-4f25-9871-9ea6b782cf64	income	100000.00	870646f7-0720-4465-8e1c-f680da2b7064	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.275599+00	2026-10-11 08:29:34.275599+00
+3b407b93-e00a-47de-bda1-2cfb8f9cc2cd	c5fefaf1-5ed0-4fef-9f7e-5e91f3fb4712	income	2000.00	6fb9dd50-7ee8-45d3-a8b5-17087d04d38e	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.333946+00	2026-10-11 08:29:34.340519+00
+b1397095-1afe-439c-84f2-cb6499f60f7e	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10000.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.398816+00	2026-10-11 08:29:34.398816+00
+25580367-7cd9-4bab-9590-68aa65d74b71	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10005.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.404743+00	2026-10-11 08:29:34.404743+00
+69578f35-7afd-4bcd-8dab-a21e01fd3fdf	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10006.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.410426+00	2026-10-11 08:29:34.410426+00
+9c7a6c40-bd95-453f-a14f-ffd754abc884	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10004.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.414812+00	2026-10-11 08:29:34.414812+00
+48f3d043-fbf8-43b3-9bbf-be2c155f0447	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10016.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.427475+00	2026-10-11 08:29:34.427475+00
+8e745e06-3cb6-4f32-813c-15795ce1dc87	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10010.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.431782+00	2026-10-11 08:29:34.431782+00
+1b800d38-47df-4953-8ccd-501e8e7e8ed6	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10018.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.439184+00	2026-10-11 08:29:34.439184+00
+2ab855ff-6e54-4129-8637-a55c2a3f1a70	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10009.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.449956+00	2026-10-11 08:29:34.449956+00
+ad7fd2ff-355e-46fe-8257-2b6ac5c1e45b	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10008.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.454581+00	2026-10-11 08:29:34.454581+00
+f19ae310-9ad7-474a-93ec-69857dd9a6ed	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10019.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.468673+00	2026-10-11 08:29:34.468673+00
+98265237-5fa2-441a-953b-be56ffbf182a	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10001.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.481127+00	2026-10-11 08:29:34.481127+00
+5d4e9204-00e4-4d5d-a7ae-8815fc36a6ad	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10015.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.484568+00	2026-10-11 08:29:34.484568+00
+fbb2f08c-2814-40af-9fa6-59e3df204133	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10017.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.486876+00	2026-10-11 08:29:34.486876+00
+8134b676-4123-45bb-9548-d44d35290e86	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10011.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.517913+00	2026-10-11 08:29:34.517913+00
+002662dd-ec03-4665-b02d-c455a8abb2c2	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10003.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.522112+00	2026-10-11 08:29:34.522112+00
+2eeddbe6-ce24-447b-97fc-e27c6256f6db	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10013.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.522468+00	2026-10-11 08:29:34.522468+00
+8f4784ab-a60b-49fe-9fa6-8ba31a3412b3	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10014.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.525103+00	2026-10-11 08:29:34.525103+00
+8a4df0ed-3142-475b-b9c4-8501673db6d8	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10012.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.539007+00	2026-10-11 08:29:34.539007+00
+cfa3954e-7754-4e46-b10e-542200d22420	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10002.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.526069+00	2026-10-11 08:29:34.526069+00
+0361b1d6-7986-413c-b8b6-6ad234eebe45	5e5b1c46-57d7-4360-9e98-284cd4da6ce5	income	10007.00	9485504c-93d5-4bbe-ae0f-bd3afa344af2	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:29:34.546762+00	2026-10-11 08:29:34.546762+00
+71324d0e-6d41-49c3-9e0a-6e0bade2e2fb	04f1e6fc-2bc1-44ca-95f9-6808edc2e0fd	income	100000.00	a7317060-aa3f-4941-a300-63af3f97384d	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.305883+00	2026-10-11 08:56:51.305883+00
+18a72696-ab7e-4792-a8bc-6c5a41e34d21	de7a6d62-848a-46e7-968d-d77230b84203	income	2000.00	bea82b1c-4fe3-4bb2-9558-470d4c42678c	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.348236+00	2026-10-11 08:56:51.354006+00
+962be309-aa96-4eee-badd-c04bf10c6226	6118d78b-7009-4895-a343-face014428d5	income	10000.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.401144+00	2026-10-11 08:56:51.401144+00
+917260d7-be10-4a1b-9a5a-0da3e50e0ad2	6118d78b-7009-4895-a343-face014428d5	income	10015.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.40695+00	2026-10-11 08:56:51.40695+00
+49c634b5-2f45-4b63-a417-31dd36b99cf7	6118d78b-7009-4895-a343-face014428d5	income	10009.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.411375+00	2026-10-11 08:56:51.411375+00
+9e72ba69-8f0a-4b4d-bc9a-7b913652b1f0	6118d78b-7009-4895-a343-face014428d5	income	10011.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.416626+00	2026-10-11 08:56:51.416626+00
+96b672a5-96b9-4ae3-8025-0ac46d195b1d	6118d78b-7009-4895-a343-face014428d5	income	10012.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.420588+00	2026-10-11 08:56:51.420588+00
+56e4ff13-d0ed-4293-b171-873046de28b1	6118d78b-7009-4895-a343-face014428d5	income	10016.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.423932+00	2026-10-11 08:56:51.423932+00
+a036f54d-e7c0-4ea4-aeae-462b210aab22	6118d78b-7009-4895-a343-face014428d5	income	10005.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.427796+00	2026-10-11 08:56:51.427796+00
+3b5e8402-195d-45b3-b753-1f931e42209d	6118d78b-7009-4895-a343-face014428d5	income	10004.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.431954+00	2026-10-11 08:56:51.431954+00
+55a790f7-bb46-4a49-8534-ea9d33142f78	6118d78b-7009-4895-a343-face014428d5	income	10006.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.435623+00	2026-10-11 08:56:51.435623+00
+33489fb2-a430-4c08-a2d1-5960bc5e6502	6118d78b-7009-4895-a343-face014428d5	income	10001.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.454876+00	2026-10-11 08:56:51.454876+00
+e3bb7052-0f5a-4ab3-a934-b5e600506299	6118d78b-7009-4895-a343-face014428d5	income	10002.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.462968+00	2026-10-11 08:56:51.462968+00
+a9a56728-d2a5-42e0-9dc8-4f6fa0d41d08	6118d78b-7009-4895-a343-face014428d5	income	10007.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.469301+00	2026-10-11 08:56:51.469301+00
+ce58e95d-26af-43b7-8375-c63bddabd744	6118d78b-7009-4895-a343-face014428d5	income	10019.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.472512+00	2026-10-11 08:56:51.472512+00
+e983722d-c56e-49a2-8466-c9aa0a27f8fa	6118d78b-7009-4895-a343-face014428d5	income	10013.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.474652+00	2026-10-11 08:56:51.474652+00
+5cef10e8-6d0d-4bfd-8475-524609f15062	6118d78b-7009-4895-a343-face014428d5	income	10018.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.476496+00	2026-10-11 08:56:51.476496+00
+10153e5d-8a0e-45f3-acb6-e0060f1123ea	6118d78b-7009-4895-a343-face014428d5	income	10014.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.479451+00	2026-10-11 08:56:51.479451+00
+0e4ff9ed-202c-49b9-afd1-21f754bbaced	6118d78b-7009-4895-a343-face014428d5	income	10010.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.482729+00	2026-10-11 08:56:51.482729+00
+5666c743-4ae6-41d2-a1d2-5e0ffc815d69	6118d78b-7009-4895-a343-face014428d5	income	10003.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.486804+00	2026-10-11 08:56:51.486804+00
+9504a1e9-3ad2-4636-b21d-89a92afd1dae	6118d78b-7009-4895-a343-face014428d5	income	10017.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.487767+00	2026-10-11 08:56:51.487767+00
+acca4bb9-6986-4832-9133-ea20a3d10be4	6118d78b-7009-4895-a343-face014428d5	income	10008.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.489288+00	2026-10-11 08:56:51.489288+00
+dade9b8e-df38-4b04-8b05-003dd8eb1858	9784264c-8957-46db-ba0c-ca38e0711489	income	100000.00	11fe7f6c-905d-415f-9a2f-4c0223cc52ab	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.704737+00	2026-10-11 09:20:33.704737+00
+f51085c8-1e8b-4dbd-aa36-532355c2fc19	6fe7eea2-da31-471c-9930-287dd458d436	income	2000.00	0bfc7f7c-721c-4a06-b33c-9c034ec2ca0e	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.754788+00	2026-10-11 09:20:33.760151+00
+de79ef99-b6ef-4d4a-92f7-fc8425027b3f	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10002.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.813333+00	2026-10-11 09:20:33.813333+00
+62bb4b4a-3f36-4a34-8c98-1507f3e22596	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10012.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.819907+00	2026-10-11 09:20:33.819907+00
+a3597811-1344-4bc1-8263-5069ee00a7b7	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10015.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.824394+00	2026-10-11 09:20:33.824394+00
+5db6e851-3c21-46ec-ace4-5533ab38306a	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10008.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.828763+00	2026-10-11 09:20:33.828763+00
+d854298b-9f84-4685-868d-d7fba7dbf57e	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10013.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.833524+00	2026-10-11 09:20:33.833524+00
+cfa46f65-588a-4a0a-8650-ff1ea8753bc0	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10007.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.837894+00	2026-10-11 09:20:33.837894+00
+5892c348-23df-43ed-a2f9-532a3dde4ff4	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10016.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.841353+00	2026-10-11 09:20:33.841353+00
+8349146f-3269-40f4-81d0-a85687f6c9fe	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10010.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.845957+00	2026-10-11 09:20:33.845957+00
+a562c5b8-bd9b-4bc2-b4f2-48cb534cb830	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10001.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.850205+00	2026-10-11 09:20:33.850205+00
+1a06c0d9-8bd6-4bc7-b158-911a6ad458e4	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10018.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.875776+00	2026-10-11 09:20:33.875776+00
+104b7d56-f30f-4c9f-a566-fccdb2c04fcc	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10019.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.87896+00	2026-10-11 09:20:33.87896+00
+520433f1-40b5-4c6c-8baf-ab35a8ef66eb	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10005.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.88338+00	2026-10-11 09:20:33.88338+00
+bbe377e9-ba6f-41ab-b674-e264d449dd69	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10009.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.893774+00	2026-10-11 09:20:33.893774+00
+8f600df7-5930-4b0f-8f4c-3de8c76204c3	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10014.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.896592+00	2026-10-11 09:20:33.896592+00
+9270cccf-686c-4271-8e83-3c059840dc06	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10004.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.900256+00	2026-10-11 09:20:33.900256+00
+3f4732b2-f35d-4eef-b140-69147f584531	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10006.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.902309+00	2026-10-11 09:20:33.902309+00
+7288da8e-1fe6-4363-a2f6-fc81cd2d000a	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10000.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.902225+00	2026-10-11 09:20:33.902225+00
+e8443e5e-8103-4ada-a63c-25334f1c3711	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10003.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.904278+00	2026-10-11 09:20:33.904278+00
+4ac237eb-b4a9-47a3-a70e-a785c7f9ab90	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10011.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.905936+00	2026-10-11 09:20:33.905936+00
+18d7a9f7-2472-439c-b3d9-8140272511af	5ae1be02-8c17-48a7-9ebc-62af712f9b32	income	10017.00	83906886-643e-4131-b80b-040d77ef99f9	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:20:33.908482+00	2026-10-11 09:20:33.908482+00
+a6ce62e7-9940-4713-9204-bd53df611249	2ff86a68-f02d-4ba8-b70a-3abb348479b4	income	100000.00	5f02ee00-3177-42cc-99a8-f728a50ad2f4	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.800212+00	2026-10-11 09:23:37.800212+00
+537b1ae5-cb04-443d-86bd-e1c717b4121f	0b80e16f-5975-45a7-8fd8-a446bf97e3ae	income	2000.00	e3c56c33-a9f6-4f23-8a03-0fc87e9f46be	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.860102+00	2026-10-11 09:23:37.867077+00
+c1811fe0-a4ae-404e-b2ae-2d524f634dec	e54c6948-ac57-46ef-8202-a6828c84c454	income	10000.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.922368+00	2026-10-11 09:23:37.922368+00
+7647a6a0-194d-4d8c-ba4b-51a8ea121f17	e54c6948-ac57-46ef-8202-a6828c84c454	income	10009.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.928508+00	2026-10-11 09:23:37.928508+00
+50cfefce-ec9f-4ebe-bc5c-5f5408ac0465	e54c6948-ac57-46ef-8202-a6828c84c454	income	10007.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.932697+00	2026-10-11 09:23:37.932697+00
+b7e37069-50c3-45d1-b5ea-147da5d03cb4	e54c6948-ac57-46ef-8202-a6828c84c454	income	10008.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.93983+00	2026-10-11 09:23:37.93983+00
+6f793901-153e-4bda-9192-2b4bd2a9f045	e54c6948-ac57-46ef-8202-a6828c84c454	income	10018.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.943832+00	2026-10-11 09:23:37.943832+00
+7cec389e-51cf-49fd-aa5f-ff4cd1f05d24	e54c6948-ac57-46ef-8202-a6828c84c454	income	10010.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.947498+00	2026-10-11 09:23:37.947498+00
+c5435b73-5644-4460-b4a0-9a636f0529cd	e54c6948-ac57-46ef-8202-a6828c84c454	income	10011.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.95214+00	2026-10-11 09:23:37.95214+00
+790aa749-676d-42ed-bda4-5d27a037900c	e54c6948-ac57-46ef-8202-a6828c84c454	income	10013.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.958855+00	2026-10-11 09:23:37.958855+00
+73374acc-1614-4588-98d9-761f03e93065	e54c6948-ac57-46ef-8202-a6828c84c454	income	10014.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.962403+00	2026-10-11 09:23:37.962403+00
+01335b6a-246c-4e12-a052-b9e10468b966	e54c6948-ac57-46ef-8202-a6828c84c454	income	10002.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.981365+00	2026-10-11 09:23:37.981365+00
+eebef5b5-cd15-4231-8b08-71f4e7d9b597	e54c6948-ac57-46ef-8202-a6828c84c454	income	10004.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:37.98526+00	2026-10-11 09:23:37.98526+00
+e7a0f9ec-f348-46e2-b48a-0a4a281e3f3a	e54c6948-ac57-46ef-8202-a6828c84c454	income	10003.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.004091+00	2026-10-11 09:23:38.004091+00
+add81e62-c472-4736-bf83-ba9be8562088	e54c6948-ac57-46ef-8202-a6828c84c454	income	10019.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.011277+00	2026-10-11 09:23:38.011277+00
+7ce3788f-3b6c-43d7-8263-5f4606cc62fe	e54c6948-ac57-46ef-8202-a6828c84c454	income	10005.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.019432+00	2026-10-11 09:23:38.019432+00
+b2c5e0cf-d9e7-480c-a920-34af50ce8831	e54c6948-ac57-46ef-8202-a6828c84c454	income	10015.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.022045+00	2026-10-11 09:23:38.022045+00
+af841a7d-984e-4804-b936-064ac416b248	e54c6948-ac57-46ef-8202-a6828c84c454	income	10001.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.021981+00	2026-10-11 09:23:38.021981+00
+0827d8b9-7fdb-4f90-936d-2947c67c78a2	e54c6948-ac57-46ef-8202-a6828c84c454	income	10012.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.024985+00	2026-10-11 09:23:38.024985+00
+64fd33b5-4178-4f47-8537-888b0950cdec	e54c6948-ac57-46ef-8202-a6828c84c454	income	10006.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.026728+00	2026-10-11 09:23:38.026728+00
+1d068dee-f4c9-430d-aaa4-00780d4ddbcc	e54c6948-ac57-46ef-8202-a6828c84c454	income	10017.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.031327+00	2026-10-11 09:23:38.031327+00
+258f5d95-9be1-4ab3-819f-df60334f212c	e54c6948-ac57-46ef-8202-a6828c84c454	income	10016.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.032743+00	2026-10-11 09:23:38.032743+00
+bb3fb1dc-ac23-4fe2-8a8e-22980439cecc	67492f17-4f88-48c1-8c50-1964bf8eed22	income	100000.00	38d65284-a424-4340-a215-cb72ee86958f	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.68203+00	2026-10-11 09:47:26.68203+00
+2336c1bd-4db2-45e7-924a-e613074c6028	0647e462-a512-4e40-bdac-9887f4b8e033	income	2000.00	6cba8b11-d4ee-4388-88e3-53624f631e11	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.734421+00	2026-10-11 09:47:26.740494+00
+683651cd-1f78-4d37-901a-fa7fdd722add	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10000.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.793089+00	2026-10-11 09:47:26.793089+00
+43315ad9-2d62-4d94-aead-23c297aacba3	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10015.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.799192+00	2026-10-11 09:47:26.799192+00
+842210b1-d9a2-4fe2-837a-ef9c090747f2	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10017.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.803715+00	2026-10-11 09:47:26.803715+00
+cf34a278-2d25-4724-a351-b97ae6f16ff6	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10018.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.807622+00	2026-10-11 09:47:26.807622+00
+86a610b8-4e9f-42e9-a3f7-1f0406e548ad	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10002.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.811747+00	2026-10-11 09:47:26.811747+00
+fe24d410-6c6e-49f9-bdef-193dc76a1bf2	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10014.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.816039+00	2026-10-11 09:47:26.816039+00
+d8a83f25-3ba3-4e78-a0f2-a60c0d067411	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10010.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.820332+00	2026-10-11 09:47:26.820332+00
+f14f8274-b324-47eb-918b-603d483c357a	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10008.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.824672+00	2026-10-11 09:47:26.824672+00
+34118066-0b15-459a-a3f9-2a11bb899e74	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10011.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.828073+00	2026-10-11 09:47:26.828073+00
+df6fe675-f9c2-4549-ba11-680e429f7e5e	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10003.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.848524+00	2026-10-11 09:47:26.848524+00
+ebecc7d1-5745-44bc-9f9d-4dd6867ea5c1	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10009.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.855325+00	2026-10-11 09:47:26.855325+00
+7016c477-271d-4dc5-8633-00357f1c5974	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10019.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.865916+00	2026-10-11 09:47:26.865916+00
+38075597-1fe6-42ae-adc0-e65364140117	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10001.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.866637+00	2026-10-11 09:47:26.866637+00
+6fd4f475-9cc2-489a-80ca-17d6214680bb	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10005.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.875185+00	2026-10-11 09:47:26.875185+00
+dc0ea684-3173-4949-8aba-aa3213baad2f	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10007.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.877824+00	2026-10-11 09:47:26.877824+00
+9541b4e6-b560-4332-8891-7ac1e5755df0	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10004.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.87783+00	2026-10-11 09:47:26.87783+00
+7fc59f2c-f5ec-4a04-884e-150548761378	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10013.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.88055+00	2026-10-11 09:47:26.88055+00
+6aaeeda5-afdd-4e21-af2a-326c3cbc4d5b	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10012.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.883039+00	2026-10-11 09:47:26.883039+00
+7144640d-94b6-4a8a-8631-1377f24879a5	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10006.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.886022+00	2026-10-11 09:47:26.886022+00
+03a01567-7d6c-405b-bb2a-597f2bab2d64	7a5eac40-9951-4b8f-9649-5a294028dc94	income	10016.00	dc1fba09-62e6-41e2-941f-fbe924067c7b	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.887517+00	2026-10-11 09:47:26.887517+00
 \.
 
 
@@ -3416,7 +4416,66 @@ b1b66fa0-13d9-4937-a4b4-09e3e2060f86	tester_ai@fintrack.com	$2a$10$79ZxEUkoSDSz6
 4a70824e-8116-4ac8-be58-2837848a6ea0	anggimaulana23@student.polindra.ac.id	$2a$10$FNjgmRSQcFfVukNhU3BVJ.xBo/A2gtKpivKPlbTaiQtEVzfYM7FgG	Anggi Maulana	user	\N	t	2026-06-21 20:19:05.05333+00	2026-10-10 19:02:59.854495+00
 017962fc-c5b9-487c-a171-6915991f20b2	test@fintrack.com	$2a$10$yidMFC57wQYHLqlU6ftjz.jflABFQwbLGZVzV4Ej/HJ7c6BGU7KKa	test@fintrack.com	user	\N	t	2026-06-24 11:26:39.899955+00	2026-10-10 19:02:59.854495+00
 2f870e3d-10a2-463c-afd6-838090c0d422	test@test.com	$2a$10$vWvjseLDCgkE85.y9GhlRurDDt7hp/k0etbs6GjafzHFWRq2WdxGa	test@test.com	user	\N	t	2026-06-22 01:25:21.086017+00	2026-10-10 19:02:59.854495+00
+4c40f185-5d03-466b-8acc-c81ba80137ec	it-7cf046f2-234a-4f7a-996d-ad64ed0393cd@example.com	$2a$12$Wi68Mi8EhbbCf2HbHq0/5.wZlEeUfj3PwceBKxK7T6IW1.Um7oUoW	IT User	user	\N	t	2026-10-11 08:29:33.818145+00	2026-10-11 08:29:33.818145+00
+f1438acd-95eb-4f25-9871-9ea6b782cf64	it-0b5717ed-a46d-4be9-869f-856652868e0a@example.com	x	A	user	\N	t	2026-10-11 08:29:34.259073+00	2026-10-11 08:29:34.259073+00
+cac24269-9f90-4d61-a17c-9e6205ce4d9a	it-7154954e-60cf-4807-a180-8559ec2afa4e@example.com	x	B	user	\N	t	2026-10-11 08:29:34.262501+00	2026-10-11 08:29:34.262501+00
+c5fefaf1-5ed0-4fef-9f7e-5e91f3fb4712	it-6509721b-e1f4-4aa1-8435-9d13f97e09a1@example.com	x	L	user	\N	t	2026-10-11 08:29:34.323377+00	2026-10-11 08:29:34.323377+00
+5e5b1c46-57d7-4360-9e98-284cd4da6ce5	it-70d2dd4c-3735-4079-8300-1085e4d5f8fc@example.com	x	R	user	\N	t	2026-10-11 08:29:34.383204+00	2026-10-11 08:29:34.383204+00
+75076450-d14a-46dd-9135-ff752e814a08	it-0a2d7a06-6471-4c53-8ba3-563a47c554a8@example.com	$2a$12$oP3JEoCAYPLJGYUO/Zcd5.xXmDmA88/rD8rG8Y6cv0K2ykhxrfwhm	IT User	user	\N	t	2026-10-11 08:56:50.884579+00	2026-10-11 08:56:50.884579+00
+04f1e6fc-2bc1-44ca-95f9-6808edc2e0fd	it-67f05ca7-9dd9-471d-8056-24b5db8d8d41@example.com	x	A	user	\N	t	2026-10-11 08:56:51.29339+00	2026-10-11 08:56:51.29339+00
+aa6f554a-480a-4757-80a6-dd82f713e582	it-cd702f1f-b079-4625-a015-7773324588fb@example.com	x	B	user	\N	t	2026-10-11 08:56:51.296795+00	2026-10-11 08:56:51.296795+00
+de7a6d62-848a-46e7-968d-d77230b84203	it-b5a1d2f6-35e9-47cb-894c-f4946586f3ba@example.com	x	L	user	\N	t	2026-10-11 08:56:51.339868+00	2026-10-11 08:56:51.339868+00
+6118d78b-7009-4895-a343-face014428d5	it-3f027037-de12-444c-ac36-dfcf2eb306f3@example.com	x	R	user	\N	t	2026-10-11 08:56:51.389601+00	2026-10-11 08:56:51.389601+00
+cc5a957b-2117-4e53-afb0-a3252cf96b1f	cc5a957b-2117-4e53-afb0-a3252cf96b1f@itest.local	\N	ITest	user	\N	t	2026-10-11 09:15:13.963507+00	2026-10-11 09:15:13.963507+00
+93237f05-47f6-450b-8018-3ab9b433a1c5	93237f05-47f6-450b-8018-3ab9b433a1c5@itest.local	\N	ITest	user	\N	t	2026-10-11 09:15:14.181312+00	2026-10-11 09:15:14.181312+00
+2ffdcecc-b2af-4cf1-abfd-0bb182784422	2ffdcecc-b2af-4cf1-abfd-0bb182784422@itest.local	\N	ITest	user	\N	t	2026-10-11 09:16:18.335482+00	2026-10-11 09:16:18.335482+00
+e51250cd-facf-4bd7-a23d-27b8bfc0864a	e51250cd-facf-4bd7-a23d-27b8bfc0864a@itest.local	\N	ITest	user	\N	t	2026-10-11 09:16:18.516825+00	2026-10-11 09:16:18.516825+00
+b736ceea-b25f-4b4e-8423-ee8b2848cab4	it-20f490b7-85f7-4318-9f51-5ab4e2a16340@example.com	$2a$12$BD8I0ha7RnCiqL6hJh.NO.yQZhMvW5YRkLWFCB99JONN0IzFHKcNi	IT User	user	\N	t	2026-10-11 09:20:33.27117+00	2026-10-11 09:20:33.27117+00
+9784264c-8957-46db-ba0c-ca38e0711489	it-44798dc6-9cc9-441e-b744-945696d0c715@example.com	x	A	user	\N	t	2026-10-11 09:20:33.692082+00	2026-10-11 09:20:33.692082+00
+d2168e84-39b2-4c2e-9ee4-44cab94bd32a	it-31e5897d-0d3b-423b-8b11-b4ed0aced295@example.com	x	B	user	\N	t	2026-10-11 09:20:33.695271+00	2026-10-11 09:20:33.695271+00
+6fe7eea2-da31-471c-9930-287dd458d436	it-0d33ad8e-37a4-4ae4-9a32-1903bcab8c55@example.com	x	L	user	\N	t	2026-10-11 09:20:33.744026+00	2026-10-11 09:20:33.744026+00
+5ae1be02-8c17-48a7-9ebc-62af712f9b32	it-070efe3f-653e-4e4c-af47-6bbfd67b8e2a@example.com	x	R	user	\N	t	2026-10-11 09:20:33.800278+00	2026-10-11 09:20:33.800278+00
+e43afc50-295e-4941-9626-524b1f10f573	e43afc50-295e-4941-9626-524b1f10f573@itest.local	\N	ITest	user	\N	t	2026-10-11 09:20:33.969392+00	2026-10-11 09:20:33.969392+00
+c539a480-fbc6-4cf3-bea3-839807c7e8ad	c539a480-fbc6-4cf3-bea3-839807c7e8ad@itest.local	\N	ITest	user	\N	t	2026-10-11 09:20:34.123587+00	2026-10-11 09:20:34.123587+00
+fea2a34a-d77e-4cec-a0ea-3970f58a1f23	fea2a34a-d77e-4cec-a0ea-3970f58a1f23@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:22:40.004599+00	2026-10-11 09:22:40.004599+00
+3ab3c38c-06b7-4956-a376-7eaa52ccc710	3ab3c38c-06b7-4956-a376-7eaa52ccc710@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:22:40.219374+00	2026-10-11 09:22:40.219374+00
+742426f5-1bc6-426b-b816-3f7666b35b6a	it-a14ecb59-fca8-42e2-9cfb-0fc1a9e3d652@example.com	$2a$12$J9g63Gp5NcMNRl4dkXEfGOvtlgk40fvlIfCDd.toUngDixhtxnujS	IT User	user	\N	t	2026-10-11 09:23:37.310209+00	2026-10-11 09:23:37.310209+00
+2ff86a68-f02d-4ba8-b70a-3abb348479b4	it-82d6ef00-a83b-41e4-9c26-c41e2dca2747@example.com	x	A	user	\N	t	2026-10-11 09:23:37.782795+00	2026-10-11 09:23:37.782795+00
+71499710-6517-443f-9d40-0a58a9a0d850	it-b0cf155c-f7f2-410a-bf74-e132217abd2c@example.com	x	B	user	\N	t	2026-10-11 09:23:37.787099+00	2026-10-11 09:23:37.787099+00
+0b80e16f-5975-45a7-8fd8-a446bf97e3ae	it-61e25694-9ba7-405f-866e-af9063384922@example.com	x	L	user	\N	t	2026-10-11 09:23:37.850187+00	2026-10-11 09:23:37.850187+00
+e54c6948-ac57-46ef-8202-a6828c84c454	it-09eade4f-5cbc-4178-9936-4ddcd6c3a9a0@example.com	x	R	user	\N	t	2026-10-11 09:23:37.909067+00	2026-10-11 09:23:37.909067+00
+861425c0-8837-4d6a-b203-7b1ca3f9cd4c	861425c0-8837-4d6a-b203-7b1ca3f9cd4c@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:23:38.108192+00	2026-10-11 09:23:38.108192+00
+88bb36fb-014c-44b9-a4e9-aaf56629d826	88bb36fb-014c-44b9-a4e9-aaf56629d826@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:23:38.459815+00	2026-10-11 09:23:38.459815+00
+275360a9-652b-4224-afdb-c01b6aaa3211	275360a9-652b-4224-afdb-c01b6aaa3211@itest.local	\N	ITest	user	\N	t	2026-10-11 09:23:38.796209+00	2026-10-11 09:23:38.796209+00
+d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5@itest.local	\N	ITest	user	\N	t	2026-10-11 09:23:39.034809+00	2026-10-11 09:23:39.034809+00
+43d42446-5689-45f3-9a21-73b435ae0ccf	it-89529e4b-ac3e-4e5e-bc4d-748991ae3cdc@example.com	$2a$12$HBrUADeuD/qWNeGRbD9PnuRH66blCGjzeUcjG0to/WypvukdiWCdm	IT User	user	\N	t	2026-10-11 09:47:26.242379+00	2026-10-11 09:47:26.242379+00
+67492f17-4f88-48c1-8c50-1964bf8eed22	it-7a89007e-f909-46e1-a6d2-2f80416f8ae3@example.com	x	A	user	\N	t	2026-10-11 09:47:26.665312+00	2026-10-11 09:47:26.665312+00
+07585500-1189-45bd-ae58-01fa299becb5	it-de67ecfa-c6f8-4b3c-ad2c-3667aacabc3d@example.com	x	B	user	\N	t	2026-10-11 09:47:26.668802+00	2026-10-11 09:47:26.668802+00
+0647e462-a512-4e40-bdac-9887f4b8e033	it-b3d96ded-27a5-4ca7-9c1a-8a31d1a91b65@example.com	x	L	user	\N	t	2026-10-11 09:47:26.724943+00	2026-10-11 09:47:26.724943+00
+7a5eac40-9951-4b8f-9649-5a294028dc94	it-b995b509-ada1-46ec-aff5-9132fa9cb3a3@example.com	x	R	user	\N	t	2026-10-11 09:47:26.779823+00	2026-10-11 09:47:26.779823+00
+7c74a854-3f1e-4259-8a21-7020ebfc375b	7c74a854-3f1e-4259-8a21-7020ebfc375b@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:47:26.961789+00	2026-10-11 09:47:26.961789+00
+d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5@itest.local	\N	Concurrency	user	\N	t	2026-10-11 09:47:27.194479+00	2026-10-11 09:47:27.194479+00
+a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a7a19023-9a67-4c09-a8e3-a9383c3b18a9@itest.local	\N	ITest	user	\N	t	2026-10-11 09:47:27.520654+00	2026-10-11 09:47:27.520654+00
+7cd26518-df13-4981-a5af-d7442f09f44b	7cd26518-df13-4981-a5af-d7442f09f44b@itest.local	\N	ITest	user	\N	t	2026-10-11 09:47:27.679609+00	2026-10-11 09:47:27.679609+00
+c5d4f372-d0b9-43de-9cbc-c4003d704101	smoke-user@fintrack.test	$2a$12$WMURhS8H3px30f22hqtKnedGURziHnRhY3cDJuXl8xTXSGL0JoyHu	Smoke User	user	\N	t	2026-10-11 10:23:51.847648+00	2026-10-11 10:23:51.847648+00
+661ae48b-19ed-476e-8fd3-4968fa105c28	smoke-admin@fintrack.test	$2a$12$GqKY8B9R8Jr6PbpmIYZI1OCmvTh/0FoJR70uPTEwshlrc6Q8lztsG	Smoke Admin	super_admin	\N	t	2026-10-11 10:23:50.186043+00	2026-10-11 10:28:59.62324+00
 \.
+
+
+--
+-- Name: ai_endpoints ai_endpoints_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_endpoints
+    ADD CONSTRAINT ai_endpoints_name_key UNIQUE (name);
+
+
+--
+-- Name: ai_endpoints ai_endpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_endpoints
+    ADD CONSTRAINT ai_endpoints_pkey PRIMARY KEY (id);
 
 
 --
@@ -3433,6 +4492,22 @@ ALTER TABLE ONLY public.ai_providers
 
 ALTER TABLE ONLY public.ai_providers
     ADD CONSTRAINT ai_providers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_routes ai_routes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_routes
+    ADD CONSTRAINT ai_routes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
 
 
 --
@@ -3484,6 +4559,22 @@ ALTER TABLE ONLY public.expense_subcategories
 
 
 --
+-- Name: feature_flags feature_flags_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT feature_flags_key_key UNIQUE (key);
+
+
+--
+-- Name: feature_flags feature_flags_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT feature_flags_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: gemini_api_keys gemini_api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -3516,6 +4607,102 @@ ALTER TABLE ONLY public.income_categories
 
 
 --
+-- Name: invoice_counters invoice_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.invoice_counters
+    ADD CONSTRAINT invoice_counters_pkey PRIMARY KEY (day);
+
+
+--
+-- Name: invoices invoices_invoice_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_invoice_number_key UNIQUE (invoice_number);
+
+
+--
+-- Name: invoices invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payment_events payment_events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payment_events
+    ADD CONSTRAINT payment_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payments payments_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payments
+    ADD CONSTRAINT payments_idempotency_key_key UNIQUE (idempotency_key);
+
+
+--
+-- Name: payments payments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payments
+    ADD CONSTRAINT payments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: plan_entitlements plan_entitlements_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_entitlements
+    ADD CONSTRAINT plan_entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: plan_limits plan_limits_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_limits
+    ADD CONSTRAINT plan_limits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: plans plans_code_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plans
+    ADD CONSTRAINT plans_code_key UNIQUE (code);
+
+
+--
+-- Name: plans plans_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plans
+    ADD CONSTRAINT plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pricing_rules pricing_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.pricing_rules
+    ADD CONSTRAINT pricing_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pricing_rules pricing_rules_rule_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.pricing_rules
+    ADD CONSTRAINT pricing_rules_rule_name_key UNIQUE (rule_name);
+
+
+--
 -- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -3540,11 +4727,59 @@ ALTER TABLE ONLY public.savings_categories
 
 
 --
+-- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: spk_results spk_results_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.spk_results
     ADD CONSTRAINT spk_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: subscription_events subscription_events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: subscriptions subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscriptions
+    ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: token_ledger token_ledger_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_ledger
+    ADD CONSTRAINT token_ledger_idempotency_key_key UNIQUE (idempotency_key);
+
+
+--
+-- Name: token_ledger token_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_ledger
+    ADD CONSTRAINT token_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: token_periods token_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_periods
+    ADD CONSTRAINT token_periods_pkey PRIMARY KEY (id);
 
 
 --
@@ -3572,6 +4807,38 @@ ALTER TABLE ONLY public.transactions
 
 
 --
+-- Name: plan_entitlements uq_plan_feature; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_entitlements
+    ADD CONSTRAINT uq_plan_feature UNIQUE (plan_id, feature_key);
+
+
+--
+-- Name: plan_limits uq_plan_limit; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_limits
+    ADD CONSTRAINT uq_plan_limit UNIQUE (plan_id, limit_key);
+
+
+--
+-- Name: subscriptions uq_user_subscription; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscriptions
+    ADD CONSTRAINT uq_user_subscription UNIQUE (user_id);
+
+
+--
+-- Name: token_periods uq_user_token_period; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_periods
+    ADD CONSTRAINT uq_user_token_period UNIQUE (user_id, period_start);
+
+
+--
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -3585,6 +4852,48 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_ai_endpoints_status_priority; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_ai_endpoints_status_priority ON public.ai_endpoints USING btree (status, priority);
+
+
+--
+-- Name: idx_ai_routes_lookup; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_ai_routes_lookup ON public.ai_routes USING btree (use_case, is_active, priority);
+
+
+--
+-- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action, created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_actor; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_logs_actor ON public.audit_logs USING btree (actor_id, created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_entity; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity, entity_id, created_at DESC);
 
 
 --
@@ -3616,6 +4925,13 @@ CREATE INDEX idx_expense_categories_active ON public.expense_categories USING bt
 
 
 --
+-- Name: idx_feature_flags_enabled; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_feature_flags_enabled ON public.feature_flags USING btree (is_enabled);
+
+
+--
 -- Name: idx_gemini_keys_modality; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -3634,6 +4950,62 @@ CREATE INDEX idx_gemini_keys_user_status_priority ON public.gemini_api_keys USIN
 --
 
 CREATE INDEX idx_income_categories_active ON public.income_categories USING btree (is_active, sort_order);
+
+
+--
+-- Name: idx_invoices_due_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_invoices_due_at ON public.invoices USING btree (due_at);
+
+
+--
+-- Name: idx_invoices_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_invoices_status ON public.invoices USING btree (status);
+
+
+--
+-- Name: idx_invoices_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_invoices_user_id ON public.invoices USING btree (user_id);
+
+
+--
+-- Name: idx_payment_events_payment; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payment_events_payment ON public.payment_events USING btree (payment_id, created_at DESC);
+
+
+--
+-- Name: idx_payments_gateway_ref; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payments_gateway_ref ON public.payments USING btree (gateway_ref);
+
+
+--
+-- Name: idx_payments_invoice_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payments_invoice_id ON public.payments USING btree (invoice_id);
+
+
+--
+-- Name: idx_payments_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payments_status ON public.payments USING btree (status);
+
+
+--
+-- Name: idx_payments_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payments_user_id ON public.payments USING btree (user_id);
 
 
 --
@@ -3662,6 +5034,41 @@ CREATE INDEX idx_savings_categories_active ON public.savings_categories USING bt
 --
 
 CREATE INDEX idx_spk_results_user_calculated ON public.spk_results USING btree (user_id, calculated_at DESC);
+
+
+--
+-- Name: idx_sub_events_user; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sub_events_user ON public.subscription_events USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_subscriptions_status_period; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_subscriptions_status_period ON public.subscriptions USING btree (status, current_period_end);
+
+
+--
+-- Name: idx_token_ledger_reservation; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_token_ledger_reservation ON public.token_ledger USING btree (reservation_id) WHERE (reservation_id IS NOT NULL);
+
+
+--
+-- Name: idx_token_ledger_user; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_token_ledger_user ON public.token_ledger USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_token_periods_user_window; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_token_periods_user_window ON public.token_periods USING btree (user_id, period_start, period_end);
 
 
 --
@@ -3714,6 +5121,34 @@ CREATE INDEX idx_users_role_active ON public.users USING btree (role, is_active)
 
 
 --
+-- Name: audit_logs audit_logs_no_delete; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER audit_logs_no_delete BEFORE DELETE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_block_mutation();
+
+
+--
+-- Name: audit_logs audit_logs_no_update; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER audit_logs_no_update BEFORE UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_block_mutation();
+
+
+--
+-- Name: ai_endpoints on_ai_endpoint_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_ai_endpoint_updated BEFORE UPDATE ON public.ai_endpoints FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: ai_routes on_ai_route_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_ai_route_updated BEFORE UPDATE ON public.ai_routes FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
 -- Name: chat_sessions on_chat_session_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -3735,6 +5170,13 @@ CREATE TRIGGER on_expense_subcategory_updated BEFORE UPDATE ON public.expense_su
 
 
 --
+-- Name: feature_flags on_feature_flag_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_feature_flag_updated BEFORE UPDATE ON public.feature_flags FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
 -- Name: gemini_api_keys on_gemini_key_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -3749,10 +5191,45 @@ CREATE TRIGGER on_income_category_updated BEFORE UPDATE ON public.income_categor
 
 
 --
+-- Name: invoices on_invoice_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_invoice_updated BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: payments on_payment_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_payment_updated BEFORE UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: plans on_plan_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_plan_updated BEFORE UPDATE ON public.plans FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: pricing_rules on_pricing_rule_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_pricing_rule_updated BEFORE UPDATE ON public.pricing_rules FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
 -- Name: savings_categories on_savings_category_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER on_savings_category_updated BEFORE UPDATE ON public.savings_categories FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: subscriptions on_subscription_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_subscription_updated BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 
 --
@@ -3774,6 +5251,36 @@ CREATE TRIGGER on_transaction_updated BEFORE UPDATE ON public.transactions FOR E
 --
 
 CREATE TRIGGER on_user_updated BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: token_ledger token_ledger_no_delete; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER token_ledger_no_delete BEFORE DELETE ON public.token_ledger FOR EACH ROW EXECUTE FUNCTION public.token_ledger_block_mutation();
+
+
+--
+-- Name: token_ledger token_ledger_no_update; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER token_ledger_no_update BEFORE UPDATE ON public.token_ledger FOR EACH ROW EXECUTE FUNCTION public.token_ledger_block_mutation();
+
+
+--
+-- Name: ai_routes ai_routes_endpoint_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_routes
+    ADD CONSTRAINT ai_routes_endpoint_id_fkey FOREIGN KEY (endpoint_id) REFERENCES public.ai_endpoints(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audit_logs audit_logs_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -3817,6 +5324,14 @@ ALTER TABLE ONLY public.expense_subcategories
 
 
 --
+-- Name: feature_flags feature_flags_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT feature_flags_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: gemini_api_keys gemini_api_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -3830,6 +5345,78 @@ ALTER TABLE ONLY public.gemini_api_keys
 
 ALTER TABLE ONLY public.income_categories
     ADD CONSTRAINT income_categories_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: invoices invoices_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: invoices invoices_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: payment_events payment_events_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payment_events
+    ADD CONSTRAINT payment_events_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: payment_events payment_events_payment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payment_events
+    ADD CONSTRAINT payment_events_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.payments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: payments payments_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payments
+    ADD CONSTRAINT payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id) ON DELETE CASCADE;
+
+
+--
+-- Name: payments payments_reviewed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payments
+    ADD CONSTRAINT payments_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: payments payments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payments
+    ADD CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: plan_entitlements plan_entitlements_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_entitlements
+    ADD CONSTRAINT plan_entitlements_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE CASCADE;
+
+
+--
+-- Name: plan_limits plan_limits_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.plan_limits
+    ADD CONSTRAINT plan_limits_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE CASCADE;
 
 
 --
@@ -3857,11 +5444,83 @@ ALTER TABLE ONLY public.savings_categories
 
 
 --
+-- Name: settings settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: spk_results spk_results_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.spk_results
     ADD CONSTRAINT spk_results_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: subscription_events subscription_events_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: subscription_events subscription_events_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: subscription_events subscription_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: subscriptions subscriptions_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscriptions
+    ADD CONSTRAINT subscriptions_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: subscriptions subscriptions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.subscriptions
+    ADD CONSTRAINT subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: token_ledger token_ledger_period_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_ledger
+    ADD CONSTRAINT token_ledger_period_id_fkey FOREIGN KEY (period_id) REFERENCES public.token_periods(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: token_ledger token_ledger_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_ledger
+    ADD CONSTRAINT token_ledger_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: token_periods token_periods_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.token_periods
+    ADD CONSTRAINT token_periods_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -3928,10 +5587,31 @@ GRANT USAGE ON SCHEMA public TO fintrack_app;
 
 
 --
+-- Name: TABLE ai_endpoints; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_endpoints TO fintrack_app;
+
+
+--
 -- Name: TABLE ai_providers; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_providers TO fintrack_app;
+
+
+--
+-- Name: TABLE ai_routes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_routes TO fintrack_app;
+
+
+--
+-- Name: TABLE audit_logs; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.audit_logs TO fintrack_app;
 
 
 --
@@ -3963,6 +5643,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.expense_subcategories TO fintr
 
 
 --
+-- Name: TABLE feature_flags; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.feature_flags TO fintrack_app;
+
+
+--
 -- Name: TABLE gemini_api_keys; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -3974,6 +5661,62 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.gemini_api_keys TO fintrack_ap
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.income_categories TO fintrack_app;
+
+
+--
+-- Name: TABLE invoice_counters; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.invoice_counters TO fintrack_app;
+
+
+--
+-- Name: TABLE invoices; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.invoices TO fintrack_app;
+
+
+--
+-- Name: TABLE payment_events; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.payment_events TO fintrack_app;
+
+
+--
+-- Name: TABLE payments; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.payments TO fintrack_app;
+
+
+--
+-- Name: TABLE plan_entitlements; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.plan_entitlements TO fintrack_app;
+
+
+--
+-- Name: TABLE plan_limits; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.plan_limits TO fintrack_app;
+
+
+--
+-- Name: TABLE plans; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.plans TO fintrack_app;
+
+
+--
+-- Name: TABLE pricing_rules; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pricing_rules TO fintrack_app;
 
 
 --
@@ -3991,10 +5734,45 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.savings_categories TO fintrack
 
 
 --
+-- Name: TABLE settings; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.settings TO fintrack_app;
+
+
+--
 -- Name: TABLE spk_results; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.spk_results TO fintrack_app;
+
+
+--
+-- Name: TABLE subscription_events; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.subscription_events TO fintrack_app;
+
+
+--
+-- Name: TABLE subscriptions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.subscriptions TO fintrack_app;
+
+
+--
+-- Name: TABLE token_ledger; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.token_ledger TO fintrack_app;
+
+
+--
+-- Name: TABLE token_periods; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.token_periods TO fintrack_app;
 
 
 --
@@ -4036,5 +5814,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gumYbsqnqpPCfHc5aqxeEJUVtipNQ0Tp32XC64lLbc7AjR2W66TPrkejMoUvD71
+\unrestrict 97av16SVrYvbaW6sFiuk9dAz0ddgkjFMKJ5FrUwzxS9GTsGuOM90jK4VxDUF2g9
 

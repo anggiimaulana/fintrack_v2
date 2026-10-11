@@ -19,6 +19,10 @@ type Repository interface {
 	// Payments
 	CreatePayment(ctx context.Context, p *Payment) error
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (*Payment, error)
+	// GetPaymentByIDForUpdate locks the payment row for the duration of the
+	// transaction (manual review idempotency: one admin wins, the rest see the
+	// committed state and fail with ErrInvalidState).
+	GetPaymentByIDForUpdate(ctx context.Context, id uuid.UUID) (*Payment, error)
 	GetPaymentByGatewayRef(ctx context.Context, ref string) (*Payment, error)
 	GetPaymentByGatewayRefForUpdate(ctx context.Context, ref string) (*Payment, error)
 	UpdatePaymentStatus(ctx context.Context, id uuid.UUID, status PaymentStatus, method, proofURL *string, snapshot map[string]any) error

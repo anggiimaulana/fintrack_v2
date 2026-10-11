@@ -163,6 +163,12 @@ func (r *PaymentRepo) GetPaymentByID(ctx context.Context, id uuid.UUID) (*paymen
 	return r.scanPayment(q(ctx, r.pool).QueryRow(ctx, paymentSelect+` WHERE id=$1`, id))
 }
 
+// GetPaymentByIDForUpdate locks the payment row for the duration of the
+// transaction (manual review idempotency).
+func (r *PaymentRepo) GetPaymentByIDForUpdate(ctx context.Context, id uuid.UUID) (*payment.Payment, error) {
+	return r.scanPayment(q(ctx, r.pool).QueryRow(ctx, paymentSelect+` WHERE id=$1 FOR UPDATE`, id))
+}
+
 func (r *PaymentRepo) GetPaymentByGatewayRef(ctx context.Context, ref string) (*payment.Payment, error) {
 	return r.scanPayment(q(ctx, r.pool).QueryRow(ctx, paymentSelect+` WHERE gateway_ref=$1`, ref))
 }

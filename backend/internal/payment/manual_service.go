@@ -85,7 +85,9 @@ func (s *ManualService) Reject(ctx context.Context, paymentID uuid.UUID, reason 
 func (s *ManualService) review(ctx context.Context, paymentID uuid.UUID, approve bool, reason string) (*Payment, error) {
 	var out *Payment
 	err := s.tx.RunInTx(ctx, func(txCtx context.Context) error {
-		pay, err := s.repo.GetPaymentByID(txCtx, paymentID)
+		// Row lock: concurrent admins reviewing the same payment serialize here.
+		// The loser re-reads the committed state and fails with ErrInvalidState.
+		pay, err := s.repo.GetPaymentByIDForUpdate(txCtx, paymentID)
 		if err != nil {
 			return err
 		}

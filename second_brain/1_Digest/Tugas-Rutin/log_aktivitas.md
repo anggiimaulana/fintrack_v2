@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-10-11 — P06-020: Suite E2E integrasi super admin + perbaikan race review pembayaran
+
+Penutupan P06-020 ("E2E Validation"). Hasil sampingan penting: suite ini **menemukan bug
+data-integrity nyata** pada jalur persetujuan pembayaran manual, yang lalu diperbaiki.
+
+### Perubahan
+- **`backend/tests/admin_e2e_test.go` (baru)** — suite integrasi 6 skenario memakai HTTP asli
+  (httptest) di atas middleware produksi (`AuthMiddleware` + `RequireSuperAdmin`), handler
+  `internal/admin`, repository Postgres, dan DB nyata. Env-gated `TEST_DATABASE_URL` sehingga
+  `go test ./...` tanpa infrastruktur tetap hijau (skip).
+  1. Otorisasi: anon 401, user biasa 403, klaim `super_admin` palsu 403 (re-check peran hidup, K-14), demosi saat token masih valid 403.
+  2. Pembuatan plan + inspeksi jejak audit (aktor, `entity=plan`, `after.code`).
+  3. Race review pembayaran (8 approve bersamaan → tepat 1×200, sisanya 409).
+  4. Penyesuaian token idempoten (replay `idempotency_key` → `replayed=true`, kuota tidak dobel, 1 baris ledger).
+  5. Kill switch AI Gateway (persistensi ke `settings`, target tidak valid 400).
+  6. Pengaturan global + feature flags (allowlist key, `updated_by`, validasi rollout 0–100).
+- **Perbaikan race (3 berkas sumber + 1 fake test)**:
+  - `payment/service.go` — `GetPaymentByIDForUpdate` ditambahkan ke interface `Repository`.
+  - `repository/postgres/payment_repo.go` — implementasi `SELECT ... FOR UPDATE`.
+  - `payment/manual_service.go` — `review()` kini memakai varian `ForUpdate` di dalam transaksi.
+  - `payment/webhook_test.go` — `memRepo` memenuhi method baru.
+
+### Temuan bug (bukti)
+- Sebelum perbaikan: 8 approve bersamaan pada satu pembayaran → `[200 200 200 409 200 409 409 409]`,
+  dan tanpa penjadwalan acak bisa `[200 ×8]`. Akar masalah: `review()` membaca dengan
+  `GetPaymentByID` (tanpa lock); di bawah READ COMMITTED semua transaksi melihat `pending_review`
+  dan semuanya menulis `settled` → event/audit ganda untuk satu pembayaran.
+- Jalur webhook sudah punya lock (`GetPaymentByGatewayRefForUpdate`, dibuktikan
+  `TestPayment_ConcurrentWebhookIdempotent`, 20 webhook bersamaan); jalur admin tidak pernah diberi.
+- Sesuai mitigasi yang diminta `P06/planning/sprint-plan.md` (risk register: "pessimistic row-lock
+  `SELECT ... FOR UPDATE`") dan `implementation-plan.md` ("cegah race condition antar-admin").
+
+### Verifikasi
+- `go vet ./...` bersih; `go test ./...` hijau; `go build ./...` hijau.
+- `TEST_DATABASE_URL=... go test -count=30 -run TestAdminE2E_PaymentReviewRace ./tests/...` → hijau (90 burst).
+- Uji mutasi: lock dilepas sementara → suite gagal di ronde pertama (`[200 ×8]`), lalu dikembalikan → hijau. Tes terbukti menangkap regresi, bukan lolos karena keberuntungan.
+- `TEST_DATABASE_URL=... go test -run TestAdminE2E ./tests/...` → 6/6 hijau.
+- **Prasyarat**: `fintrack_test` perlu dimigrasi penuh dulu (sebelumnya hanya tabel dari `0002`; kolom
+  `super_admin` belum ada). Diterapkan `0001–0010` idempoten via `psql` (dokumentasi: `database/README.md`).
+- **Bukan regresi**: `TestLedger_ReserveCommitRelease` gagal karena `fintrack_test` tanpa seed
+  (`pricing_rules` kosong). Diverifikasi gagal juga saat perubahan ini di-`git stash` — kondisi pra-ada.
+
+---
+
 ## 2026-10-11 — P06: Bersih-bersih lint + hapus `setState` di dalam `useEffect`
 
 Lanjutan penutupan P06 (fitur sudah 20/20). Fokus: menghilangkan pola sinkronisasi state

@@ -64,6 +64,11 @@ func (m *memRepo) GetPaymentByID(_ context.Context, id uuid.UUID) (*Payment, err
 	defer m.mu.Unlock()
 	return m.payments[id], nil
 }
+func (m *memRepo) GetPaymentByIDForUpdate(_ context.Context, id uuid.UUID) (*Payment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.payments[id], nil
+}
 func (m *memRepo) GetPaymentByGatewayRef(_ context.Context, ref string) (*Payment, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
