@@ -33,10 +33,10 @@ Fase ini menjadi pondasi mutlak bagi fase P03 (AI Gateway), P04 (Subscription En
 5. Dokumentasi teknis lengkap di folder `second_brain/2_Projects/P02_Fondasi-Platform/teknis/`.
 
 ## 4. Kriteria Sukses (Success Criteria)
-- [ ] Redis beroperasi normal di container Docker, terintegrasi healthcheck dengan backend Go.
-- [ ] Invalidation cache berbasis versi bekerja instan lintas instance tanpa flushall Redis.
-- [ ] Mutasi administratif dan billing mencatat audit log append-only dengan latensi per-request backend < 5ms (asynchronous worker).
-- [ ] Evaluasi feature flag per-user memiliki fallback aman (default-off) jika Redis offline.
-- [ ] Komponen DataTable menyajikan data dari server dengan URL state lengkap (refresh halaman mempertahankan halaman, sorting, filter).
-- [ ] Seluruh migrasi database berprinsip expand/contract (zero-downtime compatible).
-- [ ] Tidak ada regresi pada fungsionalitas P01 eksisting.
+- [x] Redis beroperasi normal di container Docker, terintegrasi healthcheck dengan backend Go. *(TASK-P02-001)*
+- [x] Invalidation cache berbasis versi bekerja instan lintas instance tanpa flushall Redis. *(TASK-P02-003, 004)*
+- [x] Mutasi administratif dan billing mencatat audit log append-only dengan latensi per-request backend < 5ms (asynchronous worker). *(TASK-P02-006 — test non-blocking < 10ms)*
+- [x] Evaluasi feature flag per-user memiliki fallback aman (default-off) jika Redis offline. *(TASK-P02-008 — fail-closed)*
+- [x] Komponen DataTable menyajikan data dari server dengan URL state lengkap (refresh halaman mempertahankan halaman, sorting, filter). *(TASK-P02-009..012)*
+- [x] Seluruh migrasi database berprinsip expand/contract (zero-downtime compatible). *(TASK-P02-005, 007 — aditif, replayable)*
+- [x] Tidak ada regresi pada fungsionalitas P01 eksisting. *(go test ./... + smoke test live: login 200, `X-Cache: HIT`)*
