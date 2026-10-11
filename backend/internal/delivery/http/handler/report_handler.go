@@ -20,12 +20,12 @@ func NewReportHandler(usecase *usecase.ReportUsecase) *ReportHandler {
 func (h *ReportHandler) Generate(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 	req := domain.ReportRequest{
-		Period:      c.DefaultQuery("period", "current_month"),
-		Type:        c.Query("type"),
-		StartDate:   c.Query("start_date"),
-		EndDate:     c.Query("end_date"),
+		Period:       c.DefaultQuery("period", "current_month"),
+		Type:         c.Query("type"),
+		StartDate:    c.Query("start_date"),
+		EndDate:      c.Query("end_date"),
 		CompareStart: c.Query("compare_start"),
-		CompareEnd:  c.Query("compare_end"),
+		CompareEnd:   c.Query("compare_end"),
 	}
 
 	report, err := h.usecase.Generate(c.Request.Context(), userID, req)

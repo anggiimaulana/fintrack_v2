@@ -30,12 +30,12 @@ func NewCategoryUsecase(
 
 func (u *CategoryUsecase) CreateIncome(ctx context.Context, adminID uuid.UUID, req domain.CreateCategoryRequest) (*domain.IncomeCategory, error) {
 	c := &domain.IncomeCategory{
-		Name:      req.Name,
-		Icon:      req.Icon,
-		Color:     req.Color,
+		Name:        req.Name,
+		Icon:        req.Icon,
+		Color:       req.Color,
 		Description: req.Description,
-		SortOrder: req.SortOrder,
-		CreatedBy: &adminID,
+		SortOrder:   req.SortOrder,
+		CreatedBy:   &adminID,
 	}
 	if c.Icon == "" {
 		c.Icon = "circle"

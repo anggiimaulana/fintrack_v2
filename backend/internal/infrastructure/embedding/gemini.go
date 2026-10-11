@@ -38,7 +38,7 @@ var ErrDisabled = fmt.Errorf("embedding disabled: GEMINI_EMBEDDING_API_KEY is no
 func (e *GeminiEmbedder) Enabled() bool { return e.apiKey != "" }
 
 type embedRequest struct {
-	Model   string      `json:"model"`
+	Model   string       `json:"model"`
 	Content embedContent `json:"content"`
 }
 
@@ -109,8 +109,8 @@ func (e *GeminiEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to parse embedding response: %w", err)
 		}
-		if len(parsed.Embedding.Values) == 0 {
-			return nil, fmt.Errorf("embedding response had no values")
+		if err := validateDimensions(parsed.Embedding.Values); err != nil {
+			return nil, err
 		}
 		return parsed.Embedding.Values, nil
 	}

@@ -544,5 +544,3 @@ func (r *TransactionRepo) GetTimeSeries(ctx context.Context, userID uuid.UUID, s
 	}
 	return points, nil
 }
-
-

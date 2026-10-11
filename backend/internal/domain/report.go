@@ -30,18 +30,18 @@ type MonthlyComparison struct {
 }
 
 type ReportResponse struct {
-	Summary    ReportSummary      `json:"summary"`
-	Categories []CategoryReport   `json:"categories"`
+	Summary    ReportSummary       `json:"summary"`
+	Categories []CategoryReport    `json:"categories"`
 	Monthly    []MonthlyComparison `json:"monthly"`
 }
 
 type ReportRequest struct {
-	Period      string `form:"period"`
-	Type        string `form:"type"`
-	StartDate   string `form:"start_date"`
-	EndDate     string `form:"end_date"`
+	Period       string `form:"period"`
+	Type         string `form:"type"`
+	StartDate    string `form:"start_date"`
+	EndDate      string `form:"end_date"`
 	CompareStart string `form:"compare_start"`
-	CompareEnd  string `form:"compare_end"`
+	CompareEnd   string `form:"compare_end"`
 }
 
 type ReportUsecase interface {

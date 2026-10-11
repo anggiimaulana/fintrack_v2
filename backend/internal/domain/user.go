@@ -42,15 +42,15 @@ type ProfileRepository interface {
 }
 
 type UserStats struct {
-	ID                uuid.UUID `json:"id"`
-	FullName          string    `json:"full_name"`
-	Email             string    `json:"email"`
-	Role              UserRole  `json:"role"`
-	IsActive          bool      `json:"is_active"`
-	CreatedAt         time.Time `json:"created_at"`
-	TransactionCount  int       `json:"transaction_count"`
-	TotalIncome       float64   `json:"total_income"`
-	TotalExpense      float64   `json:"total_expense"`
+	ID                uuid.UUID  `json:"id"`
+	FullName          string     `json:"full_name"`
+	Email             string     `json:"email"`
+	Role              UserRole   `json:"role"`
+	IsActive          bool       `json:"is_active"`
+	CreatedAt         time.Time  `json:"created_at"`
+	TransactionCount  int        `json:"transaction_count"`
+	TotalIncome       float64    `json:"total_income"`
+	TotalExpense      float64    `json:"total_expense"`
 	LastTransactionAt *time.Time `json:"last_transaction_at,omitempty"`
 }
 

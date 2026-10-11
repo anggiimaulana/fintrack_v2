@@ -33,7 +33,7 @@ func base64Encode(data []byte) string {
 }
 
 type sessionRateLimit struct {
-	count     int
+	count         int
 	cooldownUntil time.Time
 }
 
@@ -50,10 +50,24 @@ type AIUsecase struct {
 	httpClient      *http.Client
 	rateLimits      map[string]*sessionRateLimit
 	rateLimitMu     sync.Mutex
-	embedder        *embedding.GeminiEmbedder
+	embedder        embedding.Embedder
 	embedRepo       domain.EmbeddingRepository
 	ragWarned       bool
+
+	// gateway routes AI traffic through the centralized pool (P03). When nil,
+	// the legacy BYOK path is used (feature-flag off / graceful degradation).
+	gateway domain.AIGatewayService
 }
+
+// WithGateway attaches the centralized AI gateway. When set, chat/vision/voice
+// traffic is routed through the pooled endpoints instead of per-user keys.
+func (u *AIUsecase) WithGateway(gw domain.AIGatewayService) *AIUsecase {
+	u.gateway = gw
+	return u
+}
+
+// UseGateway reports whether the centralized gateway is active.
+func (u *AIUsecase) UseGateway() bool { return u.gateway != nil }
 
 func NewAIUsecase(
 	chatSessionRepo domain.ChatSessionRepository,
@@ -65,7 +79,7 @@ func NewAIUsecase(
 	savingsCatRepo domain.SavingsCategoryRepository,
 	profileRepo domain.ProfileRepository,
 	cryptoKey []byte,
-	embedder *embedding.GeminiEmbedder,
+	embedder embedding.Embedder,
 	embedRepo domain.EmbeddingRepository,
 ) *AIUsecase {
 	return &AIUsecase{
@@ -503,6 +517,12 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 
 	systemPrompt := u.buildSystemPrompt(userContext) + u.buildToolsSystemPrompt()
 
+	// Centralized AI gateway (P03): route through the pooled endpoints instead
+	// of per-user keys. The legacy BYOK path below remains as a fallback.
+	if u.gateway != nil {
+		return u.chatViaGateway(ctx, userID, req, sessionID, systemPrompt, msgChan)
+	}
+
 	keys, err := u.getAvailableKeys(ctx, userID)
 	if err != nil || len(keys) == 0 {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Anda belum menambahkan API key. Silakan tambahkan API key terlebih dahulu di menu API Keys."}
@@ -716,8 +736,8 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 		var results []toolExecResult
 		for _, call := range toolCalls {
 			msgChan <- domain.ChatStreamEvent{
-				Type: "agent_step",
-				StepLabel: u.getToolLabel(ctx, call.Tool),
+				Type:       "agent_step",
+				StepLabel:  u.getToolLabel(ctx, call.Tool),
 				StepStatus: "running",
 			}
 			// Only send tool name to client — never expose raw parameters
@@ -750,8 +770,8 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 				status = "error"
 			}
 			msgChan <- domain.ChatStreamEvent{
-				Type: "agent_step",
-				StepLabel: u.getToolLabel(ctx, call.Tool),
+				Type:       "agent_step",
+				StepLabel:  u.getToolLabel(ctx, call.Tool),
 				StepStatus: status,
 			}
 		}
@@ -828,10 +848,10 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 	rl, exists = u.rateLimits[sessionID.String()]
 	if exists {
 		rl.count++
-	if rl.count >= 20 {
-		rl.cooldownUntil = time.Now().Add(5 * time.Second)
-		rl.count = 0
-	}
+		if rl.count >= 20 {
+			rl.cooldownUntil = time.Now().Add(5 * time.Second)
+			rl.count = 0
+		}
 	}
 	u.rateLimitMu.Unlock()
 
@@ -935,9 +955,9 @@ type openAIVisionMessage struct {
 }
 
 type openAIVisionRequest struct {
-	Model     string               `json:"model"`
+	Model     string                `json:"model"`
 	Messages  []openAIVisionMessage `json:"messages"`
-	MaxTokens int                  `json:"max_tokens,omitempty"`
+	MaxTokens int                   `json:"max_tokens,omitempty"`
 }
 
 type geminiRequest struct {
@@ -998,7 +1018,7 @@ func (u *AIUsecase) callOpenAICompatible(ctx context.Context, ep providerEndpoin
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("User-Agent", "FinTrack/1.0")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
@@ -1079,7 +1099,7 @@ func (u *AIUsecase) callGemini(ctx context.Context, ep providerEndpoint, apiKey,
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("Gemini call failed: %w", err)
 	}
@@ -1156,7 +1176,7 @@ func (u *AIUsecase) callAnthropic(ctx context.Context, ep providerEndpoint, apiK
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("Anthropic call failed: %w", err)
 	}
@@ -1415,6 +1435,11 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 		return nil, fmt.Errorf("invalid image data")
 	}
 
+	// Centralized AI gateway (P03): route vision through the pooled endpoints.
+	if u.gateway != nil {
+		return u.analyzeReceiptViaGateway(ctx, imageData, contentType)
+	}
+
 	keys, err := u.getAvailableKeys(ctx, userID)
 	if err != nil || len(keys) == 0 {
 		return map[string]interface{}{
@@ -1425,41 +1450,7 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 	}
 
 	base64Image := base64Encode(imageData)
-	prompt := fmt.Sprintf(`Anda adalah asisten analisis struk keuangan. Ekstrak informasi dari gambar struk berikut.
-
-Aturan:
-1. Identifikasi setiap item: **nama**, **jumlah**, **harga satuan**, **total**
-2. Total keseluruhan struk
-3. Tanggal transaksi (jika terbaca)
-4. Nama toko/merchant (jika terbaca)
-5. Kategori yang sesuai — untuk expense: Makanan, Transportasi, Belanja, Hiburan, Kesehatan, Pendidikan, Lain-lain. Untuk income: Gaji, Bonus, Investasi, Lainnya. Untuk savings: Tabungan Harian, Deposito, Lainnya.
-6. Hanya ekstrak data yang jelas terbaca, jangan membuat data palsu
-7. Jika gambar bukan struk/tidak jelas, beri tahu pengguna
-8. Penting: Tentukan type transaksi: "income" untuk pemasukan (gaji, transfer masuk), "expense" untuk pengeluaran (belanja, tagihan), "savings" untuk tabungan/investasi (setoran tabungan, deposito, beli reksadana)
-9. Penting: Jika struk mengandung lebih dari 1 jenis transaksi (misalnya pengeluaran + tabungan), kembalikan array "transactions" dengan setiap item memiliki type, total, category, description sendiri. Jika hanya 1 transaksi, kembalikan format single object seperti biasa.
-
-Format respons JSON (single transaction):
-{
-  "merchant": "Nama Toko",
-  "date": "2024-01-01",
-  "total": 50000,
-  "category": "Makanan",
-  "type": "expense",
-  "items": [{"name": "Item", "quantity": 1, "unit_price": 25000, "total": 25000}],
-  "raw_text": "teks yang terbaca"
-}
-
-Format respons JSON (multiple transactions dari 1 struk):
-{
-  "merchant": "Nama Toko",
-  "date": "2024-01-01",
-  "transactions": [
-    {"type": "expense", "total": 50000, "category": "Pulsa", "description": "pulsa 50k"},
-    {"type": "expense", "total": 10000, "category": "Belanja", "description": "sampo 10k"}
-  ],
-  "items": [{"name": "Item", "quantity": 1, "unit_price": 25000, "total": 25000}],
-  "raw_text": "teks yang terbaca"
-}`)
+	prompt := receiptPrompt()
 
 	key := u.findWorkingKeyByModality(ctx, keys, domain.ModalityVision)
 	if key == nil {
@@ -1525,41 +1516,7 @@ Format respons JSON (multiple transactions dari 1 struk):
 		return u.receiptErrorResult(lastErr), nil
 	}
 
-	if text == "" {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Gambar tidak dikenali sebagai struk. Pastikan foto jelas dan terbaca.",
-			"items":   []interface{}{},
-		}, nil
-	}
-
-	// Clean AI response: strip <think> tags, extract JSON from ```json blocks
-	cleaned := text
-	cleaned = stripThinkTags(cleaned)
-	cleaned = extractJSONBlock(cleaned)
-
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
-		// Try fallback: parse the original raw text directly
-		if err2 := json.Unmarshal([]byte(text), &result); err2 != nil {
-			result = map[string]interface{}{
-				"success":     true,
-				"raw_text":    text,
-				"items":       []interface{}{},
-				"total":       0,
-				"merchant":    "",
-				"category":    "Lainnya",
-				"type":        "expense",
-			}
-		}
-	}
-
-	if _, ok := result["type"]; !ok {
-		result["type"] = "expense"
-	}
-
-	result["success"] = true
-	return result, nil
+	return parseReceiptResponse(text), nil
 }
 
 func (u *AIUsecase) receiptErrorResult(err error) map[string]interface{} {
@@ -1679,7 +1636,7 @@ func (u *AIUsecase) analyzeReceiptGemini(ctx context.Context, ep providerEndpoin
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
@@ -1731,7 +1688,7 @@ func (u *AIUsecase) analyzeReceiptOpenAI(ctx context.Context, ep providerEndpoin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
@@ -1794,7 +1751,7 @@ func (u *AIUsecase) analyzeReceiptAnthropic(ctx context.Context, ep providerEndp
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
@@ -1831,6 +1788,11 @@ func (u *AIUsecase) CreateTransaction(ctx context.Context, tx *domain.Transactio
 func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBase64 string) (map[string]interface{}, error) {
 	if len(audioBase64) > 5*1024*1024 {
 		return nil, fmt.Errorf("audio too large")
+	}
+
+	// Centralized AI gateway (P03): route voice through the pooled endpoints.
+	if u.gateway != nil {
+		return u.processVoiceViaGateway(ctx, audioBase64)
 	}
 
 	keys, err := u.getAvailableKeys(ctx, userID)
@@ -1945,7 +1907,7 @@ func (u *AIUsecase) voiceProcessGemini(ctx context.Context, ep providerEndpoint,
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
@@ -1980,8 +1942,8 @@ func (u *AIUsecase) voiceProcessGemini(ctx context.Context, ep providerEndpoint,
 func (u *AIUsecase) voiceProcessOpenAI(ctx context.Context, ep providerEndpoint, model, apiKey, prompt, audioBase64 string) (string, error) {
 	// Use OpenAI-compatible audio input format with vision-style multimodal messages
 	type audioContentPart struct {
-		Type     string `json:"type"`
-		Text     string `json:"text,omitempty"`
+		Type       string `json:"type"`
+		Text       string `json:"text,omitempty"`
 		InputAudio *struct {
 			Data   string `json:"data"`
 			Format string `json:"format"`
@@ -1994,9 +1956,9 @@ func (u *AIUsecase) voiceProcessOpenAI(ctx context.Context, ep providerEndpoint,
 	}
 
 	type audioRequest struct {
-		Model     string          `json:"model"`
-		Messages  []audioMessage  `json:"messages"`
-		MaxTokens int             `json:"max_tokens,omitempty"`
+		Model     string         `json:"model"`
+		Messages  []audioMessage `json:"messages"`
+		MaxTokens int            `json:"max_tokens,omitempty"`
 	}
 
 	// Detect audio format from the base64 data header
@@ -2036,7 +1998,7 @@ func (u *AIUsecase) voiceProcessOpenAI(ctx context.Context, ep providerEndpoint,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := u.httpClient.Do( req)
+	resp, err := u.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}

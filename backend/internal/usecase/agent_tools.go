@@ -17,18 +17,18 @@ import (
 // ─── Tool Definitions ──────────────────────────────────────────
 
 type toolParam struct {
-	Type        string                   `json:"type"`
-	Description string                   `json:"description,omitempty"`
-	Enum        []string                 `json:"enum,omitempty"`
-	Properties  map[string]toolParam     `json:"properties,omitempty"`
-	Required    []string                 `json:"required,omitempty"`
-	Items       *map[string]interface{}  `json:"items,omitempty"`
+	Type        string                  `json:"type"`
+	Description string                  `json:"description,omitempty"`
+	Enum        []string                `json:"enum,omitempty"`
+	Properties  map[string]toolParam    `json:"properties,omitempty"`
+	Required    []string                `json:"required,omitempty"`
+	Items       *map[string]interface{} `json:"items,omitempty"`
 }
 
 type toolDef struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Parameters  toolParam  `json:"parameters"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Parameters  toolParam `json:"parameters"`
 }
 
 var agentTools = []toolDef{
@@ -111,8 +111,8 @@ var agentTools = []toolDef{
 		Parameters: toolParam{
 			Type: "object",
 			Properties: map[string]toolParam{
-				"start_date":  {Type: "string", Description: "Start date in YYYY-MM-DD format"},
-				"end_date":    {Type: "string", Description: "End date in YYYY-MM-DD format"},
+				"start_date":    {Type: "string", Description: "Start date in YYYY-MM-DD format"},
+				"end_date":      {Type: "string", Description: "End date in YYYY-MM-DD format"},
 				"compare_start": {Type: "string", Description: "Optional: comparison start date in YYYY-MM-DD format"},
 				"compare_end":   {Type: "string", Description: "Optional: comparison end date in YYYY-MM-DD format"},
 			},
@@ -201,9 +201,9 @@ func parseToolCalls(ctx context.Context, text string) []toolCallRequest {
 // ─── Tool Execution ────────────────────────────────────────────
 
 type toolExecResult struct {
-	Tool   string      `json:"tool"`
-	Data   interface{} `json:"data,omitempty"`
-	Error  string      `json:"error,omitempty"`
+	Tool  string      `json:"tool"`
+	Data  interface{} `json:"data,omitempty"`
+	Error string      `json:"error,omitempty"`
 }
 
 func (u *AIUsecase) executeTool(ctx context.Context, userID uuid.UUID, call toolCallRequest) toolExecResult {
@@ -296,16 +296,16 @@ func (u *AIUsecase) execSpendingSummary(ctx context.Context, userID uuid.UUID, p
 	}
 
 	data := map[string]interface{}{
-		"period":         period,
-		"total_income":   stats.TotalIncome,
-		"total_expense":  stats.TotalExpense,
-		"total_savings":  stats.TotalSavings,
-		"net_balance":    stats.NetBalance,
-		"income_count":   stats.IncomeCount,
-		"expense_count":  stats.ExpenseCount,
-		"savings_count":  stats.SavingsCount,
-		"start_date":     start.Format("2006-01-02"),
-		"end_date":       end.Format("2006-01-02"),
+		"period":        period,
+		"total_income":  stats.TotalIncome,
+		"total_expense": stats.TotalExpense,
+		"total_savings": stats.TotalSavings,
+		"net_balance":   stats.NetBalance,
+		"income_count":  stats.IncomeCount,
+		"expense_count": stats.ExpenseCount,
+		"savings_count": stats.SavingsCount,
+		"start_date":    start.Format("2006-01-02"),
+		"end_date":      end.Format("2006-01-02"),
 	}
 
 	prevStart := start.AddDate(0, -1, 0)
@@ -371,7 +371,7 @@ func (u *AIUsecase) execGetTransactions(ctx context.Context, userID uuid.UUID, p
 	filter := domain.TransactionFilter{Page: 1, PerPage: limit}
 
 	if t, ok := params["type"].(string); ok {
-				tType := domain.TransactionType(t)
+		tType := domain.TransactionType(t)
 		filter.Type = &tType
 	}
 
@@ -545,15 +545,15 @@ func (u *AIUsecase) execCreateTransaction(ctx context.Context, userID uuid.UUID,
 	}
 
 	tx := &domain.Transaction{
-		UserID:           userID,
-		Type:             cType,
-		Amount:           amount,
+		UserID:            userID,
+		Type:              cType,
+		Amount:            amount,
 		IncomeCategoryID:  incomeCatID,
 		ExpenseCategoryID: expenseCatID,
 		SavingsCategoryID: savingsCatID,
-		Description:      descPtr,
-		TransactionDate:  txDate,
-		Source:           domain.SourceAI,
+		Description:       descPtr,
+		TransactionDate:   txDate,
+		Source:            domain.SourceAI,
 	}
 
 	if err := u.txRepo.Create(ctx, tx); err != nil {
@@ -610,11 +610,11 @@ func (u *AIUsecase) execGenerateChart(ctx context.Context, userID uuid.UUID, par
 	}
 
 	result := map[string]interface{}{
-		"chart_type":       "comparison",
-		"labels":           labels,
-		"income":           incomeData,
-		"expense":          expenseData,
-		"savings":          savingsData,
+		"chart_type": "comparison",
+		"labels":     labels,
+		"income":     incomeData,
+		"expense":    expenseData,
+		"savings":    savingsData,
 	}
 
 	// Add comparison period if provided

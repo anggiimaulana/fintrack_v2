@@ -42,11 +42,11 @@ func (u *ProviderUsecase) Create(ctx context.Context, adminID uuid.UUID, req dom
 	}
 
 	provider := &domain.AIProvider{
-		Name:            req.Name,
-		DisplayName:     req.DisplayName,
-		SupportsFast:    req.SupportsFast,
+		Name:              req.Name,
+		DisplayName:       req.DisplayName,
+		SupportsFast:      req.SupportsFast,
 		SupportsReasoning: req.SupportsReasoning,
-		IsActive:        true,
+		IsActive:          true,
 	}
 	if !req.IsActive {
 		provider.IsActive = false

@@ -23,7 +23,9 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 
 const userCols = "id, email, full_name, role, avatar_url, is_active, created_at, updated_at"
 
-func scanUser(row interface{ Scan(dest ...interface{}) error }) (*domain.Profile, error) {
+func scanUser(row interface {
+	Scan(dest ...interface{}) error
+}) (*domain.Profile, error) {
 	p := &domain.Profile{}
 	err := row.Scan(&p.ID, &p.Email, &p.FullName, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
 	return p, err

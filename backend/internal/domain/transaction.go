@@ -29,8 +29,8 @@ const (
 type RecurringInterval string
 
 const (
-	RecurringDaily  RecurringInterval = "daily"
-	RecurringWeekly RecurringInterval = "weekly"
+	RecurringDaily   RecurringInterval = "daily"
+	RecurringWeekly  RecurringInterval = "weekly"
 	RecurringMonthly RecurringInterval = "monthly"
 )
 
@@ -118,13 +118,13 @@ type StatsPeriod struct {
 }
 
 type TransactionStats struct {
-	TotalIncome   float64 `json:"total_income"`
-	TotalExpense  float64 `json:"total_expense"`
-	TotalSavings  float64 `json:"total_savings"`
-	NetBalance    float64 `json:"net_balance"`
-	IncomeCount   int     `json:"income_count"`
-	ExpenseCount  int     `json:"expense_count"`
-	SavingsCount  int     `json:"savings_count"`
+	TotalIncome  float64 `json:"total_income"`
+	TotalExpense float64 `json:"total_expense"`
+	TotalSavings float64 `json:"total_savings"`
+	NetBalance   float64 `json:"net_balance"`
+	IncomeCount  int     `json:"income_count"`
+	ExpenseCount int     `json:"expense_count"`
+	SavingsCount int     `json:"savings_count"`
 }
 
 type CreateTransactionRequest struct {

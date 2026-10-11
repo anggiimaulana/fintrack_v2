@@ -22,7 +22,9 @@ func NewRefreshTokenRepo(pool *pgxpool.Pool) *RefreshTokenRepo {
 
 const refreshTokenCols = "id, user_id, token_hash, expires_at, revoked_at, replaced_by, created_at, last_used_at, user_agent"
 
-func scanRefreshToken(row interface{ Scan(dest ...interface{}) error }) (*domain.RefreshToken, error) {
+func scanRefreshToken(row interface {
+	Scan(dest ...interface{}) error
+}) (*domain.RefreshToken, error) {
 	t := &domain.RefreshToken{}
 	err := row.Scan(&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.RevokedAt, &t.ReplacedBy, &t.CreatedAt, &t.LastUsedAt, &t.UserAgent)
 	return t, err

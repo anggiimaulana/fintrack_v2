@@ -21,10 +21,10 @@ type PeriodSummary struct {
 }
 
 type ChangeSummary struct {
-	IncomeChange   float64 `json:"income_change_pct"`
-	ExpenseChange  float64 `json:"expense_change_pct"`
-	SavingsChange  float64 `json:"savings_change_pct"`
-	BalanceChange  float64 `json:"balance_change_pct"`
+	IncomeChange  float64 `json:"income_change_pct"`
+	ExpenseChange float64 `json:"expense_change_pct"`
+	SavingsChange float64 `json:"savings_change_pct"`
+	BalanceChange float64 `json:"balance_change_pct"`
 }
 
 type DateRange struct {
@@ -48,14 +48,14 @@ type OverviewRequest struct {
 }
 
 type ChartData struct {
-	Labels []string    `json:"labels"`
+	Labels []string      `json:"labels"`
 	Series []ChartSeries `json:"series"`
 }
 
 type ChartSeries struct {
-	Name   string    `json:"name"`
-	Data   []float64 `json:"data"`
-	Color  string    `json:"color,omitempty"`
+	Name  string    `json:"name"`
+	Data  []float64 `json:"data"`
+	Color string    `json:"color,omitempty"`
 }
 
 type DashboardRepository interface {

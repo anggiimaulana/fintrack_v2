@@ -20,38 +20,38 @@ const (
 )
 
 type GeminiAPIKey struct {
-	ID            uuid.UUID       `json:"id" db:"id"`
-	UserID        uuid.UUID       `json:"user_id" db:"user_id"`
-	Alias         string          `json:"alias" db:"alias"`
-	Provider      string          `json:"provider" db:"provider"`
-	Model         string          `json:"model,omitempty" db:"model"`
-	EncryptedKey  string          `json:"-" db:"encrypted_key"`
-	KeyPreview    string          `json:"key_preview" db:"key_preview"`
-	Priority      int             `json:"priority" db:"priority"`
-	Status        GeminiKeyStatus `json:"status" db:"status"`
-	SupportsText  bool            `json:"supports_text" db:"supports_text"`
-	SupportsAudio bool            `json:"supports_audio" db:"supports_audio"`
-	SupportsVision bool           `json:"supports_vision" db:"supports_vision"`
-	LastUsedAt    *time.Time      `json:"last_used_at,omitempty" db:"last_used_at"`
-	LastError     *string         `json:"last_error,omitempty" db:"last_error"`
-	CreatedAt     time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at" db:"updated_at"`
+	ID             uuid.UUID       `json:"id" db:"id"`
+	UserID         uuid.UUID       `json:"user_id" db:"user_id"`
+	Alias          string          `json:"alias" db:"alias"`
+	Provider       string          `json:"provider" db:"provider"`
+	Model          string          `json:"model,omitempty" db:"model"`
+	EncryptedKey   string          `json:"-" db:"encrypted_key"`
+	KeyPreview     string          `json:"key_preview" db:"key_preview"`
+	Priority       int             `json:"priority" db:"priority"`
+	Status         GeminiKeyStatus `json:"status" db:"status"`
+	SupportsText   bool            `json:"supports_text" db:"supports_text"`
+	SupportsAudio  bool            `json:"supports_audio" db:"supports_audio"`
+	SupportsVision bool            `json:"supports_vision" db:"supports_vision"`
+	LastUsedAt     *time.Time      `json:"last_used_at,omitempty" db:"last_used_at"`
+	LastError      *string         `json:"last_error,omitempty" db:"last_error"`
+	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
 }
 
 type GeminiKeyResponse struct {
-	ID            uuid.UUID       `json:"id"`
-	Alias         string          `json:"alias"`
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model,omitempty"`
-	KeyPreview    string          `json:"key_preview"`
-	Priority      int             `json:"priority"`
-	Status        GeminiKeyStatus `json:"status"`
-	SupportsText  bool            `json:"supports_text"`
-	SupportsAudio bool            `json:"supports_audio"`
-	SupportsVision bool           `json:"supports_vision"`
-	LastUsedAt    *time.Time      `json:"last_used_at,omitempty"`
-	LastError     *string         `json:"last_error,omitempty"`
-	CreatedAt     time.Time       `json:"created_at"`
+	ID             uuid.UUID       `json:"id"`
+	Alias          string          `json:"alias"`
+	Provider       string          `json:"provider"`
+	Model          string          `json:"model,omitempty"`
+	KeyPreview     string          `json:"key_preview"`
+	Priority       int             `json:"priority"`
+	Status         GeminiKeyStatus `json:"status"`
+	SupportsText   bool            `json:"supports_text"`
+	SupportsAudio  bool            `json:"supports_audio"`
+	SupportsVision bool            `json:"supports_vision"`
+	LastUsedAt     *time.Time      `json:"last_used_at,omitempty"`
+	LastError      *string         `json:"last_error,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 type GeminiKeyRepository interface {
@@ -83,14 +83,14 @@ func (k *GeminiAPIKey) ToResponse() GeminiKeyResponse {
 }
 
 type CreateGeminiKeyRequest struct {
-	Alias         string `json:"alias" binding:"required"`
-	APIKey        string `json:"api_key" binding:"required"`
-	Provider      string `json:"provider"`
-	Model         string `json:"model"`
-	Priority      int    `json:"priority"`
-	SupportsText  bool   `json:"supports_text"`
-	SupportsAudio bool   `json:"supports_audio"`
-	SupportsVision bool  `json:"supports_vision"`
+	Alias          string `json:"alias" binding:"required"`
+	APIKey         string `json:"api_key" binding:"required"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	Priority       int    `json:"priority"`
+	SupportsText   bool   `json:"supports_text"`
+	SupportsAudio  bool   `json:"supports_audio"`
+	SupportsVision bool   `json:"supports_vision"`
 }
 
 type UpdateGeminiKeyRequest struct {

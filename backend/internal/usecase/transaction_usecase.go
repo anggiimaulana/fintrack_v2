@@ -16,7 +16,7 @@ import (
 type TransactionUsecase struct {
 	txRepo      domain.TransactionRepository
 	spkQueue    *SPKQueue
-	embedding   *embedding.GeminiEmbedder
+	embedding   embedding.Embedder
 	embedRepo   domain.EmbeddingRepository
 	catNameFunc func(ctx context.Context, tx *domain.Transaction) string
 }
@@ -24,7 +24,7 @@ type TransactionUsecase struct {
 func NewTransactionUsecase(
 	txRepo domain.TransactionRepository,
 	spkQueue *SPKQueue,
-	embedder *embedding.GeminiEmbedder,
+	embedder embedding.Embedder,
 	embedRepo domain.EmbeddingRepository,
 	catNameFunc func(ctx context.Context, tx *domain.Transaction) string,
 ) *TransactionUsecase {

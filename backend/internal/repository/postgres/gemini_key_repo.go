@@ -23,7 +23,9 @@ func NewGeminiKeyRepo(pool *pgxpool.Pool) *GeminiKeyRepo {
 
 const geminiKeyCols = "id, user_id, alias, provider, model, encrypted_key, key_preview, priority, status, supports_text, supports_audio, supports_vision, last_used_at, last_error, created_at, updated_at"
 
-func scanGeminiKey(row interface{ Scan(dest ...interface{}) error }) (domain.GeminiAPIKey, error) {
+func scanGeminiKey(row interface {
+	Scan(dest ...interface{}) error
+}) (domain.GeminiAPIKey, error) {
 	var k domain.GeminiAPIKey
 	err := row.Scan(
 		&k.ID, &k.UserID, &k.Alias, &k.Provider, &k.Model, &k.EncryptedKey, &k.KeyPreview,

@@ -19,8 +19,8 @@ Status tracking tugas implementasi Fase P03.
 | TASK-P03-006 | Router Multi-Endpoint & Failover Engine | Backend | ✅ | `aigateway/gateway/service.go` (failover chain, kill switch, breaker gate, embedding 768 lock); 6 test PASS (failover, all-exhausted, breaker skip, kill switch, dim lock) |
 | TASK-P03-007 | Active & Passive Health Checker Worker | Backend | ✅ | `aigateway/gateway/health.go` (worker ticker, probe /models, update health); 4 test PASS (unhealthy, healthy, skip inactive, stop idempotent) |
 | TASK-P03-008 | Metering Token Extractor & Heuristic Fallback | Backend | ✅ | `aigateway/metering` (FromProvider + Estimate + vision/audio); 8 test PASS (>0 selalu, buffer 10%, modality) |
-| TASK-P03-009 | Adapter Tipis `AIUsecase` | Backend | ⬜ | Refactor `ai_usecase.go` chat, vision, voice tanpa rewrite RAG |
-| TASK-P03-010 | Adapter Embedder 768d Terkunci | Backend | ⬜ | Integrasi embedder ke gateway, strict validation vector len = 768 |
+| TASK-P03-009 | Adapter Tipis `AIUsecase` | Backend | ✅ | `ai_gateway_adapter.go` + `ai_gateway_vision_voice.go` (Strangler Fig: dispatch gateway di Chat/AnalyzeReceipt/ProcessVoice; jalur BYOK tetap fallback); 6 test PASS; usecase regression OK |
+| TASK-P03-010 | Adapter Embedder 768d Terkunci | Backend | ✅ | `embedding/embedder.go` (interface + `validateDimensions`) + `gateway.go` (`GatewayEmbedder`); legacy `GeminiEmbedder` kini validasi 768; 5 test PASS |
 | TASK-P03-011 | Deprecate Endpoint API Key Lama & Pengarsipan | Backend | ⬜ | Return 410 Gone pada user API key, soft-archive tabel DB |
 | TASK-P03-012 | Frontend BYOK Cleanup & UX Polish | Frontend | ⬜ | Hapus menu API key user, pembersihan modal dan pesan error |
 | TASK-P03-013 | Integration Test Failover & Circuit Breaker | QA/Backend | ⬜ | Skenario failover otomatis, test transisi circuit breaker |

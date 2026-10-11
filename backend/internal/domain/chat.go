@@ -17,40 +17,40 @@ type ChatSession struct {
 }
 
 type ChatMessage struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	SessionID uuid.UUID `json:"session_id" db:"session_id"`
-	UserID    uuid.UUID `json:"user_id" db:"user_id"`
-	Role      string    `json:"role" db:"role"`
-	Content   string    `json:"content" db:"content"`
-	ModelUsed *string   `json:"model_used,omitempty" db:"model_used"`
-	TokensUsed *int     `json:"tokens_used,omitempty" db:"tokens_used"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	ID         uuid.UUID `json:"id" db:"id"`
+	SessionID  uuid.UUID `json:"session_id" db:"session_id"`
+	UserID     uuid.UUID `json:"user_id" db:"user_id"`
+	Role       string    `json:"role" db:"role"`
+	Content    string    `json:"content" db:"content"`
+	ModelUsed  *string   `json:"model_used,omitempty" db:"model_used"`
+	TokensUsed *int      `json:"tokens_used,omitempty" db:"tokens_used"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
 type AIProvider struct {
-	ID              uuid.UUID `json:"id" db:"id"`
-	Name            string    `json:"name" db:"name"`
-	DisplayName     string    `json:"display_name" db:"display_name"`
-	SupportsFast    bool      `json:"supports_fast" db:"supports_fast"`
-	SupportsReasoning bool    `json:"supports_reasoning" db:"supports_reasoning"`
-	IsActive        bool      `json:"is_active" db:"is_active"`
-	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	ID                uuid.UUID `json:"id" db:"id"`
+	Name              string    `json:"name" db:"name"`
+	DisplayName       string    `json:"display_name" db:"display_name"`
+	SupportsFast      bool      `json:"supports_fast" db:"supports_fast"`
+	SupportsReasoning bool      `json:"supports_reasoning" db:"supports_reasoning"`
+	IsActive          bool      `json:"is_active" db:"is_active"`
+	CreatedAt         time.Time `json:"created_at" db:"created_at"`
 }
 
 type CreateProviderRequest struct {
-	Name            string `json:"name" binding:"required"`
-	DisplayName     string `json:"display_name" binding:"required"`
-	SupportsFast    bool   `json:"supports_fast"`
-	SupportsReasoning bool `json:"supports_reasoning"`
-	IsActive        bool   `json:"is_active"`
+	Name              string `json:"name" binding:"required"`
+	DisplayName       string `json:"display_name" binding:"required"`
+	SupportsFast      bool   `json:"supports_fast"`
+	SupportsReasoning bool   `json:"supports_reasoning"`
+	IsActive          bool   `json:"is_active"`
 }
 
 type UpdateProviderRequest struct {
-	Name            *string `json:"name"`
-	DisplayName     *string `json:"display_name"`
-	SupportsFast    *bool   `json:"supports_fast"`
-	SupportsReasoning *bool `json:"supports_reasoning"`
-	IsActive        *bool   `json:"is_active"`
+	Name              *string `json:"name"`
+	DisplayName       *string `json:"display_name"`
+	SupportsFast      *bool   `json:"supports_fast"`
+	SupportsReasoning *bool   `json:"supports_reasoning"`
+	IsActive          *bool   `json:"is_active"`
 }
 
 type LLMMode string
@@ -77,14 +77,14 @@ type ToolResultInfo struct {
 }
 
 type ChatStreamEvent struct {
-	Type        string                 `json:"type"`
-	Content     string                 `json:"content,omitempty"`
-	Step        string                 `json:"step,omitempty"`
-	StepLabel   string                 `json:"step_label,omitempty"`
-	StepStatus  string                 `json:"step_status,omitempty"`
-	Done        bool                   `json:"done,omitempty"`
-	ToolCall    *ToolCallInfo          `json:"tool_call,omitempty"`
-	ToolResult  *ToolResultInfo        `json:"tool_result,omitempty"`
+	Type       string          `json:"type"`
+	Content    string          `json:"content,omitempty"`
+	Step       string          `json:"step,omitempty"`
+	StepLabel  string          `json:"step_label,omitempty"`
+	StepStatus string          `json:"step_status,omitempty"`
+	Done       bool            `json:"done,omitempty"`
+	ToolCall   *ToolCallInfo   `json:"tool_call,omitempty"`
+	ToolResult *ToolResultInfo `json:"tool_result,omitempty"`
 }
 
 type ChatSessionRepository interface {

@@ -245,4 +245,3 @@ func TestIntegrationSPKRace(t *testing.T) {
 		t.Fatalf("SPK rows grew by %d (want <=2)", growth)
 	}
 }
-
