@@ -5,7 +5,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 - 🔄 : Sedang dikerjakan (*In Progress*)
 - ✅ : Selesai dan terverifikasi (*Done* — kode ada, test hijau)
 
-> **Status saat ini: BELUM DIMULAI.** Seluruh task masih ⬜ — belum ada implementasi kode.
+> **Status: BERJALAN.** W1 (skema, seeder, domain, repo) selesai. ✅ hanya setelah dibuktikan test nyata.
 > Status diperbarui saat eksekusi berjalan.
 
 ---
@@ -22,10 +22,10 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 
 | Task ID | Komponen | Judul Pekerjaan | Assignee | Status | Catatan |
 |---|---|---|---|:---:|---|
-| **TASK-P04-001** | Database | Skema Migrasi DDL `0008_subscription_token_core.sql` | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-001** | Database | Skema Migrasi DDL `0008_subscription_token_core.sql` | Backend Core | ✅ | 8 tabel diterapkan; trigger append-only `token_ledger` (UPDATE/DELETE ditolak); check constraint & idempotency unique terbukti; replay OK |
+| **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ✅ | `seeds/0002_subscription_token_seeds.sql` — 3 plan + 24 entitlement + 18 limit + pricing default; replay idempoten (tetap 3 plan) |
+| **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | ✅ | `internal/billing/{domain.go,repository.go}` — entity, enum, `TokenPeriod.Available()`, error sentinel, interface repo; build OK |
+| **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ✅ | `repository/postgres/billing_repo.go` (plan/subscription/token/pricing, `SELECT ... FOR UPDATE`, idempotency 23505→ErrDuplicate); 2 test PASS vs DB live |
 | **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Worker | ⬜ | Belum dikerjakan |
