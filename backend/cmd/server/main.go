@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/admin"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
@@ -110,7 +111,7 @@ func main() {
 	// Audit trail (append-only). Started once the pool is available.
 	auditSvc := audit.NewService(audit.NewPostgresRepository(pool), audit.DefaultConfig())
 	defer auditSvc.Close()
-	_ = auditSvc // consumed by later phases (P03+); wired now so the trail is ready.
+	_ = auditSvc // consumed by the Super Admin audit viewer (P06-017).
 
 	// Repositories
 	txRepo := postgres.NewTransactionRepo(pool)
@@ -129,14 +130,31 @@ func main() {
 	txManager := postgres.NewTxManager(pool)
 	aiGatewayRepo := postgres.NewAIGatewayRepo(pool)
 
+	// Emergency kill switch (P06-016): persisted in `settings`, fanned out over
+	// Pub/Sub so every instance stops routing a use case within ~100ms.
+	killSwitch := admin.NewKillSwitchStore(pool, infraRedis.NewPubSub(redisClient))
+	if err := killSwitch.Load(bgCtx); err != nil {
+		logger.Warn("AI kill switch state not loaded (using defaults)", zap.Error(err))
+	}
+	stopKillSwitchWatch := killSwitch.Watch(bgCtx)
+	defer stopKillSwitchWatch()
+
 	// Centralized AI gateway (P03). Attached to the AI usecase when enabled.
-	aiGateway := gateway.New(aiGatewayRepo, gateway.Config{EncryptionKey: encryptionKey})
+	aiGateway := gateway.New(aiGatewayRepo, gateway.Config{
+		EncryptionKey: encryptionKey,
+		KillSwitch:    func(uc domain.UseCase) bool { return killSwitch.Enabled(string(uc)) },
+	})
 	healthChecker := gateway.NewHealthChecker(aiGatewayRepo, gateway.HealthConfig{Interval: 60 * time.Second, Timeout: 5 * time.Second})
 	healthChecker.Start(bgCtx)
 	defer healthChecker.Stop()
 
+	// One cache engine shared process-wide: version bumps (role demotion,
+	// entitlement invalidation) must be visible to every consumer, which the
+	// in-memory backend cannot guarantee across separate instances.
+	cacheEngine := infraRedis.NewCacheEngine(redisClient)
+
 	// Feature flag gating the centralized gateway (default OFF for safe rollout).
-	flagSvc := featureflag.NewService(featureflag.NewPostgresRepository(pool), infraRedis.NewCacheEngine(redisClient))
+	flagSvc := featureflag.NewService(featureflag.NewPostgresRepository(pool), cacheEngine)
 	gatewayEnabled := flagSvc.IsEnabled(bgCtx, "feature_ai_gateway_centralized", nil)
 	if gatewayEnabled {
 		logger.Info("AI gateway centralized: ENABLED")
@@ -156,6 +174,11 @@ func main() {
 		}
 		embedder = direct
 	}
+	// The emergency stop covers embeddings on every transport: the gateway
+	// embedder consults it internally, the direct one is wrapped here.
+	embedder = embedding.NewKillSwitchEmbedder(embedder, func() bool {
+		return killSwitch.Enabled(string(domain.UseCaseEmbedding))
+	})
 
 	// Category-name resolver used to build embedding text.
 	catName := func(ctx context.Context, tx *domain.Transaction) string {
@@ -193,10 +216,13 @@ func main() {
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
 	}
+	// The emergency stop applies regardless of which transport serves a model
+	// call, so it is wired outside the gateway feature flag.
+	aiUC.WithKillSwitch(killSwitch.Enabled)
 	// Subscription & entitlement engine (P04).
 	billingRepo := postgres.NewBillingRepo(pool)
 	entSource := postgres.NewEntitlementSource(billingRepo)
-	entResolver := entitlement.NewResolver(entSource, infraRedis.NewCacheEngine(redisClient))
+	entResolver := entitlement.NewResolver(entSource, cacheEngine)
 	entHandler := handler.NewEntitlementHandler(entResolver)
 	entBroadcaster := entitlement.NewBroadcaster(infraRedis.NewPubSub(redisClient), entResolver)
 	stopEntSubscriber := entBroadcaster.StartSubscriber(bgCtx)
@@ -241,6 +267,18 @@ func main() {
 		Metrics:      metricsRegistry,
 	}
 
+	// Super Admin portal (P06): one service + handler shared by every route.
+	adminSvc := admin.NewService(pool, auditSvc,
+		admin.WithManualService(payManual),
+		admin.WithGateway(aiGateway),
+		admin.WithKillSwitch(killSwitch),
+		admin.WithFeatureFlags(flagSvc),
+		admin.WithEncryptionKey(encryptionKey),
+		admin.WithCache(cacheEngine),
+	)
+	superAdminH := admin.NewHandler(adminSvc)
+	adminRoleResolver := admin.NewRoleResolver(pool, cacheEngine)
+
 	r := deliveryHTTP.SetupRouter(
 		routerConfig,
 		transactionUC,
@@ -255,6 +293,8 @@ func main() {
 		authUC,
 		entHandler,
 		payHandler,
+		superAdminH,
+		adminRoleResolver,
 	)
 
 	// Start the SPK worker pool.

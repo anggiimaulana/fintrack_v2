@@ -40,6 +40,12 @@ func OK(c *gin.Context, msg string, data interface{}) {
 	JSON(c, http.StatusOK, msg, data)
 }
 
+// Envelope builds the standard success body without writing it. Useful for
+// caching the serialised payload keyed on the response shape.
+func Envelope(msg string, data interface{}) Response {
+	return Response{Success: true, Message: msg, Data: data}
+}
+
 func Created(c *gin.Context, msg string, data interface{}) {
 	JSON(c, http.StatusCreated, msg, data)
 }

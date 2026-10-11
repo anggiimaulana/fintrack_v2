@@ -25,10 +25,12 @@ type Flag struct {
 	Rules       map[string]any `json:"rules"`
 }
 
-// Repository reads flags from persistent storage.
+// Repository reads and writes flags in persistent storage.
 type Repository interface {
 	GetByKey(ctx context.Context, key string) (*Flag, error)
 	List(ctx context.Context) ([]Flag, error)
+	// Upsert creates the flag when absent, otherwise updates it.
+	Upsert(ctx context.Context, f Flag, updatedBy *uuid.UUID) error
 }
 
 // Service evaluates flags with a cache in front of the repository.
@@ -67,6 +69,27 @@ func (s *Service) get(ctx context.Context, key string) (*Flag, error) {
 		}
 	}
 	return f, nil
+}
+
+// List returns every flag (admin surface).
+func (s *Service) List(ctx context.Context) ([]Flag, error) { return s.repo.List(ctx) }
+
+// GetByKey returns a single flag (admin surface), nil when absent.
+func (s *Service) GetByKey(ctx context.Context, key string) (*Flag, error) {
+	return s.repo.GetByKey(ctx, key)
+}
+
+// Set upserts a flag and drops its cached value so the change is visible
+// immediately across instances.
+func (s *Service) Set(ctx context.Context, f Flag, updatedBy *uuid.UUID) error {
+	if f.Rules == nil {
+		f.Rules = map[string]any{}
+	}
+	if err := s.repo.Upsert(ctx, f, updatedBy); err != nil {
+		return err
+	}
+	s.Invalidate(ctx, f.Key)
+	return nil
 }
 
 // Invalidate drops the cached value for a flag (call after admin changes).

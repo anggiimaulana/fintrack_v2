@@ -160,6 +160,18 @@ func (b *Breaker) State(id string) string {
 	return string(b.get(id).state)
 }
 
+// Reset forcibly closes the breaker for an endpoint, clearing its failure
+// window. Used by the admin circuit-breaker reset action.
+func (b *Breaker) Reset(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	st := b.get(id)
+	st.state = StateClosed
+	st.failures = 0
+	st.openedAt = time.Time{}
+	st.probesInFlight = 0
+}
+
 // Failures returns the current consecutive failure count (for diagnostics).
 func (b *Breaker) Failures(id string) int {
 	b.mu.Lock()

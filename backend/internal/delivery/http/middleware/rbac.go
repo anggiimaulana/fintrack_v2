@@ -9,7 +9,13 @@ import (
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
-		if !exists || role.(string) != "admin" {
+		if !exists {
+			response.Forbidden(c, "Admin access required")
+			c.Abort()
+			return
+		}
+		r, _ := role.(string)
+		if r != "admin" && r != SuperAdminRole {
 			response.Forbidden(c, "Admin access required")
 			c.Abort()
 			return

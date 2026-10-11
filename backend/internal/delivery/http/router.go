@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ulule/limiter/v3"
 
+	"github.com/fintrack/backend/internal/admin"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
@@ -46,6 +47,8 @@ func SetupRouter(
 	authUC *usecase.AuthUsecase,
 	entitlementH *handler.EntitlementHandler,
 	paymentH *handler.PaymentHandler,
+	superAdminH *admin.Handler,
+	roleResolver middleware.RoleResolver,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -198,6 +201,14 @@ func SetupRouter(
 
 				adminRoutes.POST("/providers", providerH.Create)
 				adminRoutes.PUT("/providers/:id", providerH.Update)
+			}
+
+			// Super Admin portal (P06). Gated on the live `super_admin` role,
+			// re-resolved per request so a demotion revokes access instantly.
+			if superAdminH != nil {
+				sa := protected.Group("/admin")
+				sa.Use(middleware.RequireSuperAdmin(roleResolver))
+				admin.RegisterRoutes(sa, superAdminH)
 			}
 		}
 	}

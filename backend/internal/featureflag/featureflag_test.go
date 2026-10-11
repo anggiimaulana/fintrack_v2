@@ -31,6 +31,15 @@ func (m *memRepo) List(context.Context) ([]Flag, error) {
 	return out, nil
 }
 
+func (m *memRepo) Upsert(_ context.Context, f Flag, _ *uuid.UUID) error {
+	if m.err != nil {
+		return m.err
+	}
+	cp := f
+	m.flags[f.Key] = &cp
+	return nil
+}
+
 // TestIsEnabled_MissingFlagIsFalse asserts fail-closed on unknown flags.
 func TestIsEnabled_MissingFlagIsFalse(t *testing.T) {
 	svc := NewService(&memRepo{flags: map[string]*Flag{}}, nil)

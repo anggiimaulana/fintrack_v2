@@ -4,6 +4,72 @@
 
 ---
 
+## 2026-10-11 — P06: Bersih-bersih lint + hapus `setState` di dalam `useEffect`
+
+Lanjutan penutupan P06 (fitur sudah 20/20). Fokus: menghilangkan pola sinkronisasi state
+anti-pattern dan menyisakan 0 error lint.
+
+### Perubahan
+- **Hook baru `frontend/hooks/use-reset-on-open.ts`** — reset form dialog saat `open` berubah
+  `false → true` memakai pola React "adjust state during render" (tanpa render pass tambahan);
+  param `signature` opsional untuk reset saat record yang disunting berganti.
+  Dipakai di `ForceDowngradeDialog`, `CancelSubscriptionDialog`, `PaymentActionDialogs`
+  (approve/reject/refund), `FeatureFlagDialog`.
+- **Adopsi nilai server saat render** (bukan effect) di `AuditFilters` (4 nilai filter),
+  `GlobalSettingsTab` (hidrasi form) dan `RoutingMatrixPanel` (matriks rute). Perbandingan
+  memakai signature nilai, sehingga refetch latar tidak lagi menghapus suntingan lokal.
+- Impor/ekspor mati dibuang: `AreaChartView`, 6 ikon lucide di `GatewayPanels`, `CardHeader/
+  CardTitle/CardDescription` di `FeatureFlagsTab`, `AlertCircle`, tipe `TokenLedgerRow`,
+  deklarasi `variant` di `JsonDiffViewer`; kutip ganda pada teks JSX di-escape (`&quot;`).
+
+### Verifikasi
+- `pnpm lint` → **0 error** (3 error sebelumnya: `react-hooks/set-state-in-effect` ×2,
+  `prefer-const`), 62 warning sisa (mayoritas `no-unused-vars` di berkas di luar P06).
+- `pnpm build` hijau; `pnpm test` → 4 berkas / 54 tes lolos.
+- Browser (Next build lokal di port 3001 + backend/DB docker, login super admin):
+  - Reset dialog: extend (30 hari/'' → terisi → buka ulang kembali 30/''), feature flag
+    (key/nama/rollout kembali ke nilai server), paksa turunkan paket (paket default +
+    alasan kosong, tombol submit `disabled`), refund (3 field kosong).
+  - Matriks rute: sunting prioritas → tombol "Simpan Matriks" aktif; "Segarkan Data" →
+    suntingan **tetap** (dulu terhapus); "Batalkan perubahan" → kembali ke nilai server & tombol nonaktif.
+  - Filter audit: ketik email → URL `?filter_email=...` setelah debounce; "Reset Filter" → input & URL bersih.
+  - Pengaturan: muat ulang halaman → form terhidrasi dari server, tombol "Simpan Pengaturan" `disabled`.
+
+### Catatan / deviasi kecil
+- Tidak ada tes unit baru untuk hook: `vitest` proyek berjalan di environment `node` tanpa
+  `@testing-library/react`/jsdom; menambah dependensi hanya untuk 15 baris hook dinilai tidak
+  sepadan. Perilaku dibuktikan lewat walkthrough browser di atas.
+
+
+---
+
+## 2026-10-11 — Implementasi P06 Super Admin Dashboard SELESAI (20/20, 100%)
+
+Eksekusi `P06_Super-Admin-Dashboard/planning/implementation-plan.md` (4 milestone). Semua task ✅
+setelah dibuktikan lewat suite API + walkthrough browser.
+
+### Backend — Otorisasi, Admin API, Kill Switch
+- **TASK-P06-001** ✅ middleware `super_admin.go` (+test) + grup `/api/v1/admin/*`; anon 401, user 403 (dibuktikan di smoke).
+- **TASK-P06-005/008/010/012/014/018** ✅ paket `internal/admin` (12 berkas): metrics (overview, timeseries, payment-methods), plans CRUD + entitlement, subscriptions (extend/cancel/force-downgrade), payments (review/settle/refund), tokens (users/ledger/adjust 409 `NO_ACTIVE_PERIOD`), audit-logs (filter + sanitasi PDP).
+- **TASK-P06-016** ✅ aigateway admin (endpoints/routes/kill-switch) + migrasi `0010_settings.sql`; enforcement kill switch di `gateway/service.go`, `breaker/circuit_breaker.go`, `embedding/killswitch.go`.
+- **TASK-P06-006/013/015/017/019** ✅ feature flag repository + test; `pkg/response` dan `ai_usecase` diselaraskan.
+
+### Frontend — Dashboard Admin
+- **TASK-P06-002/003/004** ✅ layout + guard role di `proxy.ts`, sidebar, `<DataTable>` TanStack v8 + URL state (Suspense boundary ditambahkan — sebelumnya `pnpm build` gagal).
+- **TASK-P06-006/007/009/011/013/015/017/019/020** ✅ 8 halaman `(dashboard)/super-admin/*` (dashboard + Recharts, plans, subscriptions, payments + review, tokens, ai-gateway, audit viewer + diff JSON, settings + feature flag).
+
+### Verifikasi (bukti nyata)
+- `bash tester/p06_smoke.sh` → seluruh endpoint admin 200; negatif sesuai kontrak: 400 `target tidak valid`, 401 anon, 403 user, 409 `NO_ACTIVE_PERIOD`.
+- Browser (super admin): 8 halaman render, **0 error konsol**.
+- Kill switch lewat UI: klik switch global → dialog "Ya, Aktifkan Kill Switch" → `data-state=checked`, banner "Layanan Global Dimatikan" muncul, API `global=true`, audit `entity_id=ai_kill_switch after={"enabled":true,"target":"global"}`; toggle OFF langsung tanpa dialog → API semua `false` (state dikembalikan).
+- RBAC: user biasa membuka `/super-admin` → dialihkan ke `/user`.
+- `cd frontend && pnpm build` hijau.
+
+### Catatan / deviasi kecil
+- Tombol "Simpan Matriks" hanya untuk perubahan matriks rute; toggle kill switch tersimpan otomatis setelah dialog konfirmasi (dibuktikan: tombol tetap `disabled` saat toggle berubah, namun API sudah terbarui).
+
+---
+
 ## 2026-10-11 — Implementasi P05 Payments & Billing SELESAI (17/17, 100%)
 
 Eksekusi `P05_Payments-Billing/planning/implementation-plan.md` (5 wave). Semua task ✅ setelah

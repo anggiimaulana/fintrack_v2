@@ -30,7 +30,13 @@ type Config struct {
 	DefaultTimeout time.Duration
 	// Breaker config; defaults applied when zero-valued.
 	Breaker breaker.Config
+	// KillSwitch, when non-nil, reports whether a use case is administratively
+	// disabled by the Super Admin emergency stop. Nil means all enabled.
+	KillSwitch func(uc domain.UseCase) bool
 }
+
+// ErrKillSwitch is returned when the emergency kill switch disables a use case.
+var ErrKillSwitch = errors.New("ai gateway disabled by kill switch")
 
 // Service implements domain.AIGatewayService over a pooled set of endpoints.
 type Service struct {
@@ -57,6 +63,11 @@ func New(repo domain.AIEndpointRepository, cfg Config) *Service {
 
 // Breaker exposes the breaker (for health checks / diagnostics).
 func (s *Service) Breaker() *breaker.Breaker { return s.breaker }
+
+// killed reports whether the emergency kill switch disables a use case.
+func (s *Service) killed(uc domain.UseCase) bool {
+	return s.cfg.KillSwitch != nil && s.cfg.KillSwitch(uc)
+}
 
 // InvalidateRoutes drops the cached routes (call after admin changes).
 func (s *Service) InvalidateRoutes() { s.repo.InvalidateCache() }
@@ -108,6 +119,9 @@ func (s *Service) ChatStream(ctx context.Context, req *domain.AIChatRequest) (<-
 	if useCase == "" {
 		useCase = domain.UseCaseChat
 	}
+	if s.killed(useCase) {
+		return nil, ErrKillSwitch
+	}
 	routes, err := s.repo.GetActiveRoutesByUseCase(ctx, useCase)
 	if err != nil {
 		return nil, err
@@ -147,6 +161,9 @@ func (s *Service) ChatSync(ctx context.Context, req *domain.AIChatRequest) (stri
 	if useCase == "" {
 		useCase = domain.UseCaseChat
 	}
+	if s.killed(useCase) {
+		return "", domain.TokenUsage{}, ErrKillSwitch
+	}
 	routes, err := s.repo.GetActiveRoutesByUseCase(ctx, useCase)
 	if err != nil {
 		return "", domain.TokenUsage{}, err
@@ -183,6 +200,9 @@ func (s *Service) ChatSync(ctx context.Context, req *domain.AIChatRequest) (stri
 
 // CreateEmbedding returns a 768-dim vector for text.
 func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRequest) ([]float32, domain.TokenUsage, error) {
+	if s.killed(domain.UseCaseEmbedding) {
+		return nil, domain.TokenUsage{}, ErrKillSwitch
+	}
 	routes, err := s.repo.GetActiveRoutesByUseCase(ctx, domain.UseCaseEmbedding)
 	if err != nil {
 		return nil, domain.TokenUsage{}, err
@@ -225,6 +245,9 @@ func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRe
 
 // TranscribeAudio transcribes audio to text.
 func (s *Service) TranscribeAudio(ctx context.Context, req *domain.AIAudioTranscriptionRequest) (string, domain.TokenUsage, error) {
+	if s.killed(domain.UseCaseVoice) {
+		return "", domain.TokenUsage{}, ErrKillSwitch
+	}
 	routes, err := s.repo.GetActiveRoutesByUseCase(ctx, domain.UseCaseVoice)
 	if err != nil {
 		return "", domain.TokenUsage{}, err

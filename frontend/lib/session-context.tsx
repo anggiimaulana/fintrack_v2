@@ -9,6 +9,7 @@ type SessionContextValue = {
   isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
 };
 
 const SessionContext = createContext<SessionContextValue>({
@@ -16,6 +17,7 @@ const SessionContext = createContext<SessionContextValue>({
   isLoading: true,
   isAuthenticated: false,
   isAdmin: false,
+  isSuperAdmin: false,
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -34,7 +36,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         isAuthenticated: Boolean(user),
-        isAdmin: user?.role === "admin",
+        isAdmin: user?.role === "admin" || user?.role === "super_admin",
+        isSuperAdmin: user?.role === "super_admin",
       }}
     >
       {children}

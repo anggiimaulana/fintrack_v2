@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
+import { normalizeRole, type Role } from "@/lib/roles";
 
 export type SessionUser = {
   id: string;
-  role: "admin" | "user";
+  role: Role;
   email: string;
 };
 
@@ -32,7 +33,7 @@ export async function getSession(): Promise<SessionUser | null> {
     const role = payload.role as string | undefined;
     const email = payload.email as string | undefined;
     if (!sub || !role) return null;
-    return { id: sub, role: role === "admin" ? "admin" : "user", email: email ?? "" };
+    return { id: sub, role: normalizeRole(role), email: email ?? "" };
   } catch {
     return null;
   }

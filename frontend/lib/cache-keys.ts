@@ -45,4 +45,21 @@ export const queryKeys = {
   providers: {
     all: ["providers"] as const,
   },
+  superAdmin: {
+    metricsOverview: (refresh?: boolean) => ["super-admin", "metrics-overview", refresh] as const,
+    metricsTimeseries: (period?: string) => ["super-admin", "metrics-timeseries", period] as const,
+    metricsPaymentMethods: ["super-admin", "metrics-payment-methods"] as const,
+    plans: ["super-admin", "plans"] as const,
+    subscriptions: (params?: unknown) => ["super-admin", "subscriptions", params] as const,
+    payments: (params?: unknown) => ["super-admin", "payments", params] as const,
+    paymentsReview: (params?: unknown) => ["super-admin", "payments-review", params] as const,
+    tokensUsers: (params?: unknown) => ["super-admin", "tokens-users", params] as const,
+    tokensLedger: (params?: unknown) => ["super-admin", "tokens-ledger", params] as const,
+    gatewayEndpoints: ["super-admin", "gateway-endpoints"] as const,
+    gatewayRoutes: ["super-admin", "gateway-routes"] as const,
+    killSwitch: ["super-admin", "kill-switch"] as const,
+    auditLogs: (params?: unknown) => ["super-admin", "audit-logs", params] as const,
+    settings: ["super-admin", "settings"] as const,
+    featureFlags: ["super-admin", "feature-flags"] as const,
+  },
 };

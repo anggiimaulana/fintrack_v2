@@ -57,6 +57,11 @@ type AIUsecase struct {
 	// gateway routes AI traffic through the centralized pool (P03). When nil,
 	// the legacy BYOK path is used (feature-flag off / graceful degradation).
 	gateway domain.AIGatewayService
+
+	// killSwitch reports emergency-stop state per use case ("chat", "vision",
+	// "voice"). Wired to the admin store so the operator stop applies to BOTH
+	// the centralized gateway and the legacy BYOK path.
+	killSwitch func(useCase string) bool
 }
 
 // WithGateway attaches the centralized AI gateway. When set, chat/vision/voice
@@ -64,6 +69,18 @@ type AIUsecase struct {
 func (u *AIUsecase) WithGateway(gw domain.AIGatewayService) *AIUsecase {
 	u.gateway = gw
 	return u
+}
+
+// WithKillSwitch attaches the emergency-stop predicate. It is consulted before
+// every model call, regardless of which transport (gateway or BYOK) serves it.
+func (u *AIUsecase) WithKillSwitch(stopped func(useCase string) bool) *AIUsecase {
+	u.killSwitch = stopped
+	return u
+}
+
+// stopped reports whether the emergency kill switch halts a use case.
+func (u *AIUsecase) stopped(useCase string) bool {
+	return u.killSwitch != nil && u.killSwitch(useCase)
 }
 
 // UseGateway reports whether the centralized gateway is active.
@@ -454,6 +471,15 @@ func getTemplateResponse(msg string) (string, bool) {
 
 func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatRequest, sessionID *uuid.UUID, source string, msgChan chan<- domain.ChatStreamEvent) error {
 	defer close(msgChan)
+
+	// Emergency stop: the operator may halt AI traffic process-wide. Checked
+	// first so nothing (session, RAG, provider call) happens while stopped, and
+	// enforced here rather than in the gateway so it covers both transports.
+	if u.stopped("chat") {
+		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Fitur AI sedang dinonaktifkan sementara oleh administrator."}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		return nil
+	}
 
 	msgLower := strings.ToLower(strings.TrimSpace(req.Message))
 
@@ -1435,6 +1461,14 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 		return nil, fmt.Errorf("invalid image data")
 	}
 
+	if u.stopped("vision") {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Fitur AI sedang dinonaktifkan sementara oleh administrator.",
+			"items":   []interface{}{},
+		}, nil
+	}
+
 	// Centralized AI gateway (P03): route vision through the pooled endpoints.
 	if u.gateway != nil {
 		return u.analyzeReceiptViaGateway(ctx, imageData, contentType)
@@ -1788,6 +1822,14 @@ func (u *AIUsecase) CreateTransaction(ctx context.Context, tx *domain.Transactio
 func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBase64 string) (map[string]interface{}, error) {
 	if len(audioBase64) > 5*1024*1024 {
 		return nil, fmt.Errorf("audio too large")
+	}
+
+	if u.stopped("voice") {
+		return map[string]interface{}{
+			"success":    false,
+			"message":    "Fitur AI sedang dinonaktifkan sementara oleh administrator.",
+			"transcript": "",
+		}, nil
 	}
 
 	// Centralized AI gateway (P03): route voice through the pooled endpoints.

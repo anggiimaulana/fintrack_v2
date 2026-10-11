@@ -3,11 +3,13 @@
  * proxy, so the httpOnly auth cookies are sent/received automatically.
  */
 
+import type { Role } from "@/lib/roles";
+
 export type AuthUser = {
   id: string;
   email: string;
   full_name: string;
-  role: "admin" | "user";
+  role: Role;
   avatar_url?: string | null;
   is_active: boolean;
 };
