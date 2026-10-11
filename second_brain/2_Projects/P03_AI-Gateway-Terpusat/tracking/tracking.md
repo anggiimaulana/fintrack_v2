@@ -21,8 +21,8 @@ Status tracking tugas implementasi Fase P03.
 | TASK-P03-008 | Metering Token Extractor & Heuristic Fallback | Backend | ✅ | `aigateway/metering` (FromProvider + Estimate + vision/audio); 8 test PASS (>0 selalu, buffer 10%, modality) |
 | TASK-P03-009 | Adapter Tipis `AIUsecase` | Backend | ✅ | `ai_gateway_adapter.go` + `ai_gateway_vision_voice.go` (Strangler Fig: dispatch gateway di Chat/AnalyzeReceipt/ProcessVoice; jalur BYOK tetap fallback); 6 test PASS; usecase regression OK |
 | TASK-P03-010 | Adapter Embedder 768d Terkunci | Backend | ✅ | `embedding/embedder.go` (interface + `validateDimensions`) + `gateway.go` (`GatewayEmbedder`); legacy `GeminiEmbedder` kini validasi 768; 5 test PASS |
-| TASK-P03-011 | Deprecate Endpoint API Key Lama & Pengarsipan | Backend | ⬜ | Return 410 Gone pada user API key, soft-archive tabel DB |
-| TASK-P03-012 | Frontend BYOK Cleanup & UX Polish | Frontend | ⬜ | Hapus menu API key user, pembersihan modal dan pesan error |
+| TASK-P03-011 | Deprecate Endpoint API Key Lama & Pengarsipan Kunci | Backend | ✅ | handler BYOK: mutasi→410 Gone (`BYOK_DEPRECATED`), list→200 `[]`; 2 test PASS; 30 kunci lama diarsipkan (`is_archived=true`, tidak dihapus) |
+| TASK-P03-012 | Frontend BYOK Cleanup & UX Polish | Frontend | ✅ | nav "API Keys" dihapus dari Sidebar & Header; halaman `/user/api-keys` → redirect `/user/settings`; `pnpm lint` 0 error; `pnpm build` OK |
 | TASK-P03-013 | Integration Test Failover & Circuit Breaker | QA/Backend | ⬜ | Skenario failover otomatis, test transisi circuit breaker |
 | TASK-P03-014 | Benchmark & Zero-Downtime Rollout Verification | Team | ⬜ | Load testing SSE, zero downtime deployment via feature flag |
 

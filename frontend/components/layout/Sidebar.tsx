@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
-  Home, ArrowLeftRight, FileText, MessageSquare, Key, Settings, 
+  Home, ArrowLeftRight, FileText, MessageSquare, Settings, 
   LogOut, Wallet, User, MessagesSquare, History, Mic
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -25,7 +25,6 @@ const navItems = [
   { href: "/user/transactions", icon: ArrowLeftRight, label: "Transaksi" },
   { href: "/user/ai", icon: MessageSquare, label: "AI Chat" },
   { href: "/user/reports", icon: FileText, label: "Laporan" },
-  { href: "/user/api-keys", icon: Key, label: "API Keys" },
   { href: "/user/profile", icon: User, label: "Profil" },
   { href: "/user/settings", icon: Settings, label: "Pengaturan" },
 ];

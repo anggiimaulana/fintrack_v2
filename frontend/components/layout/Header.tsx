@@ -8,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
-import { Home, ArrowLeftRight, FileText, MessageSquare, Key, Settings, Wallet, LogOut } from "lucide-react";
+import { Home, ArrowLeftRight, FileText, MessageSquare, Settings, Wallet, LogOut } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,6 @@ const navItems = [
   { href: "/user/transactions", icon: ArrowLeftRight, label: "Transaksi" },
   { href: "/user/reports", icon: FileText, label: "Laporan" },
   { href: "/user/ai", icon: MessageSquare, label: "AI Chat" },
-  { href: "/user/api-keys", icon: Key, label: "API Keys" },
   { href: "/user/settings", icon: Settings, label: "Pengaturan" },
 ];
 
@@ -75,7 +74,6 @@ export function Header() {
     if (pathname.startsWith("/user/transactions")) return "Transaksi";
     if (pathname.startsWith("/user/reports")) return "Laporan";
     if (pathname.startsWith("/user/ai")) return "AI Chat";
-    if (pathname.startsWith("/user/api-keys")) return "API Keys";
     if (pathname.startsWith("/user/settings")) return "Pengaturan";
     return "Dashboard";
   };
