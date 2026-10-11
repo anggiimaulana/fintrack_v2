@@ -14,7 +14,7 @@
 ### Wave 1: Fondasi Skema Database & Domain Modeling (Hari 1 - 2)
 - **Tujuan**: Mempersiapkan skema persistensi, enkripsi kunci provider, dan kontrak antarmuka di Go domain.
 - **Deliverables**:
-  - Migrasi `0006_ai_gateway.sql` (tabel `ai_endpoints`, `ai_routes`, alter `gemini_api_keys`).
+  - Migrasi `0007_ai_gateway.sql` (tabel `ai_endpoints`, `ai_routes`, alter `gemini_api_keys`).
   - Definisi interface dan model di `internal/domain/aigateway.go`.
   - Repository layer untuk operasi CRUD endpoint dan route.
 
@@ -55,7 +55,7 @@
 
 | ID Task | Judul Task | Assignee | Dependensi | Status |
 |---|---|---|---|---|
-| TASK-P03-001 | Skema Database & Migrasi `0006_ai_gateway.sql` | Backend | - | ⬜ Ready |
+| TASK-P03-001 | Skema Database & Migrasi `0007_ai_gateway.sql` | Backend | - | ⬜ Ready |
 | TASK-P03-002 | Domain Modeling & Entity Gateway di Go | Backend | TASK-P03-001 | ⬜ Ready |
 | TASK-P03-003 | Repository SQL Endpoint & Routing Table | Backend | TASK-P03-002 | ⬜ Ready |
 | TASK-P03-004 | OpenAI-Compatible HTTP Client & Streaming Parser | Backend | TASK-P03-002 | ⬜ Ready |

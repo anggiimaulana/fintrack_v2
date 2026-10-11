@@ -25,7 +25,7 @@ Membangun pondasi monetisasi FinTrack v2 yang tangguh dan terisolasi secara tran
 
 | Hari | Target Kerja / Milestones | Fokus Area |
 |---|---|---|
-| **Hari 1–2** | **Desain Skema DB & Migrasi DDL Replayable**<br>- Pembuatan file migrasi `0007_subscription_token_core.sql`<br>- Skema tabel plans, entitlements, limits, subscriptions, token_ledger, pricing_rules<br>- Script rollback & seed data default plan (Free, Pro, Business) | Basis Data & ORM/Repository SQL |
+| **Hari 1–2** | **Desain Skema DB & Migrasi DDL Replayable**<br>- Pembuatan file migrasi `0008_subscription_token_core.sql`<br>- Skema tabel plans, entitlements, limits, subscriptions, token_ledger, pricing_rules<br>- Script rollback & seed data default plan (Free, Pro, Business) | Basis Data & ORM/Repository SQL |
 | **Hari 3–4** | **Domain Model & Repository Layer (`internal/billing/`)**<br>- Domain entity, value objects, domain errors<br>- Postgres repository dengan `SELECT ... FOR UPDATE`<br>- Implementasi unit test transaksi repository dengan isolation test | Backend Core / Repository |
 | **Hari 5–6** | **Token Ledger Engine & Pricing Engine**<br>- Implementasi 2-phase reserve-call-commit/release flow<br>- Dynamic pricing calculator (integer IDR, modality weights)<br>- Idempotency validator & auto-release background cleaner worker | Backend Service / Ledger |
 | **Hari 7–8** | **Entitlement Resolver & Versioned Cache System**<br>- Implementasi L1 in-memory + L2 Redis cache manager<br>- Redis Pub/Sub invalidation worker & user version counter<br>- Gin HTTP middleware `RequireFeature` & `WithinLimit`<br>- Handler endpoint `/api/v1/me/entitlements` | Backend Middleware & API |

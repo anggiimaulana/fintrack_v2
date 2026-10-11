@@ -19,7 +19,7 @@ Sprint plan untuk pelaksanaan implementasi fase P05 terbagi ke dalam 3 milestone
 ### Sprint 1: Skema Data, Abstraksi Gateway & Integrasi Midtrans
 - **Tujuan**: Membangun fondasi database, arsitektur antarmuka Go, dan aliran otomatisasi pembayaran Midtrans Snap beserta verifikasi webhook yang aman.
 - **Backlog Item**:
-  1. `TASK-P05-001`: Penulisan skrip migrasi database `0007_create_payments_and_invoices.sql`.
+  1. `TASK-P05-001`: Penulisan skrip migrasi database `0009_payments_invoices.sql`.
   2. `TASK-P05-002`: Implementasi interface `Gateway` dan struct model di `internal/payment/gateway.go`.
   3. `TASK-P05-003`: Implementasi driver `MidtransGateway` (`CreateTransaction` via Snap API).
   4. `TASK-P05-004`: Endpoint publik webhook Midtrans dengan validasi HMAC SHA512 signature.

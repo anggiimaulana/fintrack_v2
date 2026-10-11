@@ -29,7 +29,7 @@ Fase P04 adalah fondasi inti monetisasi dan pembatasan fitur FinTrack v2. Fase i
    - REST API Endpoint: `GET /api/v1/me/entitlements` untuk sinkronisasi antarmuka pengguna (Next.js TanStack Query).
 
 ## Deliverables
-1. Skema SQL migrasi DDL replayable `database/migrations/0007_subscription_token_core.sql` beserta rollback script.
+1. Skema SQL migrasi DDL replayable `database/migrations/0008_subscription_token_core.sql` beserta rollback script.
 2. Modul backend Go:
    - `internal/billing/domain/`: Entities, value objects, domain errors.
    - `internal/billing/repository/`: Implementasi PostgreSQL repository dengan transaksi aman.

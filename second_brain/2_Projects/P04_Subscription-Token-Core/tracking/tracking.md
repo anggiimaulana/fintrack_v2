@@ -22,7 +22,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 
 | Task ID | Komponen | Judul Pekerjaan | Assignee | Status | Catatan |
 |---|---|---|---|:---:|---|
-| **TASK-P04-001** | Database | Skema Migrasi DDL `0007_subscription_token_core.sql` | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-001** | Database | Skema Migrasi DDL `0008_subscription_token_core.sql` | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ⬜ | Belum dikerjakan |
@@ -52,7 +52,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 ## Checklist Definition of Done Umum (Fase P04)
 
 - [ ] `go vet && go test && go build` hijau.
-- [ ] Migrasi database `0007_subscription_token_core.sql` replayable maju dan mundur tanpa error.
+- [ ] Migrasi database `0008_subscription_token_core.sql` replayable maju dan mundur tanpa error.
 - [ ] Fitur penegakan kuota terpasang di balik feature flag konfigurasi.
 - [ ] Test konkurensi membuktikan zero double-spending pada token ledger (`go test -race`).
 - [ ] Audit log mencatat mutasi status langganan dan koreksi ledger secara append-only.

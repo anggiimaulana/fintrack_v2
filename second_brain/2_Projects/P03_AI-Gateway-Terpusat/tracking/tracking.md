@@ -11,7 +11,7 @@ Status tracking tugas implementasi Fase P03.
 
 | Task ID | Nama Tugas | Assignee | Status | Keterangan / Hasil Verifikasi |
 |---|---|---|---|---|
-| TASK-P03-001 | Skema Database & Migrasi `0006_ai_gateway.sql` | Backend | ⬜ | DDL `ai_endpoints`, `ai_routes`, arsip `gemini_api_keys`, seed default |
+| TASK-P03-001 | Skema Database & Migrasi `0007_ai_gateway.sql` | Backend | ⬜ | DDL `ai_endpoints`, `ai_routes`, arsip `gemini_api_keys`, seed default |
 | TASK-P03-002 | Domain Modeling & Interface Gateway | Backend | ⬜ | Struct entity, request/response DTO, interface contracts |
 | TASK-P03-003 | Repository SQL Endpoint & Route Cache | Backend | ⬜ | Implementasi repository, AES-GCM decrypt, in-memory cache |
 | TASK-P03-004 | OpenAI-Compatible HTTP Client Engine | Backend | ⬜ | HTTP client standard, SSE stream reader, usage extractor |

@@ -14,7 +14,7 @@ Status ditandai dengan:
 
 | Kode Tugas | Deskripsi Singkat | Sprint | Pemilik | Status | Tautan Artefak / Verifikasi |
 |---|---|---|---|:---:|---|
-| `TASK-P05-001` | Migrasi Skema Payments & Invoices | Sprint 1 | Backend | ⬜ | `database/migrations/0007_create_payments_and_invoices.sql` |
+| `TASK-P05-001` | Migrasi Skema Payments & Invoices | Sprint 1 | Backend | ⬜ | `database/migrations/0009_payments_invoices.sql` |
 | `TASK-P05-002` | Abstraksi Interface Gateway di `internal/payment` | Sprint 1 | Backend | ⬜ | `internal/payment/gateway.go` |
 | `TASK-P05-003` | Driver Midtrans Snap Client | Sprint 1 | Backend | ⬜ | `internal/payment/midtrans.go` |
 | `TASK-P05-004` | Webhook Handler Midtrans & Validasi Signature | Sprint 1 | Backend | ⬜ | `internal/payment/handler_webhook.go` |

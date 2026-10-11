@@ -152,7 +152,7 @@ Dokumen ini mendokumentasikan keputusan teknis arsitektural (*Architectural Deci
 ### K-P04-13: Struktur Migrasi Database Expand/Contract
 - **Konteks:** Database produksi PostgreSQL 17 harus menerapkan perubahan skema tanpa penghentian layanan (*zero downtime*).
 - **Keputusan:**
-  - Migrasi `0007_subscription_token_core.sql` hanya menambahkan tabel-tabel baru tanpa mengubah kolom tabel pengguna yang sedang berjalan secara destruktif.
+  - Migrasi `0008_subscription_token_core.sql` hanya menambahkan tabel-tabel baru tanpa mengubah kolom tabel pengguna yang sedang berjalan secara destruktif.
   - Penambahan foreign key ke tabel `users(id)` menggunakan klausa `ON DELETE RESTRICT` untuk mencegah cascade delete yang tidak disengaja.
   - Index komposit dibuat secara `CONCURRENTLY` jika dioperasikan pada tabel transaksi besar.
 - **Dampak:** Tidak ada table-lock berdurasi panjang, aplikasi versi lama dan baru dapat berjalan berdampingan selama *rolling deployment*.

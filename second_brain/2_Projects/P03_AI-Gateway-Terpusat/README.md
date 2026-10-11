@@ -14,7 +14,7 @@ FinTrack v2 mengalihkan seluruh pemrosesan AI (chat, vision, voice, embedding) d
 2. **Adapter Tipis di `internal/usecase/ai_usecase.go`**:
    - Menggantikan map hardcoded provider lama tanpa rewrite masif pada orchestration RAG dan SSE session streaming.
    - Refactoring pemanggilan LLM, vision, voice, dan embedder melalui `aigateway.Client`.
-3. **Database & Migrasi (`0006_ai_gateway_schema.sql`)**:
+3. **Database & Migrasi (`0007_ai_gateway.sql`)**:
    - Pembuatan tabel `ai_endpoints` dan `ai_routes`.
    - Seed default endpoint 9router lokal + fallback cloud route.
    - Pengarsipan tabel lama `gemini_api_keys` (kolom `archived_at` / flag arsip, data tidak dihapus).
@@ -28,7 +28,7 @@ FinTrack v2 mengalihkan seluruh pemrosesan AI (chat, vision, voice, embedding) d
    - Fallback tokenizer estimasi lokal ketika usage tidak dikembalikan oleh upstream provider.
 
 ## Deliverables
-1. `backend/database/migrations/0006_ai_gateway.sql` (schema `ai_endpoints`, `ai_routes`, arsip `gemini_api_keys`).
+1. `backend/database/migrations/0007_ai_gateway.sql` (schema `ai_endpoints`, `ai_routes`, arsip `gemini_api_keys`).
 2. `backend/internal/domain/aigateway.go` (definisi entitas, DTO, interface).
 3. `backend/internal/aigateway/` (implementasi pool, client, router, circuit breaker, health check, fallback tokenizer).
 4. `backend/internal/usecase/ai_usecase.go` (adapter tipis penghubung usecase lama ke gateway terpusat).

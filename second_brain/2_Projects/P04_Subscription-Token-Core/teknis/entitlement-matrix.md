@@ -101,7 +101,7 @@ const LimitUnlimited = int64(-1)
 
 ---
 
-## 4. Skrip Seeder SQL (`database/seeds/0007_default_plans.sql`)
+## 4. Skrip Seeder SQL (`database/seeds/0002_subscription_token_seeds.sql`)
 
 Cuplikan SQL seeder untuk mengisi matriks default:
 

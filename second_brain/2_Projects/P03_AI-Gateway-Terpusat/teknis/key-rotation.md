@@ -10,7 +10,7 @@ Sesuai keputusan **K-16**, fitur di mana pengguna akhir (user) memasukkan API ke
 
 ### 1.1. Langkah Pengarsipan Database
 Data pada tabel `gemini_api_keys` tidak dihapus secara destruktif (`DROP TABLE` atau `DELETE FROM`) guna memenuhi kepatuhan audit dan riwayat sistem (UU PDP No. 27/2022).
-Tabel diubah statusnya menjadi arsip melalui migrasi `0006_ai_gateway.sql`:
+Tabel diubah statusnya menjadi arsip melalui migrasi `0007_ai_gateway.sql`:
 
 ```sql
 -- Tambah kolom audit arsip

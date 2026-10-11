@@ -60,7 +60,7 @@ var providerEndpoints = map[string]struct{ baseURL, model, path string }{
 
 Peta hardcoded di atas ditransformasikan menjadi entri dinamis di tabel `ai_routes` yang diarahkan ke 9router lokal atau provider fallback:
 
-### Seed Pemetaan Default (`0006_ai_gateway.sql`):
+### Seed Pemetaan Default (`0007_ai_gateway.sql`):
 
 | Use Case | Endpoint Target | Model | Priority | Timeout | Keterangan |
 |---|---|---|---|---|---|

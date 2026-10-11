@@ -38,11 +38,11 @@
 |---|---|---|
 | `0005_create_audit_logs.sql` | P02 | `audit_logs` append-only + trigger blok UPDATE/DELETE |
 | `0006_create_feature_flags.sql` | P02 | `feature_flags` |
-| `0007_create_ai_gateway.sql` | P03 | `ai_endpoints`, `ai_routes` |
-| `0008_create_subscription_token_core.sql` | P04 | `plans`, `plan_entitlements`, `plan_limits`, `subscriptions`, `subscription_events`, `token_periods`, `token_ledger`, `pricing_rules` |
-| `0009_create_payments_invoices.sql` | P05 | `payments`, `invoices` |
-| `0010_*` | P06 | `settings` (+ kolom pendukung dashboard) |
-| `0011_*` | P07 | (bila perlu) index/kolom untuk rollout |
+| `0007_ai_gateway.sql` | P03 | `ai_endpoints`, `ai_routes` |
+| `0008_subscription_token_core.sql` | P04 | `plans`, `plan_entitlements`, `plan_limits`, `subscriptions`, `subscription_events`, `token_periods`, `token_ledger`, `pricing_rules` |
+| `0009_payments_invoices.sql` | P05 | `payments`, `invoices` |
+| `0010_settings.sql` | P06 | `settings` (+ kolom pendukung dashboard) |
+| `0011_archive_byok_keys.sql` | P07 | arsip kunci BYOK lama (bila perlu) |
 | `0012_*` | P08 | (bila perlu) index performa/retensi |
 
 ## 4. Ringkasan Fase

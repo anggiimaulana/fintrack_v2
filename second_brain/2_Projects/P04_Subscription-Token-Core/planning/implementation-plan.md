@@ -69,7 +69,7 @@ Menyediakan mesin **Subscription & Token Core** yang kuat, aman secara finansial
 - **Catatan Zero-Downtime & Keamanan:** Operasi DDL aditif. Tidak memodifikasi tabel transaksi P01 yang sedang beroperasi. Menggunakan `BIGINT` untuk mencegah integer overflow.
 
 #### TASK-P04-002 — Seeder Data Default Plans dan Pricing Rules
-- **Target File:** `database/seeds/0008_subscription_token_seeds.sql` (atau disisipkan idempoten dalam migrasi/seeder Go)
+- **Target File:** `database/seeds/0002_subscription_token_seeds.sql` (atau disisipkan idempoten dalam migrasi/seeder Go)
 - **Langkah:**
   1. Insert data master paket:
      - Free: `code='free'`, `price_monthly=0`, `daily_token_quota=10000`.
@@ -309,7 +309,7 @@ Menyediakan mesin **Subscription & Token Core** yang kuat, aman secara finansial
 | Task ID | Nama Task | Artefak Target | Bentuk Bukti Verifikasi |
 |---|---|---|---|
 | **TASK-P04-001** | Skema Migrasi DB 0008 | `database/migrations/0008_subscription_token_core.sql` | Output migration runner up/down sukses, schema dump terbarui |
-| **TASK-P04-002** | Seeder Paket & Pricing | `database/seeds/0008_subscription_token_seeds.sql` | Kueri DB menghasilkan paket free/pro/business dan rules default |
+| **TASK-P04-002** | Seeder Paket & Pricing | `database/seeds/0002_subscription_token_seeds.sql` | Kueri DB menghasilkan paket free/pro/business dan rules default |
 | **TASK-P04-003** | Domain Entity Billing | `backend/internal/billing/domain/*.go` | `go vet` lulus, unit test domain errors & enums hijau |
 | **TASK-P04-004** | Repository PostgreSQL Billing | `backend/internal/billing/repository/*.go` | Test kueri database mock/transaksional lulus row-lock test |
 | **TASK-P04-005** | Token Reserve Flow | `backend/internal/billing/service/token_ledger.go` | Test isolasi transaksi `SELECT ... FOR UPDATE` dan idempotency |

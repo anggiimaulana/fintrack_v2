@@ -41,7 +41,7 @@ Dokumen ini memetakan urutan eksekusi, dependensi antar modul, dan milestone pen
 ## 2. Rincian Milestone Harian
 
 ### Hari 1: Persiapan Skema Database & Entitas Domain
-- Eksekusi migrasi `0006_ai_gateway.sql`.
+- Eksekusi migrasi `0007_ai_gateway.sql`.
 - Penambahan kolom arsip pada `gemini_api_keys`.
 - Seed konfigurasi default (9router primer).
 - Output: DB schema up-to-date, struct domain di Go siap.
