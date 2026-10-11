@@ -30,11 +30,11 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 | **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ✅ | `billing/ledger.go` Commit/Release (release sisa reserve, idempoten); test PASS |
 | **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Core | ✅ | `billing/cleaner.go` (sweep reservation basi); test PASS (auto-release) |
 | **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ✅ | `billing/pricing.go` (base+markup+modality, floor); 6 test PASS |
-| **TASK-P04-009** | Entitlement | Domain Model & Aggregation Repository Resolver | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-010** | Entitlement | Versioned Cache Manager L1 (In-Memory) & L2 (Redis) | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-012** | Entitlement | Gin Middleware `RequireFeature` & `WithinLimit` | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-009** | Entitlement | Domain Model & Aggregation Repository Resolver | Backend Core | ✅ | `entitlement/domain.go` + `resolver.go`; `EntitlementSource` (join subscription+plan); 6 test PASS |
+| **TASK-P04-010** | Entitlement | Versioned Cache Manager L1 (In-Memory) & L2 (Redis) | Backend Core | ✅ | `resolver.go` L1+L2 berversi (`entitlement:u:{uid}:v{ver}`); test invalidation & TTL PASS |
+| **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ✅ | `entitlement/broadcaster.go` (channel `entitlement:invalidations`); wired di main |
+| **TASK-P04-012** | Entitlement | Gin Middleware `RequireFeature` & `WithinLimit` | Backend Core | ✅ | `middleware/entitlement.go` (403/402, super_admin bypass, fail-closed); 6 test PASS |
+| **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ✅ | `handler/entitlement_handler.go` + route; wired di main |
 | **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | QA Engineer | ⬜ | Belum dikerjakan |

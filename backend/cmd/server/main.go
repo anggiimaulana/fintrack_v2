@@ -17,8 +17,10 @@ import (
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
+	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/featureflag"
 	infraDB "github.com/fintrack/backend/internal/infrastructure/db"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
@@ -190,6 +192,16 @@ func main() {
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
 	}
+	// Subscription & entitlement engine (P04).
+	billingRepo := postgres.NewBillingRepo(pool)
+	entSource := postgres.NewEntitlementSource(billingRepo)
+	entResolver := entitlement.NewResolver(entSource, infraRedis.NewCacheEngine(redisClient))
+	entHandler := handler.NewEntitlementHandler(entResolver)
+	entBroadcaster := entitlement.NewBroadcaster(infraRedis.NewPubSub(redisClient), entResolver)
+	stopEntSubscriber := entBroadcaster.StartSubscriber(bgCtx)
+	_ = entBroadcaster // used by P05/P06 on plan changes
+	defer stopEntSubscriber()
+
 	providerUC := usecase.NewProviderUsecase(providerRepo)
 	reportUC := usecase.NewReportUsecase(txRepo)
 	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret))
@@ -213,6 +225,7 @@ func main() {
 		providerUC,
 		reportUC,
 		authUC,
+		entHandler,
 	)
 
 	// Start the SPK worker pool.

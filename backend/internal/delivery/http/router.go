@@ -44,6 +44,7 @@ func SetupRouter(
 	providerUC *usecase.ProviderUsecase,
 	reportUC *usecase.ReportUsecase,
 	authUC *usecase.AuthUsecase,
+	entitlementH *handler.EntitlementHandler,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -102,6 +103,9 @@ func SetupRouter(
 		{
 			protected.GET("/me", ah.GetProfile)
 			protected.PUT("/me", ah.UpdateProfile)
+			if entitlementH != nil {
+				protected.GET("/me/entitlements", entitlementH.Me)
+			}
 
 			userRoutes := protected.Group("")
 			userRoutes.Use(middleware.RequireUser())
