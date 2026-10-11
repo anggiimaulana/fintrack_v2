@@ -5,7 +5,7 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
-> **Status saat ini: SLICE A + B + C + D1 SELESAI (16/18).** Sisa 2 task (BYOK = D2, k8s = gap). (Tanda ✅ pada tabel
+> **Status saat ini: SLICE A + B + C + D1 SELESAI (17/18).** Sisa 1 task: **TASK-P07-013 (BYOK) = D2**. (Tanda ✅ pada tabel
 > "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
 >
 > **Slice A — Entitlement & RBAC Rollout (2026-10-11)** mencakup TASK-P07-001 & TASK-P07-002
@@ -42,7 +42,7 @@ Status Legend:
 | **TASK-P07-007** | Standardisasi Skema JSON Event Domain SSE | Backend Lead | H-04 | ✅ | **Slice B.** Kontrak di `pkg/contracts/events.go` (paket daun, tanpa impor internal) + 5 payload. Producer nyata: payment webhook/approve, upload bukti, perubahan langganan/plan, siklus token, breaker gateway. |
 | **TASK-P07-008** | Frontend Hook `useRealtimeStream` & Auto-Reconnect | Frontend Dev 3 | H-06 | ✅ | **Slice B.** `hooks/use-realtime-stream.ts` + `providers/realtime-provider.tsx`. Backoff manual 1s→16s + jitter; `last_event_id` sebagai query param karena EventSource yang dibuat ulang tidak mengirim header otomatis. |
 | **TASK-P07-009** | Registri Query Key & Surgical Cache Invalidation | Frontend Lead | H-06 | ✅ | **Slice B.** `lib/realtime-dispatcher.ts` memetakan event ke query key NYATA (dokumen memakai `billing.*` yang tidak ada). Test memastikan tidak ada `invalidateQueries` tanpa key. |
-| **TASK-P07-010** | Optimistic Updates Mutasi Transaksi & Anggaran | Frontend Dev 1 & 2 | H-07 | ⬜ | Rollback rapi saat terjadi error 409/429. **Sebagian oleh Slice A**: handler error 402/403 entitlement terpusat (`lib/entitlement-errors.ts`) + toast upgrade; optimistic update penuh belum. |
+| **TASK-P07-010** | Optimistic Updates Mutasi Transaksi & Anggaran | Frontend Dev 1 & 2 | H-07 | ✅ | **Slice C (dengan catatan).** Optimistic update untuk **update & delete** transaksi (`onMutate` snapshot semua halaman list, patch/remove, `onError` rollback, `onSettled` invalidate); rollback menangani 409, 402/403 (via `notifyEntitlementError`), dan generik. **Create sengaja TIDAK optimistik**: list dipaginasi + di-sort server-side sehingga posisi baris baru tidak diketahui. **Halaman anggaran (`/budgets`) tidak ada** di codebase, jadi bagian "Anggaran" pada task ini tidak berlaku. Uji mutasi: `restoreLists` dilepas → 3 test rollback gagal → terbukti terjaga. |
 | **TASK-P07-011** | Standardisasi Komponen `<DataTable>` TanStack v8 | Frontend Dev 1 | H-01 | ✅ | **Slice C.** `<DataTable>` dipakai di `/user/transactions` dengan state di URL (`useDataTableUrlState`): page/sort/order/q bookmarkable. Debounce 300ms dari `DataTableToolbar` (sebelumnya search terkirim per ketikan). |
 | **TASK-P07-012** | Refactor Seluruh Halaman List ke `<DataTable>` | Frontend Dev 1 & 2 | H-04 | ✅ | **Slice C (sebagian).** Hanya `/user/transactions` yang dikerjakan: `/budgets` dan `/categories` (user) **tidak ada** di codebase — kategori dikelola admin. Refactor sekaligus menghapus komponen baris custom (kode mati). |
 | **TASK-P07-013** | Pembersihan Tuntas Menu & Kode Legacy BYOK | Fullstack Dev | H-03 | ⬜ | Hapus form/halaman AI keys, arsip DB tabel |
