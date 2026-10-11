@@ -22,7 +22,7 @@ Dokumen ini mendefinisikan rincian pekerjaan teknis (*work breakdown structure*)
 - **Deskripsi:** Membuat skrip SQL seeder untuk mengisi paket bawaan: Free (Rp 0), Pro (Rp 99.000/bln, Rp 990.000/thn), dan Business (Rp 299.000/bln, Rp 2.990.000/thn), lengkap dengan entitlement boolean dan batasan limit numerik per paket. Menyediakan konfigurasi awal `pricing_rules` untuk modalitas chat, vision, voice, dan embedding.
 - **Kriteria Penerimaan (Acceptance Criteria):**
   1. Seeder tereksekusi secara idempoten (`ON CONFLICT DO NOTHING` atau `DO UPDATE`).
-  2. Paket Free, Pro, dan Business terkonfigurasi dengan batasan kuota token harian yang tepat (Free: 10.000, Pro: 250.000, Business: 1.000.000).
+  2. Paket Free, Pro, dan Business terkonfigurasi dengan batasan kuota token per siklus yang tepat (Free: 10.000, Pro: 250.000, Business: 1.000.000).
   3. Entri `pricing_rules` memuat `base_per_1k_idr = 300` dengan multiplier modalitas default.
 - **Dependensi:** TASK-P04-001.
 
@@ -58,7 +58,7 @@ Dokumen ini mendefinisikan rincian pekerjaan teknis (*work breakdown structure*)
 - **Tipe:** Business Logic
 - **Deskripsi:** Mengembangkan service `ReserveToken` yang bertugas memvalidasi kuota token pengguna untuk hari berjalan (TZ Asia/Jakarta), mengunci kuota yang diminta ke dalam kolom `reserved_tokens`, dan mencatat entri ledger bertipe `reserve` dengan `idempotency_key` unik.
 - **Kriteria Penerimaan (Acceptance Criteria):**
-  1. Menolak permintaan dengan error `ErrInsufficientQuota` jika `used_tokens + reserved_tokens + requested > daily_quota`.
+  1. Menolak permintaan dengan error `ErrInsufficientQuota` jika `used_tokens + reserved_tokens + requested > quota_tokens`.
   2. Mengembalikan `reservation_id` unik jika kuota mencukupi.
   3. Bersifat aman secara konkuren saat diuji dengan banyak permintaan simultan.
 - **Dependensi:** TASK-P04-004.
@@ -180,7 +180,7 @@ Dokumen ini mendefinisikan rincian pekerjaan teknis (*work breakdown structure*)
 - **Tipe:** Business Logic
 - **Deskripsi:** Mengimplementasikan fungsi bisnis `CalculateUpgradeProration` dan `ScheduleDowngrade`. Menghitung kredit prorata berbasis hari tersisa (dibulatkan ke bawah ke integer IDR). Menjadwalkan downgrade di akhir masa siklus langganan aktif tanpa menghapus data entitas historis user (*soft-limit policy*).
 - **Kriteria Penerimaan (Acceptance Criteria):**
-  1. Perhitungan prorata akurat terhadap jumlah hari berjalan dalam siklus harian.
+  1. Perhitungan prorata akurat terhadap jumlah hari berjalan dalam siklus langganan.
   2. Downgrade menandai kolom `cancel_at_period_end = true` dan menyimpan rencana paket baru tanpa langsung mencabut hak akses saat ini.
   3. Penegakan soft-limit diuji: pengguna paket Free dengan 5 dompet lama tetap bisa melihat 5 dompet, namun gagal membuat dompet ke-6.
 - **Dependensi:** TASK-P04-014.

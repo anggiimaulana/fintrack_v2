@@ -43,7 +43,7 @@ Membangun pondasi monetisasi FinTrack v2 yang tangguh dan terisolasi secara tran
 
 ### Milestone 2: Token Ledger & Concurrency (Hari 3–5)
 - **TASK-P04-004:** Postgres repository untuk `token_periods` dan `token_ledger` dengan locking row `FOR UPDATE`.
-- **TASK-P04-005:** Service reserve token dengan validasi sisa kuota harian dan penandaan `idempotency_key`.
+- **TASK-P04-005:** Service reserve token dengan validasi sisa kuota siklus berjalan dan penandaan `idempotency_key`.
 - **TASK-P04-006:** Service commit dan release token dengan kalkulasi token aktual pasca-eksekusi AI Gateway.
 - **TASK-P04-007:** Background worker pembersih reservasi kuota expired (auto-release timeout).
 - **TASK-P04-008:** Dynamic pricing engine calculator dengan integer IDR dan modality multiplier.

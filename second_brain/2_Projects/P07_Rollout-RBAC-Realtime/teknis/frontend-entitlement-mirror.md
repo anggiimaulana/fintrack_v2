@@ -182,7 +182,7 @@ export function ExportTransactionsButton() {
 }
 ```
 
-### 4.2. Indikator Batas Kuota Input Transaksi Bulanan
+### 4.2. Indikator Batas Kuota Input Transaksi per Siklus
 Pada formulir pencatatan transaksi:
 ```tsx
 export function CreateTransactionForm() {
@@ -194,7 +194,7 @@ export function CreateTransactionForm() {
     <form onSubmit={handleSubmit}>
       {limitReached ? (
         <div className="mb-4 p-3 bg-destructive/10 text-destructive text-sm rounded-md">
-          Kuota transaksi bulanan Anda telah mencapai batas maksimal (0 transaksi tersisa). Silakan tingkatkan paket Anda untuk melanjutkan pencatatan tanpa batas.
+          Kuota transaksi per siklus Anda telah mencapai batas maksimal (0 transaksi tersisa). Silakan tingkatkan paket Anda untuk melanjutkan pencatatan tanpa batas.
         </div>
       ) : (
         <div className="mb-2 text-xs text-muted-foreground">

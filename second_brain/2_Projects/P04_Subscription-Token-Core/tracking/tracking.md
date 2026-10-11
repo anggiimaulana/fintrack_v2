@@ -23,7 +23,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 | **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ✅ | 2026-10-20 | Seeder idempoten terverifikasi dengan batasan kuota default |
 | **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | 🔄 | 2026-10-20 | Struct enum status langganan dan ledger types dalam penulisan |
 | **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ⬜ | 2026-10-21 | Implementasi query `SELECT ... FOR UPDATE` |
-| **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | 2026-10-22 | Alur validasi kuota harian & isolasi reservasi |
+| **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | 2026-10-22 | Alur validasi kuota siklus & isolasi reservasi |
 | **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ⬜ | 2026-10-23 | Integrasi callback pasca-eksekusi AI Gateway |
 | **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Worker | ⬜ | 2026-10-23 | Pembersih reservasi kedaluwarsa interval 15 menit |
 | **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ⬜ | 2026-10-26 | Formula harga dinamis IDR dengan bobot modalitas |

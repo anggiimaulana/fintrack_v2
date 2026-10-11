@@ -118,7 +118,7 @@ import (
 )
 
 var (
-    ErrInsufficientQuota   = errors.New("kuota token harian tidak mencukupi")
+    ErrInsufficientQuota   = errors.New("kuota token per siklus tidak mencukupi")
     ErrReservationNotFound = errors.New("reservasi token tidak ditemukan")
 )
 
@@ -136,20 +136,20 @@ func (r *PostgresLedgerRepository) ReserveToken(ctx context.Context, userID stri
 
     // 1. Lock baris periode hari ini untuk user
     var periodID string
-    var dailyQuota, usedTokens, reservedTokens int64
+    var quotaTokens, usedTokens, reservedTokens int64
     queryLock := `
-        SELECT id, daily_quota, used_tokens, reserved_tokens 
+        SELECT id, quota_tokens, used_tokens, reserved_tokens 
         FROM token_periods 
         WHERE user_id = $1 AND period_start <= NOW() AND period_end >= NOW()
         FOR UPDATE`
     
-    err = tx.QueryRowContext(ctx, queryLock, userID).Scan(&periodID, &dailyQuota, &usedTokens, &reservedTokens)
+    err = tx.QueryRowContext(ctx, queryLock, userID).Scan(&periodID, &quotaTokens, &usedTokens, &reservedTokens)
     if err != nil {
         return "", fmt.Errorf("gagal mengambil token period: %w", err)
     }
 
     // 2. Evaluasi kecukupan kuota
-    if (usedTokens + reservedTokens + estTokens) > dailyQuota {
+    if (usedTokens + reservedTokens + estTokens) > quotaTokens {
         return "", ErrInsufficientQuota
     }
 

@@ -1,13 +1,13 @@
 # P04 — Subscription & Token Core
 
 ## Ringkasan Proyek
-Fase P04 adalah fondasi inti monetisasi dan pembatasan fitur FinTrack v2. Fase ini mengimplementasikan modul backend `internal/billing/` dan `internal/entitlement/`, skema basis data langganan dan token, alur transaksi ledger token (reserve-call-commit/release), mesin kalkulasi harga token dinamis berbasis integer rupiah, siklus kuota harian (Asia/Jakarta), siklus hidup subscription (active, past_due, grace, canceled, expired, trialing), serta middleware penegakan hak akses (*entitlement enforcement*) berbasis cache berversi dengan zero-downtime dan tanpa keharusan relogin.
+Fase P04 adalah fondasi inti monetisasi dan pembatasan fitur FinTrack v2. Fase ini mengimplementasikan modul backend `internal/billing/` dan `internal/entitlement/`, skema basis data langganan dan token, alur transaksi ledger token (reserve-call-commit/release), mesin kalkulasi harga token dinamis berbasis integer rupiah, siklus kuota per langganan (Asia/Jakarta), siklus hidup subscription (active, past_due, grace, canceled, expired, trialing), serta middleware penegakan hak akses (*entitlement enforcement*) berbasis cache berversi dengan zero-downtime dan tanpa keharusan relogin.
 
 ## Ruang Lingkup (Scope)
 1. **Model Data & Migrasi Basis Data:**
-   - Tabel `plans`: Definisi paket (Free, Pro, Business), harga dasar bulanan/tahunan (integer rupiah), status aktif, fallback gateway.
+   - Tabel `plans`: Definisi paket (Free, Pro, Business), harga dasar per periode siklus (integer rupiah), status aktif, fallback gateway.
    - Tabel `plan_entitlements`: Hak akses biner (boolean flags) per plan (e.g. `export_csv`, `ai_chat`, `bank_sync`, `ocr_receipt`, `advanced_budgeting`).
-   - Tabel `plan_limits`: Batasan numerik kuota per plan (e.g. `max_accounts`, `max_budgets`, `ai_token_daily_quota`, `ocr_daily_quota`).
+   - Tabel `plan_limits`: Batasan numerik kuota per plan (e.g. `max_accounts`, `max_budgets`, `ai_token_quota`, `ocr_quota`).
    - Tabel `subscriptions`: Status langganan per-user (`trialing`, `active`, `past_due`, `grace`, `canceled`, `expired`), timestamp periode (`current_period_start`, `current_period_end`), gateway referensi, flag `cancel_at_period_end`.
    - Tabel `subscription_events`: Audit log append-only untuk transisi siklus hidup langganan (state before -> after, alasan, metadata payload).
    - Tabel `token_periods`: Pelacakan periode kuota token per user, kuota alokasi, terpakai (`used`), dan terkunci sementara (`reserved`).

@@ -125,7 +125,7 @@ Dipancarkan ke panel super admin saat ada pembayaran transfer manual baru yang d
 ```
 
 #### 5. `quota_reset`
-Dipancarkan saat siklus harian pengguna memasuki tanggal reset periodik pukul 00:00 WIB.
+Dipancarkan saat siklus langganan pengguna berakhir dan kuota direset (awal siklus baru, TZ Asia/Jakarta).
 ```json
 {
   "event": "quota_reset",

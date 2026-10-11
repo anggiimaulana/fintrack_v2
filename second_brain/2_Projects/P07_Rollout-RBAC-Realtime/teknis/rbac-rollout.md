@@ -101,7 +101,7 @@ func RequireEntitlement(entitlementService EntitlementService, featureKey string
 ```
 
 ### 2.3. `RequireLimit(limitKey string, countCost int)`
-Memvalidasi konsumsi batas numerik (misal kuota transaksi bulanan, kuota ekspor data).
+Memvalidasi konsumsi batas numerik (misal kuota transaksi per siklus, kuota ekspor data).
 ```go
 func RequireLimit(entitlementService EntitlementService, limitKey string, countCost int) gin.HandlerFunc {
 	return func(c *gin.Context) {

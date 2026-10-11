@@ -100,7 +100,7 @@ Ketika pengguna paket berbayar berpindah ke paket yang lebih tinggi di pertengah
    $$\text{Net Upgrade Cost}_{\text{IDR}} = \max\left(0, \text{New Plan Price}_{\text{IDR}} - \text{Credit}_{\text{IDR}}\right)$$
 4. **Eksekusi:**
    - Setelah tagihan bersih terbayar, `plan_id` langsung diperbarui ke paket baru.
-   - Sisa kuota harian `daily_quota` pada `token_periods` hari ini langsung disesuaikan ke kuota paket baru.
+   - Sisa kuota siklus pada `token_periods` periode berjalan langsung disesuaikan ke kuota paket baru.
    - Cache entitlement diinvalidasi seketika sehingga pengguna langsung menikmati fitur baru tanpa menunggu periode berikutnya.
 
 ---

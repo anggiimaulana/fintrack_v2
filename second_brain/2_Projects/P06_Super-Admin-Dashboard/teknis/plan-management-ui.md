@@ -20,7 +20,7 @@ Daftar paket ditampilkan menggunakan komponen `<DataTable>` dengan konfigurasi k
 - **Slug**: Pengenal unik URL (misal `pro-monthly`).
 - **Harga (IDR)**: Format integer rupiah (`Rp 0`, `Rp 79.000`, `Rp 149.000`).
 - **Siklus (Hari)**: Durasi siklus per-hari (contoh: 30 hari sesuai K-05).
-- **Kuota Token**: Batas token AI bulanan (misal 50.000 token, 500.000 token).
+- **Kuota Token**: Batas token AI per siklus (misal 50.000 token, 500.000 token).
 - **Gateway**: `Default Global` atau label override khusus (`Midtrans Only`, `Xendit Only`).
 - **Status Aktif**: Toggle switch untuk mengaktifkan/menonaktifkan paket dari katalog publik.
 - **Aksi**: Tombol dropdown `Edit Paket`, `Duplikasi`, dan `Arsipkan`.
@@ -58,7 +58,7 @@ Daftar saklar/checkbox fitur aplikasi sesuai K-12:
 Input numerik dengan opsi nilai tak terbatas (*unlimited* diwakili angka `-1`):
 - **Maksimal Dompet/Rekening**: Batas jumlah akun keuangan (misal 3 untuk Free, 10 untuk Pro, -1 untuk Ultimate).
 - **Maksimal Anggaran/Kategori**: Batas pos anggaran bulanan.
-- **Kuota Token Bulanan**: Jumlah kredit token AI dasar yang diberikan setiap awal siklus (K-06).
+- **Kuota Token per Siklus**: Jumlah kredit token AI dasar yang diberikan setiap awal siklus (K-06).
 
 ### 3.4 Tab 4: Dynamic Pricing Rules AI & Multiplier Modality
 Sesuai **K-04**, penentuan harga token AI dihitung secara dinamis:

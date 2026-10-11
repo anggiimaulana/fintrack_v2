@@ -17,9 +17,9 @@ Dokumen ini mendefinisikan matriks hak akses (*entitlement matrix*) resmi untuk 
 | | `max_custom_categories` | 5 | 50 | -1 (*unlimited*) | Kategori pengeluaran kustom |
 | | `history_retention_days` | 90 | 730 | -1 (*unlimited*) | Retensi pencarian data historis |
 | **Kecerdasan Buatan (AI)** | `ai_chat` | ✅ | ✅ | ✅ | Asisten chat finansial |
-| | `daily_ai_tokens` | 10.000 | 250.000 | 1.000.000 | Token AI harian (reset 00:00 WIB) |
+| | `ai_tokens_per_cycle` | 10.000 | 250.000 | 1.000.000 | Token AI per siklus (reset tiap awal siklus) |
 | | `ocr_receipt` | ❌ | ✅ | ✅ | Pindai struk/nota otomatis |
-| | `daily_ocr_scans` | 0 | 25 | 150 | Jumlah scan nota per hari |
+| | `ocr_scans_per_cycle` | 0 | 25 | 150 | Jumlah scan nota per hari |
 | | `voice_input` | ❌ | ✅ | ✅ | Input transaksi via rekaman suara |
 | | `ai_financial_advisor` | ❌ | ✅ | ✅ | Analisis anomali & saran budget AI |
 | **Integrasi & Sinkronisasi** | `bank_sync` | ❌ | ✅ | ✅ | Integrasi mutasi bank otomatis |
@@ -86,8 +86,8 @@ const (
     LimitHistoryRetentionDays   = "history_retention_days"
 
     // Batasan AI & Pemrosesan
-    LimitDailyAITokens          = "daily_ai_tokens"
-    LimitDailyOCRScans          = "daily_ocr_scans"
+    LimitAITokensPerCycle          = "ai_tokens_per_cycle"
+    LimitDailyOCRScans          = "ocr_scans_per_cycle"
     LimitMaxSyncedBankAccounts  = "max_synced_bank_accounts"
 )
 
@@ -149,22 +149,22 @@ INSERT INTO plan_limits (plan_id, limit_key, limit_value) VALUES
     ('11111111-1111-1111-1111-111111111111', 'max_wallets', 2),
     ('11111111-1111-1111-1111-111111111111', 'max_budgets', 3),
     ('11111111-1111-1111-1111-111111111111', 'max_custom_categories', 5),
-    ('11111111-1111-1111-1111-111111111111', 'daily_ai_tokens', 10000),
-    ('11111111-1111-1111-1111-111111111111', 'daily_ocr_scans', 0),
+    ('11111111-1111-1111-1111-111111111111', 'ai_tokens_per_cycle', 10000),
+    ('11111111-1111-1111-1111-111111111111', 'ocr_scans_per_cycle', 0),
     ('11111111-1111-1111-1111-111111111111', 'history_retention_days', 90),
     
     ('22222222-2222-2222-2222-222222222222', 'max_wallets', 10),
     ('22222222-2222-2222-2222-222222222222', 'max_budgets', 20),
     ('22222222-2222-2222-2222-222222222222', 'max_custom_categories', 50),
-    ('22222222-2222-2222-2222-222222222222', 'daily_ai_tokens', 250000),
-    ('22222222-2222-2222-2222-222222222222', 'daily_ocr_scans', 25),
+    ('22222222-2222-2222-2222-222222222222', 'ai_tokens_per_cycle', 250000),
+    ('22222222-2222-2222-2222-222222222222', 'ocr_scans_per_cycle', 25),
     ('22222222-2222-2222-2222-222222222222', 'history_retention_days', 730),
 
     ('33333333-3333-3333-3333-333333333333', 'max_wallets', -1),
     ('33333333-3333-3333-3333-333333333333', 'max_budgets', -1),
     ('33333333-3333-3333-3333-333333333333', 'max_custom_categories', -1),
-    ('33333333-3333-3333-3333-333333333333', 'daily_ai_tokens', 1000000),
-    ('33333333-3333-3333-3333-333333333333', 'daily_ocr_scans', 150),
+    ('33333333-3333-3333-3333-333333333333', 'ai_tokens_per_cycle', 1000000),
+    ('33333333-3333-3333-3333-333333333333', 'ocr_scans_per_cycle', 150),
     ('33333333-3333-3333-3333-333333333333', 'history_retention_days', -1)
 ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = EXCLUDED.limit_value;
 ```

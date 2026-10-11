@@ -154,7 +154,7 @@ Menyimpan batasan kuota numerik per paket.
 CREATE TABLE plan_limits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    limit_key VARCHAR(64) NOT NULL, -- 'daily_ai_tokens', 'max_wallets', dll
+    limit_key VARCHAR(64) NOT NULL, -- 'ai_tokens_per_cycle', 'max_wallets', dll
     limit_value BIGINT NOT NULL,     -- -1 merepresentasikan unlimited
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -206,14 +206,14 @@ CREATE INDEX idx_sub_events_user ON subscription_events (user_id, created_at DES
 ```
 
 ### 3.6. Tabel `token_periods`
-Melacak alokasi dan pemakaian kuota token harian per user (TZ Asia/Jakarta).
+Melacak alokasi dan pemakaian kuota token per siklus per user (TZ Asia/Jakarta).
 ```sql
 CREATE TABLE token_periods (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     period_start TIMESTAMPTZ NOT NULL,
     period_end TIMESTAMPTZ NOT NULL,
-    daily_quota BIGINT NOT NULL,      -- Batas kuota total hari tersebut
+    quota_tokens BIGINT NOT NULL,      -- Batas kuota total hari tersebut
     used_tokens BIGINT NOT NULL DEFAULT 0,     -- Token aktual yang telah dikonsumsi (commit)
     reserved_tokens BIGINT NOT NULL DEFAULT 0, -- Token yang sedang dikunci sementara (in-flight)
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -289,7 +289,7 @@ CREATE TABLE pricing_rules (
 2. Endpoint memanggil `LedgerService.ReserveToken(ctx, userID, estTokens, idempotencyKey)`.
 3. `LedgerService` membuka transaksi DB singkat:
    - Mengambil row `token_periods` pengguna hari ini dengan `SELECT ... FOR UPDATE`.
-   - Memastikan `used_tokens + reserved_tokens + estTokens <= daily_quota`.
+   - Memastikan `used_tokens + reserved_tokens + estTokens <= quota_tokens`.
    - Mengupdate `reserved_tokens = reserved_tokens + estTokens`.
    - Memasukkan entri `token_ledger` bertipe `reserve`.
    - Commit transaksi DB (lock baris dilepas).

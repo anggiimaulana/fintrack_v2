@@ -19,7 +19,7 @@ Berikut adalah rincian task teknis untuk fase P07 FinTrack v2 dengan format stan
 - **File Target**: `backend/internal/api/routes.go`, `backend/internal/api/handler/*.go`
 - **Acceptance Criteria**:
   - 100% dari 28 endpoint terdaftar memiliki pengawalan middleware yang sesuai dengan matriks hak akses.
-  - Endpoint transaksi gratis dibatasi kuota bulanan; transaksi pro/unlimited terbuka sesuai plan.
+  - Endpoint transaksi gratis dibatasi kuota siklus; transaksi pro/unlimited terbuka sesuai plan.
   - Seluruh rute chat/AI terikat verifikasi saldo token dan fitur `ai_chat`.
 
 ### TASK-P07-003: Migrasi In-Memory globalCache Lokal ke Redis Distributed Cache Berversi

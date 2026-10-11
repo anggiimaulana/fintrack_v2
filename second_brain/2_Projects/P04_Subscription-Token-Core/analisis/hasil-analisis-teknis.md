@@ -35,11 +35,11 @@ Dokumen ini mendokumentasikan keputusan teknis arsitektural (*Architectural Deci
   - Repository Go menerapkan penanganan *unique constraint violation* (error code `23505` PostgreSQL): jika kunci sudah ada, kembalikan entitas yang telah tercatat sebelumnya tanpa melempar kegagalan.
 - **Dampak:** Eksekusi ulang aman dari pemotongan kuota ganda.
 
-### K-P04-04: Siklus Kuota Harian Berbasis Zona Waktu Asia/Jakarta
+### K-P04-04: Siklus Kuota per Langganan Berbasis Zona Waktu Asia/Jakarta
 - **Konteks:** Siklus kuota berbasis bulan kalender tidak adil pada bulan dengan durasi 28, 29, 30, atau 31 hari, serta menyulitkan perhitungan prorata. Sesuai K-05, siklus langganan dan kuota ditentukan per-HARI dalam TZ Asia/Jakarta (WIB, UTC+7).
 - **Keputusan:**
-  - Batas harian dihitung dari `00:00:00 WIB` sampai `23:59:59 WIB` (dikonversi ke UTC pada penyimpanan database: `17:00:00 UTC` hari sebelumnya hingga `16:59:59 UTC`).
-  - Siklus langganan bulanan dihitung tepat $N$ hari kalender (default: 30 hari untuk siklus bulanan, 365 hari untuk tahunan) sejak jam aktivasi.
+  - Periode kuota mengikuti siklus langganan: `current_period_start` s/d `current_period_end` (N hari kalender, TZ `Asia/Jakarta`), disimpan sebagai UTC di database.
+  - Siklus langganan dihitung tepat $N$ hari kalender (mis. 30 hari atau 365 hari) sejak waktu aktivasi, TZ Asia/Jakarta.
   - Tabel `token_periods` memiliki rentang `period_start TIMESTAMPTZ` dan `period_end TIMESTAMPTZ`.
   - Reset kuota terjadi otomatis saat masuk rentang baru; sisa kuota yang tidak terpakai hangus (*no rollover*, K-06).
 - **Dampak:** Transparansi kuota pengguna jelas, perhitungan kuota deterministik terbebas dari anomali perbedaan hari dalam bulan.
@@ -62,7 +62,7 @@ Dokumen ini mendokumentasikan keputusan teknis arsitektural (*Architectural Deci
 - **Keputusan:**
   - Dibagi menjadi 2 tabel berelasi ke `plans`:
     - `plan_entitlements`: Menyimpan `(plan_id, feature_key, is_enabled)`. `feature_key` bertipe string konstan (`export_csv`, `ai_chat`, `bank_sync`, `ocr_receipt`, `advanced_analytics`).
-    - `plan_limits`: Menyimpan `(plan_id, limit_key, limit_value)`. `limit_key` bertipe string (`max_wallets`, `max_categories`, `daily_ai_tokens`, `daily_ocr_scans`), `limit_value` bertipe integer (`-1` merepresentasikan *unlimited*).
+    - `plan_limits`: Menyimpan `(plan_id, limit_key, limit_value)`. `limit_key` bertipe string (`max_wallets`, `max_categories`, `ai_tokens_per_cycle`, `ocr_scans_per_cycle`), `limit_value` bertipe integer (`-1` merepresentasikan *unlimited*).
 - **Dampak:** Fleksibel dalam penambahan fitur dan kuota tanpa perlu migrasi kolom tabel `plans`.
 
 ### K-P04-07: Versioned Cache Entitlement Multi-Level
@@ -104,7 +104,7 @@ Dokumen ini mendokumentasikan keputusan teknis arsitektural (*Architectural Deci
     - Sisa hari pada paket lama dihitung sebagai kredit prorata:
       $$\text{Credit} = \left\lfloor \frac{\text{Hari Tersisa}}{\text{Total Hari Siklus}} \times \text{Harga Paket Lama} \right\rfloor$$
     - Tagihan baru adalah harga paket baru dikurangi sisa kredit paket lama (dibulatkan ke bawah ke integer IDR).
-    - Kuota token harian langsung dinaikkan ke kuota paket baru untuk sisa hari berjalan.
+    - Kuota token siklus langsung dinaikkan ke kuota paket baru untuk sisa hari berjalan.
 - **Dampak:** Pengalaman pengguna instan, tidak ada kelebihan pembayaran, konversi upgrade mulus.
 
 ### K-P04-11: Pricing Engine Dinamis untuk Biaya Token AI
@@ -142,7 +142,7 @@ Dokumen ini mendokumentasikan keputusan teknis arsitektural (*Architectural Deci
       },
       "limits": {
         "max_wallets": { "limit": 10, "used": 4, "remaining": 6 },
-        "daily_ai_tokens": { "limit": 250000, "used": 45000, "remaining": 205000 }
+        "ai_tokens_per_cycle": { "limit": 250000, "used": 45000, "remaining": 205000 }
       },
       "version": 4
     }
