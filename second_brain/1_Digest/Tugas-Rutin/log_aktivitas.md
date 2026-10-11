@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-10-12 — P07 Slice E: Routing AI Dinamis, Weighted Round-Robin & Multi-Model
+
+Slice kelima P07. Mewujudkan routing AI dinamis antar-model per use case, memfungsikan
+failover berjenjang di dalam combo, load distribution berbobot antar-combo, dan
+mengaktifkan gateway P03 secara nyata di lingkungan produksi.
+
+### Perubahan & Implementasi
+- **Smooth Weighted Round-Robin (SWRR):** Algoritma Nginx SWRR diterapkan di `service.go`
+  untuk rotasi antar-combo secara proporsional terhadap bobot endpoint tanpa lonjakan burst.
+  Di dalam combo, rute dievaluasi berurut berdasarkan `priority ASC` (failover lokal). Jika
+  semua rute di combo pemenang gagal, failover otomatis berpindah ke combo berikutnya.
+- **State In-Memory & Anti-Lockstep:** State WRR disimpan di memori `Service` dengan proteksi
+  `sync.Mutex` dan di-seed secara acak pada konstruksi untuk mencegah instance multi-pod
+  menabrak combo yang sama secara bersamaan.
+- **Validasi Pra-Transaksi `PutRoutes`:** Memvalidasi seluruh payload (format UUID, use case valid,
+  endpoint ada & aktif, tidak ada duplikat kombinasi `use_case+endpoint_id+model+combo`) sebelum
+  membuka transaksi. Mencegah terhapusnya rute lama jika ada baris baru yang cacat.
+- **Parameter Dimensi Embedding:** Client OpenAI gateway mengirimkan `"dimensions": 768`
+  sehingga model `gemini-embedding-001` (yang defaultnya 3072d) menghasilkan vektor 768d
+  yang lolos validasi ketat pgvector `vector(768)`.
+- **Migrasi 0012 (`0012_ai_routes_multi_model.sql`):** Aditif & idempoten (teruji 2x).
+  Memperbarui rute `vision` ke `gemini-2.5-flash`, `embedding` ke `gemini-embedding-001`,
+  dan menambahkan rute sekunder & combo backup untuk `chat`.
+
+### Verifikasi & Bukti Nyata
+- **Live e2e Gateway Terverifikasi:**
+  - `ChatSync`: 3 panggilan berturut-turut sukses -> `"P07-OK"` (2796 tokens, provider_reported).
+  - `CreateEmbedding`: sukses -> `len=768` (10 tokens).
+  - `AnalyzeVision`: sukses -> `"Merah. Padat. Murni."` (3331 tokens).
+- **Unit Test Baru:**
+  - Test SWRR ratio & anti-burst (urutan A B A A B A A B A pada bobot 200:100).
+  - Test failover di dalam combo sebelum berpindah combo.
+  - Test breaker open dilewati dari rotasi.
+  - Test konkurensi goroutine aman.
+  - Test validasi payload `PutRoutes` & penolakan duplikat.
+  - Test pengiriman parameter `dimensions`.
+- **Uji Mutasi:** Mematikan pengurangan `totalWeight` pada SWRR menyebabkan test gagal -> terbukti menangkap regresi.
+- **Gerbang Penuh:** `go vet ./...`, `go build ./...`, `go test ./...` hijau; frontend `lint` 0 error, `build` hijau, `test` 102 passed.
+
+### Catatan & Gap Terisolasi
+- Voice (`whisper-1`) upstream provider merespons 429/timeout -> dicatat sebagai gap terisolasi.
+- Kuota global terdistribusi (Redis) tidak dibutuhkan untuk pembagian beban (keputusan didiskusikan & disetujui).
+
+---
+
 ## 2026-10-11 — P07 Slice D1: health gates, shutdown 30s & temuan gateway mati
 
 Slice keempat P07 (D1; BYOK → D2). Menemukan **bug besar** sekaligus memperbaiki kebenarannya

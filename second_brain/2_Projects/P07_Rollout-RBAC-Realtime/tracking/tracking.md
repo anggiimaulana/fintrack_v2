@@ -208,3 +208,27 @@ Status Legend:
     2. Template k8s tidak dibuat (`deploy/` tidak ada di repo).
     3. Uji rolling restart 200 RPS tanpa 5xx tidak dijalankan (uji beban terkoordinasi).
     4. **BYOK belum dihapus** → slice D2, dengan syarat gateway benar-benar melayani semua user.
+
+- **2026-10-12 — Slice E (Routing AI Dinamis: Combo, Weighted Round-Robin & Multi-Model) SELESAI.**
+  - **Status P03:** Gateway AI terpusat sekarang **AKTIF dan TERVERIFIKASI BEKERJA LANGSUNG**
+    (ChatSync "P07-OK", Embedding 768d, Vision "Merah. Padat. Murni.")!
+  - **Smooth Weighted Round-Robin (SWRR):** Algoritma Nginx SWRR diterapkan untuk rotasi
+    antar-combo secara berbobot (bebas burst, rasio presisi, di-seed acak untuk multi-instance).
+    Di dalam combo terpilih, rute dievaluasi berurut berdasarkan `priority ASC` (failover lokal).
+    Jika seluruh rute combo habis/gagal, otomatis failover ke combo berikutnya.
+  - **API Admin `PutRoutes`:** Menyimpan kolom `combo`, memvalidasi keberadaan `endpoint_id`
+    yang berstatus active, menolak duplikat `(use_case, endpoint_id, model, combo)`, dan
+    memvalidasi seluruh payload sebelum membuka transaksi (mencegah data lama terhapus jika payload error).
+  - **Embedding 768 Dimensions:** Client OpenAI gateway mengirimkan parameter `"dimensions": 768`
+    sehingga model `gemini-embedding-001` menghasilkan 768 dimensi (bukan default 3072d) dan cocok
+    100% dengan kolom `vector(768)` pgvector.
+  - **Migrasi 0012 (`0012_ai_routes_multi_model.sql`):** Aditif & idempoten (teruji 2x eksekusi).
+    Menghubungkan `chat` ke multi-model (primary `deepseek-r1`, fallback & secondary combo
+    `gemini-2.5-flash`), `vision` ke `gemini-2.5-flash`, dan `embedding` ke `gemini-embedding-001`.
+  - **Bukti & Verifikasi:**
+    - Live e2e gateway: ChatSync ("P07-OK"), CreateEmbedding (len=768), AnalyzeVision (sukses mengenali gambar).
+    - Unit tests: SWRR ratio & anti-burst, failover dalam combo, breaker integration, concurrency test, PutRoutes payload validation.
+    - Uji mutasi: Mematikan pengurangan totalWeight pada SWRR menyebabkan test gagal -> terbukti menangkap regresi.
+  - **Sisa Gap:**
+    1. Voice (`whisper-1`) upstream provider merespons 429/hang -> dicatat sebagai gap terisolasi.
+    2. BYOK Cleanup (D2) -> siap dieksekusi setelah gateway terbukti mandiri.

@@ -232,6 +232,9 @@ type routeDTO struct {
 	UseCase    string `json:"use_case"`
 	EndpointID string `json:"endpoint_id"`
 	Model      string `json:"model"`
+	// Combo groups routes into a failover set. Routes in the same combo are
+	// tried in priority order; the gateway rotates between combos by weight.
+	Combo      string `json:"combo"`
 	Priority   int    `json:"priority"`
 	TimeoutMS  int    `json:"timeout_ms"`
 	MaxRetries int    `json:"max_retries"`
@@ -242,8 +245,8 @@ type routeDTO struct {
 func (h *Handler) ListRoutes(c *gin.Context) {
 	ctx := c.Request.Context()
 	rows, err := h.svc.pool.Query(ctx, `
-		SELECT id, use_case, endpoint_id, model, priority, timeout_ms, max_retries, is_active
-		FROM ai_routes ORDER BY use_case, priority`)
+		SELECT id, use_case, endpoint_id, model, combo, priority, timeout_ms, max_retries, is_active
+		FROM ai_routes ORDER BY use_case, combo, priority`)
 	if err != nil {
 		response.InternalError(c, "Gagal memuat rute AI")
 		return
@@ -253,7 +256,7 @@ func (h *Handler) ListRoutes(c *gin.Context) {
 	out := []routeDTO{}
 	for rows.Next() {
 		var r routeDTO
-		if err := rows.Scan(&r.ID, &r.UseCase, &r.EndpointID, &r.Model, &r.Priority,
+		if err := rows.Scan(&r.ID, &r.UseCase, &r.EndpointID, &r.Model, &r.Combo, &r.Priority,
 			&r.TimeoutMS, &r.MaxRetries, &r.IsActive); err != nil {
 			response.InternalError(c, "Gagal memuat rute AI")
 			return
@@ -272,22 +275,51 @@ func (h *Handler) PutRoutes(c *gin.Context) {
 		return
 	}
 	validUseCase := map[string]bool{"chat": true, "vision": true, "voice": true, "embedding": true, "reasoning": true}
+	seen := make(map[string]bool, len(body))
+	endpointIDs := make([]uuid.UUID, 0, len(body))
 	for _, r := range body {
 		if !validUseCase[r.UseCase] {
 			response.BadRequest(c, "use_case tidak valid: "+r.UseCase, "validation")
 			return
 		}
-		if _, err := uuid.Parse(r.EndpointID); err != nil {
-			response.BadRequest(c, "endpoint_id tidak valid", "validation")
+		eid, err := uuid.Parse(r.EndpointID)
+		if err != nil {
+			response.BadRequest(c, "endpoint_id tidak valid", "invalid_payload")
 			return
 		}
 		if r.TimeoutMS < 0 || r.MaxRetries < 0 {
 			response.BadRequest(c, "timeout_ms/max_retries tidak boleh negatif", "validation")
 			return
 		}
+		combo := normalizeCombo(r.Combo)
+		key := r.UseCase + "|" + eid.String() + "|" + r.Model + "|" + combo
+		if seen[key] {
+			response.BadRequest(c, "rute duplikat: "+r.UseCase+"/"+r.Model+"/"+combo, "duplicate_route")
+			return
+		}
+		seen[key] = true
+		endpointIDs = append(endpointIDs, eid)
 	}
 
 	ctx := c.Request.Context()
+	if h.svc.pool != nil && len(endpointIDs) > 0 {
+		var activeCount int
+		if err := h.svc.pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM ai_endpoints WHERE id = ANY($1) AND status = 'active'`,
+			endpointIDs).Scan(&activeCount); err != nil {
+			response.InternalError(c, "Gagal memvalidasi endpoint")
+			return
+		}
+		if activeCount != len(uniqueIDs(endpointIDs)) {
+			response.BadRequest(c, "endpoint_id tidak ditemukan atau tidak aktif", "invalid_endpoint")
+			return
+		}
+	}
+
+	if h.svc.pool == nil {
+		response.InternalError(c, "database pool tidak tersedia")
+		return
+	}
 	tx, err := h.svc.pool.Begin(ctx)
 	if err != nil {
 		response.InternalError(c, "Gagal menyimpan rute")
@@ -296,11 +328,11 @@ func (h *Handler) PutRoutes(c *gin.Context) {
 	defer tx.Rollback(ctx)
 
 	var before []routeDTO
-	brows, _ := tx.Query(ctx, `SELECT id, use_case, endpoint_id, model, priority, timeout_ms, max_retries, is_active FROM ai_routes ORDER BY use_case, priority`)
+	brows, _ := tx.Query(ctx, `SELECT id, use_case, endpoint_id, model, combo, priority, timeout_ms, max_retries, is_active FROM ai_routes ORDER BY use_case, combo, priority`)
 	if brows != nil {
 		for brows.Next() {
 			var r routeDTO
-			if brows.Scan(&r.ID, &r.UseCase, &r.EndpointID, &r.Model, &r.Priority,
+			if brows.Scan(&r.ID, &r.UseCase, &r.EndpointID, &r.Model, &r.Combo, &r.Priority,
 				&r.TimeoutMS, &r.MaxRetries, &r.IsActive) == nil {
 				before = append(before, r)
 			}
@@ -318,9 +350,9 @@ func (h *Handler) PutRoutes(c *gin.Context) {
 			priority = i + 1
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO ai_routes (use_case, endpoint_id, model, priority, timeout_ms, max_retries, is_active)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-			r.UseCase, r.EndpointID, r.Model, priority,
+			INSERT INTO ai_routes (use_case, endpoint_id, model, combo, priority, timeout_ms, max_retries, is_active)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+			r.UseCase, r.EndpointID, r.Model, normalizeCombo(r.Combo), priority,
 			defaultInt(r.TimeoutMS, 30000), defaultInt(r.MaxRetries, 2), r.IsActive); err != nil {
 			response.InternalError(c, "Gagal menyimpan rute")
 			return
@@ -334,6 +366,31 @@ func (h *Handler) PutRoutes(c *gin.Context) {
 	h.audit(c, "update", "ai_route", "routes", map[string]any{"routes": before},
 		map[string]any{"routes": body})
 	response.OK(c, "Rute AI disimpan", nil)
+}
+
+// normalizeCombo maps an empty combo to the default group, so routes created
+// before combos existed keep working as one failover set.
+func normalizeCombo(combo string) string {
+	combo = strings.TrimSpace(combo)
+	if combo == "" {
+		return "default"
+	}
+	return combo
+}
+
+// uniqueIDs deduplicates UUIDs (a payload may reference the same endpoint in
+// several routes).
+func uniqueIDs(ids []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 type resetBreakerRequest struct {

@@ -104,7 +104,7 @@ func TestEmbedding_ReturnsVector(t *testing.T) {
 	defer srv.Close()
 
 	c := New(Config{BaseURL: srv.URL + "/v1"})
-	got, usage, err := c.Embedding(context.Background(), "text-embedding-004", "halo", 5*time.Second)
+	got, usage, err := c.Embedding(context.Background(), "text-embedding-004", "halo", 768, 5*time.Second)
 	if err != nil {
 		t.Fatalf("embedding: %v", err)
 	}
@@ -113,6 +113,39 @@ func TestEmbedding_ReturnsVector(t *testing.T) {
 	}
 	if usage.TotalTokens != 4 {
 		t.Fatalf("expected 4 tokens, got %d", usage.TotalTokens)
+	}
+}
+
+func TestEmbedding_SendsDimensionsPayload(t *testing.T) {
+	var capturedPayload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPayload = make(map[string]any)
+		_ = json.NewDecoder(r.Body).Decode(&capturedPayload)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data":  []any{map[string]any{"embedding": []float32{0.1, 0.2}}},
+			"usage": map[string]any{"total_tokens": 2},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL + "/v1"})
+
+	// Case 1: dims > 0 -> dimensions included in JSON
+	_, _, err := c.Embedding(context.Background(), "gemini-embedding-001", "halo", 768, 5*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if d, ok := capturedPayload["dimensions"]; !ok || d != float64(768) {
+		t.Errorf("expected dimensions=768 in payload, got %v", capturedPayload)
+	}
+
+	// Case 2: dims == 0 -> dimensions omitted from JSON
+	_, _, err = c.Embedding(context.Background(), "text-embedding-004", "halo", 0, 5*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if _, ok := capturedPayload["dimensions"]; ok {
+		t.Errorf("dimensions field must be omitted when dims=0, got %v", capturedPayload)
 	}
 }
 

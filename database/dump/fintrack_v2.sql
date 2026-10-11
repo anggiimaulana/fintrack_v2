@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 97av16SVrYvbaW6sFiuk9dAz0ddgkjFMKJ5FrUwzxS9GTsGuOM90jK4VxDUF2g9
+\restrict LQqNyLu2U0j2hQnmlyyb3omQaQy3GFZEu600DQmu0vbLWiU4yihTjSzqrwB2t0F
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg12+2)
 -- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg12+2)
@@ -720,7 +720,7 @@ ALTER TABLE public.users OWNER TO postgres;
 --
 
 COPY public.ai_endpoints (id, name, base_url, api_key_encrypted, provider, priority, status, health, last_check_at, last_error, modalities, weight, created_at, updated_at) FROM stdin;
-d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	\N	9router	1	active	unhealthy	2026-10-11 11:07:29.722279+00	Get "http://localhost:20128/v1/models": dial tcp [::1]:20128: connect: connection refused	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-11 11:07:29.722512+00
+d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	66d7e1594fc5ee125fefd5f8f392bcba8ae0e10302f7242860716f06200ca2ef7f16f058a05ceb7f98555cde6db1ebcfc764a6ec1d37be7cdd5947bd61e227	9router	1	active	unhealthy	2026-10-11 17:36:30.280284+00	Get "http://localhost:20128/v1/models": dial tcp [::1]:20128: connect: connection refused	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-11 17:36:30.280465+00
 \.
 
 
@@ -748,11 +748,13 @@ bd49a1ea-e172-4123-bdc0-0d54ca5d72e1	other	Lainnya	t	f	t	2026-06-22 00:53:40.095
 --
 
 COPY public.ai_routes (id, use_case, endpoint_id, model, combo, priority, is_active, timeout_ms, max_retries, created_at, updated_at) FROM stdin;
-0f455b17-4680-489b-9619-dff47da78230	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gpt-4o-mini	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
-d30b7d9f-b127-4914-9f20-cde39f1d141d	vision	d07ebaae-0344-4fc9-be4c-0446464f9690	gpt-4o-mini	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
 1d1c9b51-1ca1-4832-a0b0-2c6cb3044e76	voice	d07ebaae-0344-4fc9-be4c-0446464f9690	whisper-1	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
-fd824b61-9246-4c14-97fe-b5ea9657ea76	embedding	d07ebaae-0344-4fc9-be4c-0446464f9690	text-embedding-004	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
 401134d9-72ce-4d1f-8171-88c0ed9f345f	reasoning	d07ebaae-0344-4fc9-be4c-0446464f9690	deepseek-r1	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 08:41:28.719157+00
+0f455b17-4680-489b-9619-dff47da78230	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	deepseek-r1	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 16:35:32.634732+00
+d30b7d9f-b127-4914-9f20-cde39f1d141d	vision	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini-2.5-flash	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 17:31:43.39716+00
+fd824b61-9246-4c14-97fe-b5ea9657ea76	embedding	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini-embedding-001	default	1	t	30000	2	2026-10-11 08:41:28.719157+00	2026-10-11 17:31:43.408186+00
+30c0072b-9384-49bb-a5a4-bd5a8fc942b5	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini-2.5-flash	default	2	t	30000	2	2026-10-11 17:31:43.418991+00	2026-10-11 17:31:43.418991+00
+fa2782cb-1aa1-40b4-aa18-52159f2af7ce	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini-2.5-flash	backup	1	t	30000	2	2026-10-11 17:31:43.42417+00	2026-10-11 17:31:43.42417+00
 \.
 
 
@@ -5814,5 +5816,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 97av16SVrYvbaW6sFiuk9dAz0ddgkjFMKJ5FrUwzxS9GTsGuOM90jK4VxDUF2g9
+\unrestrict LQqNyLu2U0j2hQnmlyyb3omQaQy3GFZEu600DQmu0vbLWiU4yihTjSzqrwB2t0F
 

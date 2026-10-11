@@ -304,3 +304,150 @@ func TestHasHealthyEndpoint_RequiresHealthyEndpoint(t *testing.T) {
 		t.Fatalf("no routes: got (%v, %v), want (false, nil)", got, err)
 	}
 }
+
+// ─── E-6: Weighted Round-Robin & Combo Tests ─────────────────
+
+func TestOrderedRoutes_SingleComboPreservesPriority(t *testing.T) {
+	ep1 := &domain.AIEndpoint{ID: uuid.New(), Name: "ep1", Status: "active", Weight: 100}
+	ep2 := &domain.AIEndpoint{ID: uuid.New(), Name: "ep2", Status: "active", Weight: 100}
+
+	routes := []*domain.AIRoute{
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "default", Priority: 2, Endpoint: ep2},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "default", Priority: 1, Endpoint: ep1},
+	}
+
+	svc := New(&fakeRepo{}, Config{})
+	ordered := svc.orderedRoutes(domain.UseCaseChat, routes)
+
+	if len(ordered) != 2 {
+		t.Fatalf("expected 2 routes, got %d", len(ordered))
+	}
+	if ordered[0].Priority != 1 || ordered[1].Priority != 2 {
+		t.Errorf("expected priority order 1, 2; got %d, %d", ordered[0].Priority, ordered[1].Priority)
+	}
+}
+
+func TestOrderedRoutes_SmoothWRRRatiosAndAntiBurst(t *testing.T) {
+	epA := &domain.AIEndpoint{ID: uuid.New(), Name: "epA", Status: "active", Weight: 200}
+	epB := &domain.AIEndpoint{ID: uuid.New(), Name: "epB", Status: "active", Weight: 100}
+
+	routes := []*domain.AIRoute{
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboA", Priority: 1, Endpoint: epA},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboB", Priority: 1, Endpoint: epB},
+	}
+
+	svc := New(&fakeRepo{}, Config{})
+	// Reset state explicitly to 0 for deterministic sequence assertions
+	svc.rrMu.Lock()
+	svc.rrState[domain.UseCaseChat] = map[string]int64{"comboA": 0, "comboB": 0}
+	svc.rrMu.Unlock()
+
+	// 1. Anti-burst check: In 9 steps, comboA must NOT be picked 9 times in a row!
+	firstWinners := make([]string, 9)
+	for i := 0; i < 9; i++ {
+		ordered := svc.orderedRoutes(domain.UseCaseChat, routes)
+		if len(ordered) != 2 {
+			t.Fatalf("step %d: expected 2 routes, got %d", i, len(ordered))
+		}
+		firstWinners[i] = ordered[0].Combo
+	}
+
+	// Expected Nginx SWRR sequence for 200:100 is A, B, A, A, B, A, A, B, A
+	expectedSeq := []string{"comboA", "comboB", "comboA", "comboA", "comboB", "comboA", "comboA", "comboB", "comboA"}
+	for i, want := range expectedSeq {
+		if firstWinners[i] != want {
+			t.Errorf("step %d: got winner %q, want %q (sequence: %v)", i, firstWinners[i], want, firstWinners)
+		}
+	}
+
+	// 2. Statistical ratio check across 300 selections (should converge exactly to 200:100 = 2:1)
+	counts := map[string]int{"comboA": 0, "comboB": 0}
+	for i := 0; i < 300; i++ {
+		ordered := svc.orderedRoutes(domain.UseCaseChat, routes)
+		counts[ordered[0].Combo]++
+	}
+
+	ratioA := float64(counts["comboA"]) / 300.0
+	if ratioA < 0.64 || ratioA > 0.69 {
+		t.Errorf("expected ratio of comboA around 0.667, got %.3f (counts: %v)", ratioA, counts)
+	}
+}
+
+func TestOrderedRoutes_FailoverWithinComboFirst(t *testing.T) {
+	epA1 := &domain.AIEndpoint{ID: uuid.New(), Name: "epA1", Status: "active", Weight: 100}
+	epA2 := &domain.AIEndpoint{ID: uuid.New(), Name: "epA2", Status: "active", Weight: 100}
+	epB1 := &domain.AIEndpoint{ID: uuid.New(), Name: "epB1", Status: "active", Weight: 100}
+
+	routes := []*domain.AIRoute{
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboA", Priority: 2, Endpoint: epA2},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboA", Priority: 1, Endpoint: epA1},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboB", Priority: 1, Endpoint: epB1},
+	}
+
+	svc := New(&fakeRepo{}, Config{})
+	svc.rrMu.Lock()
+	svc.rrState[domain.UseCaseChat] = map[string]int64{"comboA": 50, "comboB": -50} // force comboA win
+	svc.rrMu.Unlock()
+
+	ordered := svc.orderedRoutes(domain.UseCaseChat, routes)
+	if len(ordered) != 3 {
+		t.Fatalf("expected 3 routes, got %d", len(ordered))
+	}
+
+	// Within winner comboA, Priority 1 must precede Priority 2.
+	// And comboB must follow comboA.
+	if ordered[0].Endpoint.Name != "epA1" || ordered[1].Endpoint.Name != "epA2" || ordered[2].Endpoint.Name != "epB1" {
+		t.Errorf("expected order [epA1, epA2, epB1], got [%s, %s, %s]",
+			ordered[0].Endpoint.Name, ordered[1].Endpoint.Name, ordered[2].Endpoint.Name)
+	}
+}
+
+func TestOrderedRoutes_BreakerOpenSkipped(t *testing.T) {
+	epA := &domain.AIEndpoint{ID: uuid.New(), Name: "epA", Status: "active", Weight: 100}
+	epB := &domain.AIEndpoint{ID: uuid.New(), Name: "epB", Status: "active", Weight: 100}
+
+	routes := []*domain.AIRoute{
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboA", Priority: 1, Endpoint: epA},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboB", Priority: 1, Endpoint: epB},
+	}
+
+	svc := New(&fakeRepo{}, Config{Breaker: breaker.Config{FailureThreshold: 1, Cooldown: 10 * time.Second}})
+	// Trip breaker on epA
+	svc.breaker.RecordFailure(epA.ID.String())
+
+	ordered := svc.orderedRoutes(domain.UseCaseChat, routes)
+	if len(ordered) != 1 {
+		t.Fatalf("expected 1 eligible route, got %d", len(ordered))
+	}
+	if ordered[0].Combo != "comboB" {
+		t.Errorf("expected comboB when comboA breaker is open, got %s", ordered[0].Combo)
+	}
+}
+
+func TestOrderedRoutes_ConcurrentRaceSafe(t *testing.T) {
+	epA := &domain.AIEndpoint{ID: uuid.New(), Name: "epA", Status: "active", Weight: 100}
+	epB := &domain.AIEndpoint{ID: uuid.New(), Name: "epB", Status: "active", Weight: 100}
+
+	routes := []*domain.AIRoute{
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboA", Priority: 1, Endpoint: epA},
+		{ID: uuid.New(), UseCase: domain.UseCaseChat, Combo: "comboB", Priority: 1, Endpoint: epB},
+	}
+
+	svc := New(&fakeRepo{}, Config{})
+
+	var wg sync.WaitGroup
+	workers := 30
+	iterations := 100
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				_ = svc.orderedRoutes(domain.UseCaseChat, routes)
+			}
+		}()
+	}
+
+	wg.Wait()
+}

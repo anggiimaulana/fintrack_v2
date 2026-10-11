@@ -187,14 +187,19 @@ func (c *Client) ChatSync(ctx context.Context, model string, req *domain.AIChatR
 
 // ─── Embeddings ───────────────────────────────────────────────
 
-// Embedding returns the vector for text and its usage.
-func (c *Client) Embedding(ctx context.Context, model, text string, timeout time.Duration) ([]float32, domain.TokenUsage, error) {
+// Embedding returns the vector for text and its usage. When dims > 0,
+// the dimensions field is sent in the request payload (required by providers
+// whose default dimension does not match the target schema, e.g. gemini-embedding-001
+// which defaults to 3072d but supports 768d via dimensions=768).
+func (c *Client) Embedding(ctx context.Context, model, text string, dims int, timeout time.Duration) ([]float32, domain.TokenUsage, error) {
 	payload := map[string]any{"model": model, "input": text}
+	if dims > 0 {
+		payload["dimensions"] = dims
+	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil, domain.TokenUsage{}, err
 	}
-
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/embeddings", bytes.NewReader(raw), timeout)
 	if err != nil {
 		return nil, domain.TokenUsage{}, err

@@ -8,6 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,7 +47,11 @@ type Service struct {
 	repo    domain.AIEndpointRepository
 	breaker *breaker.Breaker
 	cfg     Config
+
+	rrMu    sync.Mutex
+	rrState map[domain.UseCase]map[string]int64 // use_case -> combo -> currentWeight
 }
+
 
 // New builds a gateway service.
 func New(repo domain.AIEndpointRepository, cfg Config) *Service {
@@ -54,10 +62,28 @@ func New(repo domain.AIEndpointRepository, cfg Config) *Service {
 	if bc.FailureThreshold == 0 && bc.Cooldown == 0 {
 		bc = breaker.DefaultConfig()
 	}
-	return &Service{
+	s := &Service{
 		repo:    repo,
 		breaker: breaker.New(bc),
 		cfg:     cfg,
+		rrState: make(map[domain.UseCase]map[string]int64),
+	}
+	s.seedWRR()
+	return s
+}
+
+func (s *Service) seedWRR() {
+	s.rrMu.Lock()
+	defer s.rrMu.Unlock()
+	// Pre-seed pseudo-random offsets for standard use cases to prevent multi-instance lockstep.
+	for _, uc := range []domain.UseCase{
+		domain.UseCaseChat,
+		domain.UseCaseVision,
+		domain.UseCaseVoice,
+		domain.UseCaseEmbedding,
+		domain.UseCaseReasoning,
+	} {
+		s.rrState[uc] = make(map[string]int64)
 	}
 }
 
@@ -113,6 +139,107 @@ func (s *Service) eligibleRoutes(routes []*domain.AIRoute) []*domain.AIRoute {
 	return out
 }
 
+// orderedRoutes filters eligible routes and orders them:
+// 1. Groups eligible routes by normalized combo name ("default" when empty).
+// 2. Selects combo ordering via Nginx Smooth Weighted Round-Robin (SWRR) based on
+//    the aggregated endpoint weights in each combo.
+// 3. Within each combo, routes are ordered by Priority ASC, then Endpoint Priority ASC.
+// 4. The winning combo is placed first; if its routes fail, the remaining combos
+//    are tried in descending order of remaining SWRR weight (failover).
+func (s *Service) orderedRoutes(useCase domain.UseCase, routes []*domain.AIRoute) []*domain.AIRoute {
+	eligible := s.eligibleRoutes(routes)
+	if len(eligible) <= 1 {
+		return eligible
+	}
+
+	comboRoutes := make(map[string][]*domain.AIRoute)
+	comboWeights := make(map[string]int64)
+
+	for _, rt := range eligible {
+		combo := strings.TrimSpace(rt.Combo)
+		if combo == "" {
+			combo = "default"
+		}
+		comboRoutes[combo] = append(comboRoutes[combo], rt)
+
+		w := int64(100)
+		if rt.Endpoint != nil && rt.Endpoint.Weight > 0 {
+			w = int64(rt.Endpoint.Weight)
+		}
+		comboWeights[combo] += w
+	}
+
+	// Sort routes within each combo by Priority ASC, then Endpoint Priority ASC.
+	for _, cr := range comboRoutes {
+		sort.SliceStable(cr, func(i, j int) bool {
+			if cr[i].Priority != cr[j].Priority {
+				return cr[i].Priority < cr[j].Priority
+			}
+			if cr[i].Endpoint != nil && cr[j].Endpoint != nil {
+				return cr[i].Endpoint.Priority < cr[j].Endpoint.Priority
+			}
+			return false
+		})
+	}
+
+	if len(comboRoutes) == 1 {
+		for _, cr := range comboRoutes {
+			return cr
+		}
+	}
+
+	s.rrMu.Lock()
+	state := s.rrState[useCase]
+	if state == nil {
+		state = make(map[string]int64)
+		s.rrState[useCase] = state
+	}
+
+	var totalWeight int64
+	combos := make([]string, 0, len(comboWeights))
+	for c, w := range comboWeights {
+		totalWeight += w
+		combos = append(combos, c)
+		if _, exists := state[c]; !exists {
+			state[c] = rand.Int64N(w + 1)
+		}
+		state[c] += w
+	}
+	sort.Strings(combos)
+
+	var bestCombo string
+	var maxWeight int64 = -1 << 62
+	for _, c := range combos {
+		if state[c] > maxWeight {
+			maxWeight = state[c]
+			bestCombo = c
+		}
+	}
+	state[bestCombo] -= totalWeight
+
+	remaining := make([]string, 0, len(combos)-1)
+	for _, c := range combos {
+		if c != bestCombo {
+			remaining = append(remaining, c)
+		}
+	}
+	sort.SliceStable(remaining, func(i, j int) bool {
+		if state[remaining[i]] != state[remaining[j]] {
+			return state[remaining[i]] > state[remaining[j]]
+		}
+		return remaining[i] < remaining[j]
+	})
+	s.rrMu.Unlock()
+
+	orderedCombos := append([]string{bestCombo}, remaining...)
+
+	out := make([]*domain.AIRoute, 0, len(eligible))
+	for _, c := range orderedCombos {
+		out = append(out, comboRoutes[c]...)
+	}
+	return out
+}
+
 // ChatStream streams a chat completion through the failover chain.
 func (s *Service) ChatStream(ctx context.Context, req *domain.AIChatRequest) (<-chan domain.AIChatStreamChunk, error) {
 	useCase := req.UseCase
@@ -131,7 +258,7 @@ func (s *Service) ChatStream(ctx context.Context, req *domain.AIChatRequest) (<-
 	}
 
 	var lastErr error
-	for _, rt := range s.eligibleRoutes(routes) {
+	for _, rt := range s.orderedRoutes(useCase, routes) {
 		c, model, cerr := s.clientFor(rt)
 		if cerr != nil {
 			lastErr = cerr
@@ -173,7 +300,7 @@ func (s *Service) ChatSync(ctx context.Context, req *domain.AIChatRequest) (stri
 	}
 
 	var lastErr error
-	for _, rt := range s.eligibleRoutes(routes) {
+	for _, rt := range s.orderedRoutes(useCase, routes) {
 		c, model, cerr := s.clientFor(rt)
 		if cerr != nil {
 			lastErr = cerr
@@ -212,7 +339,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRe
 	}
 
 	var lastErr error
-	for _, rt := range s.eligibleRoutes(routes) {
+	for _, rt := range s.orderedRoutes(domain.UseCaseEmbedding, routes) {
 		c, model, cerr := s.clientFor(rt)
 		if cerr != nil {
 			lastErr = cerr
@@ -221,7 +348,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRe
 		if req.Model != "" {
 			model = req.Model
 		}
-		vec, usage, eerr := c.Embedding(ctx, model, req.Text, routeTimeout(rt, s.cfg.DefaultTimeout))
+		vec, usage, eerr := c.Embedding(ctx, model, req.Text, 768, routeTimeout(rt, s.cfg.DefaultTimeout))
 		if eerr != nil {
 			s.recordFailure(rt, eerr)
 			lastErr = eerr
@@ -257,7 +384,7 @@ func (s *Service) TranscribeAudio(ctx context.Context, req *domain.AIAudioTransc
 	}
 
 	var lastErr error
-	for _, rt := range s.eligibleRoutes(routes) {
+	for _, rt := range s.orderedRoutes(domain.UseCaseVoice, routes) {
 		c, model, cerr := s.clientFor(rt)
 		if cerr != nil {
 			lastErr = cerr
