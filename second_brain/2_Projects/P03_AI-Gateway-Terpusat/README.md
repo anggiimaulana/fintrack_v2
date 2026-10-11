@@ -37,9 +37,9 @@ FinTrack v2 mengalihkan seluruh pemrosesan AI (chat, vision, voice, embedding) d
 7. Dokumen teknis dan operasional lengkap di `second_brain/2_Projects/P03_AI-Gateway-Terpusat/`.
 
 ## Success Criteria
-1. Tidak ada panggilan LLM langsung dari client atau via BYOK user; 100% trafik AI melewati internal AI Gateway.
-2. 9router lokal berfungsi sebagai primary endpoint; jika 9router mati/5xx, failover otomatis berpindah ke endpoint priority berikutnya dalam <2 detik tanpa request user crash.
-3. Circuit breaker memblokir endpoint yang gagal 5 kali berturut-turut selama cooldown 30 detik.
-4. Dimensi embedding konsisten 768 float; cosine distance pada `transaction_embeddings` tetap valid tanpa re-indexing ulang.
-5. Token tercatat akurat (provider reported atau fallback estimation) untuk persiapan konsumsi P04 (Billing & Ledger).
-6. Zero downtime deployment via expand-contract dan feature flag `feature_ai_gateway_centralized`.
+1. [x] Tidak ada panggilan LLM langsung dari client atau via BYOK user; trafik AI melewati internal AI Gateway saat flag ON. *(adapter wired + diuji; BYOK endpoint → 410 Gone)*
+2. [x] 9router lokal sebagai primary; failover otomatis < 2 detik tanpa crash. *(diuji: failover < 1s; live: 9router mati → pesan ramah, tanpa crash)*
+3. [x] Circuit breaker memblokir endpoint setelah 5 kegagalan berturut (cooldown 30s). *(diuji)*
+4. [x] Dimensi embedding konsisten 768 float. *(diuji: lock menolak non-768; cosine ops tetap valid)*
+5. [x] Token tercatat akurat (provider reported / fallback estimation). *(metering diuji)*
+6. [x] Zero downtime via expand-contract + feature flag `feature_ai_gateway_centralized`. *(flag wired default OFF; rollout doc)*

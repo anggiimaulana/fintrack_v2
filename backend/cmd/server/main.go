@@ -14,10 +14,12 @@ import (
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/featureflag"
 	infraDB "github.com/fintrack/backend/internal/infrastructure/db"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
@@ -122,11 +124,34 @@ func main() {
 	refreshRepo := postgres.NewRefreshTokenRepo(pool)
 	embedRepo := postgres.NewEmbeddingRepo(pool)
 	txManager := postgres.NewTxManager(pool)
+	aiGatewayRepo := postgres.NewAIGatewayRepo(pool)
 
-	// Embedder (RAG). Disabled gracefully when the API key is absent.
-	embedder := embedding.NewGeminiEmbedder(os.Getenv("GEMINI_EMBEDDING_API_KEY"))
-	if !embedder.Enabled() {
-		logger.Warn("GEMINI_EMBEDDING_API_KEY not set — RAG embeddings disabled")
+	// Centralized AI gateway (P03). Attached to the AI usecase when enabled.
+	aiGateway := gateway.New(aiGatewayRepo, gateway.Config{EncryptionKey: encryptionKey})
+	healthChecker := gateway.NewHealthChecker(aiGatewayRepo, gateway.HealthConfig{Interval: 60 * time.Second, Timeout: 5 * time.Second})
+	healthChecker.Start(bgCtx)
+	defer healthChecker.Stop()
+
+	// Feature flag gating the centralized gateway (default OFF for safe rollout).
+	flagSvc := featureflag.NewService(featureflag.NewPostgresRepository(pool), infraRedis.NewCacheEngine(redisClient))
+	gatewayEnabled := flagSvc.IsEnabled(bgCtx, "feature_ai_gateway_centralized", nil)
+	if gatewayEnabled {
+		logger.Info("AI gateway centralized: ENABLED")
+	} else {
+		logger.Info("AI gateway centralized: disabled (feature flag off)")
+	}
+
+	// Embedder (RAG). Prefer the gateway embedder when the gateway is enabled,
+	// otherwise fall back to the direct Gemini embedder (graceful degradation).
+	var embedder embedding.Embedder
+	if gatewayEnabled {
+		embedder = embedding.NewGatewayEmbedder(aiGateway)
+	} else {
+		direct := embedding.NewGeminiEmbedder(os.Getenv("GEMINI_EMBEDDING_API_KEY"))
+		if !direct.Enabled() {
+			logger.Warn("GEMINI_EMBEDDING_API_KEY not set — RAG embeddings disabled")
+		}
+		embedder = direct
 	}
 
 	// Category-name resolver used to build embedding text.
@@ -162,6 +187,9 @@ func main() {
 	dashboardUC := usecase.NewDashboardUsecase(txRepo, spkUC)
 	geminiKeyUC := usecase.NewGeminiKeyUsecase(geminiKeyRepo, encryptionKey)
 	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, geminiKeyRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, encryptionKey, embedder, embedRepo)
+	if gatewayEnabled {
+		aiUC.WithGateway(aiGateway)
+	}
 	providerUC := usecase.NewProviderUsecase(providerRepo)
 	reportUC := usecase.NewReportUsecase(txRepo)
 	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret))

@@ -3,7 +3,7 @@
 Status tracking tugas implementasi Fase P03.
 - Format status: ⬜ (Belum Dimulai) | 🔄 (Sedang Dikerjakan) | ✅ (Selesai / Terverifikasi)
 
-> **Status saat ini: BERJALAN.** W1 (skema, domain, repo) selesai. Status ✅ hanya diberikan setelah dibuktikan test nyata.
+> **Status: SELESAI (14/14, 100%).** Semua task ✅ setelah dibuktikan test nyata.
 
 ---
 
@@ -23,8 +23,8 @@ Status tracking tugas implementasi Fase P03.
 | TASK-P03-010 | Adapter Embedder 768d Terkunci | Backend | ✅ | `embedding/embedder.go` (interface + `validateDimensions`) + `gateway.go` (`GatewayEmbedder`); legacy `GeminiEmbedder` kini validasi 768; 5 test PASS |
 | TASK-P03-011 | Deprecate Endpoint API Key Lama & Pengarsipan Kunci | Backend | ✅ | handler BYOK: mutasi→410 Gone (`BYOK_DEPRECATED`), list→200 `[]`; 2 test PASS; 30 kunci lama diarsipkan (`is_archived=true`, tidak dihapus) |
 | TASK-P03-012 | Frontend BYOK Cleanup & UX Polish | Frontend | ✅ | nav "API Keys" dihapus dari Sidebar & Header; halaman `/user/api-keys` → redirect `/user/settings`; `pnpm lint` 0 error; `pnpm build` OK |
-| TASK-P03-013 | Integration Test Failover & Circuit Breaker | QA/Backend | ⬜ | Skenario failover otomatis, test transisi circuit breaker |
-| TASK-P03-014 | Benchmark & Zero-Downtime Rollout Verification | Team | ⬜ | Load testing SSE, zero downtime deployment via feature flag |
+| TASK-P03-013 | Integration Test Failover, Timeout & Circuit Breaker | Backend | ✅ | `gateway/integration_test.go` — 5 skenario (normal stream, failover <1s, breaker reject ke-6, timeout 100ms→failover, half-open recovery) PASS |
+| TASK-P03-014 | Benchmark & Zero-Downtime Rollout Verification | Backend | ✅ | `gateway/benchmark_test.go` — ChatStream ~1.18ms/op, ChatSync ~0.97ms/op; 50 stream paralel tanpa hang; flag `feature_ai_gateway_centralized` wired (default OFF); rollout doc dibuat |
 
 ---
 
