@@ -16,7 +16,7 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 | Total Tugas | ⬜ Belum | 🔄 Berjalan | ✅ Selesai | Persentase |
 |---|---|---|---|---|
-| **14** | **9** | **0** | **5** | **36%** |
+| **14** | **6** | **0** | **8** | **57%** |
 
 ---
 
@@ -29,9 +29,9 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 | **TASK-P02-003** | Versioned Cache Middleware & Engine | Backend | Backend Eng | ✅ | `redis/cache.go` (engine berversi + fallback memory) + middleware rewrite; key `cache:u:{uid}:v{ver}:g{gver}:{hash}`; `ConfigureCache` wired di main. Test: HIT/MISS/version-bump/isolasi-user/live-redis PASS |
 | **TASK-P02-004** | Redis Pub/Sub Broadcaster Invalidation | Backend | Backend Eng | ✅ | `redis/pubsub.go` (Publish/Subscribe, channel `cache:invalidate`); publish saat invalidate + subscriber di main. Test: disabled + live publish/subscribe PASS |
 | **TASK-P02-005** | Migrasi Database Tabel Append-Only audit_logs | Database | Data / Backend | ✅ | `0005_create_audit_logs.sql` diterapkan ke DB; trigger `audit_logs_block_mutation` → UPDATE & DELETE ditolak (`append-only`); replay idempoten OK |
-| **TASK-P02-006** | Modul internal/audit & Async Worker Queue | Backend | Backend Eng | ⬜ | Belum dikerjakan |
-| **TASK-P02-007** | Migrasi Database Tabel feature_flags | Database | Data / Backend | ⬜ | Belum dikerjakan |
-| **TASK-P02-008** | Modul internal/featureflag & Evaluator Engine | Backend | Backend Eng | ⬜ | Belum dikerjakan |
+| **TASK-P02-006** | Modul internal/audit & Async Worker Queue | Backend | Backend Eng | ✅ | `internal/audit` (service async + worker batch + masker + repo pgx); wired di main. Test: 9 PASS (non-blocking, flush-on-close, batch, masking); integrasi live DB PASS |
+| **TASK-P02-007** | Migrasi Database Tabel feature_flags | Database | Data / Backend | ✅ | `0006_create_feature_flags.sql` diterapkan; unique `key` menolak duplikat; replay idempoten OK |
+| **TASK-P02-008** | Modul internal/featureflag & Evaluator Engine | Backend | Backend Eng | ✅ | `internal/featureflag` (evaluator + repo pgx + cache Redis/memory); fail-closed; rollout deterministik per user. Test: 8 PASS |
 | **TASK-P02-009** | Kontrak API Handler Paginated Data Table di Go | Backend | Backend Eng | ⬜ | Belum dikerjakan |
 | **TASK-P02-010** | Custom Hook useDataTableUrlState di Next.js | Frontend | Frontend Eng | ⬜ | Belum dikerjakan |
 | **TASK-P02-011** | Komponen Generic DataTable TanStack Table v8 | Frontend | Frontend Eng | ⬜ | Belum dikerjakan |
@@ -43,6 +43,7 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 ## Log Progres Aktivitas
 
+- **2026-10-11 (W3)**: TASK-P02-006 ✅ (audit async + masking, integrasi live DB), TASK-P02-007 ✅ (migrasi feature_flags), TASK-P02-008 ✅ (evaluator feature flag).
 - **2026-10-11 (W2)**: TASK-P02-003 ✅ (cache berversi), TASK-P02-004 ✅ (pub/sub), TASK-P02-013 ✅ (metrics, live `/metrics` 200), TASK-P02-005 ✅ (migrasi audit_logs + trigger append-only terbukti).
 - **2026-10-11 (W1)**: TASK-P02-001 ✅ — Redis 7-alpine ditambahkan ke `docker-compose.yml` (host port 6380 karena 6379 dipakai stack lain), `maxmemory 256mb`/`allkeys-lru`, healthcheck healthy, `PING`→`PONG`.
 - **2026-10-11 (W1)**: TASK-P02-002 ✅ — package `internal/infrastructure/redis` (client+config+errors) dengan graceful degradation; di-wire di `main.go`. Test: 4 PASS (termasuk live Redis); `go vet`+`go build`+`go test ./...` hijau.

@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/audit"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
@@ -100,6 +101,11 @@ func main() {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer pool.Close()
+
+	// Audit trail (append-only). Started once the pool is available.
+	auditSvc := audit.NewService(audit.NewPostgresRepository(pool), audit.DefaultConfig())
+	defer auditSvc.Close()
+	_ = auditSvc // consumed by later phases (P03+); wired now so the trail is ready.
 
 	// Repositories
 	txRepo := postgres.NewTransactionRepo(pool)
