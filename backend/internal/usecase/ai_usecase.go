@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,6 +86,47 @@ func (u *AIUsecase) stopped(useCase string) bool {
 
 // UseGateway reports whether the centralized gateway is active.
 func (u *AIUsecase) UseGateway() bool { return u.gateway != nil }
+
+// errGatewayEmpty signals that the gateway returned without producing any
+// content — treated as a failure so the BYOK fallback can take over.
+var errGatewayEmpty = errors.New("gateway returned no content")
+
+// forwardGatewayAttempt runs one gateway attempt, relaying its events to msgChan
+// while observing whether any user-visible content was produced.
+//
+// It returns sentAny = true once any non-empty content event has been forwarded.
+// The caller must NOT fall back to another transport when sentAny is true: the
+// user has already seen output, and restarting would duplicate or contradict it.
+//
+// A gateway that "succeeds" while emitting nothing is reported as errGatewayEmpty
+// so the fallback still runs — an empty answer is a failure from the user's point
+// of view.
+func forwardGatewayAttempt(
+	attempt func(out chan domain.ChatStreamEvent) error,
+	msgChan chan<- domain.ChatStreamEvent,
+) (sentAny bool, err error) {
+	guarded := make(chan domain.ChatStreamEvent, 16)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for ev := range guarded {
+			if ev.Type == "content" && ev.Content != "" {
+				sentAny = true
+			}
+			msgChan <- ev
+		}
+	}()
+
+	err = attempt(guarded)
+	close(guarded)
+	<-done
+
+	if err == nil && !sentAny {
+		err = errGatewayEmpty
+	}
+	return sentAny, err
+}
 
 func NewAIUsecase(
 	chatSessionRepo domain.ChatSessionRepository,
@@ -543,14 +585,35 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 
 	systemPrompt := u.buildSystemPrompt(userContext) + u.buildToolsSystemPrompt()
 
-	// Centralized AI gateway (P03): route through the pooled endpoints instead
-	// of per-user keys. The legacy BYOK path below remains as a fallback.
+	// Centralized AI gateway (P03): route through the pooled endpoints instead of
+	// per-user keys, falling back to the legacy BYOK path when the gateway fails.
+	//
+	// The fallback only applies when NOTHING has been streamed to the client yet:
+	// once the user has seen partial output, restarting on another transport would
+	// duplicate or contradict what is already on screen. `sentAny` is the signal
+	// for that.
 	if u.gateway != nil {
-		return u.chatViaGateway(ctx, userID, req, sessionID, systemPrompt, msgChan)
+		sentAny, gerr := forwardGatewayAttempt(func(out chan domain.ChatStreamEvent) error {
+			return u.chatViaGateway(ctx, userID, req, sessionID, systemPrompt, out)
+		}, msgChan)
+
+		if gerr == nil {
+			return nil
+		}
+		if sentAny {
+			// Partial output already delivered: surface the failure rather than
+			// silently starting over and duplicating what is on screen.
+			logger.Warn("gateway chat failed after partial output; not falling back",
+				zap.Error(gerr))
+			return nil
+		}
+		logger.Warn("gateway chat failed; falling back to BYOK", zap.Error(gerr))
 	}
 
 	keys, err := u.getAvailableKeys(ctx, userID)
-	if err != nil || len(keys) == 0 {
+
+	keys, keyErr := u.getAvailableKeys(ctx, userID)
+	if keyErr != nil || len(keys) == 0 {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Anda belum menambahkan API key. Silakan tambahkan API key terlebih dahulu di menu API Keys."}
 		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
 		return nil

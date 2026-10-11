@@ -152,3 +152,104 @@ func TestHealthChecker_StopIdempotent(t *testing.T) {
 	hc.Stop() // must not panic
 	cancel()
 }
+
+// TestProbe_StatusSemantics pins what "healthy" means: reachable and not 5xx.
+// A provider that answers 401/403/404 is up; only transport failure or 5xx is
+// unhealthy.
+func TestProbe_StatusSemantics(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{200, "healthy"},
+		{301, "healthy"},
+		{401, "healthy"}, // unauthorized: server is up and routing
+		{403, "healthy"},
+		{404, "healthy"},
+		{500, "unhealthy"},
+		{503, "unhealthy"},
+	}
+	for _, tc := range cases {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			c := NewHealthChecker(&healthRepo{}, HealthConfig{Timeout: 2 * time.Second})
+			got, _ := c.probe(context.Background(), &domain.AIEndpoint{BaseURL: srv.URL})
+			if got != tc.want {
+				t.Fatalf("status %d: got %q, want %q", tc.status, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProbe_HangingApiPathIsAvoided is the regression guard for the real bug
+// found against the local 9router, where these were measured:
+//
+//	GET /             -> 307 (fast)
+//	GET /health       -> 404 (fast)
+//	GET /v1           -> hangs until timeout
+//	GET /v1/models    -> hangs until timeout
+//
+// Probing the API base path therefore marked a working gateway "unhealthy"
+// forever. The probe must target the ORIGIN with a neutral path.
+func TestProbe_HangingApiPathIsAvoided(t *testing.T) {
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1", "/v1/models":
+			<-block // never answers, exactly like the local 9router
+		default:
+			w.WriteHeader(http.StatusNotFound) // any response proves reachability
+		}
+	}))
+	defer func() { close(block); srv.Close() }()
+
+	base := srv.URL + "/v1"
+
+	// The default probe targets the origin (/health) and succeeds even though the
+	// API base path hangs: a response under 500 is all reachability needs.
+	def := NewHealthChecker(&healthRepo{}, HealthConfig{Timeout: 2 * time.Second})
+	if got, _ := def.probe(context.Background(), &domain.AIEndpoint{BaseURL: base}); got != "healthy" {
+		t.Fatalf("origin probe: got %q, want healthy", got)
+	}
+
+	// If an operator explicitly configures a hanging path, it is still reported
+	// unhealthy — the probe does not pretend a silent endpoint is fine.
+	explicit := NewHealthChecker(&healthRepo{}, HealthConfig{
+		Timeout:    300 * time.Millisecond,
+		HealthPath: "v1", // hangs on this test server
+	})
+	if got, _ := explicit.probe(context.Background(), &domain.AIEndpoint{BaseURL: base}); got != "unhealthy" {
+		t.Fatalf("explicit hanging path: got %q, want unhealthy", got)
+	}
+}
+
+// TestProbeURL_UsesOrigin pins the URL construction.
+func TestProbeURL_UsesOrigin(t *testing.T) {
+	cases := []struct{ base, path, want string }{
+		{"http://localhost:20128/v1", "", "http://localhost:20128/health"},
+		{"http://localhost:20128/v1", "readyz", "http://localhost:20128/readyz"},
+		{"http://host:9000/api/v2/deep", "", "http://host:9000/health"},
+	}
+	for _, tc := range cases {
+		if got := probeURL(tc.base, tc.path); got != tc.want {
+			t.Fatalf("probeURL(%q,%q) = %q, want %q", tc.base, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestProbe_TransportFailureIsUnhealthy covers an unreachable endpoint.
+func TestProbe_TransportFailureIsUnhealthy(t *testing.T) {
+	c := NewHealthChecker(&healthRepo{}, HealthConfig{Timeout: 300 * time.Millisecond})
+	// Port 1 is not listening.
+	got, msg := c.probe(context.Background(), &domain.AIEndpoint{BaseURL: "http://127.0.0.1:1/v1"})
+	if got != "unhealthy" {
+		t.Fatalf("unreachable: got %q, want unhealthy", got)
+	}
+	if msg == nil {
+		t.Fatal("expected an error message for an unreachable endpoint")
+	}
+}

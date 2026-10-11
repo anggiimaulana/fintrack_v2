@@ -151,3 +151,93 @@ func TestGatewayFriendlyError(t *testing.T) {
 		t.Fatalf("expected friendly message without internal detail, got %q", msg)
 	}
 }
+
+// TestForwardGatewayAttempt_SuccessStreamsContent covers the happy path.
+func TestForwardGatewayAttempt_SuccessStreamsContent(t *testing.T) {
+	out := make(chan domain.ChatStreamEvent, 8)
+	sentAny, err := forwardGatewayAttempt(func(ch chan domain.ChatStreamEvent) error {
+		ch <- domain.ChatStreamEvent{Type: "content", Content: "halo"}
+		ch <- domain.ChatStreamEvent{Type: "done", Done: true}
+		return nil
+	}, out)
+
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !sentAny {
+		t.Fatal("expected sentAny=true once content was forwarded")
+	}
+	if got := <-out; got.Content != "halo" {
+		t.Fatalf("content not relayed: %+v", got)
+	}
+}
+
+// TestForwardGatewayAttempt_ErrorBeforeContentAllowsFallback is the core guard:
+// a gateway failure with nothing streamed must be reported so the caller can fall
+// back to BYOK.
+func TestForwardGatewayAttempt_ErrorBeforeContentAllowsFallback(t *testing.T) {
+	out := make(chan domain.ChatStreamEvent, 8)
+	sentAny, err := forwardGatewayAttempt(func(chan domain.ChatStreamEvent) error {
+		return domain.ErrAllEndpointsExhausted
+	}, out)
+
+	if err == nil {
+		t.Fatal("expected the gateway error to be reported")
+	}
+	if sentAny {
+		t.Fatal("nothing was streamed, so sentAny must be false (fallback allowed)")
+	}
+}
+
+// TestForwardGatewayAttempt_ErrorAfterContentBlocksFallback verifies the rule
+// that matters for UX: once the user has seen output, we must not restart on
+// another transport (it would duplicate/contradict what is on screen).
+func TestForwardGatewayAttempt_ErrorAfterContentBlocksFallback(t *testing.T) {
+	out := make(chan domain.ChatStreamEvent, 8)
+	sentAny, err := forwardGatewayAttempt(func(ch chan domain.ChatStreamEvent) error {
+		ch <- domain.ChatStreamEvent{Type: "content", Content: "sebagian"}
+		return domain.ErrAllEndpointsExhausted
+	}, out)
+
+	if err == nil {
+		t.Fatal("expected the error to be reported")
+	}
+	if !sentAny {
+		t.Fatal("content was streamed, so sentAny must be true (no fallback)")
+	}
+}
+
+// TestForwardGatewayAttempt_EmptySuccessIsTreatedAsFailure verifies that a
+// gateway returning "success" with no content still triggers the fallback — an
+// empty answer is a failure to the user.
+func TestForwardGatewayAttempt_EmptySuccessIsTreatedAsFailure(t *testing.T) {
+	out := make(chan domain.ChatStreamEvent, 8)
+	sentAny, err := forwardGatewayAttempt(func(ch chan domain.ChatStreamEvent) error {
+		ch <- domain.ChatStreamEvent{Type: "done", Done: true} // no content
+		return nil
+	}, out)
+
+	if sentAny {
+		t.Fatal("no content was produced")
+	}
+	if err != errGatewayEmpty {
+		t.Fatalf("expected errGatewayEmpty, got %v", err)
+	}
+}
+
+// TestForwardGatewayAttempt_IgnoresNonContentEvents verifies that tool/step
+// events do not count as user-visible output (so the fallback still runs).
+func TestForwardGatewayAttempt_IgnoresNonContentEvents(t *testing.T) {
+	out := make(chan domain.ChatStreamEvent, 8)
+	sentAny, err := forwardGatewayAttempt(func(ch chan domain.ChatStreamEvent) error {
+		ch <- domain.ChatStreamEvent{Type: "agent_step", StepLabel: "Menganalisis..."}
+		return domain.ErrAllEndpointsExhausted
+	}, out)
+
+	if sentAny {
+		t.Fatal("agent_step is not user content; fallback must stay allowed")
+	}
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

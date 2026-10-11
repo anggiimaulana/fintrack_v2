@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,10 +15,11 @@ import (
 
 // HealthChecker periodically probes active endpoints and persists their health.
 type HealthChecker struct {
-	repo     domain.AIEndpointRepository
-	interval time.Duration
-	timeout  time.Duration
-	client   *http.Client
+	repo       domain.AIEndpointRepository
+	interval   time.Duration
+	timeout    time.Duration
+	healthPath string
+	client     *http.Client
 
 	stop chan struct{}
 	done chan struct{}
@@ -27,6 +29,20 @@ type HealthChecker struct {
 type HealthConfig struct {
 	Interval time.Duration // default 60s
 	Timeout  time.Duration // default 5s
+	// HealthPath is the path probed on the endpoint's ORIGIN (scheme+host), not
+	// on its API base path. Default "/health".
+	//
+	// Why the origin and a neutral path: probing the API base (…/v1) or a
+	// vendor-specific path is unreliable. Measured against the local 9router:
+	//   GET /        -> 307 (fast)
+	//   GET /health  -> 404 (fast)
+	//   GET /v1      -> hangs until timeout
+	//   GET /v1/models -> hangs until timeout
+	// Probing …/v1 or …/v1/models therefore reported a working gateway as
+	// "unhealthy" forever. The probe measures REACHABILITY — any response under
+	// 500 proves the server is up and routing; whether a model answers is what
+	// real requests exercise.
+	HealthPath string
 }
 
 // NewHealthChecker builds a health checker with documented defaults.
@@ -38,12 +54,13 @@ func NewHealthChecker(repo domain.AIEndpointRepository, cfg HealthConfig) *Healt
 		cfg.Timeout = 5 * time.Second
 	}
 	return &HealthChecker{
-		repo:     repo,
-		interval: cfg.Interval,
-		timeout:  cfg.Timeout,
-		client:   &http.Client{Timeout: cfg.Timeout},
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
+		repo:       repo,
+		interval:   cfg.Interval,
+		timeout:    cfg.Timeout,
+		healthPath: cfg.HealthPath,
+		client:     &http.Client{Timeout: cfg.Timeout},
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -97,9 +114,19 @@ func (c *HealthChecker) runOnce(ctx context.Context) {
 	}
 }
 
-// probe performs a lightweight HTTP request against the endpoint.
+// probe checks whether the endpoint is REACHABLE.
+//
+// Any HTTP response with status < 500 counts as healthy, including 401/403/404:
+// a server that answers "unauthorized" or "not found" is up and routing, which
+// is what readiness needs to know. Only a transport failure (timeout, connection
+// refused) or a 5xx marks it unhealthy.
+//
+// The probe deliberately does not assert that a model endpoint works — that is
+// what real requests exercise, and a probe that hangs on a provider-specific path
+// would report a working gateway as down.
 func (c *HealthChecker) probe(ctx context.Context, ep *domain.AIEndpoint) (string, *string) {
-	url := strings.TrimRight(ep.BaseURL, "/") + "/models"
+	url := probeURL(ep.BaseURL, c.healthPath)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		msg := err.Error()
@@ -116,8 +143,22 @@ func (c *HealthChecker) probe(ctx context.Context, ep *domain.AIEndpoint) (strin
 		msg := resp.Status
 		return "unhealthy", &msg
 	}
-	// 2xx/3xx/4xx means the endpoint is reachable and responding.
 	return "healthy", nil
+}
+
+// probeURL builds the reachability URL: the endpoint's ORIGIN plus the probe
+// path (default "/health"). Using the origin deliberately avoids the API base
+// path, which some gateways answer only for real API calls (or not at all).
+func probeURL(baseURL, healthPath string) string {
+	if healthPath == "" {
+		healthPath = "/health"
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		// Fall back to naive joining when the base URL is not absolute.
+		return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(healthPath, "/")
+	}
+	return u.Scheme + "://" + u.Host + "/" + strings.TrimLeft(healthPath, "/")
 }
 
 // compile-time assertion.
