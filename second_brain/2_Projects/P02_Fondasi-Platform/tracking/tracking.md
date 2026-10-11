@@ -16,7 +16,7 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 | Total Tugas | ⬜ Belum | 🔄 Berjalan | ✅ Selesai | Persentase |
 |---|---|---|---|---|
-| **14** | **6** | **0** | **8** | **57%** |
+| **14** | **2** | **0** | **12** | **86%** |
 
 ---
 
@@ -32,10 +32,10 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 | **TASK-P02-006** | Modul internal/audit & Async Worker Queue | Backend | Backend Eng | ✅ | `internal/audit` (service async + worker batch + masker + repo pgx); wired di main. Test: 9 PASS (non-blocking, flush-on-close, batch, masking); integrasi live DB PASS |
 | **TASK-P02-007** | Migrasi Database Tabel feature_flags | Database | Data / Backend | ✅ | `0006_create_feature_flags.sql` diterapkan; unique `key` menolak duplikat; replay idempoten OK |
 | **TASK-P02-008** | Modul internal/featureflag & Evaluator Engine | Backend | Backend Eng | ✅ | `internal/featureflag` (evaluator + repo pgx + cache Redis/memory); fail-closed; rollout deterministik per user. Test: 8 PASS |
-| **TASK-P02-009** | Kontrak API Handler Paginated Data Table di Go | Backend | Backend Eng | ⬜ | Belum dikerjakan |
-| **TASK-P02-010** | Custom Hook useDataTableUrlState di Next.js | Frontend | Frontend Eng | ⬜ | Belum dikerjakan |
-| **TASK-P02-011** | Komponen Generic DataTable TanStack Table v8 | Frontend | Frontend Eng | ⬜ | Belum dikerjakan |
-| **TASK-P02-012** | Komponen Toolbar & Pagination DataTable | Frontend | Frontend Eng | ⬜ | Belum dikerjakan |
+| **TASK-P02-009** | Kontrak API Handler Paginated Data Table di Go | Backend | Backend Eng | ✅ | `pkg/pagination` (parser + envelope); clamp per_page 10-100, whitelist sort anti-injection, offset/meta. Test: 9 PASS |
+| **TASK-P02-010** | Custom Hook useDataTableUrlState di Next.js | Frontend | Frontend Eng | ✅ | `lib/table-params.ts` (murni, testable) + `hooks/use-data-table-url-state.ts` (useSearchParams + router.replace scroll:false). Test: 13 PASS |
+| **TASK-P02-011** | Komponen Generic DataTable TanStack Table v8 | Frontend | Frontend Eng | ✅ | `components/data-table/{data-table,data-table-column-header,data-table-skeleton}.tsx`; TanStack Table v8.21.3, server-side, skeleton/empty/error state |
+| **TASK-P02-012** | Komponen Toolbar & Pagination DataTable | Frontend | Frontend Eng | ✅ | `data-table-toolbar.tsx` (search debounce 300ms + filter chips) & `data-table-pagination.tsx` (10/20/50/100, numbering, cursor-pointer). `pnpm lint` 0 error; build OK |
 | **TASK-P02-013** | Instrumentasi Prometheus Metrics di Backend Go | Observability | Backend Eng | ✅ | `internal/infrastructure/metrics` (four golden signals + counter bisnis); `/metrics` wired. Test PASS; live: `/metrics` 200 mengekspos `fintrack_http_*` |
 | **TASK-P02-014** | Integrasi Verifikasi End-to-End Fondasi | QA / Test | Fullstack Eng | ⬜ | Belum dikerjakan |
 
@@ -43,6 +43,7 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 ## Log Progres Aktivitas
 
+- **2026-10-11 (W4)**: TASK-P02-009 ✅ (parser pagination Go, 9 test), TASK-P02-010 ✅ (URL state hook + lib murni, 13 test), TASK-P02-011 ✅ (DataTable v8), TASK-P02-012 ✅ (toolbar+pagination). `pnpm lint` 0 error, `pnpm build` OK, `pnpm test` 21 PASS.
 - **2026-10-11 (W3)**: TASK-P02-006 ✅ (audit async + masking, integrasi live DB), TASK-P02-007 ✅ (migrasi feature_flags), TASK-P02-008 ✅ (evaluator feature flag).
 - **2026-10-11 (W2)**: TASK-P02-003 ✅ (cache berversi), TASK-P02-004 ✅ (pub/sub), TASK-P02-013 ✅ (metrics, live `/metrics` 200), TASK-P02-005 ✅ (migrasi audit_logs + trigger append-only terbukti).
 - **2026-10-11 (W1)**: TASK-P02-001 ✅ — Redis 7-alpine ditambahkan ke `docker-compose.yml` (host port 6380 karena 6379 dipakai stack lain), `maxmemory 256mb`/`allkeys-lru`, healthcheck healthy, `PING`→`PONG`.
