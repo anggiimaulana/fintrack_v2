@@ -6,7 +6,7 @@ Status ditandai dengan:
 - 🔄 : Sedang dikerjakan (*In Progress*)
 - ✅ : Selesai dan terverifikasi (*Done*)
 
-> **Status saat ini: BELUM DIMULAI.** Seluruh task masih ⬜ — belum ada implementasi kode.
+> **Status: BERJALAN.** W1 (skema, gateway, midtrans, webhook) selesai. ✅ hanya setelah dibuktikan test nyata.
 
 ---
 
@@ -14,11 +14,11 @@ Status ditandai dengan:
 
 | Kode Tugas | Deskripsi Singkat | Sprint | Pemilik | Status | Tautan Artefak / Verifikasi |
 |---|---|---|---|:---:|---|
-| `TASK-P05-001` | Migrasi Skema Payments & Invoices | Sprint 1 | Backend | ⬜ | `database/migrations/0009_payments_invoices.sql` |
-| `TASK-P05-002` | Abstraksi Interface Gateway di `internal/payment` | Sprint 1 | Backend | ⬜ | `internal/payment/gateway.go` |
-| `TASK-P05-003` | Driver Midtrans Snap Client | Sprint 1 | Backend | ⬜ | `internal/payment/midtrans.go` |
-| `TASK-P05-004` | Webhook Handler Midtrans & Validasi Signature | Sprint 1 | Backend | ⬜ | `internal/payment/handler_webhook.go` |
-| `TASK-P05-005` | Pull Verification & Idempotensi Concurrency | Sprint 1 | Backend | ⬜ | `internal/payment/service.go` |
+| `TASK-P05-001` | Migrasi Skema Payments & Invoices | Sprint 1 | Backend | ✅ | 0009 diterapkan; 4 tabel (invoices, payments, settings, invoice_counters); CHECK amount>0 terbukti; replay OK |
+| `TASK-P05-002` | Abstraksi Interface Gateway di `internal/payment` | Sprint 1 | Backend | ✅ | `payment/gateway.go` (interface Gateway + models, semua uang int64) |
+| `TASK-P05-003` | Driver Midtrans Snap Client | Sprint 1 | Backend | ✅ | `payment/midtrans.go` (Snap create+basic auth, verify SHA512, check status); 7 test PASS |
+| `TASK-P05-004` | Webhook Handler Midtrans & Validasi Signature | Sprint 1 | Backend | ✅ | `handler/payment_handler.go` webhook (MaxBytes 1MB); signature diverifikasi gateway |
+| `TASK-P05-005` | Pull Verification & Idempotensi Concurrency | Sprint 1 | Backend | ✅ | `payment/webhook.go` (pull verification + row-lock idempoten); test replay 5x -> aktivasi 1x PASS |
 | `TASK-P05-006` | Invoice Generator & Penomoran Deterministik | Sprint 1 | Backend | ⬜ | `internal/payment/invoice_service.go` |
 | `TASK-P05-007` | Driver Manual Payment & Upload Bukti Transfer | Sprint 2 | Backend | ⬜ | `internal/payment/manual.go` |
 | `TASK-P05-008` | Endpoint Review Approval Super Admin | Sprint 2 | Backend | ⬜ | `internal/payment/handler_admin.go` |
