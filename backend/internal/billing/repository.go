@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -53,9 +54,14 @@ type TokenRepository interface {
 	InsertLedger(ctx context.Context, e *TokenLedgerEntry) error
 	// GetLedgerByIdempotencyKey returns an existing entry (for idempotent replay).
 	GetLedgerByIdempotencyKey(ctx context.Context, key string) (*TokenLedgerEntry, error)
+	// GetLedgerByID returns a ledger entry by primary key (reservation lookup).
+	GetLedgerByID(ctx context.Context, id uuid.UUID) (*TokenLedgerEntry, error)
+	// IsReservationResolved reports whether a commit/release exists for the
+	// reservation (prevents double resolution).
+	IsReservationResolved(ctx context.Context, reservationID uuid.UUID) (bool, error)
 	// ListExpiredReservations returns reserve entries older than the cutoff that
 	// have no matching commit/release (for the auto-release worker).
-	ListExpiredReservations(ctx context.Context, cutoffUnix int64) ([]*TokenLedgerEntry, error)
+	ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]*TokenLedgerEntry, error)
 }
 
 // PricingRepository reads pricing rules.

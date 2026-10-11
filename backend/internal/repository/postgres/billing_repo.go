@@ -291,10 +291,34 @@ func (r *BillingRepo) GetLedgerByIdempotencyKey(ctx context.Context, key string)
 	return e, nil
 }
 
+// GetLedgerByID returns a ledger entry by primary key.
+func (r *BillingRepo) GetLedgerByID(ctx context.Context, id uuid.UUID) (*billing.TokenLedgerEntry, error) {
+	e := &billing.TokenLedgerEntry{}
+	err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at
+         FROM token_ledger WHERE id = $1`, id).
+		Scan(&e.ID, &e.PeriodID, &e.UserID, &e.ReservationID, &e.EntryType, &e.Amount, &e.Modality, &e.CostIDR, &e.IdempotencyKey, &e.ReferenceID, &e.Notes, &e.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// IsReservationResolved reports whether a commit/release exists for the reservation.
+func (r *BillingRepo) IsReservationResolved(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	var exists bool
+	err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM token_ledger WHERE reservation_id = $1 AND entry_type IN ('commit','release'))`,
+		reservationID).Scan(&exists)
+	return exists, err
+}
+
 // ListExpiredReservations finds reserve entries older than cutoff that have no
 // matching commit/release referencing them.
-func (r *BillingRepo) ListExpiredReservations(ctx context.Context, cutoffUnix int64) ([]*billing.TokenLedgerEntry, error) {
-	cutoff := time.Unix(cutoffUnix, 0).UTC()
+func (r *BillingRepo) ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]*billing.TokenLedgerEntry, error) {
 	rows, err := q(ctx, r.pool).Query(ctx,
 		`SELECT r.id, r.period_id, r.user_id, r.entry_type, r.amount, r.modality, r.cost_idr, r.idempotency_key, r.created_at
          FROM token_ledger r

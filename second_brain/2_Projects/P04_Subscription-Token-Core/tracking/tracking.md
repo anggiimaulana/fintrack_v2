@@ -26,10 +26,10 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 | **TASK-P04-002** | Database | Seeder Default Plans (Free/Pro/Business) & Pricing Rules | Backend Core | ✅ | `seeds/0002_subscription_token_seeds.sql` — 3 plan + 24 entitlement + 18 limit + pricing default; replay idempoten (tetap 3 plan) |
 | **TASK-P04-003** | Billing | Domain Entities, Value Objects & Domain Errors | Backend Core | ✅ | `internal/billing/{domain.go,repository.go}` — entity, enum, `TokenPeriod.Available()`, error sentinel, interface repo; build OK |
 | **TASK-P04-004** | Billing | PostgreSQL Repository Layer dengan Row Locking | Backend Core | ✅ | `repository/postgres/billing_repo.go` (plan/subscription/token/pricing, `SELECT ... FOR UPDATE`, idempotency 23505→ErrDuplicate); 2 test PASS vs DB live |
-| **TASK-P04-005** | Billing | Token Ledger Service — Reserve Flow & Quota Check | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Worker | ⬜ | Belum dikerjakan |
-| **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-005** | Billing | Token Ledger Service — Alur Reserve | Backend Core | ✅ | `billing/ledger.go` Reserve (row-lock FOR UPDATE, idempoten); test PASS |
+| **TASK-P04-006** | Billing | Token Ledger Service — Commit & Release Flow | Backend Core | ✅ | `billing/ledger.go` Commit/Release (release sisa reserve, idempoten); test PASS |
+| **TASK-P04-007** | Billing | Background Cleaner Worker (Auto-Release Timeout) | Backend Core | ✅ | `billing/cleaner.go` (sweep reservation basi); test PASS (auto-release) |
+| **TASK-P04-008** | Billing | Dynamic Pricing Engine Calculator (Integer IDR) | Backend Core | ✅ | `billing/pricing.go` (base+markup+modality, floor); 6 test PASS |
 | **TASK-P04-009** | Entitlement | Domain Model & Aggregation Repository Resolver | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-010** | Entitlement | Versioned Cache Manager L1 (In-Memory) & L2 (Redis) | Backend Core | ⬜ | Belum dikerjakan |
 | **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ⬜ | Belum dikerjakan |
