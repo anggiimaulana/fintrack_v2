@@ -241,3 +241,70 @@ func TestForwardGatewayAttempt_IgnoresNonContentEvents(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+// TestGatewayResultFailed pins the fallback trigger for vision/voice, whose
+// adapters swallow upstream errors into a map rather than returning an error.
+func TestGatewayResultFailed(t *testing.T) {
+	cases := []struct {
+		name string
+		res  map[string]interface{}
+		want bool
+	}{
+		{"nil map counts as failure", nil, true},
+		{"success true passes", map[string]interface{}{"success": true}, false},
+		{"success false fails", map[string]interface{}{"success": false}, true},
+		{"missing success fails closed", map[string]interface{}{"message": "x"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := gatewayResultFailed(tc.res); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAnalyzeReceiptViaGateway_ErrorIsDetectable verifies that a gateway vision
+// failure surfaces as success=false, which is what the caller uses to decide to
+// fall back to BYOK.
+func TestAnalyzeReceiptViaGateway_ErrorIsDetectable(t *testing.T) {
+	gw := &fakeGateway{visionErr: domain.ErrAllEndpointsExhausted}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
+	if err != nil {
+		t.Fatalf("adapter should not return a raw error, got %v", err)
+	}
+	if !gatewayResultFailed(res) {
+		t.Fatalf("a failed gateway vision result must be detectable for fallback: %+v", res)
+	}
+}
+
+// TestProcessVoiceViaGateway_ErrorIsDetectable is the voice counterpart.
+func TestProcessVoiceViaGateway_ErrorIsDetectable(t *testing.T) {
+	gw := &fakeGateway{voiceErr: domain.ErrAllEndpointsExhausted}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	res, err := u.processVoiceViaGateway(context.Background(), "aGVsbG8=")
+	if err != nil {
+		t.Fatalf("adapter should not return a raw error, got %v", err)
+	}
+	if !gatewayResultFailed(res) {
+		t.Fatalf("a failed gateway voice result must be detectable for fallback: %+v", res)
+	}
+}
+
+// TestGatewayVisionSuccessIsNotTreatedAsFailure guards against the fallback
+// firing on a healthy gateway response.
+func TestGatewayVisionSuccessIsNotTreatedAsFailure(t *testing.T) {
+	gw := &fakeGateway{visionResponse: `{"merchant":"Toko A","total":50000,"category":"Makanan","type":"expense","items":[]}`}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if gatewayResultFailed(res) {
+		t.Fatalf("a successful gateway response must NOT trigger the fallback: %+v", res)
+	}
+}

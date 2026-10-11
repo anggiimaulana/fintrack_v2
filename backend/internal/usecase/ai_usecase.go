@@ -1532,9 +1532,19 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 		}, nil
 	}
 
-	// Centralized AI gateway (P03): route vision through the pooled endpoints.
+	// Centralized AI gateway (P03): route vision through the pooled endpoints,
+	// falling back to BYOK when the gateway cannot serve the request.
+	//
+	// The gateway's vision route points at a model the provider may not serve
+	// (measured: 503), so without this fallback enabling the gateway would break
+	// receipt scanning entirely. Unlike chat there is no partial-output problem:
+	// the result is a single JSON object returned at the end.
 	if u.gateway != nil {
-		return u.analyzeReceiptViaGateway(ctx, imageData, contentType)
+		res, err := u.analyzeReceiptViaGateway(ctx, imageData, contentType)
+		if err == nil && !gatewayResultFailed(res) {
+			return res, nil
+		}
+		logger.Warn("gateway vision failed; falling back to BYOK", zap.Error(err))
 	}
 
 	keys, err := u.getAvailableKeys(ctx, userID)
@@ -1614,6 +1624,18 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 	}
 
 	return parseReceiptResponse(text), nil
+}
+
+// gatewayResultFailed reports whether a gateway result map represents a failure.
+// The vision/voice adapters swallow upstream errors into a map with
+// success=false, so the fallback decision must inspect the map, not just the
+// returned error.
+func gatewayResultFailed(res map[string]interface{}) bool {
+	if res == nil {
+		return true
+	}
+	ok, _ := res["success"].(bool)
+	return !ok
 }
 
 func (u *AIUsecase) receiptErrorResult(err error) map[string]interface{} {
@@ -1895,9 +1917,15 @@ func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBas
 		}, nil
 	}
 
-	// Centralized AI gateway (P03): route voice through the pooled endpoints.
+	// Centralized AI gateway (P03): route voice through the pooled endpoints,
+	// falling back to BYOK when the gateway cannot serve the request (its voice
+	// route points at a model the provider may not serve).
 	if u.gateway != nil {
-		return u.processVoiceViaGateway(ctx, audioBase64)
+		res, err := u.processVoiceViaGateway(ctx, audioBase64)
+		if err == nil && !gatewayResultFailed(res) {
+			return res, nil
+		}
+		logger.Warn("gateway voice failed; falling back to BYOK", zap.Error(err))
 	}
 
 	keys, err := u.getAvailableKeys(ctx, userID)
