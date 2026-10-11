@@ -15,9 +15,10 @@ import (
 	"go.uber.org/zap"
 
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
+	"github.com/fintrack/backend/internal/domain"
 	infraDB "github.com/fintrack/backend/internal/infrastructure/db"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
-	"github.com/fintrack/backend/internal/domain"
+	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/logger"
@@ -63,6 +64,19 @@ func main() {
 	}
 
 	bgCtx := context.Background()
+
+	// Redis (cache berversi + pub/sub). Degrades gracefully when unavailable.
+	redisCfg := infraRedis.ConfigFromEnv(os.Getenv, func(key string, def int) int {
+		if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
+			return v
+		}
+		return def
+	})
+	redisClient, redisErr := infraRedis.New(bgCtx, redisCfg)
+	if redisErr != nil {
+		logger.Warn("Redis unavailable — running without cache", zap.Error(redisErr))
+	}
+	defer redisClient.Close()
 
 	poolCfg := infraDB.PoolConfigFromEnv(os.Getenv, func(key string, def int) int {
 		if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {

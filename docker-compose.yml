@@ -1,10 +1,28 @@
 # ============================================================
 # FinTrack v2 — local stack (Docker Compose)
 #   db        PostgreSQL 17 + pgvector      (5435 -> 5432)
+#   redis     Redis 7 (cache + pub/sub)     (6379 -> 6379)
 #   backend   Go API                        (8080 -> 8080)
 #   frontend  Next.js                       (3001 -> 3000)
 # ============================================================
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: fintrack_v2_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   db:
     image: pgvector/pgvector:pg17
     container_name: fintrack_v2_db
@@ -30,6 +48,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://fintrack_app:${APP_DB_PASSWORD}@db:5432/fintrack
+      REDIS_URL: redis://redis:6379/0
       PORT: "8080"
       CORS_ORIGIN: http://localhost:3001
       # Relaxed login limit so the k6 load profile can exercise the auth flow.
@@ -39,6 +58,8 @@ services:
       - "8080:8080"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:

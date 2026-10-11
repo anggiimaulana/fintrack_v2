@@ -16,7 +16,7 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 | Total Tugas | ⬜ Belum | 🔄 Berjalan | ✅ Selesai | Persentase |
 |---|---|---|---|---|
-| **14** | **14** | **0** | **0** | **0%** |
+| **14** | **12** | **0** | **2** | **14%** |
 
 ---
 
@@ -24,8 +24,8 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 | Task ID | Nama Task | Kategori | Owner | Status | Catatan / Evidence |
 |---|---|---|---|:---:|---|
-| **TASK-P02-001** | Provisioning Redis Container & Healthcheck | Infra | DevOps / Backend | ⬜ | Belum dikerjakan |
-| **TASK-P02-002** | Client Pool & Lifecycle Manager Redis di Go | Backend | Backend Eng | ⬜ | Belum dikerjakan |
+| **TASK-P02-001** | Provisioning Redis Container & Healthcheck | Infra | DevOps / Backend | ✅ | Redis 7-alpine di `docker-compose.yml` (host port 6380), `maxmemory 256mb` + `allkeys-lru`; healthcheck `redis-cli ping` = healthy; `docker exec ... redis-cli ping` → PONG |
+| **TASK-P02-002** | Client Pool & Lifecycle Manager Redis di Go | Backend | Backend Eng | ✅ | `internal/infrastructure/redis` (client.go, config.go, errors.go); graceful degradation (`Enabled()`); wired di `main.go` + `defer Close()`. Test: EmptyURL/InvalidURL/Unreachable/Live PASS; `go vet`+`go build` OK |
 | **TASK-P02-003** | Versioned Cache Middleware & Engine | Backend | Backend Eng | ⬜ | Belum dikerjakan |
 | **TASK-P02-004** | Redis Pub/Sub Broadcaster Invalidation | Backend | Backend Eng | ⬜ | Belum dikerjakan |
 | **TASK-P02-005** | Migrasi Database Tabel Append-Only audit_logs | Database | Data / Backend | ⬜ | Belum dikerjakan |
@@ -43,5 +43,6 @@ Dokumen ini memantau status penyelesaian seluruh task teknis pada Fase P02 Fonda
 
 ## Log Progres Aktivitas
 
-- **2026-10-11**: Perencanaan P02 selesai (analisis K-P02-01..K-P02-14, sprint plan, tasks, timeline, rules, teknis).
-  **Implementasi belum dimulai** — menunggu eksekusi `planning/implementation-plan.md`.
+- **2026-10-11 (W1)**: TASK-P02-001 ✅ — Redis 7-alpine ditambahkan ke `docker-compose.yml` (host port 6380 karena 6379 dipakai stack lain), `maxmemory 256mb`/`allkeys-lru`, healthcheck healthy, `PING`→`PONG`.
+- **2026-10-11 (W1)**: TASK-P02-002 ✅ — package `internal/infrastructure/redis` (client+config+errors) dengan graceful degradation; di-wire di `main.go`. Test: 4 PASS (termasuk live Redis); `go vet`+`go build`+`go test ./...` hijau.
+- **2026-10-11**: Perencanaan P02 selesai (analisis K-P02-01..K-P02-14, sprint plan, tasks, timeline, rules, teknis). Implementasi dimulai (W1 selesai).
