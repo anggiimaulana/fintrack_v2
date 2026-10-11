@@ -5,7 +5,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 - 🔄 : Sedang dikerjakan (*In Progress*)
 - ✅ : Selesai dan terverifikasi (*Done* — kode ada, test hijau)
 
-> **Status: BERJALAN.** W1 (skema, seeder, domain, repo) selesai. ✅ hanya setelah dibuktikan test nyata.
+> **Status: SELESAI (17/17, 100%).** Semua task ✅ setelah dibuktikan test nyata.
 > Status diperbarui saat eksekusi berjalan.
 
 ---
@@ -37,8 +37,8 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 | **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ✅ | `handler/entitlement_handler.go` + route; wired di main |
 | **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ✅ | `billing/lifecycle.go` (matriks transisi + audit event + invalidate); test PASS |
 | **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ✅ | `billing/subscription_management.go` (prorata floor integer, schedule downgrade soft-limit); 5 test PASS |
-| **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | QA Engineer | ⬜ | Belum dikerjakan |
-| **TASK-P04-017** | Observability | Prometheus Metrics, Tracing & Handoff Kontrak P05/P06 | DevOps / Lead | ⬜ | Belum dikerjakan |
+| **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | Backend Core | ✅ | 40 reserve paralel kuota 1000 → tepat 10 sukses, 30 ditolak, reserved=1000 (no over-spend); 10 commit ganda → used=1000, no negatif. Test PASS (DB live) |
+| **TASK-P04-017** | Observability | Prometheus Metrics, Tracing & Handoff Kontrak P05/P06 | Backend Core | ✅ | Metrik `token_ledger_ops_total`/`token_quota_used`/`entitlement_resolve_total`; handoff doc dibuat |
 
 ---
 

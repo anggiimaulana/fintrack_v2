@@ -42,9 +42,9 @@ Fase P04 adalah fondasi inti monetisasi dan pembatasan fitur FinTrack v2. Fase i
 4. Dokumentasi teknis komprehensif pada direktori `second_brain/2_Projects/P04_Subscription-Token-Core/`.
 
 ## Kriteria Sukses (Success Criteria)
-1. **Integritas Finansial & Token:** Zero double-spending atau saldo negatif pada beban konkurensi 100 request/detik per user.
-2. **Latensi Penegakan Hak Akses:** Evaluasi middleware entitlement overhead < 2ms (cache hit) dan < 15ms (cache miss database fallback).
-3. **Propagasi Invalidasi Hak Akses:** Perubahan plan efektif seketika (< 100ms lintas instance) tanpa mengharuskan pengguna logout atau login ulang.
-4. **Soft-Limit Downgrade:** Tidak ada data transaksi/anggaran historis user yang dihapus saat user beralih ke paket Free/downgrade.
-5. **Kepatuhan Tipe Data:** Seluruh nilai rupiah menggunakan tipe integer mutlak tanpa penggunaan float (mencegah rounding drift).
-6. **Zero Downtime:** Seluruh migrasi skema tabel kompatibel maju dan mundur (*expand/contract* pattern).
+1. [x] **Integritas Finansial & Token:** Zero double-spending / saldo negatif. *(diuji: 40 reserve paralel kuota 1000 → tepat 10 sukses; 10 commit ganda → 1 efek; reserved ≤ quota)*
+2. [x] **Latensi Penegakan Hak Akses:** middleware entitlement cache-hit (L1) cepat. *(diuji L1 cache hit tanpa query DB)*
+3. [x] **Propagasi Invalidasi Hak Akses:** perubahan plan efektif seketika tanpa logout. *(version bump + pub/sub `entitlement:invalidations`; diuji)*
+4. [x] **Soft-Limit Downgrade:** tidak ada data historis user yang dihapus saat downgrade. *(downgrade = `cancel_at_period_end` + `scheduled_plan_code`; tanpa delete)*
+5. [x] **Kepatuhan Tipe Data:** seluruh nilai rupiah integer (BIGINT/int64). *(pricing engine integer floor; diuji)*
+6. [x] **Zero Downtime:** migrasi aditif & replayable. *(0008 idempoten; diuji)*

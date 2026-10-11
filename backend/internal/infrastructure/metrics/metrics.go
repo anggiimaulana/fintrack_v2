@@ -24,6 +24,11 @@ type Registry struct {
 	TokensUsed      *prometheus.CounterVec
 	GatewayFailover prometheus.Counter
 	Payments        *prometheus.CounterVec
+
+	// Billing (P04): token ledger + entitlement cache.
+	TokenLedgerOps     *prometheus.CounterVec
+	TokenQuotaUsed     *prometheus.GaugeVec
+	EntitlementResolve *prometheus.CounterVec
 }
 
 // New builds a metrics registry with all collectors registered.
@@ -68,6 +73,21 @@ func New() *Registry {
 		Name: "fintrack_payments_total",
 		Help: "Total payment events by gateway and status. Populated from P05.",
 	}, []string{"gateway", "status"})
+
+	m.TokenLedgerOps = f.NewCounterVec(prometheus.CounterOpts{
+		Name: "fintrack_token_ledger_ops_total",
+		Help: "Token ledger operations by type and result (P04).",
+	}, []string{"entry_type", "result"})
+
+	m.TokenQuotaUsed = f.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "fintrack_token_quota_used",
+		Help: "Current used token quota per user (P04).",
+	}, []string{"user_id"})
+
+	m.EntitlementResolve = f.NewCounterVec(prometheus.CounterOpts{
+		Name: "fintrack_entitlement_resolve_total",
+		Help: "Entitlement resolutions by cache source (P04).",
+	}, []string{"source"})
 
 	return m
 }

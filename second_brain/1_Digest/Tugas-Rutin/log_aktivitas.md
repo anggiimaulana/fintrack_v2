@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-10-11 — Implementasi P04 Subscription & Token Core SELESAI (17/17, 100%)
+
+Eksekusi `P04_Subscription-Token-Core/planning/implementation-plan.md` (5 wave). Semua task ✅
+setelah dibuktikan test nyata.
+
+### W1 — Skema, Seeder, Domain, Repositori
+- **TASK-P04-001** ✅ migrasi `0008_subscription_token_core.sql` (8 tabel; trigger append-only `token_ledger`; constraint & idempotency unique terbukti; replay OK).
+- **TASK-P04-002** ✅ `seeds/0002_subscription_token_seeds.sql` (3 plan, 24 entitlement, 18 limit, pricing; idempoten).
+- **TASK-P04-003** ✅ `internal/billing` domain + interface repo.
+- **TASK-P04-004** ✅ `repository/postgres/billing_repo.go` (row-lock FOR UPDATE, idempotency); 2 test PASS.
+
+### W2 — Token Ledger 2-Fase
+- **TASK-P04-005/006** ✅ `billing/ledger.go` Reserve/Commit/Release (row-lock, idempoten, release sisa reserve).
+- **TASK-P04-007** ✅ `billing/cleaner.go` auto-release reservation basi.
+- **TASK-P04-008** ✅ `billing/pricing.go` (integer IDR, floor). 10 test PASS.
+
+### W3 — Pricing, Entitlement, Middleware
+- **TASK-P04-009/010/011** ✅ `entitlement` resolver + cache berversi L1/L2 + broadcaster pub/sub.
+- **TASK-P04-012** ✅ middleware `RequireFeature` (403) & `WithinLimit` (402), super_admin bypass, fail-closed.
+- **TASK-P04-013** ✅ `GET /api/v1/me/entitlements`. 12 test PASS.
+
+### W4 — Subscription Lifecycle
+- **TASK-P04-014** ✅ `billing/lifecycle.go` state machine + audit event.
+- **TASK-P04-015** ✅ `billing/subscription_management.go` prorata (integer floor) + downgrade soft-limit. 5 test PASS.
+
+### W5 — Testing & Metrics
+- **TASK-P04-016** ✅ **Anti double-spend terbukti:** 40 reserve paralel pada kuota 1000 → tepat 10 sukses, 30 ditolak, `reserved=1000` (tanpa over-spend); 10 commit ganda → `used=1000`, `reserved=0`, tanpa saldo negatif.
+- **TASK-P04-017** ✅ Metrik Prometheus (`token_ledger_ops_total`, `token_quota_used`, `entitlement_resolve_total`) + handoff kontrak P05/P06.
+
+### Verifikasi akhir
+- `go vet`/`go build`/`go test ./...` hijau (semua paket ok; 21 paket).
+- Backend rebuild; endpoint `/api/v1/me/entitlements` tersedia.
+
+**Catatan deviasi:** `-race` tidak tersedia (tanpa gcc); uji race harus dijalankan di CI. Uji konkurensi dijalankan tanpa race detector namun dengan verifikasi invarian DB (reserved ≤ quota, tidak negatif).
+
+---
+
 ## 2026-10-11 — Implementasi P03 AI Gateway Terpusat SELESAI (14/14, 100%)
 
 Eksekusi `second_brain/2_Projects/P03_AI-Gateway-Terpusat/planning/implementation-plan.md` (5 wave).
