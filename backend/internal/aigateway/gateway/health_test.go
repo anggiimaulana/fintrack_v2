@@ -26,6 +26,27 @@ func newHealthRepo(eps ...*domain.AIEndpoint) *healthRepo {
 	return &healthRepo{endpoints: eps, updated: map[uuid.UUID]string{}, lastErr: map[uuid.UUID]*string{}}
 }
 
+func (r *healthRepo) HasHealthyEndpoint(ctx context.Context, uc domain.UseCase) (bool, error) {
+	routes, err := r.GetActiveRoutesByUseCase(ctx, uc)
+	if err != nil {
+		return false, err
+	}
+	for _, rt := range routes {
+		if rt.Endpoint != nil && rt.Endpoint.Health == "healthy" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *healthRepo) HasActiveRoutes(ctx context.Context, uc domain.UseCase) (bool, error) {
+	routes, err := r.GetActiveRoutesByUseCase(ctx, uc)
+	if err != nil {
+		return false, err
+	}
+	return len(routes) > 0, nil
+}
+
 func (r *healthRepo) GetActiveRoutesByUseCase(context.Context, domain.UseCase) ([]*domain.AIRoute, error) {
 	return nil, nil
 }

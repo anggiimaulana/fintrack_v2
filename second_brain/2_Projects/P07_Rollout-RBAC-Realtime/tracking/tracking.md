@@ -5,7 +5,7 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
-> **Status saat ini: SLICE A + B + C SELESAI (12/18).** Sisa 6 task masih ⬜. (Tanda ✅ pada tabel
+> **Status saat ini: SLICE A + B + C + D1 SELESAI (16/18).** Sisa 2 task (BYOK = D2, k8s = gap). (Tanda ✅ pada tabel
 > "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
 >
 > **Slice A — Entitlement & RBAC Rollout (2026-10-11)** mencakup TASK-P07-001 & TASK-P07-002
@@ -21,6 +21,11 @@ Status Legend:
 > TASK-P07-011, 012, 014, 015 (013 → slice D). Lihat
 > `docs/superpowers/specs/2026-10-11-p07-ui-standards-a11y-design.md` dan
 > `docs/superpowers/plans/2026-10-11-p07-ui-standards-a11y-plan.md`.
+>
+> **Slice D1 — Health Gates, Shutdown & Aturan Migrasi (2026-10-11)** mencakup TASK-P07-016, 017,
+> 018 + verifikasi 003. Lihat `docs/superpowers/specs/2026-10-11-p07-health-shutdown-migrations-design.md`
+> dan `docs/superpowers/plans/2026-10-11-p07-health-shutdown-migrations-plan.md`.
+> **BYOK (TASK-P07-013) ditunda ke D2** — lihat catatan di bawah.
 
 ---
 
@@ -30,7 +35,7 @@ Status Legend:
 |---|---|---|---|:---:|---|
 | **TASK-P07-001** | Middleware Entitlement & Limit di Backend Go | Backend Dev 1 | H-01 | ✅ | **Slice A.** Middleware sudah ada sejak P04 tetapi **tidak pernah dikonstruksi** → 0/63 rute ter-gate. Kini dikonstruksi di `cmd/server/main.go`, disuntikkan via `RouterConfig`, plus `upgrade_url` + valve `ENTITLEMENT_ENFORCEMENT` + 3 usage resolver. Bukti: `middleware/entitlement_test.go` (+6 test), `tests/entitlement_e2e_test.go`. |
 | **TASK-P07-002** | Pasang Proteksi Entitlement ke 28 Endpoint Legacy | Backend Dev 1 & 2 | H-02 | ✅ | **Slice A.** 6 rute nyata ter-gate (bukan 28 — dokumen lama menyebut endpoint yang belum dibangun). Rute baca dibiarkan. 7 kunci seed belum dapat ditegakkan (tercatat di `teknis/rbac-rollout.md` §3.4). Uji mutasi membuktikan suite gagal bila gate dilepas. |
-| **TASK-P07-003** | Migrasi globalCache In-Memory ke Redis Berversi | Backend Dev 2 | H-01 | ⬜ | Arsitektur namespace `ft:{env}:{module}:{entity}:{id}` |
+| **TASK-P07-003** | Migrasi globalCache In-Memory ke Redis Berversi | Backend Dev 2 | H-01 | ✅ | **Slice D1 (terverifikasi).** AC terpenuhi **tanpa kode baru**: grep `sync.Map` & `globalCache` di seluruh `backend/` (non-test) = **nol hasil**; cache sudah Redis berversi sejak P04 (`CacheEngine.GetVersion`/`BumpVersion`/`BumpUserVersion`, dipakai resolver entitlement dengan scope `ent:{user}` dan `ent:plan:{id}`). Tidak ada pekerjaan tersisa. |
 | **TASK-P07-004** | Modul Hub SSE `internal/realtime/` | Backend Dev 3 | H-02 | ✅ | **Slice B.** Modul `internal/realtime/` (hub, client, buffer, publisher, subscriber, handler). Endpoint `GET /api/v1/realtime/stream`, auth cookie `ft_at`, header SSE benar, batas 5 koneksi/user. |
 | **TASK-P07-005** | Jembatan Redis Pub/Sub Distribusi SSE Multi-Pod | Backend Dev 3 | H-03 | ✅ | **Slice B.** Fan-out Redis: channel `realtime:u:{id}` + `realtime:admins`; `SubscribePattern` baru di pubsub; degradasi ke hub lokal bila Redis mati. |
 | **TASK-P07-006** | Resiliensi SSE: Cookie Auth, 15s Heartbeat, Resume | Backend Dev 3 | H-04 | ✅ | **Slice B.** Heartbeat `: ping` 15s, resume `Last-Event-ID` (header atau query `last_event_id`), ring-buffer Redis `realtime:buf:{id}` TTL 10 menit. **Temuan:** header tidak di-flush saat connect → klien menunggu 15s; diperbaiki, waktu test integrasi turun 91.7s → 2.9s. |
@@ -43,9 +48,9 @@ Status Legend:
 | **TASK-P07-013** | Pembersihan Tuntas Menu & Kode Legacy BYOK | Fullstack Dev | H-03 | ⬜ | Hapus form/halaman AI keys, arsip DB tabel |
 | **TASK-P07-014** | Audit Universal Cursor Pointer & Styling Hover | Frontend Dev 3 | H-07 | ✅ | **Slice C.** Audit menyeluruh: akar masalah di komponen dasar (`Button` tanpa cursor sama sekali + `disabled:pointer-events-none` yang membuat `cursor-not-allowed` mustahil; `SelectTrigger` juga). 79 elemen native diperbaiki; verifikasi akhir 0 tersisa. Laporan di `teknis/cursor-pointer-audit.md`. |
 | **TASK-P07-015** | Audit Aksesibilitas WCAG 2.1 AA & Keyboard Nav | Frontend Dev 3 & QA | H-08 | ✅ | **Slice C (dengan catatan).** `eslint-plugin-jsx-a11y` aktif (40 pelanggaran nyata diperbaiki, bukan aturan dimatikan) + axe-core via Vitest untuk komponen kunci (nol pelanggaran). Kontras dihitung manual dan 4 temuan diperbaiki dengan nilai terverifikasi. **AC "Lighthouse ≥ 95" TIDAK terpenuhi** — Lighthouse tidak ada di repo; ditandai gap, bukan diklaim. |
-| **TASK-P07-016** | Dual Health Gate Endpoint (`/health/live` & `/ready`) | Backend Dev 1 | H-06 | ⬜ | Cek database postgres + redis connectivity |
-| **TASK-P07-017** | Graceful Shutdown 30s & Zero-Downtime Rolling Test | DevOps Engineer | H-07 | ⬜ | Pengujian rolling deploy tanpa 5xx pada 200 RPS |
-| **TASK-P07-018** | Template & Prosedur Migrasi Skema Expand/Contract | Backend Lead & DBA | H-08 | ⬜ | Standardisasi non-blocking migrations |
+| **TASK-P07-016** | Dual Health Gate Endpoint (`/health/live` & `/ready`) | Backend Dev 1 | H-06 | ✅ | **Slice D1.** `/health/live` (tanpa I/O), `/health/ready` (PostgreSQL + pgvector + Redis dengan latensi per dependensi), `/health` alias live. DB mati → **503** (hard dependency); Redis mati → **200 degraded** (Redis opsional di codebase ini). Bukti: 5 test + verifikasi terhadap DB/Redis nyata (`postgres ok 2ms, redis ok 1ms`). |
+| **TASK-P07-017** | Graceful Shutdown 30s & Zero-Downtime Rolling Test | DevOps Engineer | H-07 | ✅ | **Slice D1.** Drain `10s → 30s` via `SHUTDOWN_TIMEOUT` (default 30s, divalidasi test). Compose: healthcheck `backend` memakai `/health/ready` + `stop_grace_period: 30s`; perintah healthcheck diuji langsung di container (wget tersedia, endpoint 200). **Gap:** template k8s tidak dibuat (`deploy/` tidak ada di repo) dan uji rolling restart 200 RPS tanpa 5xx tidak dijalankan. |
+| **TASK-P07-018** | Template & Prosedur Migrasi Skema Expand/Contract | Backend Lead & DBA | H-08 | ✅ | **Slice D1.** `database/migrations/README.md` baru: larangan `DROP COLUMN` langsung / `SET NOT NULL` tanpa backfill / `ADD COLUMN NOT NULL` tanpa default / `CREATE INDEX` blocking / mengedit migrasi lama; wajib aditif+idempoten, `CREATE INDEX CONCURRENTLY`, `NOT VALID` + `VALIDATE CONSTRAINT`, dan pola expand→migrate→contract 3 rilis untuk rename kolom. |
 
 ---
 
@@ -166,3 +171,40 @@ Status Legend:
        (butuh server + browser). Digantikan: jsx-a11y + axe + perhitungan kontras manual.
     2. **AC-010 "0ms saat menambah" tidak sepenuhnya terpenuhi** — create sengaja non-optimistik.
     3. **TASK-P07-012 hanya sebagian** — `/budgets` & `/categories` (user) tidak ada.
+
+- **2026-10-11 — Slice D1 (Health Gates, Shutdown & Aturan Migrasi) SELESAI.** TASK-P07-016/017/018 ✅,
+  TASK-P07-003 ✅ (terverifikasi).
+  - **Temuan besar: gateway AI terpusat TIDAK PERNAH aktif.** `IsEnabled(ctx, key, nil)`
+    mengembalikan false untuk rollout parsial, dan flag bernilai `enabled=true rollout=25` →
+    selalu false (log runtime: `"AI gateway centralized: disabled"`). Akibatnya **seluruh P03
+    tidak berjalan** — 100% traffic AI lewat BYOK per-user. Flag itu sendiri **artefak uji**
+    (di-toggle via `curl` saat pengujian P06).
+  - **Koreksi klaim saya sendiri:** saya sempat melaporkan `ai_routes` kosong. **SALAH** — berisi
+    **5 route aktif** (chat, vision, voice, embedding, reasoning) menunjuk `9router-primary`.
+    Output sebelumnya terpotong dan saya salah baca. Dikoreksi setelah memverifikasi ulang.
+  - **Konsekuensi & pengaman:** karena route chat ADA, pengaman berbasis-route saja akan
+    **membuka** gateway; dan `chatViaGateway` **tidak punya fallback ke BYOK**. Jadi pengaman
+    diperkuat: gateway hanya aktif bila flag ON **DAN** ada route chat **DAN** endpoint sehat
+    (`health == "healthy"`; `unknown` tidak dihitung sehat).
+    **Bukti runtime:** `WARN AI gateway: flag is ON and a chat route exists, but no endpoint is
+    healthy; gateway stays disabled (BYOK fallback in use)` → gateway mati, AI tetap jalan.
+    Gateway akan terbuka sendiri begitu health checker melaporkan endpoint sehat.
+  - **Perbaikan semantik flag:** `IsEnabledForPlatform` (kill switch platform, tanpa bucketing
+    user) — flag `enabled=true rollout=25` kini terbaca ON.
+  - **Health gates:** `/health/live` (tanpa I/O), `/health/ready` (PostgreSQL + pgvector + Redis
+    dengan latensi), `/health` alias. DB mati → 503; Redis mati → 200 `degraded`. Diverifikasi
+    terhadap DB/Redis nyata: `postgres ok 2ms, redis ok 1ms`.
+  - **Shutdown:** drain 30s via `SHUTDOWN_TIMEOUT`; compose healthcheck + `stop_grace_period: 30s`
+    (perintah healthcheck diuji langsung di container).
+  - **Migrasi:** `database/migrations/README.md` memuat aturan expand/contract.
+  - **TASK-P07-003 terverifikasi terpenuhi tanpa kode baru:** grep `sync.Map`/`globalCache` di
+    `backend/` (non-test) nol hasil.
+  - **Bukti:** `go vet`/`go build`/`go test ./...` hijau; suite integrasi (P06 + P07 A/B) hijau;
+    uji mutasi pengaman membuktikan test menangkap regresi (tanpa cek kesehatan, `unhealthy` dan
+    `unknown` lolos).
+  - **GAP yang dicatat, tidak diklaim:**
+    1. **Gateway masih mati** setelah D1 (endpoint `unhealthy`) → "P03 tidak berjalan" **belum
+       terselesaikan**; butuh endpoint sehat. Ini temuan **prioritas tinggi**.
+    2. Template k8s tidak dibuat (`deploy/` tidak ada di repo).
+    3. Uji rolling restart 200 RPS tanpa 5xx tidak dijalankan (uji beban terkoordinasi).
+    4. **BYOK belum dihapus** → slice D2, dengan syarat gateway benar-benar melayani semua user.

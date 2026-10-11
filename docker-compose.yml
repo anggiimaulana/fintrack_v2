@@ -56,6 +56,18 @@ services:
       RATE_LIMIT_DEFAULT: "100000"
     ports:
       - "8080:8080"
+    # Readiness probe: fails when PostgreSQL is unreachable (503), so the
+    # orchestrator does not route traffic to an instance that cannot serve it.
+    # Redis being down is reported as degraded but keeps the container healthy.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 3 -O - http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Give the process time to drain in-flight requests before SIGKILL. Keep this
+    # >= SHUTDOWN_TIMEOUT (default 30s).
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy

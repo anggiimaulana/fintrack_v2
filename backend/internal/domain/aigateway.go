@@ -148,6 +148,15 @@ var (
 // AIEndpointRepository persists and reads pooled endpoints.
 type AIEndpointRepository interface {
 	GetActiveRoutesByUseCase(ctx context.Context, useCase UseCase) ([]*AIRoute, error)
+	// HasActiveRoutes reports whether any route exists for a use case. Used as a
+	// readiness guard before switching the whole platform onto the gateway: with
+	// no routes configured, routing traffic there would break AI entirely.
+	HasActiveRoutes(ctx context.Context, useCase UseCase) (bool, error)
+	// HasHealthyEndpoint reports whether any active route for the use case points
+	// at an endpoint whose health check is passing. A route alone is not enough:
+	// routing the whole platform at an unhealthy endpoint breaks AI for every
+	// user, and the gateway path has no BYOK fallback.
+	HasHealthyEndpoint(ctx context.Context, useCase UseCase) (bool, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*AIEndpoint, error)
 	ListEndpoints(ctx context.Context) ([]*AIEndpoint, error)
 	UpdateEndpointHealth(ctx context.Context, id uuid.UUID, health string, lastCheck time.Time, lastErr *string) error

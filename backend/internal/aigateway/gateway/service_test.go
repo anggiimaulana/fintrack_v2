@@ -21,6 +21,27 @@ type fakeRepo struct {
 	routes []*domain.AIRoute
 }
 
+func (f *fakeRepo) HasHealthyEndpoint(ctx context.Context, uc domain.UseCase) (bool, error) {
+	routes, err := f.GetActiveRoutesByUseCase(ctx, uc)
+	if err != nil {
+		return false, err
+	}
+	for _, rt := range routes {
+		if rt.Endpoint != nil && rt.Endpoint.Health == "healthy" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeRepo) HasActiveRoutes(ctx context.Context, uc domain.UseCase) (bool, error) {
+	routes, err := f.GetActiveRoutesByUseCase(ctx, uc)
+	if err != nil {
+		return false, err
+	}
+	return len(routes) > 0, nil
+}
+
 func (f *fakeRepo) GetActiveRoutesByUseCase(context.Context, domain.UseCase) ([]*domain.AIRoute, error) {
 	return f.routes, nil
 }
@@ -239,5 +260,47 @@ func TestCreateEmbedding_Accepts768(t *testing.T) {
 	}
 	if len(got) != 768 {
 		t.Fatalf("expected 768 dims, got %d", len(got))
+	}
+}
+
+// TestHasHealthyEndpoint_RequiresHealthyEndpoint verifies the readiness guard
+// used before switching the platform onto the gateway: an active route is not
+// enough if its endpoint's health check is failing (the gateway path has no BYOK
+// fallback, so this would break AI for every user).
+func TestHasHealthyEndpoint_RequiresHealthyEndpoint(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name   string
+		health string
+		want   bool
+	}{
+		{"healthy endpoint passes", "healthy", true},
+		{"unhealthy endpoint blocks", "unhealthy", false},
+		{"unprobed endpoint blocks", "unknown", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &fakeRepo{
+				routes: []*domain.AIRoute{{
+					UseCase:  domain.UseCaseChat,
+					Endpoint: &domain.AIEndpoint{ID: uuid.New(), Health: tc.health},
+				}},
+			}
+			got, err := repo.HasHealthyEndpoint(ctx, domain.UseCaseChat)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("health=%q: got %v, want %v", tc.health, got, tc.want)
+			}
+		})
+	}
+
+	// No routes at all -> not healthy.
+	empty := &fakeRepo{routes: nil}
+	got, err := empty.HasHealthyEndpoint(ctx, domain.UseCaseChat)
+	if err != nil || got {
+		t.Fatalf("no routes: got (%v, %v), want (false, nil)", got, err)
 	}
 }

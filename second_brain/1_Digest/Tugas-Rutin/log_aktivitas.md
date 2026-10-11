@@ -4,6 +4,70 @@
 
 ---
 
+## 2026-10-11 — P07 Slice D1: health gates, shutdown 30s & temuan gateway mati
+
+Slice keempat P07 (D1; BYOK → D2). Menemukan **bug besar** sekaligus memperbaiki kebenarannya
+tanpa merusak layanan.
+
+### Temuan besar: gateway AI terpusat TIDAK PERNAH aktif
+
+```go
+gatewayEnabled := flagSvc.IsEnabled(bgCtx, "feature_ai_gateway_centralized", nil)
+```
+
+`IsEnabled` mengembalikan **false** bila `userID == nil` dan rollout parsial. Flag bernilai
+`enabled=true, rollout=25` → **selalu false**; log runtime membuktikannya
+(`"AI gateway centralized: disabled (feature flag off)"`). Akibatnya **seluruh P03 tidak
+berjalan** — routing, breaker, metering, failover semuanya mati; 100% traffic AI lewat BYOK.
+
+Flag itu sendiri **artefak uji**: riwayat di dump menunjukkan di-toggle via `curl` saat pengujian
+P06 (`is_enabled: false→true`, `rollout: 0→25`).
+
+### Koreksi klaim saya sendiri
+
+Saya sempat melaporkan `ai_routes` **kosong**. **SALAH** — berisi **5 route aktif** (chat, vision,
+voice, embedding, reasoning) menunjuk `9router-primary`. Output sebelumnya terpotong dan saya
+salah membacanya; dikoreksi setelah memverifikasi ulang. Ini penting karena mengubah kesimpulan:
+pengaman berbasis-route saja akan **membuka** gateway, bukan menahannya.
+
+### Perubahan
+
+- **`featureflag.IsEnabledForPlatform`** — membaca flag sebagai kill switch platform (tanpa
+  bucketing user), sehingga `enabled=true, rollout=25` terbaca ON.
+- **Pengaman gateway diperkuat.** Gateway hanya aktif bila flag ON **DAN** ada route chat **DAN**
+  endpoint sehat (`health == "healthy"`; `unknown` tidak dihitung). Alasannya: `chatViaGateway`
+  **tidak punya fallback ke BYOK**, jadi mengarahkan seluruh platform ke endpoint yang gagal akan
+  mematikan AI untuk semua user. Method baru: `HasActiveRoutes`, `HasHealthyEndpoint`.
+- **Health gates:** `/health/live` (tanpa I/O), `/health/ready` (PostgreSQL + pgvector + Redis
+  dengan latensi per dependensi), `/health` alias live. DB mati → **503** (hard dependency);
+  Redis mati → **200 `degraded`** (Redis opsional di codebase ini).
+- **Shutdown:** drain `10s → 30s` via `SHUTDOWN_TIMEOUT`; compose dapat `healthcheck` backend +
+  `stop_grace_period: 30s`.
+- **Aturan migrasi:** `database/migrations/README.md` baru (expand/contract, larangan
+  `DROP COLUMN`/`SET NOT NULL` tanpa fase perantara, `CREATE INDEX CONCURRENTLY`).
+- **TASK-P07-003 terverifikasi terpenuhi tanpa kode baru:** grep `sync.Map`/`globalCache` di
+  `backend/` (non-test) = nol hasil.
+
+### Verifikasi
+- `go vet`/`go build`/`go test ./...` hijau; suite integrasi (P06 + P07 A/B) hijau.
+- Health diuji terhadap DB/Redis **nyata**: `postgres ok 2ms, redis ok 1ms`; DB mati → 503
+  (pool diarahkan ke DSN tak valid); Redis tak dikonfigurasi → `degraded`.
+- **Bukti runtime pengaman gateway:**
+  `WARN AI gateway: flag is ON and a chat route exists, but no endpoint is healthy; gateway stays
+  disabled (BYOK fallback in use)` → gateway mati, AI tetap jalan lewat BYOK.
+- **Uji mutasi pengaman:** cek kesehatan dilepas → endpoint `unhealthy` dan `unknown` lolos
+  (test gagal) → terbukti test menangkap regresi.
+
+### Gap yang dicatat, tidak diklaim
+1. **Gateway masih mati** setelah D1 (endpoint `unhealthy`) → "P03 tidak berjalan" **belum
+   terselesaikan**. Ini temuan **prioritas tinggi**: butuh endpoint sehat (9router) agar gateway
+   menyala. Pengaman akan membuka sendiri begitu health checker melaporkan `healthy`.
+2. Template k8s tidak dibuat (`deploy/` tidak ada di repo).
+3. Uji rolling restart 200 RPS tanpa 5xx tidak dijalankan.
+4. **BYOK belum dihapus** → slice D2, dengan syarat gateway benar-benar melayani semua user.
+
+---
+
 ## 2026-10-11 — P07 Slice C: Standar UI, a11y terverifikasi & optimistic update
 
 Slice ketiga P07. Menutup standar UI dengan tooling yang benar-benar memverifikasi, bukan

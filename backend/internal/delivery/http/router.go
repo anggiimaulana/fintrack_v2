@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ulule/limiter/v3"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
+	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/usecase"
 )
@@ -31,6 +33,10 @@ type RouterConfig struct {
 	// Usage supplies the numeric usage for limit checks. Required when
 	// Entitlement is set.
 	Usage *middleware.UsageProviders
+	// Pool and Redis back the readiness probe (/health/ready). Either may be nil
+	// in tests; the probe then reports the dependency as down/degraded.
+	Pool  *pgxpool.Pool
+	Redis *infraRedis.Client
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -269,9 +275,12 @@ func SetupRouter(
 		}
 	}
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "service": "fintrack-api"})
-	})
+	// Health probes. `/health/live` performs no I/O; `/health/ready` checks the
+	// real dependencies. `/health` is kept as an alias of live for compatibility.
+	healthH := NewHealthHandler(config.Pool, config.Redis)
+	r.GET("/health", healthH.Live)
+	r.GET("/health/live", healthH.Live)
+	r.GET("/health/ready", healthH.Ready)
 
 	if config.Metrics != nil {
 		r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(config.Metrics.Registry(), promhttp.HandlerOpts{})))

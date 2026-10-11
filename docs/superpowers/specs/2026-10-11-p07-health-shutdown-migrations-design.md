@@ -131,17 +131,36 @@ sudah Redis berversi sejak P04. Tidak ada pekerjaan tersisa; hanya ditandai sele
 tanpa bucketing user, sehingga `enabled=true, rollout=25` → **true**. Dipakai untuk flag yang
 sifatnya kill switch platform, bukan rollout per-user.
 
-**Pengaman di `main.go`:** gateway hanya diaktifkan bila **flag aktif DAN ada route aktif untuk
-`chat`**:
+**Pengaman di `main.go`:** gateway hanya diaktifkan bila **flag aktif DAN ada route aktif
+untuk `chat` DAN endpoint-nya sehat**:
 
 ```go
 gatewayEnabled := flagSvc.IsEnabledForPlatform(ctx, "feature_ai_gateway_centralized")
-         && aiGatewayRepo.HasActiveRoutes(ctx, domain.UseCaseChat)
+if gatewayEnabled {
+    gatewayEnabled = aiGatewayRepo.HasHealthyEndpoint(ctx, domain.UseCaseChat)
+}
 ```
 
-Dengan kondisi saat ini (`ai_routes` kosong) → `gatewayEnabled=false` → **AI tetap berfungsi lewat
-BYOK**. Ini disengaja: mengaktifkan gateway pada infrastruktur yang belum siap adalah kesalahan
-operasional, bukan tujuan slice ini.
+**Mengapa "endpoint sehat" ikut disyaratkan (koreksi setelah recon):** rencana awal hanya
+memeriksa *route ada*. Recon menemukan `ai_routes` **berisi 5 route aktif** (chat, vision, voice,
+embedding, reasoning) yang menunjuk `9router-primary` — jadi pengaman berbasis route saja akan
+**membuka** gateway. Sementara itu `chatViaGateway` **tidak punya fallback ke BYOK**: bila
+gateway gagal, user melihat pesan error. Jadi mengarahkan seluruh platform ke endpoint yang
+kesehatan-nya gagal akan **mematikan AI untuk semua user**.
+
+`HasHealthyEndpoint` mensyaratkan `health == "healthy"`. Nilai `"unknown"` (endpoint baru yang
+belum pernah diprobe) **tidak dihitung sehat** — belum diprobe bukan bukti bisa melayani.
+
+**Status pada data saat ini (diverifikasi dengan menjalankan kode terhadap DB):**
+
+```
+HasActiveRoutes(chat)   = true
+HasHealthyEndpoint(chat) = false      (endpoint berstatus "unhealthy")
+=> gatewayEnabled = false             (BYOK tetap melayani)
+```
+
+Gateway akan terbuka sendiri begitu endpoint dilaporkan sehat oleh health checker — tanpa
+perubahan kode.
 
 **Konsekuensi yang dinyatakan terbuka:** setelah D1, gateway **masih mati**. "P03 tidak berjalan"
 **belum terselesaikan** — butuh provisioning endpoint + route + 9router hidup. Dicatat sebagai

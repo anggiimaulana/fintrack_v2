@@ -138,3 +138,55 @@ func TestIsEnabled_Caching(t *testing.T) {
 		t.Fatalf("expected 1 repository hit (second served from cache), got %d", repo.hits)
 	}
 }
+
+// TestIsEnabledForPlatform_IgnoresRollout is the regression guard for the bug
+// that left the centralized AI gateway permanently disabled: the flag was
+// enabled with rollout=25, and IsEnabled(…, nil) returns false for partial
+// rollout, so the gateway never turned on.
+func TestIsEnabledForPlatform_IgnoresRollout(t *testing.T) {
+	repo := &memRepo{flags: map[string]*Flag{
+		"gateway": {Key: "gateway", IsEnabled: true, Rollout: 25},
+	}}
+	svc := NewService(repo, nil)
+
+	if !svc.IsEnabledForPlatform(context.Background(), "gateway") {
+		t.Fatal("enabled flag with partial rollout must read as ON for the platform")
+	}
+}
+
+func TestIsEnabledForPlatform_FailClosed(t *testing.T) {
+	cases := map[string]*Flag{
+		"missing":  nil,
+		"disabled": {Key: "disabled", IsEnabled: false, Rollout: 100},
+		"zeroRoll": {Key: "zeroRoll", IsEnabled: true, Rollout: 0},
+	}
+	for name, flag := range cases {
+		repo := &memRepo{flags: map[string]*Flag{}}
+		if flag != nil {
+			repo.flags[flag.Key] = flag
+		}
+		svc := NewService(repo, nil)
+		if svc.IsEnabledForPlatform(context.Background(), name) {
+			t.Fatalf("%s: must be false (fail-closed)", name)
+		}
+	}
+
+	// Repository error must also be false.
+	svc := NewService(&memRepo{flags: map[string]*Flag{}, err: context.DeadlineExceeded}, nil)
+	if svc.IsEnabledForPlatform(context.Background(), "anything") {
+		t.Fatal("repository error must be false")
+	}
+}
+
+// TestIsEnabledForPlatform_FullRollout is the ordinary ON case.
+func TestIsEnabledForPlatform_FullRollout(t *testing.T) {
+	repo := &memRepo{flags: map[string]*Flag{
+		"gateway": {Key: "gateway", IsEnabled: true, Rollout: 100},
+	}}
+	svc := NewService(repo, nil)
+	if !svc.IsEnabledForPlatform(context.Background(), "gateway") {
+		t.Fatal("fully rolled-out enabled flag must be ON")
+	}
+}
+
+var _ = infraRedis.NewCacheEngine

@@ -36,6 +36,17 @@ import (
 	"github.com/fintrack/backend/pkg/logger"
 )
 
+// shutdownTimeout is the graceful-drain budget (default 30s), overridable via
+// SHUTDOWN_TIMEOUT in seconds.
+func shutdownTimeout() time.Duration {
+	if v := os.Getenv("SHUTDOWN_TIMEOUT"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return 30 * time.Second
+}
+
 func main() {
 	_ = godotenv.Load()
 
@@ -184,11 +195,43 @@ func main() {
 
 	// Feature flag gating the centralized gateway (default OFF for safe rollout).
 	flagSvc := featureflag.NewService(featureflag.NewPostgresRepository(pool), cacheEngine)
-	gatewayEnabled := flagSvc.IsEnabled(bgCtx, "feature_ai_gateway_centralized", nil)
+	// The centralized gateway is an architectural switch, not a per-user rollout,
+	// so it is read with IsEnabledForPlatform (IsEnabled(…, nil) returns false for
+	// any partial rollout — which is how this gateway silently stayed off).
+	//
+	// Safety guard: switching the platform onto the gateway with no routes
+	// configured would send every AI request into a dead end and break AI for all
+	// users. So the flag alone is not sufficient — at least one active chat route
+	// must exist. With none configured, the gateway stays off and BYOK keeps
+	// serving traffic.
+	gatewayEnabled := flagSvc.IsEnabledForPlatform(bgCtx, "feature_ai_gateway_centralized")
+	if gatewayEnabled {
+		// A route alone is not sufficient: the gateway path has no BYOK fallback,
+		// so pointing the platform at an endpoint whose health check is failing
+		// would break AI for every user. Both a route AND a healthy endpoint are
+		// required. "unknown" health does not count — an unprobed endpoint is not
+		// evidence that it can serve traffic.
+		healthy, err := aiGatewayRepo.HasHealthyEndpoint(bgCtx, domain.UseCaseChat)
+		if err != nil {
+			logger.Warn("AI gateway: endpoint health check failed; keeping gateway disabled", zap.Error(err))
+			healthy = false
+		}
+		if !healthy {
+			hasRoutes, rerr := aiGatewayRepo.HasActiveRoutes(bgCtx, domain.UseCaseChat)
+			if rerr == nil && hasRoutes {
+				logger.Warn("AI gateway: flag is ON and a chat route exists, but no endpoint is healthy; " +
+					"gateway stays disabled (BYOK fallback in use)")
+			} else {
+				logger.Warn("AI gateway: flag is ON but no active chat route is configured; " +
+					"gateway stays disabled (BYOK fallback in use)")
+			}
+		}
+		gatewayEnabled = healthy
+	}
 	if gatewayEnabled {
 		logger.Info("AI gateway centralized: ENABLED")
 	} else {
-		logger.Info("AI gateway centralized: disabled (feature flag off)")
+		logger.Info("AI gateway centralized: disabled")
 	}
 
 	// Embedder (RAG). Prefer the gateway embedder when the gateway is enabled,
@@ -310,6 +353,8 @@ func main() {
 		Metrics:      metricsRegistry,
 		Entitlement:  entMiddleware,
 		Usage:        entUsage,
+		Pool:         pool,
+		Redis:        redisClient,
 	}
 
 	// Super Admin portal (P06): one service + handler shared by every route.
@@ -377,7 +422,11 @@ func main() {
 	spkQueue.Stop()
 	stopCacheSubscriber()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Drain window: long enough for in-flight requests (including SSE streams,
+	// which the shutdown closes) to finish. Override with SHUTDOWN_TIMEOUT
+	// (seconds) when a platform needs a different budget; keep it in sync with
+	// the orchestrator's termination grace period.
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout())
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {

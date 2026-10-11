@@ -127,6 +127,26 @@ func (s *Service) IsEnabled(ctx context.Context, key string, userID *uuid.UUID) 
 	return bucket(key, userID.String()) < f.Rollout
 }
 
+// IsEnabledForPlatform reports whether a flag is switched on for the whole
+// platform, ignoring per-user rollout buckets.
+//
+// Use this for flags that are architectural switches rather than gradual
+// rollouts — e.g. "route all AI traffic through the centralized gateway". For
+// those, a partial `rollout` percentage is meaningless: the system cannot be in
+// two modes at once, and reading them with IsEnabled(…, nil) silently returns
+// false forever (which is exactly how the centralized AI gateway ended up
+// permanently disabled in production).
+//
+// Rules: missing flag / repository error / is_enabled=false / rollout<=0 => false
+// (fail-closed). Otherwise true, regardless of the rollout percentage.
+func (s *Service) IsEnabledForPlatform(ctx context.Context, key string) bool {
+	f, err := s.get(ctx, key)
+	if err != nil || f == nil {
+		return false
+	}
+	return f.IsEnabled && f.Rollout > 0
+}
+
 // bucket returns a deterministic 0..99 bucket for (key, subject).
 func bucket(key, subject string) int {
 	h := fnv.New32a()

@@ -63,6 +63,32 @@ func (r *AIGatewayRepo) GetActiveRoutesByUseCase(ctx context.Context, useCase do
 	return routes, nil
 }
 
+// HasActiveRoutes reports whether at least one route is configured for the use
+// case. Reuses the cached route lookup so a readiness check is cheap.
+func (r *AIGatewayRepo) HasActiveRoutes(ctx context.Context, useCase domain.UseCase) (bool, error) {
+	routes, err := r.GetActiveRoutesByUseCase(ctx, useCase)
+	if err != nil {
+		return false, err
+	}
+	return len(routes) > 0, nil
+}
+
+// HasHealthyEndpoint reports whether any route for the use case points at an
+// endpoint marked healthy. "unknown" counts as not healthy: a fresh endpoint
+// that has never been probed is not evidence that the gateway can serve traffic.
+func (r *AIGatewayRepo) HasHealthyEndpoint(ctx context.Context, useCase domain.UseCase) (bool, error) {
+	routes, err := r.GetActiveRoutesByUseCase(ctx, useCase)
+	if err != nil {
+		return false, err
+	}
+	for _, rt := range routes {
+		if rt.Endpoint != nil && rt.Endpoint.Health == "healthy" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *AIGatewayRepo) loadRoutes(ctx context.Context, useCase domain.UseCase) ([]*domain.AIRoute, error) {
 	rows, err := r.pool.Query(ctx, `
         SELECT rt.id, rt.use_case, rt.endpoint_id, rt.model, rt.combo, rt.priority,

@@ -197,3 +197,38 @@ services:
 4. Sinyal `SIGTERM` dikirim ke `backend_v1`.
 5. `backend_v1` menuntaskan koneksi aktif dalam jendela 30 detik (`stop_grace_period`), lalu berhenti dengan aman.
 6. **Hasil Akhir**: Klien tidak mengalami gangguan HTTP 502/504 Bad Gateway sepanjang proses rilis.
+
+---
+
+## Status Implementasi (Slice D1, 2026-10-11)
+
+### Health gates — implementasi
+
+| Endpoint | Perilaku | Alasan |
+|---|---|---|
+| `/health/live` | 200, **tanpa I/O** | Proses hidup tidak boleh bergantung pada dependensi; kalau tidak, orchestrator me-restart proses sehat hanya karena DB blip |
+| `/health/ready` | 200 bila DB sehat; **503** bila DB gagal | PostgreSQL hard dependency: tanpa DB instance tidak bisa melayani apa pun |
+| `/health/ready` (Redis) | Redis mati → **200** dengan `redis: degraded` | Redis **opsional** di codebase ini (`REDIS_URL` boleh kosong, cache graceful degradation); menandai pod tidak siap karena cache outage akan membuang kapasitas yang tidak diperlukan |
+| `/health` | alias `/health/live` | Kompatibilitas dokumentasi & probe ad-hoc |
+
+`/health/ready` memeriksa **pgvector** juga (`pg_extension`), karena jalur embedding bergantung
+padanya. Payload memuat `status` + `latency_ms` per dependensi.
+
+### Graceful shutdown
+
+- Drain `10s → 30s`, dapat dikonfigurasi `SHUTDOWN_TIMEOUT` (detik).
+- Compose: `healthcheck` untuk service `backend` (memakai `/health/ready`) dan
+  `stop_grace_period: 30s` — harus **≥** `SHUTDOWN_TIMEOUT`, jika tidak Docker akan SIGKILL
+  sebelum drain selesai.
+
+### Gap yang belum dikerjakan (dicatat, tidak diklaim)
+
+1. **Template Kubernetes** (`deploy/k8s/deployment.yaml`, ingress, readiness probe) **tidak
+   dibuat** — direktori `deploy/` tidak ada di repo. AC TASK-P07-017 menyebutnya.
+2. **Uji rolling restart pada 200 RPS tanpa 5xx** tidak dijalankan. Itu uji beban terkoordinasi
+   (butuh k6/vegeta + stack hidup), bukan unit test; mengklaimnya tanpa menjalankan akan keliru.
+   Perintah k6 yang ada (`tester/k6-smoke.js`) menguji jalur auth, bukan rolling restart.
+3. **`ReadTimeout: 15s` pada `http.Server`** tidak diubah. Untuk endpoint SSE yang berumur
+   panjang, `ReadTimeout` mengikat pembacaan request (bukan penulisan respons), jadi stream tidak
+   terpotong — tetapi bila nanti ada kebutuhan menahan koneksi lebih lama, ini perlu ditinjau
+   bersama `WriteTimeout`.
