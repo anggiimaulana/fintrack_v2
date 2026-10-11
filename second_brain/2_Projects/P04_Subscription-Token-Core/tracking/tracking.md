@@ -35,8 +35,8 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 | **TASK-P04-011** | Entitlement | Redis Pub/Sub Subscriber Invalidation Lintas Node | Backend Core | ✅ | `entitlement/broadcaster.go` (channel `entitlement:invalidations`); wired di main |
 | **TASK-P04-012** | Entitlement | Gin Middleware `RequireFeature` & `WithinLimit` | Backend Core | ✅ | `middleware/entitlement.go` (403/402, super_admin bypass, fail-closed); 6 test PASS |
 | **TASK-P04-013** | Entitlement | REST API Endpoint `GET /api/v1/me/entitlements` | Backend Core | ✅ | `handler/entitlement_handler.go` + route; wired di main |
-| **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ⬜ | Belum dikerjakan |
-| **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ⬜ | Belum dikerjakan |
+| **TASK-P04-014** | Billing | Subscription Lifecycle State Machine & Audit Events | Backend Core | ✅ | `billing/lifecycle.go` (matriks transisi + audit event + invalidate); test PASS |
+| **TASK-P04-015** | Billing | Upgrade Prorata Instan & Downgrade Soft-Limit Logic | Backend Core | ✅ | `billing/subscription_management.go` (prorata floor integer, schedule downgrade soft-limit); 5 test PASS |
 | **TASK-P04-016** | QA / Test | Concurrency Testing & Anti Double-Spending Check | QA Engineer | ⬜ | Belum dikerjakan |
 | **TASK-P04-017** | Observability | Prometheus Metrics, Tracing & Handoff Kontrak P05/P06 | DevOps / Lead | ⬜ | Belum dikerjakan |
 
