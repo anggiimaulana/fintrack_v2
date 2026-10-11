@@ -1,5 +1,9 @@
 # 04 — Pertanyaan Terbuka
 
+> ✅ **Sudah dijawab sebagian besar** di `06-jawaban-rekomendasi-pertanyaan-terbuka.md`
+> (rekomendasi konkret + alasan + rujukan) dan dikonkretkan di `07-konfigurasi-seed-awal.md`.
+> Dokumen ini tetap disimpan sebagai daftar pertanyaan asli.
+
 Pertanyaan berikut **belum diputuskan** dan perlu dijawab sebelum implementasi fase terkait. Tidak
 semuanya harus dijawab sekarang; beberapa dapat dijawab saat fase itu dimulai.
 

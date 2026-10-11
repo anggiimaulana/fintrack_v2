@@ -70,8 +70,10 @@ di-switch realtime, **dashboard & manajemen super admin**, **RBAC berbasis entit
 - `01-analisis-mendalam.md` — analisis teknis & bisnis menyeluruh
 - `02-kritik-saran-best-practice.md` — kritik jujur + rujukan praktik industri
 - `03-keputusan-terkunci.md` — daftar keputusan lengkap dengan alasan
-- `04-pertanyaan-terbuka.md` — hal yang belum diputuskan (perlu dijawab sebelum implementasi)
+- `04-pertanyaan-terbuka.md` — daftar pertanyaan asli (sudah dijawab di 06)
 - `05-peta-jalan-awal.md` — pembagian fase P02–P08
+- `06-jawaban-rekomendasi-pertanyaan-terbuka.md` — jawaban + rekomendasi + alasan + rujukan
+- `07-konfigurasi-seed-awal.md` — nilai konkret siap seed (plan, limit, pricing, settings, gateway)
 
 ## Rujukan
 

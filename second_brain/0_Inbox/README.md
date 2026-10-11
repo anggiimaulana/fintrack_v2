@@ -29,7 +29,8 @@ Contoh: `2026-10-15_ide-optimasi-cache-per-user.md`
 ## Isi Saat Ini
 - `brief_awal.md` — brief awal & 7 keputusan terkunci migrasi FinTrack v2 (belum dipindah, masih jadi acuan).
 - `ide/2026-10-11_Subscription-AI-Gateway/` — hasil analisis mendalam permintaan platform berlangganan &
-  AI gateway terpusat (6 file: ringkasan, analisis, kritik & saran, keputusan, pertanyaan terbuka, peta jalan).
+  AI gateway terpusat (8 file: ringkasan, analisis, kritik & saran, keputusan, pertanyaan terbuka,
+  peta jalan, jawaban+rekomendasi, konfigurasi seed awal).
   Acuan untuk BRD/PRD di `../4_Resources/Dokumen-Spesifikasi/` dan fase `../2_Projects/P02..P08/`.
 
 ## Status
