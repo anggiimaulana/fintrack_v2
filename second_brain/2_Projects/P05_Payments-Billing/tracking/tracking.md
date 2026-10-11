@@ -22,10 +22,10 @@ Status ditandai dengan:
 | `TASK-P05-006` | Invoice Generator & Penomoran Deterministik | Sprint 1 | Backend | ✅ | `payment/invoice_service.go` + `payment_repo.go` NextInvoiceNumber (INV/YYYYMMDD/NNNNN, atomic upsert); test PASS |
 | `TASK-P05-007` | Driver Manual Payment & Upload Bukti Transfer | Sprint 2 | Backend | ✅ | `payment/manual.go` (gateway + magic-byte proof validation 5MB) + `manual_service.go` upload; 6 test PASS |
 | `TASK-P05-008` | Endpoint Review Approval Super Admin | Sprint 2 | Backend | ✅ | `payment/manual_service.go` approve/reject (row-lock, idempoten, reason wajib) + `AdminService` |
-| `TASK-P05-009` | Resolver Pemilihan Gateway (Global & Override) | Sprint 2 | Backend | ⬜ | `internal/payment/resolver.go` |
-| `TASK-P05-010` | Engine Perhitungan Prorata Upgrade | Sprint 2 | Backend | ⬜ | `internal/billing/proration.go` |
-| `TASK-P05-011` | Manajemen Downgrade Akhir Periode | Sprint 2 | Backend | ⬜ | `internal/billing/downgrade_service.go` |
-| `TASK-P05-012` | Modul Pajak PPN (Tax Engine) | Sprint 2 | Backend | ⬜ | `internal/payment/tax.go` |
+| `TASK-P05-009` | Resolver Pemilihan Gateway (Global & Override) | Sprint 2 | Backend | ✅ | `payment/registry.go` ResolveGateway (override per-plan > settings global > fallback manual) + `checkout.go` (lock gateway di baris payment); 4 test PASS |
+| `TASK-P05-010` | Engine Perhitungan Prorata Upgrade | Sprint 2 | Backend | ✅ | `billing/subscription_management.go` CalculateUpgradeProration (integer floor) + invoice via `payment/checkout.go`; 5 test PASS (P04) + checkout tax test |
+| `TASK-P05-011` | Manajemen Downgrade Akhir Periode | Sprint 2 | Backend | ✅ | `billing/subscription_management.go` ScheduleDowngrade/ApplyScheduledDowngrade (soft-limit, no data loss); test PASS |
+| `TASK-P05-012` | Modul Pajak PPN (Tax Engine) | Sprint 2 | Backend | ✅ | `payment/tax.go` TaxCalculator (rate dari settings, floor); test PASS (0% & 11%) |
 | `TASK-P05-013` | Background Worker Penagihan Dunning (H-3/H-1/H-0) | Sprint 3 | Backend | ⬜ | `internal/payment/dunning_worker.go` |
 | `TASK-P05-014` | Penegakan Grace Period & Past Due | Sprint 3 | Backend | ⬜ | `internal/payment/grace_worker.go` |
 | `TASK-P05-015` | Integrasi Realtime SSE Status Pembayaran | Sprint 3 | Backend | ⬜ | `internal/payment/realtime_publisher.go` |
