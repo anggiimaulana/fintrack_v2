@@ -4,6 +4,56 @@
 
 ---
 
+## 2026-10-12 — P08: Hardening, E2E Testing, & Go-Live Production Readiness (14/14 100%)
+
+Fase final FinTrack v2 sebelum pembukaan rilis publik produksi. Melakukan pembuktian empiris
+dan pengujian skala penuh atas seluruh jaminan performa, integritas finansial, keamanan, resiliensi chaos,
+dan kepatuhan regulasi hukum UU PDP No. 27/2022.
+
+### Hasil Pengujian & Temuan Signifikan
+1. **Concurrency Race Condition Kuota Token (TASK-P08-001):**
+   - Mengintegrasikan `billing.LedgerService` ke dalam `AIHandler.Chat` dan `main.go`.
+   - Skrip k6 `token_quota_concurrency.js` & integrasi `TestP08_001_TokenQuotaConcurrency`: 20 request konkuren
+     pada saldo 5 token menghasilkan tepat 5 request berhasil (HTTP 200), tepat 15 ditolak (HTTP 429 `insufficient_quota`),
+     saldo akhir di database tepat 0 (tidak pernah negatif), dan tercatat tepat 5 reservasi + 5 commit di `token_ledger`.
+2. **Idempotensi Webhook Pembayaran & Perbaikan Race Condition (TASK-P08-002):**
+   - Skrip k6 `webhook_replay.js` & integrasi `TestP08_002_WebhookReplayIdempotency`: 10 callback webhook simultan
+     dalam <50ms menghasilkan tepat 1 mutasi invoice/pembayaran (`already_processed: false`), 9 ditanggapi idempoten
+     tanpa mutasi ganda (`already_processed: true`), 0 duplicate di `payments`.
+   - **Temuan & Perbaikan Kritis:** Menemukan `concurrent map writes` pada `RateLimitMiddlewareByPath` saat request
+     simultan; diperbaiki dengan proteksi `sync.RWMutex` (double-checked locking).
+3. **Benchmark Beban AI Gateway (TASK-P08-003):**
+   - Skrip k6 `gateway_sustained_benchmark.js` & `TestP08_003_GatewaySustainedLoad`: throughput routing mencapai
+     **3.924 RPS** (target >= 500), latensi p50=12.1ms, p95=**17.0ms** (target < 50ms), p99=24.6ms, error rate 5xx = 0%.
+4. **Chaos Failover Endpoint 9router (TASK-P08-004):**
+   - `TestP08_004_ChaosFailoverUnderLoad`: terminasi mendadak node primer 9router memicu circuit breaker trip ke `StateOpen`,
+     trafik otomatis dialihkan ke node sekunder dalam <180ms, 100% request klien berhasil tanpa error 5xx.
+5. **Chaos Pemutusan Koneksi Redis (TASK-P08-005):**
+   - `TestP08_005_ChaosRedisDisconnect`: pemutusan jaringan Redis tidak menimbulkan panic; `/health/ready` 200 degraded;
+     entitlement fallback langsung ke PostgreSQL + L1 in-memory; realtime event dialihkan ke local hub.
+6. **Audit Enkripsi Kredensial At-Rest (TASK-P08-006):**
+   - `TestP08_006_AuditCredentialEncryptionAtRest`: audit langsung ke database membuktikan 1 baris `ai_endpoints` dan 30 baris
+     `gemini_api_keys` tersimpan dalam format ciphertext AES-256-GCM (nonce 12B + auth tag 16B), 0 plaintext key bocor.
+7. **Validasi Kriptografis Webhook Signature (TASK-P08-007):**
+   - `TestP08_007_CryptographicWebhookSignatureValidation`: manipulasi signature, order_id, amount, dan status code
+     ditolak tegas HTTP 401 Unauthorized via `crypto/subtle.ConstantTimeCompare`.
+8. **Kepatuhan PCI-DSS SAQ A & Security Headers (TASK-P08-008):**
+   - Server FinTrack v2 zero-contact dengan nomor kartu kredit/PAN/CVV. Header keamanan browser lengkap (CSP, HSTS, nosniff, DENY).
+9. **Kepatuhan UU PDP No. 27/2022 & Retensi Pajak 10 Tahun (TASK-P08-009 & 010):**
+   - Modul `internal/user/anonymize.go` & `TestP08_009_And_010_PDPComplianceAndTaxRetention`: Right to Erasure (Pasal 43 UU PDP)
+     menghapus tuntas chat history, sessions, embeddings 768d, refresh tokens, BYOK keys; profil users dipseudonimkan dan password dishred;
+     seluruh faktur pajak dan pembayaran tetap utuh 100% sesuai UU KUP Pasal 28 (10 tahun) tanpa selisih Rp 1 pun.
+10. **Disaster Recovery Drill (TASK-P08-011):**
+    - Simulasi pemulihan basis data bersih ke `fintrack_dr_drill` dari dump: restorasi tuntas dalam **3.72 detik** (target RTO <= 15 menit),
+      data parity 100% (users=52, endpoints=1).
+11. **Uji Latih Runbook Operasional (TASK-P08-012):**
+    - `TestP08_012_RunbookOperasionalDrill`: rotasi master encryption key tanpa downtime tervalidasi; sinkronisasi invalidasi
+      cache entitlement lintas-pod via Redis Pub/Sub berjalan instan tanpa restart pod.
+12. **Observability & Release Gate (TASK-P08-013 & 014):**
+    - Four Golden Signals & metrik bisnis aktif di `/metrics`. Seluruh checklist `teknis/go-live-checklist.md` disetujui (100% Passed).
+
+---
+
 ## 2026-10-12 — P07 Slice D2: Pembersihan Tuntas BYOK (TASK-P07-013) & Penutupan Resmi P07 (18/18)
 
 Slice penutup P07. Menuntaskan pembersihan antarmuka dan backend BYOK (Bring Your Own Key)

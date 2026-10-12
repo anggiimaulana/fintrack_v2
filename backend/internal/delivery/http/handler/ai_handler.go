@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/logger"
@@ -19,10 +22,16 @@ import (
 type AIHandler struct {
 	aiUC          *usecase.AIUsecase
 	transactionUC *usecase.TransactionUsecase
+	ledger        *billing.LedgerService
 }
 
 func NewAIHandler(aiUC *usecase.AIUsecase, transactionUC *usecase.TransactionUsecase) *AIHandler {
 	return &AIHandler{aiUC: aiUC, transactionUC: transactionUC}
+}
+
+func (h *AIHandler) WithLedger(l *billing.LedgerService) *AIHandler {
+	h.ledger = l
+	return h
 }
 
 // ─── Chat with SSE Streaming ───────────────────────────────────
@@ -41,6 +50,28 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		return
 	}
 
+	var reservation *billing.Reservation
+	if h.ledger != nil {
+		reqID := c.GetHeader("X-Request-Id")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+		idempotencyKey := "chat-reserve:" + reqID
+		res, err := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityChat, idempotencyKey)
+		if err != nil {
+			if errors.Is(err, billing.ErrInsufficientQuota) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"success": false,
+					"error":   "insufficient_quota",
+					"message": "Sisa kuota token Anda tidak mencukupi untuk melakukan permintaan ini.",
+				})
+				return
+			}
+			response.InternalError(c, "Gagal mengalokasikan kuota token")
+			return
+		}
+		reservation = res
+	}
 	var sessionID *uuid.UUID
 	if sid := c.Query("session_id"); sid != "" {
 		parsed, err := uuid.Parse(sid)
@@ -63,10 +94,24 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
+	var gotContent bool
+	defer func() {
+		if reservation != nil {
+			if gotContent {
+				_ = h.ledger.Commit(context.Background(), userID, reservation.ID, 1, "commit:"+reservation.ID.String())
+			} else {
+				_ = h.ledger.Release(context.Background(), userID, reservation.ID, "release:"+reservation.ID.String())
+			}
+		}
+	}()
+
 	c.Stream(func(w io.Writer) bool {
 		event, ok := <-msgChan
 		if !ok {
 			return false
+		}
+		if event.Type == "content" && event.Content != "" {
+			gotContent = true
 		}
 
 		data, _ := json.Marshal(event)

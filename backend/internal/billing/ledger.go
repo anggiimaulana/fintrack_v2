@@ -13,6 +13,13 @@ type QuotaResolver interface {
 	ResolveQuota(ctx context.Context, userID uuid.UUID, at time.Time) (periodStart, periodEnd time.Time, quota int64, err error)
 }
 
+// QuotaResolverFunc adapts a function to QuotaResolver.
+type QuotaResolverFunc func(ctx context.Context, userID uuid.UUID, at time.Time) (periodStart, periodEnd time.Time, quota int64, err error)
+
+func (f QuotaResolverFunc) ResolveQuota(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+	return f(ctx, userID, at)
+}
+
 // TxRunner runs fn inside a single DB transaction (implemented by
 // postgres.TxManager). The ledger service uses it to keep row locks short.
 type TxRunner interface {

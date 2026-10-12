@@ -11,6 +11,7 @@ import (
 	"github.com/ulule/limiter/v3"
 
 	"github.com/fintrack/backend/internal/admin"
+	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
@@ -37,6 +38,8 @@ type RouterConfig struct {
 	// in tests; the probe then reports the dependency as down/degraded.
 	Pool  *pgxpool.Pool
 	Redis *infraRedis.Client
+	// Ledger, when non-nil, enables two-phase token reservations on AI routes.
+	Ledger *billing.LedgerService
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -117,6 +120,9 @@ func SetupRouter(
 
 	sh := handler.NewSPKHandler(spkUC)
 	aiH := handler.NewAIHandler(aiUC, transactionUC)
+	if config.Ledger != nil {
+		aiH.WithLedger(config.Ledger)
+	}
 	ah := handler.NewAuthHandler(authUC, config.CookieSecure)
 	adminH := handler.NewAdminHandler(userUC)
 	providerH := handler.NewProviderHandler(providerUC)

@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -85,6 +86,7 @@ func defaultLimit() int64 {
 }
 
 func RateLimitMiddlewareByPath(rates map[string]limiter.Rate) gin.HandlerFunc {
+	var mu sync.RWMutex
 	stores := make(map[string]*limiter.Limiter)
 
 	return func(c *gin.Context) {
@@ -103,11 +105,18 @@ func RateLimitMiddlewareByPath(rates map[string]limiter.Rate) gin.HandlerFunc {
 			rate = limiter.Rate{Period: 1 * time.Minute, Limit: defaultLimit()}
 		}
 
+		mu.RLock()
 		lim, exists := stores[path]
+		mu.RUnlock()
 		if !exists {
-			store := memory.NewStore()
-			lim = limiter.New(store, rate)
-			stores[path] = lim
+			mu.Lock()
+			lim, exists = stores[path]
+			if !exists {
+				store := memory.NewStore()
+				lim = limiter.New(store, rate)
+				stores[path] = lim
+			}
+			mu.Unlock()
 		}
 
 		userID, exists := c.Get("user_id")

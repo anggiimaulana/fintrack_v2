@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -31,7 +32,15 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		logger.Warn("REDIS_URL not set — cache/pubsub disabled (graceful degradation)")
 		return &Client{enabled: false}, nil
 	}
-
+	if cfg.DialTimeout <= 0 {
+		cfg.DialTimeout = 5 * time.Second
+	}
+	if cfg.ReadTimeout <= 0 {
+		cfg.ReadTimeout = 3 * time.Second
+	}
+	if cfg.WriteTimeout <= 0 {
+		cfg.WriteTimeout = 3 * time.Second
+	}
 	opt, err := goredis.ParseURL(cfg.URL)
 	if err != nil {
 		return &Client{enabled: false}, fmt.Errorf("invalid REDIS_URL: %w", err)

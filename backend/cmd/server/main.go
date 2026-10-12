@@ -18,6 +18,7 @@ import (
 	"github.com/fintrack/backend/internal/aigateway/breaker"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
+	"github.com/fintrack/backend/internal/billing"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
@@ -346,6 +347,24 @@ func main() {
 		},
 	}
 
+	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+		res, err := entResolver.Resolve(ctx, userID)
+		if err != nil {
+			return time.Time{}, time.Time{}, 0, err
+		}
+		quota := res.Limit("ai_tokens_per_cycle")
+		if quota < 0 {
+			quota = 1000000000 // unlimited
+		}
+		sub, _ := billingRepo.GetByUserID(ctx, userID)
+		if sub != nil && sub.CurrentPeriodEnd != nil {
+			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, nil
+		}
+		start := at.Truncate(24 * time.Hour)
+		return start, start.AddDate(0, 0, 30), quota, nil
+	})
+	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, nil)
+
 	routerConfig := deliveryHTTP.RouterConfig{
 		JWTSecret:    jwtSecret,
 		CORSOrigin:   corsOrigin,
@@ -355,6 +374,7 @@ func main() {
 		Usage:        entUsage,
 		Pool:         pool,
 		Redis:        redisClient,
+		Ledger:       ledgerService,
 	}
 
 	// Super Admin portal (P06): one service + handler shared by every route.
