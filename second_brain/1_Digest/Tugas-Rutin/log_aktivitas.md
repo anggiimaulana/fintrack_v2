@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-10-12 — P07 Slice D2: Pembersihan Tuntas BYOK (TASK-P07-013) & Penutupan Resmi P07 (18/18)
+
+Slice penutup P07. Menuntaskan pembersihan antarmuka dan backend BYOK (Bring Your Own Key)
+setelah Gateway AI terpusat (P03/P07 Slice E) terbukti mandiri melayani beban kerja AI secara live.
+
+### Perubahan & Implementasi
+- **Backend (`router.go`):** Menghapus seluruh endpoint registrasi user key (`POST /api/v1/gemini-keys`,
+  `PATCH /:id`, `DELETE /:id`, `POST /:id/test`, dan `GET /gemini-keys`) beserta entri rate limit.
+- **Database Migrasi 0013 (`0013_archive_byok_keys.sql`):** Aditif & idempoten. Mengarsipkan seluruh data
+  kunci di tabel `gemini_api_keys` (`is_archived = true`, `status = 'inactive'`, `archived_at = now()`),
+  serta menambahkan indeks `idx_gemini_keys_archived`.
+- **Frontend:**
+  - Mengonfigurasi `next.config.ts` untuk melakukan redirect permanen (HTTP 301) dari `/settings/ai-keys`
+    dan `/user/api-keys` ke `/user/settings/subscription`.
+  - Memperbarui `frontend/app/(dashboard)/user/api-keys/page.tsx` mengalihkan ke `/user/settings/subscription`.
+  - Menghapus hook `frontend/hooks/useGeminiKeys.ts` dan query key `geminiKeys` di `cache-keys.ts`.
+- **Dump Database:** Berkas `database/dump/fintrack_v2.{sql,dump}` diregenerasi.
+
+### Verifikasi & Bukti Nyata
+- **Backend:** `go vet ./...`, `go build ./...`, `go test ./...` 100% hijau; suite integrasi P06 & P07 hijau.
+- **Frontend:** `pnpm lint` 0 error, `pnpm test` 102 passed (12 test files), `pnpm build` kompilasi sukses.
+- **Database:** `SELECT count(*), is_archived, status FROM gemini_api_keys` membuktikan seluruh 30 baris berstatus archived.
+- **Status P07:** 18 dari 18 task WBS (100%) resmi selesai. Fase P07 ditutup secara resmi.
+
+---
+
 ## 2026-10-12 — P07 Slice E: Routing AI Dinamis, Weighted Round-Robin & Multi-Model
 
 Slice kelima P07. Mewujudkan routing AI dinamis antar-model per use case, memfungsikan

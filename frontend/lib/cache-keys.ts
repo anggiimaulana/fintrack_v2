@@ -42,9 +42,6 @@ export const queryKeys = {
   entitlements: {
     me: ["entitlements", "me"] as const,
   },
-  geminiKeys: {
-    all: ["gemini-keys"] as const,
-  },
   providers: {
     all: ["providers"] as const,
   },

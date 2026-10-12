@@ -10,13 +10,13 @@ import { useRouter } from "next/navigation";
 export default function ApiKeysDeprecatedPage() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/user/settings");
+    router.replace("/user/settings/subscription");
   }, [router]);
 
   return (
     <div className="flex min-h-[40vh] items-center justify-center">
       <p className="text-sm font-bold text-muted-foreground">
-        Menu API Keys telah dihapus. Mengalihkan ke Pengaturan...
+        Menu API Keys telah dihapus. Mengalihkan ke Pengaturan Langganan...
       </p>
     </div>
   );

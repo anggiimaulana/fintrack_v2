@@ -5,8 +5,8 @@ Status Legend:
 - 🔄 : Sedang Dikerjakan (In Progress)
 - ✅ : Selesai (Completed)
 
-> **Status saat ini: SLICE A + B + C + D1 SELESAI (17/18).** Sisa 1 task: **TASK-P07-013 (BYOK) = D2**. (Tanda ✅ pada tabel
-> "Status Deliverable" di bagian bawah hanya menandai bahwa **dokumen** sudah ditulis — bukan kode.)
+> **Status saat ini: P07 RESMI SELESAI PENUH (18/18 100%).** Seluruh task WBS (TASK-P07-001 s/d TASK-P07-018)
+> tuntas dieksekusi, diuji secara menyeluruh, dan diverifikasi tanpa manipulasi hasil.
 >
 > **Slice A — Entitlement & RBAC Rollout (2026-10-11)** mencakup TASK-P07-001 & TASK-P07-002
 > plus mirror frontend. Lihat `docs/superpowers/specs/2026-10-11-p07-entitlement-rollout-design.md`
@@ -25,7 +25,7 @@ Status Legend:
 > **Slice D1 — Health Gates, Shutdown & Aturan Migrasi (2026-10-11)** mencakup TASK-P07-016, 017,
 > 018 + verifikasi 003. Lihat `docs/superpowers/specs/2026-10-11-p07-health-shutdown-migrations-design.md`
 > dan `docs/superpowers/plans/2026-10-11-p07-health-shutdown-migrations-plan.md`.
-> **BYOK (TASK-P07-013) ditunda ke D2** — lihat catatan di bawah.
+> **Slice D2 — BYOK Cleanup (TASK-P07-013)** tuntas: UI BYOK dihapus/dialihkan permanen, rute registrasi backend dihapus, migrasi 0013 mengarsipkan seluruh data key.
 
 ---
 
@@ -45,7 +45,7 @@ Status Legend:
 | **TASK-P07-010** | Optimistic Updates Mutasi Transaksi & Anggaran | Frontend Dev 1 & 2 | H-07 | ✅ | **Slice C (dengan catatan).** Optimistic update untuk **update & delete** transaksi (`onMutate` snapshot semua halaman list, patch/remove, `onError` rollback, `onSettled` invalidate); rollback menangani 409, 402/403 (via `notifyEntitlementError`), dan generik. **Create sengaja TIDAK optimistik**: list dipaginasi + di-sort server-side sehingga posisi baris baru tidak diketahui. **Halaman anggaran (`/budgets`) tidak ada** di codebase, jadi bagian "Anggaran" pada task ini tidak berlaku. Uji mutasi: `restoreLists` dilepas → 3 test rollback gagal → terbukti terjaga. |
 | **TASK-P07-011** | Standardisasi Komponen `<DataTable>` TanStack v8 | Frontend Dev 1 | H-01 | ✅ | **Slice C.** `<DataTable>` dipakai di `/user/transactions` dengan state di URL (`useDataTableUrlState`): page/sort/order/q bookmarkable. Debounce 300ms dari `DataTableToolbar` (sebelumnya search terkirim per ketikan). |
 | **TASK-P07-012** | Refactor Seluruh Halaman List ke `<DataTable>` | Frontend Dev 1 & 2 | H-04 | ✅ | **Slice C (sebagian).** Hanya `/user/transactions` yang dikerjakan: `/budgets` dan `/categories` (user) **tidak ada** di codebase — kategori dikelola admin. Refactor sekaligus menghapus komponen baris custom (kode mati). |
-| **TASK-P07-013** | Pembersihan Tuntas Menu & Kode Legacy BYOK | Fullstack Dev | H-03 | ⬜ | Hapus form/halaman AI keys, arsip DB tabel |
+| **TASK-P07-013** | Pembersihan Tuntas Menu & Kode Legacy BYOK | Fullstack Dev | H-03 | ✅ | **Slice D2.** Menu UI BYOK dihapus, `/user/api-keys` dan `/settings/ai-keys` dialihkan permanen (HTTP 301 / redirect) ke `/user/settings/subscription`, `useGeminiKeys.ts` dan cache key dihapus. Rute backend registrasi key (`POST`, `PATCH`, `DELETE`, `POST /:id/test`, dan `GET /gemini-keys`) dihapus dari `router.go`. Migrasi `0013_archive_byok_keys.sql` mengarsipkan seluruh baris `gemini_api_keys` (`is_archived = true`, `status = 'inactive'`). |
 | **TASK-P07-014** | Audit Universal Cursor Pointer & Styling Hover | Frontend Dev 3 | H-07 | ✅ | **Slice C.** Audit menyeluruh: akar masalah di komponen dasar (`Button` tanpa cursor sama sekali + `disabled:pointer-events-none` yang membuat `cursor-not-allowed` mustahil; `SelectTrigger` juga). 79 elemen native diperbaiki; verifikasi akhir 0 tersisa. Laporan di `teknis/cursor-pointer-audit.md`. |
 | **TASK-P07-015** | Audit Aksesibilitas WCAG 2.1 AA & Keyboard Nav | Frontend Dev 3 & QA | H-08 | ✅ | **Slice C (dengan catatan).** `eslint-plugin-jsx-a11y` aktif (40 pelanggaran nyata diperbaiki, bukan aturan dimatikan) + axe-core via Vitest untuk komponen kunci (nol pelanggaran). Kontras dihitung manual dan 4 temuan diperbaiki dengan nilai terverifikasi. **AC "Lighthouse ≥ 95" TIDAK terpenuhi** — Lighthouse tidak ada di repo; ditandai gap, bukan diklaim. |
 | **TASK-P07-016** | Dual Health Gate Endpoint (`/health/live` & `/ready`) | Backend Dev 1 | H-06 | ✅ | **Slice D1.** `/health/live` (tanpa I/O), `/health/ready` (PostgreSQL + pgvector + Redis dengan latensi per dependensi), `/health` alias live. DB mati → **503** (hard dependency); Redis mati → **200 degraded** (Redis opsional di codebase ini). Bukti: 5 test + verifikasi terhadap DB/Redis nyata (`postgres ok 2ms, redis ok 1ms`). |
@@ -231,4 +231,18 @@ Status Legend:
     - Uji mutasi: Mematikan pengurangan totalWeight pada SWRR menyebabkan test gagal -> terbukti menangkap regresi.
   - **Sisa Gap:**
     1. Voice (`whisper-1`) upstream provider merespons 429/hang -> dicatat sebagai gap terisolasi.
-    2. BYOK Cleanup (D2) -> siap dieksekusi setelah gateway terbukti mandiri.
+    2. Template k8s `deploy/` belum dibuat (repositori belum memiliki folder deployment kubernetes).
+
+- **2026-10-12 — Slice D2 (Pembersihan Tuntas BYOK — TASK-P07-013) SELESAI & PENUTUPAN RESMI P07.**
+  - **Tuntas 18/18 Task WBS (100%):** Seluruh lingkup kerja P07 resmi selesai.
+  - **Frontend:** Komponen dan form input BYOK sepenuhnya bersih. Rute `/user/api-keys` dan
+    `/settings/ai-keys` dikonfigurasi redirect permanen HTTP 301 ke `/user/settings/subscription`.
+    Hook `useGeminiKeys.ts` dan query key `geminiKeys` dihapus.
+  - **Backend:** Rute registrasi user key (`POST`, `PATCH`, `DELETE`, `POST /:id/test`, dan
+    `GET /gemini-keys`) beserta entri rate limit dihapus dari `router.go`.
+  - **Database:** Migrasi `0013_archive_byok_keys.sql` diaplikasikan ke database `fintrack` dan
+    `fintrack_test`. Seluruh 30 baris kunci `gemini_api_keys` berstatus `is_archived = true` dan `status = 'inactive'`.
+  - **Dump Database:** Berkas `database/dump/fintrack_v2.{sql,dump}` diregenerasi.
+  - **Verifikasi Lengkap:** `go vet`, `go build`, `go test ./...` hijau; integrasi test hijau;
+    frontend lint 0 error, test 102 passed, build hijau tanpa kegagalan.
+  - **Kesiapan Fase:** Fase P07 ditutup secara resmi. Proyek siap beralih ke Fase P08 (Hardening, E2E Testing & Go-Live).

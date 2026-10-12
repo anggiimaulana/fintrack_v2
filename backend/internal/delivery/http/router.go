@@ -85,7 +85,7 @@ func SetupRouter(
 	categoryUC *usecase.CategoryUsecase,
 	userUC *usecase.UserUsecase,
 	dashboardUC *usecase.DashboardUsecase,
-	geminiKeyUC *usecase.GeminiKeyUsecase,
+	_ *usecase.GeminiKeyUsecase, // BYOK deprecated (TASK-P07-013)
 	spkUC *usecase.SPKUsecase,
 	aiUC *usecase.AIUsecase,
 	providerUC *usecase.ProviderUsecase,
@@ -114,7 +114,7 @@ func SetupRouter(
 	th := handler.NewTransactionHandler(transactionUC)
 	ch := handler.NewCategoryHandler(categoryUC)
 	dh := handler.NewDashboardHandler(dashboardUC)
-	gkh := handler.NewGeminiKeyHandler(geminiKeyUC)
+
 	sh := handler.NewSPKHandler(spkUC)
 	aiH := handler.NewAIHandler(aiUC, transactionUC)
 	ah := handler.NewAuthHandler(authUC, config.CookieSecure)
@@ -132,7 +132,7 @@ func SetupRouter(
 		"/api/v1/auth/register":        {Period: 1 * time.Minute, Limit: registerLimit},
 		"/api/v1/auth/refresh":         {Period: 1 * time.Minute, Limit: 10},
 		"/api/v1/spk/calculate":        {Period: 1 * time.Minute, Limit: 30},
-		"/api/v1/gemini-keys/:id/test": {Period: 1 * time.Minute, Limit: 10},
+
 	}
 
 	rateLimitMw := middleware.RateLimitMiddlewareByPath(rateLimitMap)
@@ -179,7 +179,7 @@ func SetupRouter(
 					cached.GET("/dashboard/charts/categories", dh.GetCategoryChart)
 					cached.GET("/transactions/stats", th.GetStats)
 					cached.GET("/transactions/:id", th.GetByID)
-					cached.GET("/gemini-keys", gkh.List)
+
 					cached.GET("/spk/latest", sh.GetLatest)
 					cached.GET("/spk/history", sh.GetHistory)
 					// reports_export: Pro/Business only.
@@ -196,10 +196,7 @@ func SetupRouter(
 				userRoutes.PUT("/transactions/:id", th.Update)
 				userRoutes.DELETE("/transactions/:id", th.Delete)
 
-				userRoutes.POST("/gemini-keys", gkh.Create)
-				userRoutes.PATCH("/gemini-keys/:id", gkh.Update)
-				userRoutes.DELETE("/gemini-keys/:id", gkh.Delete)
-				userRoutes.POST("/gemini-keys/:id/test", gkh.Test)
+
 
 				ai := userRoutes.Group("/ai")
 				{
