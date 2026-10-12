@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-10-12 — Audit Komprehensif Logika, Regulasi, Keamanan & Potensi Masa Depan FinTrack v2
+
+Audit mendalam terhadap seluruh logika bisnis, kepatuhan regulasi UU PDP / perpajakan,
+vektor kerentanan keamanan siber (XSS, SSRF, CSRF, Race Condition), serta potensi bottleneck skalabilitas.
+
+### Ringkasan Dokumen Audit di `second_brain/0_Inbox/audit/2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi/`
+1. **`00-ringkasan-eksekutif-audit.md`**: Matriks keparahan temuan (8 temuan terpetakan).
+2. **`01-keamanan-xss-ssrf-csrf.md`**:
+   - **SEC-01 (High)**: Unsanitized `javascript:` protocol pada Custom Anchor Tag ReactMarkdown (`frontend/components/ai/ChatMessage.tsx:109-111`).
+   - **SEC-02 (High)**: Ketiadaan validasi skema & IP private/cloud metadata pada `BaseURL` AI Gateway (`backend/internal/admin/aigateway.go:85-90`).
+   - **SEC-04 (Low)**: Celah bypass `OriginCheck` saat header Origin & Referer kosong (`backend/internal/delivery/http/middleware/origin_check.go:53-56`).
+3. **`02-concurrency-auth-race-conditions.md`**:
+   - **SEC-03 (Medium-High)**: Race condition pada rotasi refresh token di `refresh_token_repo.go:62-67`; ketiadaan pengecekan `revokedAt != nil` pasca-row-lock.
+4. **`03-regulasi-uupdp-pajak-compliance.md`**:
+   - **REG-01 (High)**: Kesenjangan antarmuka & rute HTTP mandiri untuk Hak Hapus Akun (`POST /api/v1/user/delete-account`, Pasal 43 UU PDP) dan Ekspor Data Pribadi (`GET /api/v1/user/export-data`, Pasal 21 UU PDP).
+5. **`04-billing-checkout-flow-gap.md`**:
+   - **FLOW-01 (High)**: `CheckoutService` (Midtrans Snap) belum terhubung ke rute HTTP dan antarmuka langganan pengguna masih bersifat read-only tanpa tombol beli/upgrade paket.
+6. **`05-ai-rag-prompt-injection-resilience.md`**:
+   - **AI-01 (Medium)**: Vektor serangan Indirect Prompt Injection pada penggabungan deskripsi transaksi mentah ke RAG context (`ai_usecase.go:275-282, 582`).
+7. **`06-arsitektur-skalabilitas-masa-depan.md`**:
+   - **ARCH-01 (Medium)**: Bottleneck saturasi koneksi PostgreSQL tanpa PgBouncer, kebocoran koneksi idle SSE pada jaringan seluler, dan partisi tabel audit logs.
+8. **`07-master-implementation-plan.md`**:
+   - Rencana aksi bertahap (Sprint P08-Patch untuk keamanan segera, Sprint P09 untuk fitur regulasi & checkout) lengkap dengan kriteria penerimaan (DOD).
+
+---
+
 ## 2026-10-12 — P08: Hardening, E2E Testing, & Go-Live Production Readiness (14/14 100%)
 
 Fase final FinTrack v2 sebelum pembukaan rilis publik produksi. Melakukan pembuktian empiris
