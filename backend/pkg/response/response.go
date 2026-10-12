@@ -2,9 +2,26 @@ package response
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+var technicalKeywords = []string{
+	"sql:", "pq:", "pgx:", "select ", "update ", "insert ", "delete ", "from ", "where ",
+	"violates", "constraint", "sqlstate", "dial tcp", "connect:", "connection refused",
+	"syntax error", "column \"", "relation \"", "table \"", "panic", "goroutine", "runtime error",
+}
+
+func sanitizeTechnicalDetails(msg string) string {
+	lower := strings.ToLower(msg)
+	for _, kw := range technicalKeywords {
+		if strings.Contains(lower, kw) {
+			return "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."
+		}
+	}
+	return msg
+}
 
 type Meta struct {
 	Total   int `json:"total"`
@@ -29,6 +46,12 @@ func JSON(c *gin.Context, status int, msg string, data interface{}) {
 }
 
 func Error(c *gin.Context, status int, msg string, err string) {
+	if status >= 500 {
+		msg = sanitizeTechnicalDetails(msg)
+		if strings.Contains(strings.ToLower(err), "error:") || strings.Contains(strings.ToLower(err), "sql") {
+			err = "internal_error"
+		}
+	}
 	c.JSON(status, Response{
 		Success: false,
 		Message: msg,
@@ -80,6 +103,9 @@ func NotFound(c *gin.Context, msg string) {
 }
 
 func InternalError(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."
+	}
 	Error(c, http.StatusInternalServerError, msg, "internal_error")
 }
 

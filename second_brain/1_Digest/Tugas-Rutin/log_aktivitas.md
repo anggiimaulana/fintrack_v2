@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-10-12 — Pengamanan & Sanitasi Pesan Error (Anti-Information Leakage)
+
+Penyempurnaan seluruh respons kesalahan HTTP agar tidak pernah mengekspos detail teknis (query SQL, nama tabel/kolom, SQLSTATE, koneksi internal, atau pesan `err.Error()` mentah) ke pengguna/klien:
+
+### Perubahan & Pengamanan
+- **Pusat Sanitasi Global (`pkg/response/response.go`):**
+  Fungsi `Error()` dan `InternalError()` dilengkapi filter otomatis `sanitizeTechnicalDetails()`. Seluruh respons berstatus >= 500 yang memuat pola kata kunci teknis (`sql:`, `pgx:`, `pq:`, `SELECT`, `violates constraint`, `SQLSTATE`, `dial tcp`, dll.) disanitasi otomatis menjadi kalimat bahasa manusia yang ramah:
+  `"Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."`
+- **Pembersihan di Handler (`ai_handler.go`, `auth_handler.go`, `payment_handler.go`, `provider_handler.go`, `payment_admin_handler.go`):**
+  Menghapus konkatenasi pesan teknis `+ err.Error()`. Seluruh detail teknis dicatat murni ke log server backend via `logger.Error()`, sementara respons HTTP klien hanya mengembalikan pesan manusia yang mudah dimengerti.
+- **Unit Test Baru (`pkg/response/response_test.go`):**
+  `TestSanitizeTechnicalDetails` memastikan pesan SQL error yang dioper ke `InternalError` tidak pernah bocor ke payload JSON klien.
+
+---
+
 ## 2026-10-12 — Implementasi Penuh Hasil Audit: Patch Keamanan, Regulasi UU PDP & Alur Billing Checkout
 
 Eksekusi tuntas atas seluruh rekomendasi dari dokumen audit `second_brain/0_Inbox/audit/2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi/`:

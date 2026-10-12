@@ -109,7 +109,7 @@ func (h *PaymentHandler) Checkout(c *gin.Context) {
 		CustomerEmail: userProfile.Email,
 	})
 	if err != nil {
-		response.InternalError(c, "Gagal membuat sesi pembayaran: "+err.Error())
+		response.InternalError(c, "Gagal membuat sesi pembayaran. Silakan coba beberapa saat lagi.")
 		return
 	}
 

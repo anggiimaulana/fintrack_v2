@@ -36,7 +36,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 	}
 	provider, err := h.usecase.Create(c.Request.Context(), adminID, req)
 	if err != nil {
-		response.InternalError(c, "Failed to create provider: "+err.Error())
+		response.InternalError(c, "Gagal membuat provider")
 		return
 	}
 	middleware.InvalidateAllCache(c.Request.Context())
@@ -56,7 +56,7 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	provider, err := h.usecase.Update(c.Request.Context(), id, req)
 	if err != nil {
-		response.InternalError(c, "Failed to update provider: "+err.Error())
+		response.InternalError(c, "Gagal memperbarui provider")
 		return
 	}
 	if provider == nil {

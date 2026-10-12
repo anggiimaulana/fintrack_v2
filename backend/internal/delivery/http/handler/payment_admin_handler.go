@@ -22,7 +22,7 @@ func (h *PaymentHandler) ApproveManual(c *gin.Context) {
 	}
 	pay, err := h.admin.Approve(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "approve_failed", "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "approve_failed", "message": "Gagal menyetujui pembayaran"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Pembayaran disetujui", "data": pay})
@@ -48,7 +48,7 @@ func (h *PaymentHandler) RejectManual(c *gin.Context) {
 	}
 	pay, err := h.admin.Reject(c.Request.Context(), id, body.Reason)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "reject_failed", "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "reject_failed", "message": "Gagal menolak pembayaran"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Pembayaran ditolak", "data": pay})

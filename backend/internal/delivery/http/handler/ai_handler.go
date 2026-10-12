@@ -265,7 +265,7 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 	result, err := h.aiUC.AnalyzeReceipt(c.Request.Context(), userID, imageData, contentType)
 	if err != nil {
 		logger.Error("receipt analysis failed", zap.Error(err))
-		response.Error(c, http.StatusInternalServerError, "Failed to analyze receipt", err.Error())
+		response.InternalError(c, "Gagal menganalisis struk belanja. Silakan coba beberapa saat lagi.")
 		return
 	}
 

@@ -197,7 +197,7 @@ func (h *AuthHandler) DeleteAccount(c *gin.Context) {
 
 	res, err := h.anonymizeSvc.AnonymizeUserData(c.Request.Context(), userID, &userID, req.Reason)
 	if err != nil {
-		response.InternalError(c, "Gagal memproses penghapusan akun: "+err.Error())
+		response.InternalError(c, "Gagal memproses penghapusan akun. Silakan coba beberapa saat lagi.")
 		return
 	}
 
@@ -215,7 +215,7 @@ func (h *AuthHandler) ExportData(c *gin.Context) {
 
 	data, err := h.anonymizeSvc.ExportUserData(c.Request.Context(), userID)
 	if err != nil {
-		response.InternalError(c, "Gagal mengekspor data pengguna: "+err.Error())
+		response.InternalError(c, "Gagal mengekspor data pengguna. Silakan coba beberapa saat lagi.")
 		return
 	}
 

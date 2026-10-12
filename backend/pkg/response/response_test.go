@@ -106,3 +106,19 @@ func TestStatusCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeTechnicalDetails(t *testing.T) {
+	w := performRequest("GET", "/500", func(c *gin.Context) {
+		InternalError(c, "ERROR: column id of relation transactions does not exist (SQLSTATE 42703)")
+	})
+
+	var resp Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp.Message == "ERROR: column id of relation transactions does not exist (SQLSTATE 42703)" {
+		t.Fatalf("technical SQL error leaked to client: %s", resp.Message)
+	}
+	if resp.Message != "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi." {
+		t.Errorf("expected sanitized message, got: %s", resp.Message)
+	}
+}
