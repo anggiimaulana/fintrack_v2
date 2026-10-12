@@ -11,16 +11,44 @@ var technicalKeywords = []string{
 	"sql:", "pq:", "pgx:", "select ", "update ", "insert ", "delete ", "from ", "where ",
 	"violates", "constraint", "sqlstate", "dial tcp", "connect:", "connection refused",
 	"syntax error", "column \"", "relation \"", "table \"", "panic", "goroutine", "runtime error",
+	"unmarshal", "cannot unmarshal", "invalid character", "parsing time", "struct field",
+	"failed on the '", "strconv.", "invalid uuid", "json:", "unexpected eof",
 }
 
-func sanitizeTechnicalDetails(msg string) string {
-	lower := strings.ToLower(msg)
+func isTechnical(s string) bool {
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
 	for _, kw := range technicalKeywords {
 		if strings.Contains(lower, kw) {
-			return "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."
+			return true
 		}
 	}
+	return strings.Contains(s, "\n") || strings.HasPrefix(lower, "error:")
+}
+
+func sanitizeMessage(status int, msg string) string {
+	if isTechnical(msg) {
+		if status >= 500 {
+			return "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."
+		}
+		return "Format data yang dikirim tidak valid atau tidak sesuai."
+	}
+	if msg == "" && status >= 500 {
+		return "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."
+	}
 	return msg
+}
+
+func sanitizeErrorCode(status int, errCode string) string {
+	if status >= 500 {
+		return "internal_error"
+	}
+	if isTechnical(errCode) {
+		return "invalid_payload"
+	}
+	return errCode
 }
 
 type Meta struct {
@@ -46,16 +74,10 @@ func JSON(c *gin.Context, status int, msg string, data interface{}) {
 }
 
 func Error(c *gin.Context, status int, msg string, err string) {
-	if status >= 500 {
-		msg = sanitizeTechnicalDetails(msg)
-		if strings.Contains(strings.ToLower(err), "error:") || strings.Contains(strings.ToLower(err), "sql") {
-			err = "internal_error"
-		}
-	}
 	c.JSON(status, Response{
 		Success: false,
-		Message: msg,
-		Error:   err,
+		Message: sanitizeMessage(status, msg),
+		Error:   sanitizeErrorCode(status, err),
 	})
 }
 
@@ -87,18 +109,30 @@ func Paginated(c *gin.Context, msg string, data interface{}, total, page, perPag
 }
 
 func BadRequest(c *gin.Context, msg string, err string) {
+	if msg == "Invalid request body" || msg == "Invalid request" || msg == "" {
+		msg = "Format data yang dikirim tidak valid atau tidak lengkap."
+	}
 	Error(c, http.StatusBadRequest, msg, err)
 }
 
 func Unauthorized(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Autentikasi diperlukan untuk mengakses layanan ini."
+	}
 	Error(c, http.StatusUnauthorized, msg, "unauthorized")
 }
 
 func Forbidden(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Anda tidak memiliki izin untuk melakukan tindakan ini."
+	}
 	Error(c, http.StatusForbidden, msg, "forbidden")
 }
 
 func NotFound(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Data atau sumber daya yang diminta tidak ditemukan."
+	}
 	Error(c, http.StatusNotFound, msg, "not_found")
 }
 
@@ -110,9 +144,15 @@ func InternalError(c *gin.Context, msg string) {
 }
 
 func Conflict(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Data yang dikirim bertentangan dengan data yang sudah ada."
+	}
 	Error(c, http.StatusConflict, msg, "conflict")
 }
 
 func TooManyRequests(c *gin.Context, msg string) {
+	if msg == "" || msg == "Too many requests" {
+		msg = "Terlalu banyak permintaan. Silakan tunggu beberapa saat."
+	}
 	Error(c, http.StatusTooManyRequests, msg, "rate_limit_exceeded")
 }

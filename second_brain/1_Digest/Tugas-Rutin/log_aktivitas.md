@@ -4,18 +4,21 @@
 
 ---
 
-## 2026-10-12 — Pengamanan & Sanitasi Pesan Error (Anti-Information Leakage)
+## 2026-10-12 — Pengamanan & Sanitasi Universal Seluruh Pesan Error HTTP (CWE-209 Anti-Information Leakage)
 
-Penyempurnaan seluruh respons kesalahan HTTP agar tidak pernah mengekspos detail teknis (query SQL, nama tabel/kolom, SQLSTATE, koneksi internal, atau pesan `err.Error()` mentah) ke pengguna/klien:
+Penyempurnaan menyeluruh di seluruh lapisan respons HTTP (bukan hanya 500, melainkan mencakup 400, 401, 403, 404, 409, 429, dan 500) agar tidak pernah mengekspos detail teknis (query SQL, parser error, struct field Go, nama kolom/tabel, SQLSTATE, koneksi internal, atau pesan `err.Error()` mentah) ke pengguna/klien:
 
 ### Perubahan & Pengamanan
-- **Pusat Sanitasi Global (`pkg/response/response.go`):**
-  Fungsi `Error()` dan `InternalError()` dilengkapi filter otomatis `sanitizeTechnicalDetails()`. Seluruh respons berstatus >= 500 yang memuat pola kata kunci teknis (`sql:`, `pgx:`, `pq:`, `SELECT`, `violates constraint`, `SQLSTATE`, `dial tcp`, dll.) disanitasi otomatis menjadi kalimat bahasa manusia yang ramah:
-  `"Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."`
-- **Pembersihan di Handler (`ai_handler.go`, `auth_handler.go`, `payment_handler.go`, `provider_handler.go`, `payment_admin_handler.go`):**
-  Menghapus konkatenasi pesan teknis `+ err.Error()`. Seluruh detail teknis dicatat murni ke log server backend via `logger.Error()`, sementara respons HTTP klien hanya mengembalikan pesan manusia yang mudah dimengerti.
-- **Unit Test Baru (`pkg/response/response_test.go`):**
-  `TestSanitizeTechnicalDetails` memastikan pesan SQL error yang dioper ke `InternalError` tidak pernah bocor ke payload JSON klien.
+- **Sanitasi Universal Global (`pkg/response/response.go`):**
+  - Fungsi `Error()`, `BadRequest()`, `NotFound()`, `Unauthorized()`, `Forbidden()`, `Conflict()`, `TooManyRequests()`, dan `InternalError()` disaring melalui `sanitizeMessage()` dan `sanitizeErrorCode()`.
+  - Error 500: Query SQL, SQLSTATE, pgx, connection error otomatis dinetralkan menjadi `"Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi."` dengan error code `"internal_error"`.
+  - Error 400 (Bad Request): Parsing error seperti `json: cannot unmarshal ... into Go struct field ...`, `syntax error`, `EOF`, `invalid character`, dll. otomatis dinetralkan menjadi `"Format data yang dikirim tidak valid atau tidak lengkap."` dengan error code `"invalid_payload"`.
+  - Pesan default ramah bahasa manusia untuk 401 (Autentikasi diperlukan), 403 (Izin ditolak), 404 (Data tidak ditemukan), 409 (Konflik data), dan 429 (Terlalu banyak permintaan).
+- **Pencegahan Kebocoran Panic (`router.go`):**
+  - Mengganti `gin.Recovery()` default dengan `gin.CustomRecovery()`. Jika terjadi panic tak terduga, detail stack trace dicatat murni ke Zap logger internal (`logger.Error`), sementara klien menerima pesan manusia 500 yang bersih tanpa jejak stack trace Go.
+- **Unit Test Tambahan (`pkg/response/response_test.go`):**
+  - `TestSanitizeTechnicalDetails`: memverifikasi netralisasi error SQL pada status 500.
+  - `TestSanitizeBadRequestTechnicalDetails`: memverifikasi netralisasi error unmarshal struct field pada status 400.
 
 ---
 

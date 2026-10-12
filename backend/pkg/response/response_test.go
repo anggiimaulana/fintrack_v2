@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -120,5 +121,24 @@ func TestSanitizeTechnicalDetails(t *testing.T) {
 	}
 	if resp.Message != "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi." {
 		t.Errorf("expected sanitized message, got: %s", resp.Message)
+	}
+}
+
+func TestSanitizeBadRequestTechnicalDetails(t *testing.T) {
+	w := performRequest("POST", "/400", func(c *gin.Context) {
+		BadRequest(c, "Invalid request body", "json: cannot unmarshal string into Go struct field Transaction.amount of type float64")
+	})
+
+	var resp Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if strings.Contains(resp.Error, "struct field") || strings.Contains(resp.Error, "cannot unmarshal") {
+		t.Fatalf("technical unmarshal error leaked in error field: %s", resp.Error)
+	}
+	if resp.Error != "invalid_payload" {
+		t.Errorf("expected error code invalid_payload, got: %s", resp.Error)
+	}
+	if resp.Message != "Format data yang dikirim tidak valid atau tidak lengkap." {
+		t.Errorf("expected human friendly message, got: %s", resp.Message)
 	}
 }

@@ -19,6 +19,9 @@ import (
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/user"
+	"github.com/fintrack/backend/pkg/logger"
+	"github.com/fintrack/backend/pkg/response"
+	"go.uber.org/zap"
 )
 
 type RouterConfig struct {
@@ -104,8 +107,11 @@ func SetupRouter(
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
-	r.Use(gin.Recovery())
-
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		logger.Error("server panic recovered", zap.Any("panic", recovered))
+		response.InternalError(c, "Terjadi kesalahan internal pada server. Silakan coba beberapa saat lagi.")
+		c.Abort()
+	}))
 	if config.Metrics != nil {
 		r.Use(config.Metrics.Middleware())
 	}
