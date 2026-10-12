@@ -18,6 +18,7 @@ import (
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/usecase"
+	"github.com/fintrack/backend/internal/user"
 )
 
 type RouterConfig struct {
@@ -124,6 +125,9 @@ func SetupRouter(
 		aiH.WithLedger(config.Ledger)
 	}
 	ah := handler.NewAuthHandler(authUC, config.CookieSecure)
+	if config.Pool != nil {
+		ah.WithAnonymize(user.NewAnonymizeService(config.Pool))
+	}
 	adminH := handler.NewAdminHandler(userUC)
 	providerH := handler.NewProviderHandler(providerUC)
 	rh := handler.NewReportHandler(reportUC)
@@ -165,6 +169,9 @@ func SetupRouter(
 		{
 			protected.GET("/me", ah.GetProfile)
 			protected.PUT("/me", ah.UpdateProfile)
+			protected.DELETE("/me", ah.DeleteAccount)
+			protected.POST("/user/delete-account", ah.DeleteAccount)
+			protected.GET("/user/export-data", ah.ExportData)
 			// Realtime SSE stream. Registered outside the cached group: a
 			// long-lived stream must never be wrapped in the 30s response cache.
 			if realtimeH != nil {
@@ -201,9 +208,9 @@ func SetupRouter(
 				userRoutes.POST("/transactions", gated(th.Create, limitGate(config, "max_transactions"))...)
 				userRoutes.PUT("/transactions/:id", th.Update)
 				userRoutes.DELETE("/transactions/:id", th.Delete)
-
-
-
+				if paymentH != nil {
+					userRoutes.POST("/payments/checkout", paymentH.Checkout)
+				}
 				ai := userRoutes.Group("/ai")
 				{
 					// ai_chat is in every plan; the token quota is the real gate.

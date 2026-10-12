@@ -137,17 +137,18 @@ func seedPlanCatalogue(t *testing.T, pool *pgxpool.Pool) {
 		name     string
 		fallback string
 		order    int
+		price    int64
 	}{
-		{freePlanID, "free", "Free", "manual", 1},
-		{proPlanID, "pro", "Pro", "midtrans", 2},
-		{businessPlanID, "business", "Business", "midtrans", 3},
+		{freePlanID, "free", "Free", "manual", 1, 0},
+		{proPlanID, "pro", "Pro", "midtrans", 2, 39000},
+		{businessPlanID, "business", "Business", "midtrans", 3, 99000},
 	}
 	for _, p := range plans {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO plans (id, code, name, billing_period_days, is_active, is_public, fallback_gateway, sort_order)
-			VALUES ($1,$2,$3,30,true,true,$4,$5)
-			ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name`,
-			p.id, p.code, p.name, p.fallback, p.order); err != nil {
+			INSERT INTO plans (id, code, name, price_monthly_idr, billing_period_days, is_active, is_public, fallback_gateway, sort_order)
+			VALUES ($1,$2,$3,$4,30,true,true,$5,$6)
+			ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, price_monthly_idr = EXCLUDED.price_monthly_idr`,
+			p.id, p.code, p.name, p.price, p.fallback, p.order); err != nil {
 			t.Fatalf("seed plan %s: %v", p.code, err)
 		}
 	}

@@ -66,6 +66,10 @@ func (r *RefreshTokenRepo) Rotate(ctx context.Context, oldID uuid.UUID, newToken
 		return fmt.Errorf("failed to lock refresh token: %w", err)
 	}
 
+	if revokedAt != nil {
+		return domain.ErrRefreshTokenRevoked
+	}
+
 	if err := tx.QueryRow(ctx,
 		`INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent)
 		 VALUES ($1, $2, $3, $4) RETURNING id, created_at`,

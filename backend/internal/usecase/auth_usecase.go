@@ -169,6 +169,10 @@ func (u *AuthUsecase) Refresh(ctx context.Context, rawToken, userAgent string) (
 		newToken.UserAgent = &userAgent
 	}
 	if err := u.refreshRepo.Rotate(ctx, existing.ID, newToken); err != nil {
+		if errors.Is(err, domain.ErrRefreshTokenRevoked) {
+			_ = u.refreshRepo.RevokeAllForUser(ctx, existing.UserID)
+			return nil, ErrInvalidRefresh
+		}
 		return nil, err
 	}
 	return &TokenPair{AccessToken: access, RefreshToken: raw, ExpiresIn: int(accessTTL.Seconds()), User: p}, nil

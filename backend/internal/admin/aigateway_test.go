@@ -139,3 +139,28 @@ func TestPutRoutes_ValidationPayload(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEndpointURL(t *testing.T) {
+	cases := []struct {
+		url     string
+		wantErr bool
+	}{
+		{"http://localhost:20128/v1", false},
+		{"https://api.openai.com/v1", false},
+		{"http://10.0.0.5:8080/v1", false},
+		{"ftp://example.com", true},
+		{"gopher://example.com", true},
+		{"file:///etc/passwd", true},
+		{"not-a-url", true},
+		{"http://169.254.169.254/latest/meta-data/", true},
+		{"http://169.254.1.1/api", true},
+		{"", true},
+	}
+
+	for _, tc := range cases {
+		err := validateEndpointURL(tc.url)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("validateEndpointURL(%q) err = %v, wantErr = %v", tc.url, err, tc.wantErr)
+		}
+	}
+}

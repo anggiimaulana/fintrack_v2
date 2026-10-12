@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-10-12 — Implementasi Penuh Hasil Audit: Patch Keamanan, Regulasi UU PDP & Alur Billing Checkout
+
+Eksekusi tuntas atas seluruh rekomendasi dari dokumen audit `second_brain/0_Inbox/audit/2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi/`:
+
+### 1. Patch Keamanan Kritis (Sprint P08-Patch)
+- **TASK-FIX-01 (XSS Markdown Sanitization):**
+  Fungsi `isSafeUrl()` di `frontend/components/ai/ChatMessage.tsx` membatasi skema tautan hanya ke `http:`, `https:`, dan `mailto:`. Protokol berbahaya `javascript:` dan `data:` dinetralkan menjadi `#`. Diverifikasi melalui test DOM Vitest `ChatMessage.dom.test.tsx` (3 passed).
+- **TASK-FIX-02 (Anti-SSRF AI Gateway BaseURL):**
+  Fungsi `validateEndpointURL()` di `backend/internal/admin/aigateway.go` memvalidasi skema HTTP/HTTPS dan memblokir alamat IP cloud metadata (`169.254.169.254` dan `169.254.0.0/16`) serta link-local address. Unit test `TestValidateEndpointURL` lulus.
+- **TASK-FIX-03 (Atomik Concurrency Race Condition Refresh Token):**
+  Di `backend/internal/repository/postgres/refresh_token_repo.go`, pengecekan `revokedAt != nil` ditambahkan di bawah row lock `SELECT ... FOR UPDATE`. Jika token telah dicabut oleh request paralel lain, fungsi mengembalikan `domain.ErrRefreshTokenRevoked`, dan `AuthUsecase.Refresh` langsung mencabut seluruh token sesi pengguna (`RevokeAllForUser`). Diverifikasi via `TestP08_Patch_RefreshTokenConcurrentRotation` (1 sukses, 9 ditolak).
+- **TASK-FIX-04 (Penguatan OriginCheck Anti-CSRF):**
+  Di `backend/internal/delivery/http/middleware/origin_check.go`, request mutasi tanpa header Origin/Referer yang membawa cookie `ft_at` ditolak HTTP 403 kecuali membawa custom header `X-Requested-With`. Header default `X-Requested-With: XMLHttpRequest` ditambahkan ke instance Axios di `frontend/lib/api.ts`.
+- **TASK-FIX-05 (Isolasi Delimiter XML RAG Context):**
+  Di `backend/internal/usecase/ai_usecase.go`, konteks transaksi RAG dibungkus dalam tag `<user_transactions>` dengan tag-breakout sanitization. System prompt diperkuat dengan instruksi khusus yang melarang eksekusi instruksi di dalam tag transaksi pengguna.
+
+### 2. Fitur Regulasi & Alur Bisnis (Sprint P09)
+- **TASK-REG-01 & 02 (Endpoint Hapus Akun & Ekspor Data UU PDP):**
+  - Rute `DELETE /api/v1/me` dan `POST /api/v1/user/delete-account` memvalidasi password pengguna via `anonymizeSvc.VerifyPassword()`, mengeksekusi pseudonimisasi atomik dan shredding password, menghapus riwayat chat dan vektor pgvector 768d, dan mencabut sesi cookie.
+  - Rute `GET /api/v1/user/export-data` mengompilasi seluruh profil, histori transaksi, sesi chat AI, dan faktur ke dalam arsip JSON Data Portability (UU PDP Pasal 21).
+  - Terverifikasi via integrasi `TestP09_PDP_And_Checkout_Endpoints`.
+- **TASK-REG-03 (UI Privasi & Kepatuhan UU PDP di Profil):**
+  - Seksi baru di `frontend/app/(dashboard)/user/profile/page.tsx` menyediakan tombol "Ekspor Data (JSON)" dan dialog modal bahaya "Hapus Akun Permanen" dengan validasi password pengguna.
+- **TASK-PAY-01 (Endpoint Checkout Pembayaran Langganan):**
+  - Rute `POST /api/v1/payments/checkout` dihubungkan ke `PaymentHandler.Checkout` dan `CheckoutService`, menerbitkan faktur dan sesi gateway pembayaran (Midtrans Snap / manual transfer).
+- **TASK-PAY-02 (Integrasi Checkout UI di Halaman Langganan):**
+  - `frontend/app/(dashboard)/user/settings/subscription/page.tsx` diperbarui dengan kartu interaktif paket Pro (Rp 39.000/bln) dan Business (Rp 99.000/bln), terhubung ke mutasi checkout dan modal faktur pembayaran.
+- **TASK-INF-02 (Sweeper Koneksi Idle SSE di Hub):**
+  - `hub.go` dilengkapi dengan pelacakan `lastActive`, metode `SweepIdle(idleLimit)`, dan background runner `StartIdleSweeper()` yang dijalankan di `main.go`. Diverifikasi via `TestHub_SweepIdle`.
+
+### 3. Verifikasi Penuh
+- **Backend:** `go vet ./...` (OK), `go build ./...` (OK), `go test ./...` (27 packages OK), suite integrasi penuh (OK 10.9s).
+- **Frontend:** `pnpm lint` (0 error, 53 warning non-fatal), `pnpm test` (13 test files, 105 tests passed), `pnpm build` (Compiled successfully Turbopack, 31/31 pages OK).
+
+---
+
 ## 2026-10-12 — Audit Komprehensif Logika, Regulasi, Keamanan & Potensi Masa Depan FinTrack v2
 
 Audit mendalam terhadap seluruh logika bisnis, kepatuhan regulasi UU PDP / perpajakan,

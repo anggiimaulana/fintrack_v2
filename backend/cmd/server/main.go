@@ -164,6 +164,8 @@ func main() {
 	realtimeHandler := realtime.NewHandler(realtimeHub, realtimeBuffer)
 	stopRealtimeSub := realtime.NewSubscriber(realtimePubSub, realtimeHub).Start(bgCtx)
 	defer stopRealtimeSub()
+	stopSweeper := realtimeHub.StartIdleSweeper(bgCtx, 2*time.Minute, 1*time.Minute)
+	defer stopSweeper()
 	defer realtimeHub.CloseAll()
 
 	var aiGateway *gateway.Service
@@ -313,12 +315,16 @@ func main() {
 	payRegistry.Register(payment.NewManualGateway(
 		os.Getenv("MANUAL_BANK_NAME"), os.Getenv("MANUAL_ACCOUNT_NUMBER"), os.Getenv("MANUAL_ACCOUNT_HOLDER")))
 	payTax := payment.NewTaxCalculator(settingsRepo)
-	_ = payment.NewInvoiceService(paymentRepo, settingsRepo, payTax) // available for P06 checkout endpoints
+	payInvoice := payment.NewInvoiceService(paymentRepo, settingsRepo, payTax)
 	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver)
 	payWebhook := payment.NewWebhookProcessor(paymentRepo, payRegistry, subActivator, txManager)
 	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, nil)
 	payAdmin := payment.NewAdminService(payManual)
-	payHandler := handler.NewPaymentHandler(payWebhook).WithManual(payManual).WithAdmin(payAdmin)
+	payCheckout := payment.NewCheckoutService(paymentRepo, settingsRepo, payRegistry, payInvoice, nil)
+	payHandler := handler.NewPaymentHandler(payWebhook).
+		WithManual(payManual).
+		WithAdmin(payAdmin).
+		WithCheckout(payCheckout, billingRepo, userRepo)
 	// Realtime producers (P07 slice B).
 	payWebhook.SetEmitter(realtimePublisher)
 	payManual.SetEmitter(realtimePublisher)

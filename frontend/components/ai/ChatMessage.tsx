@@ -14,6 +14,19 @@ type CodeProps = {
   children?: React.ReactNode;
 } & React.HTMLAttributes<HTMLElement>;
 
+function isSafeUrl(url?: string): boolean {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed.startsWith("javascript:") || trimmed.startsWith("data:") || trimmed.startsWith("vbscript:")) {
+    return false;
+  }
+  try {
+    const parsed = new URL(url, "https://fintrack.internal");
+    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:";
+  } catch {
+    return false;
+  }
+}
 
 export function ChatMessage({ author, content }: ChatMessageProps) {
   const isUser = author === "user";
@@ -106,9 +119,20 @@ export function ChatMessage({ author, content }: ChatMessageProps) {
               hr: ({ node, ...props }: React.ComponentPropsWithoutRef<"hr"> & { node?: unknown }) => (
                 <hr className="my-3 border-t-2 border-foreground/20" {...props} />
               ),
-              a: ({ children, href, node, ...props }: React.ComponentPropsWithoutRef<"a"> & { node?: unknown }) => (
-                <a href={href} className="cursor-pointer underline text-primary hover:text-primary/80 font-bold" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
-              ),
+              a: ({ children, href, node, ...props }: React.ComponentPropsWithoutRef<"a"> & { node?: unknown }) => {
+                const safeHref = isSafeUrl(href) ? href : "#";
+                return (
+                  <a
+                    href={safeHref}
+                    className="cursor-pointer underline text-primary hover:text-primary/80 font-bold"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    {...props}
+                  >
+                    {children}
+                  </a>
+                );
+              },
             }}
           >
             {cleanContent}

@@ -143,6 +143,43 @@ func TestHub_SlowClientDoesNotBlockBroadcast(t *testing.T) {
 	}
 }
 
+func TestHub_SweepIdle(t *testing.T) {
+	h := NewHub()
+	now := time.Now()
+	h.now = func() time.Time { return now }
+
+	id := uuid.New()
+	cActive := h.Register(id, false)
+	cIdle := h.Register(id, false)
+
+	// Advance time past 2 minutes
+	now = now.Add(3 * time.Minute)
+
+	// Active client receives an event now -> updates lastActive
+	h.SendToUser(id, testEvent(contracts.EventQuotaReset))
+	<-cActive.Events()
+
+	// But cIdle was never active since the beginning
+	cIdle.lastActive = now.Add(-4 * time.Minute)
+
+	swept := h.SweepIdle(2 * time.Minute)
+	if swept != 1 {
+		t.Fatalf("expected 1 swept client, got %d", swept)
+	}
+
+	select {
+	case <-cIdle.Done():
+	default:
+		t.Fatal("idle client should be closed")
+	}
+
+	select {
+	case <-cActive.Done():
+		t.Fatal("active client must not be closed")
+	default:
+	}
+}
+
 // ─── event id helpers ────────────────────────────────────────
 
 func TestEventID_RoundTrip(t *testing.T) {

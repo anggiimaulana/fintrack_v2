@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/fintrack/backend/internal/infrastructure/auth"
 )
 
 // AnonymizeService implements data subject rights under UU PDP No. 27/2022
@@ -129,4 +131,171 @@ func (s *AnonymizeService) AnonymizeUserData(ctx context.Context, userID uuid.UU
 	}
 
 	return res, nil
+}
+
+// VerifyPassword checks if the provided password matches the user's password_hash.
+func (s *AnonymizeService) VerifyPassword(ctx context.Context, userID uuid.UUID, password string) (bool, error) {
+	var hash string
+	err := s.pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)
+	if err != nil {
+		return false, err
+	}
+	return auth.CheckPassword(hash, password), nil
+}
+
+type UserDataExport struct {
+	ExportedAt   time.Time        `json:"exported_at"`
+	Profile      map[string]any   `json:"profile"`
+	Transactions []map[string]any `json:"transactions"`
+	ChatSessions []map[string]any `json:"chat_sessions"`
+	Invoices     []map[string]any `json:"invoices"`
+	Payments     []map[string]any `json:"payments"`
+}
+
+// ExportUserData compiles all data associated with the user for Data Portability (UU PDP Pasal 21).
+func (s *AnonymizeService) ExportUserData(ctx context.Context, userID uuid.UUID) (*UserDataExport, error) {
+	export := &UserDataExport{
+		ExportedAt:   time.Now().UTC(),
+		Transactions: []map[string]any{},
+		ChatSessions: []map[string]any{},
+		Invoices:     []map[string]any{},
+		Payments:     []map[string]any{},
+	}
+
+	// 1. Profile
+	var email, fullName, role string
+	var createdAt time.Time
+	err := s.pool.QueryRow(ctx, `SELECT email, full_name, role, created_at FROM users WHERE id = $1`, userID).
+		Scan(&email, &fullName, &role, &createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("read profile: %w", err)
+	}
+	export.Profile = map[string]any{
+		"id":         userID.String(),
+		"email":      email,
+		"full_name":  fullName,
+		"role":       role,
+		"created_at": createdAt,
+	}
+
+	// 2. Transactions
+	tRows, err := s.pool.Query(ctx, `
+		SELECT id, type, amount, transaction_date, description, source, created_at
+		FROM transactions WHERE user_id = $1 AND is_deleted = false
+		ORDER BY transaction_date DESC`, userID)
+	if err == nil {
+		defer tRows.Close()
+		for tRows.Next() {
+			var id uuid.UUID
+			var tType, source string
+			var amount float64
+			var date time.Time
+			var desc *string
+			var cAt time.Time
+			if err := tRows.Scan(&id, &tType, &amount, &date, &desc, &source, &cAt); err == nil {
+				item := map[string]any{
+					"id":               id.String(),
+					"type":             tType,
+					"amount":           amount,
+					"transaction_date": date.Format("2006-01-02"),
+					"source":           source,
+					"created_at":       cAt,
+				}
+				if desc != nil {
+					item["description"] = *desc
+				}
+				export.Transactions = append(export.Transactions, item)
+			}
+		}
+	}
+
+	// 3. Chat Sessions & Messages
+	sRows, err := s.pool.Query(ctx, `
+		SELECT id, title, created_at FROM chat_sessions WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err == nil {
+		defer sRows.Close()
+		for sRows.Next() {
+			var sid uuid.UUID
+			var title string
+			var sCreatedAt time.Time
+			if err := sRows.Scan(&sid, &title, &sCreatedAt); err == nil {
+				sessionItem := map[string]any{
+					"id":         sid.String(),
+					"title":      title,
+					"created_at": sCreatedAt,
+					"messages":   []map[string]any{},
+				}
+				mRows, merr := s.pool.Query(ctx, `
+					SELECT id, role, content, created_at FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC`, sid)
+				if merr == nil {
+					var msgs []map[string]any
+					for mRows.Next() {
+						var mid uuid.UUID
+						var role, content string
+						var mCreatedAt time.Time
+						if err := mRows.Scan(&mid, &role, &content, &mCreatedAt); err == nil {
+							msgs = append(msgs, map[string]any{
+								"id":         mid.String(),
+								"role":       role,
+								"content":    content,
+								"created_at": mCreatedAt,
+							})
+						}
+					}
+					mRows.Close()
+					sessionItem["messages"] = msgs
+				}
+				export.ChatSessions = append(export.ChatSessions, sessionItem)
+			}
+		}
+	}
+
+	// 4. Invoices & Payments
+	iRows, err := s.pool.Query(ctx, `
+		SELECT id, invoice_number, subtotal_idr, tax_idr, total_idr, status, issued_at
+		FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err == nil {
+		defer iRows.Close()
+		for iRows.Next() {
+			var iid uuid.UUID
+			var invNum, status string
+			var subtotal, tax, total int64
+			var issuedAt time.Time
+			if err := iRows.Scan(&iid, &invNum, &subtotal, &tax, &total, &status, &issuedAt); err == nil {
+				export.Invoices = append(export.Invoices, map[string]any{
+					"id":             iid.String(),
+					"invoice_number": invNum,
+					"subtotal_idr":   subtotal,
+					"tax_idr":        tax,
+					"total_idr":      total,
+					"status":         status,
+					"issued_at":      issuedAt,
+				})
+			}
+		}
+	}
+
+	pRows, err := s.pool.Query(ctx, `
+		SELECT id, gateway, amount_idr, status, created_at
+		FROM payments WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var pid uuid.UUID
+			var gw, status string
+			var amount int64
+			var pCreatedAt time.Time
+			if err := pRows.Scan(&pid, &gw, &amount, &status, &pCreatedAt); err == nil {
+				export.Payments = append(export.Payments, map[string]any{
+					"id":         pid.String(),
+					"gateway":    gw,
+					"amount_idr": amount,
+					"status":     status,
+					"created_at": pCreatedAt,
+				})
+			}
+		}
+	}
+
+	return export, nil
 }

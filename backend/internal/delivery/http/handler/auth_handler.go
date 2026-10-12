@@ -10,6 +10,7 @@ import (
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/usecase"
+	"github.com/fintrack/backend/internal/user"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -21,10 +22,16 @@ const (
 type AuthHandler struct {
 	authUsecase  *usecase.AuthUsecase
 	cookieSecure bool
+	anonymizeSvc *user.AnonymizeService
 }
 
 func NewAuthHandler(authUsecase *usecase.AuthUsecase, cookieSecure bool) *AuthHandler {
 	return &AuthHandler{authUsecase: authUsecase, cookieSecure: cookieSecure}
+}
+
+func (h *AuthHandler) WithAnonymize(anonymizeSvc *user.AnonymizeService) *AuthHandler {
+	h.anonymizeSvc = anonymizeSvc
+	return h
 }
 
 func (h *AuthHandler) setCookies(c *gin.Context, pair *usecase.TokenPair) {
@@ -163,4 +170,55 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	response.OK(c, "Profil berhasil diperbarui", profile)
+}
+
+// DeleteAccount handles permanent deletion and anonymization (UU PDP Pasal 43).
+func (h *AuthHandler) DeleteAccount(c *gin.Context) {
+	if h.anonymizeSvc == nil {
+		response.InternalError(c, "Modul kepatuhan PDP belum dikonfigurasi")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req struct {
+		Password string `json:"password" binding:"required"`
+		Reason   string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Password konfirmasi wajib diisi", "validation")
+		return
+	}
+
+	valid, err := h.anonymizeSvc.VerifyPassword(c.Request.Context(), userID, req.Password)
+	if err != nil || !valid {
+		response.Unauthorized(c, "Password konfirmasi salah")
+		return
+	}
+
+	res, err := h.anonymizeSvc.AnonymizeUserData(c.Request.Context(), userID, &userID, req.Reason)
+	if err != nil {
+		response.InternalError(c, "Gagal memproses penghapusan akun: "+err.Error())
+		return
+	}
+
+	h.clearCookies(c)
+	response.OK(c, "Akun berhasil dihapus dan data pribadi dianonimkan sesuai UU PDP No. 27/2022", res)
+}
+
+// ExportData handles personal data export for Data Portability (UU PDP Pasal 21).
+func (h *AuthHandler) ExportData(c *gin.Context) {
+	if h.anonymizeSvc == nil {
+		response.InternalError(c, "Modul kepatuhan PDP belum dikonfigurasi")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	data, err := h.anonymizeSvc.ExportUserData(c.Request.Context(), userID)
+	if err != nil {
+		response.InternalError(c, "Gagal mengekspor data pengguna: "+err.Error())
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=fintrack-data-export.json")
+	response.OK(c, "Data pribadi berhasil diekspor", data)
 }

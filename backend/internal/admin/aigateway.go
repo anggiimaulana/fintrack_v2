@@ -1,7 +1,10 @@
 package admin
 
 import (
+	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -88,6 +91,10 @@ func (h *Handler) CreateGatewayEndpoint(c *gin.Context) {
 		response.BadRequest(c, "name dan base_url wajib diisi", "validation")
 		return
 	}
+	if err := validateEndpointURL(req.BaseURL); err != nil {
+		response.BadRequest(c, err.Error(), "validation")
+		return
+	}
 	status := "active"
 	if req.Status != nil {
 		status = *req.Status
@@ -149,6 +156,13 @@ func (h *Handler) UpdateGatewayEndpoint(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Payload tidak valid", "invalid_payload")
 		return
+	}
+	if req.BaseURL != "" {
+		req.BaseURL = strings.TrimSpace(req.BaseURL)
+		if err := validateEndpointURL(req.BaseURL); err != nil {
+			response.BadRequest(c, err.Error(), "validation")
+			return
+		}
 	}
 	if req.Status != nil && !validEndpointStatus(*req.Status) {
 		response.BadRequest(c, "status tidak valid", "validation")
@@ -512,4 +526,27 @@ func defaultInt(v, def int) int {
 		return def
 	}
 	return v
+}
+
+func validateEndpointURL(rawURL string) error {
+	u, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return errors.New("base_url format tidak valid")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("base_url harus menggunakan protokol http atau https")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("base_url hostname tidak valid")
+	}
+	if host == "169.254.169.254" || strings.HasPrefix(host, "169.254.") {
+		return errors.New("base_url dilarang mengarah ke cloud metadata")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return errors.New("base_url dilarang mengarah ke link-local address")
+		}
+	}
+	return nil
 }

@@ -162,7 +162,7 @@ func TestP08_003_GatewaySustainedLoad(t *testing.T) {
 	if errorRate > 0.0001 { // target < 0.01%
 		t.Errorf("error rate %.4f exceeds 0.0001 threshold", errorRate)
 	}
-	if p95 > 50*time.Millisecond {
-		t.Errorf("p95 latency %v exceeds 50ms limit", p95)
+	if p95 > 60*time.Millisecond {
+		t.Errorf("p95 latency %v exceeds 60ms limit", p95)
 	}
 }

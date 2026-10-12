@@ -8,6 +8,9 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 const api = axios.create({
   baseURL: "/api/v1",
   withCredentials: true,
+  headers: {
+    "X-Requested-With": "XMLHttpRequest",
+  },
 });
 
 // Single-flight refresh: concurrent 401s trigger at most one refresh call.

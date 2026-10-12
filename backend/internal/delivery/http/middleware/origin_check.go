@@ -51,6 +51,13 @@ func OriginCheck(allowOrigins string) gin.HandlerFunc {
 		}
 
 		if origin == "" {
+			if cookie, err := c.Cookie(AccessCookieName); err == nil && cookie != "" {
+				if c.GetHeader("Authorization") == "" && c.GetHeader("X-Requested-With") == "" {
+					response.Forbidden(c, "Origin or CSRF protection header required for cookie-authenticated mutations")
+					c.Abort()
+					return
+				}
+			}
 			c.Next()
 			return
 		}

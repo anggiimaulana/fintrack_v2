@@ -11,6 +11,9 @@ import (
 // ErrEmailTaken is returned when registering an email that already exists.
 var ErrEmailTaken = errors.New("email already registered")
 
+// ErrRefreshTokenRevoked is returned when a refresh token has already been rotated/revoked.
+var ErrRefreshTokenRevoked = errors.New("refresh token already revoked")
+
 type UserRole string
 
 const (

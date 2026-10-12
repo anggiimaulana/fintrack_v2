@@ -36,6 +36,7 @@ type Client struct {
 	once   sync.Once
 	// connectedAt orders eviction when a user exceeds maxConnsPerUser.
 	connectedAt time.Time
+	lastActive  time.Time
 }
 
 // Events exposes the receive channel (read-only).
@@ -79,6 +80,7 @@ func (h *Hub) Register(userID uuid.UUID, isAdmin bool) *Client {
 		ch:          make(chan contracts.Event, 16),
 		closed:      make(chan struct{}),
 		connectedAt: h.now(),
+		lastActive:  h.now(),
 	}
 
 	h.mu.Lock()
@@ -161,6 +163,7 @@ func (h *Hub) deliver(targets []*Client, ev contracts.Event) int {
 		}
 		select {
 		case c.ch <- ev:
+			c.lastActive = h.now()
 			sent++
 		default:
 			logger.Warn("realtime: dropped event for slow client",
@@ -213,4 +216,59 @@ func oldestClient(set map[*Client]struct{}) *Client {
 func (h *Hub) WaitContext(ctx context.Context, c *Client) {
 	<-ctx.Done()
 	h.Unregister(c)
+}
+
+// SweepIdle unregisters and closes streams that have had no delivery activity past idleLimit.
+func (h *Hub) SweepIdle(idleLimit time.Duration) int {
+	if idleLimit <= 0 {
+		return 0
+	}
+	cutoff := h.now().Add(-idleLimit)
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var stale []*Client
+	for _, set := range h.byUser {
+		for c := range set {
+			if c.lastActive.Before(cutoff) {
+				stale = append(stale, c)
+			}
+		}
+	}
+
+	for _, c := range stale {
+		h.removeLocked(c)
+		c.close()
+	}
+	return len(stale)
+}
+
+// StartIdleSweeper runs periodic sweeping of idle SSE connections.
+func (h *Hub) StartIdleSweeper(ctx context.Context, idleLimit, interval time.Duration) func() {
+	if interval <= 0 {
+		interval = 1 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	stop := make(chan struct{})
+
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+				if swept := h.SweepIdle(idleLimit); swept > 0 {
+					logger.Info("realtime: swept stale idle SSE connections", zap.Int("count", swept))
+				}
+			}
+		}
+	}()
+
+	return func() {
+		close(stop)
+	}
 }
