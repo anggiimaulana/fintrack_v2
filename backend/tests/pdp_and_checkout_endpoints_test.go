@@ -66,7 +66,7 @@ func TestP09_PDP_And_Checkout_Endpoints(t *testing.T) {
 			JWTSecret: entTestSecret,
 			Pool:      pool,
 		},
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 		authUC, nil, nil,
 		payH, nil, nil,
 	)

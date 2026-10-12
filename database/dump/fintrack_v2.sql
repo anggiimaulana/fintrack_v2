@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NwsuPA79KljFvNtVFq6ZNm40s8FZR7DRKFp2fDyiYz8MggjH71Fdk8O2QLjAImk
+\restrict VXpsJOZRvhmEM6a4Zk8ttQdT580GPM0C3tp0lxndpziG17nj9UxeG3Fr5Na1Be2
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg12+2)
 -- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg12+2)
@@ -266,35 +266,6 @@ CREATE TABLE public.feature_flags (
 
 
 ALTER TABLE public.feature_flags OWNER TO postgres;
-
---
--- Name: gemini_api_keys; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.gemini_api_keys (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
-    alias text NOT NULL,
-    encrypted_key text NOT NULL,
-    key_preview text,
-    priority integer DEFAULT 0 NOT NULL,
-    status text DEFAULT 'active'::text NOT NULL,
-    provider text DEFAULT 'gemini'::text NOT NULL,
-    model text DEFAULT ''::text NOT NULL,
-    supports_text boolean DEFAULT true NOT NULL,
-    supports_audio boolean DEFAULT false NOT NULL,
-    supports_vision boolean DEFAULT false NOT NULL,
-    last_used_at timestamp with time zone,
-    last_error text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    is_archived boolean DEFAULT true NOT NULL,
-    archived_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT gemini_api_keys_status_check CHECK ((status = ANY (ARRAY['active'::text, 'quota_exceeded'::text, 'error'::text, 'inactive'::text])))
-);
-
-
-ALTER TABLE public.gemini_api_keys OWNER TO postgres;
 
 --
 -- Name: income_categories; Type: TABLE; Schema: public; Owner: postgres
@@ -720,7 +691,7 @@ ALTER TABLE public.users OWNER TO postgres;
 --
 
 COPY public.ai_endpoints (id, name, base_url, api_key_encrypted, provider, priority, status, health, last_check_at, last_error, modalities, weight, created_at, updated_at) FROM stdin;
-d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	66d7e1594fc5ee125fefd5f8f392bcba8ae0e10302f7242860716f06200ca2ef7f16f058a05ceb7f98555cde6db1ebcfc764a6ec1d37be7cdd5947bd61e227	9router	1	active	unhealthy	2026-10-12 00:46:29.652707+00	Get "http://localhost:20128/v1/models": dial tcp [::1]:20128: connect: connection refused	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-12 00:46:29.653052+00
+d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	66d7e1594fc5ee125fefd5f8f392bcba8ae0e10302f7242860716f06200ca2ef7f16f058a05ceb7f98555cde6db1ebcfc764a6ec1d37be7cdd5947bd61e227	9router	1	active	unhealthy	2026-10-12 03:31:50.847091+00	Get "http://localhost:20128/v1/models": dial tcp [::1]:20128: connect: connection refused	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-12 03:31:50.847714+00
 \.
 
 
@@ -1056,44 +1027,6 @@ ba339f08-ff2b-479b-9449-959dcdba74dd	ff_e2e_e3e26c77-67fc-4a04-aeb3-dcb2a7d9dd83
 90b1b225-4393-43f9-96e4-23cb4c102a11	ff_e2e_4deafea7-0bc4-4734-a19f-0fee305feb51	e2e		f	100	{}	\N	2026-10-11 09:23:36.713525+00	2026-10-11 09:23:36.727806+00
 cd3e780c-30e8-48c9-a802-7bae50a6a3b3	ff_e2e_5a22c078-69df-479b-8532-5134a93fb90a	e2e		f	100	{}	\N	2026-10-11 09:47:25.747812+00	2026-10-11 09:47:25.75639+00
 39c767ef-a6de-4921-ba13-5043ee1c43b6	feature_ai_gateway_centralized	AI Gateway Centralized		t	25	{}	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 09:04:14.991917+00	2026-10-11 10:36:55.259656+00
-\.
-
-
---
--- Data for Name: gemini_api_keys; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.gemini_api_keys (id, user_id, alias, encrypted_key, key_preview, priority, status, provider, model, supports_text, supports_audio, supports_vision, last_used_at, last_error, created_at, updated_at, is_archived, archived_at) FROM stdin;
-5fb33b4f-5790-44fa-b9b0-3a0c75feaa39	4a70824e-8116-4ac8-be58-2837848a6ea0	qroq-2	5763080f240dc1af8914813fcc2d01e49888c7a9e23219f9ae56d2e24ee5d89637c6472ef2a155c5532ac590c30c8700e1f1ae5f4797d582f7f9f71d66fe9e556509959e6d19385b86dcdb51f605a03192e0ea46	gsk_xl4N...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 6005, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:46:14.841296+00	2026-06-24 08:37:06.095157+00	t	2026-10-11 08:41:28.714383+00
-ce9bf853-e14a-4429-89f0-1a59413f80c7	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-3	a4c01c4e409f39dd77b732e58fc46b17ffd0a6995808845d92929302c6cef64187be7a587762f6ff5071dc48c0484de88cd984eba228be676706c5303f0d551705c9d514d88033e10420a5266b2c4c77242256b2	gsk_QjKx...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3446, Requested 6816. Please try again in 16.965s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:57:51.460444+00	2026-06-24 08:37:22.739082+00	t	2026-10-11 08:41:28.714383+00
-2c617585-ac5e-4feb-aeaa-edde0fbf06fa	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Vision	85707d2d43d33ee036c0dbc02191762abb7c64571e857ccef012b636814d9870caffa29b9992eceb1e9cfc10a07669770adea46aaae51b4ba6ee30a2be712d32610b77c91c9a1d29a87506e218d12950d8	AQ.Ab8RN...	0	error	gemini	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API returned 429: {\n  "error": {\n    "code": 429,\n    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\\nPlease retry in 49.036789088s.",\n    "status": "RESOURCE_EXHAUSTED",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.Help",\n        "links": [\n          {\n            "description": "Learn more about Gemini API quotas",\n            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.QuotaFailure",\n        "violations": [\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",\n            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",\n            "quotaDimensions": {\n              "location": "global",\n              "model": "gemini-2.0-flash"\n            }\n          },\n          {\n            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",\n            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",\n            "quotaDimensions": {\n              "model": "gemini-2.0-flash",\n              "location": "global"\n            }\n          }\n        ]\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.RetryInfo",\n        "retryDelay": "49s"\n      }\n    ]\n  }\n}\n	2026-06-24 00:29:20.634705+00	2026-06-24 01:02:09.592382+00	t	2026-10-11 08:41:28.714383+00
-5b76ec7a-9201-47f6-a811-53a151b02bd8	4a70824e-8116-4ac8-be58-2837848a6ea0	Gemini-Spech-Openrouter	256f1b19d9d629744791570b3d01d790414792988a7af7175e5ac7d354aa7b88adfe9d7e5843a1ecdca0d11eaa136b87ae7909f9b96462d45a891431a45e575106690c48fb5281befc8d2d3288952bad7a851dff295f2aecf9970124be7c0ddee1587e39d9	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	f	\N	API returned 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 00:30:45.161406+00	2026-06-24 01:26:38.347531+00	t	2026-10-11 08:41:28.714383+00
-7bb4a6b6-8509-401a-bd07-b885c13be581	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-1	4cd09710ce9d55f41c1d0973cb8ddc4d780294b95488a43ecee4559cfc0eb0698e56ac539287e22561e552720878d4888ec0abce2c203dc4812e5dc5fb6f748746dfd15c3066bbd7271a2437a2e709d3aee1a174	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp 172.64.149.20:443: i/o timeout	2026-06-24 00:33:40.940043+00	2026-06-24 03:39:45.738574+00	t	2026-10-11 08:41:28.714383+00
-5f5dd1fc-9b5e-4117-8653-8377c4af06ec	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-1	0a2298c6751c19d9ae34358c5407fac990935d7a2927a1ca405a442408b2b5bb81bd4ef03a29bb39466e5efdcf62174f4631ef230d4ea66689033bff9b3c8f1c536e3f94e83108681b48db277117a0fd4c5f0af4	gsk_UYvH...	0	error	groq	llama-3.1-8b-instant	t	f	f	\N	API returned status 413: {"error":{"message":"Request too large for model `llama-3.1-8b-instant` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7316, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 09:53:03.670206+00	2026-06-24 08:36:55.503163+00	t	2026-10-11 08:41:28.714383+00
-0d4efeb6-92d2-455e-bcde-c0b4f56e4967	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text	088add67f8c7537e4169b7cf3d207de224e618cae2a91ae3de308e11bba2be61b73a56fa03996d198d9bde8b0ac5432469ee56009716c1f447d6b26de713403179b094eec704abb85b3ee74a353ed509cd2478ab	gsk_UYvH...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 5712, Requested 6816. Please try again in 33.959999999s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-24 04:58:50.771186+00	2026-06-24 05:48:35.388759+00	t	2026-10-11 08:41:28.714383+00
-e0b015ff-484f-4571-944f-5a5824731a3c	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-groq-2	046b25dde392e333105bb4c1a5ed1f55c26e138cd7b195a67e3207ccf4ff567ed9b81b81f3ca2b9e4b1a40c2f9233c9925adc389e6c04988ededb745415aa354f9bb7c4c3e4e6c628ea51d4238ae3fe5962e5037	gsk_CVcw...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API returned 400: {"error":{"message":"invalid image data","type":"invalid_request_error"}}\n	2026-06-24 04:55:07.291691+00	2026-06-24 05:48:36.141548+00	t	2026-10-11 08:41:28.714383+00
-8fd75ee1-48d4-4800-b9aa-71afc9de4be6	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-4	196d04c1096ff9beead21b16357cfc22924c4e453cabf802c3764ff6ff7fa7605a3eb165f8f9529dead525f23cae98ccd2b3cc0b713f1f29763237925ca9da70886365ac6a0d42c80013b5ab3daa5ea98b48a09c	gsk_8oOV...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	API returned 429: {"error":{"message":"Rate limit reached for model `qwen/qwen3.6-27b` in organization `org_01kt30qztce999y7jmg0scjmx4` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3414, Requested 6816. Please try again in 16.725s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}\n	2026-06-23 11:58:18.262193+00	2026-06-24 01:26:37.739592+00	t	2026-10-11 08:41:28.714383+00
-d41745a7-e4a2-4f0e-93f9-c3c60ea3b404	4a70824e-8116-4ac8-be58-2837848a6ea0	Groq-Vision-2	502eff94d078b559c36337693cfadccf4de492969467cfbc480b2033963a98ea3ee7930f697109d5019975673345d694a17c9a25347388d25f392c5569d88c90ad8be77329500e57be60a2cb930e8db8e0cac356	gsk_dqXM...	0	error	groq	meta-llama/llama-4-scout-17b-16e-instruct	t	f	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": context canceled	2026-06-24 00:34:12.973761+00	2026-06-24 03:40:24.168945+00	t	2026-10-11 08:41:28.714383+00
-d65d18bc-692d-4da7-9037-c300ad87c32d	4a70824e-8116-4ac8-be58-2837848a6ea0	vision-gemini	018803bf903d02157cfbf9aa65b564730d8576e2d08ca31c128826b11df034853fc6d2b76fa97c8066cddc75ef3989aceb4064c64fb53ee105d776fa7979dc9991a203a16ded46b23608c64fbdc42a9d1a305a8317b866dfcaf42a4b9fb240a1826caa32a8	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	f	\N	API call failed: Post "https://openrouter.ai/api/v1/chat/completions": dial tcp 104.18.3.115:443: i/o timeout	2026-06-24 04:09:21.721337+00	2026-06-24 04:10:47.407233+00	t	2026-10-11 08:41:28.714383+00
-f7ba526a-c322-4e37-a584-8caef6057c69	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-text-3	32098892e323f1b66c9f5e4f27c8050b552817fb8f7f20f98551cfd2906d5b7f030873c6d384be53a2de45a251ad61ae676609e78f3fe2570fe65387181b84d01ccd7892d20218525cddbcc47e0cfb05aa1956c1	gsk_UYvH...	0	error	groq	llama-3.3-70b-versatile	t	t	f	\N	API call failed: Post "https://api.groq.com/openai/v1/chat/completions": dial tcp: lookup api.groq.com: no such host	2026-06-24 06:55:23.985075+00	2026-06-24 06:59:35.861118+00	t	2026-10-11 08:41:28.714383+00
-1286556a-f7fd-4260-850a-697497b1819d	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-2	f21a5d99a0bd2eea63b4e61025702a170bf9c24adc61ed72ac92efe63f0156bab46e92297242c167da8c728b32ade8a8d170ffa51c9f10be7ef37b544e1153bfe27e045f0a6a82277fdc2553583d4f5d77e73315	gsk_UYvH...	0	error	groq	whisper-large-v3	t	f	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:56:15.080435+00	2026-06-24 07:00:07.566594+00	t	2026-10-11 08:41:28.714383+00
-154ea035-ffe5-45ff-a6b1-794c70a93893	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-2	e4dca7f8e1f4a2e7cadb141607cc01d69f92a132d33722cb1fd519e65b59ac859aac91da2ff4e2bb01955e97f612c12f9d6807af4fd4206fae7cf8a6b059c68c0579818d64ec691ad25c7090ce14e0798e5dbf0c	gsk_UYvH...	0	error	groq	whisper-large-v3	t	t	f	\N	API returned status 400: {"error":{"message":"The model `whisper-large-v3` does not support chat completions","type":"invalid_request_error"}}\n	2026-06-24 06:57:32.862938+00	2026-06-24 07:02:17.358781+00	t	2026-10-11 08:41:28.714383+00
-f0522b02-4491-4e74-9922-e373866d6b3f	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text-audio	ff3d34d07c0567362643982e25572666dcfe3835b31edb71c53dc2830f2349e921d015f4ecab02f79e57c5db2b9536eb31ee702732f87555c5669ce800254439da9494d641fa9817281155de03863fb2de10f2e1c60c36a1bbcc7af4866d90bf424a6d3e10	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-exp:free	t	f	t	\N	API returned status 404: {"error":{"message":"No endpoints found for google/gemini-2.0-flash-exp:free.","code":404},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:37:06.423782+00	2026-06-24 08:36:33.896103+00	t	2026-10-11 08:41:28.714383+00
-a1cf3cb4-b7b1-48f9-b9a2-300b5383c7c2	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-audio	1e600481afa94d7e6410632af0c1279805cc79969f14538b76cca9ae2666e6b14b8dea584be5f04449bc5b23a0e8d93456bc2536ff1cc489f38ab654b3c762778464d276ee5a1a65a6ec1f06702353e568edee875066e9ffd96e0dce172d3440f228250c55	sk-or-v1...	0	error	openrouter	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	API returned status 400: {"error":{"message":"google/gemini-2.0-flash-lite-preview-02-05:free is not a valid model ID","code":400},"user_id":"user_3FYninywLPyTIGGVBR1I3R9l18i"}	2026-06-24 06:38:34.291422+00	2026-06-24 10:14:58.463416+00	t	2026-10-11 08:41:28.714383+00
-401d23c5-aa1d-4a16-84fe-26170d56d7fc	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-text	c755066a39680b228b3ca1db4140b238120701cca7a7f0aba171d2befc4397227456fadae4afb4c1112de96a890f8c1809da0d27fc37110ceb954cb6f2ad49ca60c5f22879b8528c019b46b0b985b5705d28a5457e28fe9e8995fbc8e7f267da97f18f466a	sk-or-v1...	0	error	groq	qwen/qwen3.6-27b	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 06:37:42.907786+00	2026-06-24 08:36:10.746241+00	t	2026-10-11 08:41:28.714383+00
-ea453e7c-5927-4f1f-8694-ee01946f85ed	b1b66fa0-13d9-4937-a4b4-09e3e2060f86	key-gemini	4177b995a0ba57f6ab4e378d2db64dda711ad95e7424fb9ea32786ff4877c191f89f89528316e79b2fc5e4c69789e3cfea12f9d7fdb9f35c293d916a	AIzaSyDu...	0	error	gemini	gemini-2.0-flash	t	t	t	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:17:38.743963+00	2026-06-24 12:18:11.554127+00	t	2026-10-11 08:41:28.714383+00
-f26f9e05-e667-496e-93a3-83d83657c740	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-vision	90770e94fec33edfaee4290a97a68db62d373618bf040f15cdfb7c6d25664d2259af04a18f44470e3f4760b7c8a7f0e62ea7f96d2aa19d9dffe5ab39fa6b151ac88386951307e7653b286f87322f0892a65d89a3f7756cfc54af4da14bb407d7729f7f8127	sk-or-v1...	0	inactive	openrouter	meta-llama/llama-4-scout-17b-16e-instruct	t	f	t	\N	\N	2026-06-24 06:39:11.394271+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-92d175b7-e67f-47c8-9a5a-82506ba9c008	c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5	Gemini Key	f0331fc90c6be11c8447c71c50be62ee72898e816a00eb3deebb560d38627359cb3f14d85c	dummy-ke...	0	error	gemini	gemini-2.0-flash	t	f	f	\N	Gemini returned status 400: {\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT",\n    "details": [\n      {\n        "@type": "type.googleapis.com/google.rpc.ErrorInfo",\n        "reason": "API_KEY_INVALID",\n        "domain": "googleapis.com",\n        "metadata": {\n          "service": "generativelanguage.googleapis.com"\n        }\n      },\n      {\n        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",\n        "locale": "en-US",\n        "message": "API key not valid. Please pass a valid API key."\n      }\n    ]\n  }\n}\n	2026-06-24 12:33:43.002184+00	2026-06-24 12:34:46.955083+00	t	2026-10-11 08:41:28.714383+00
-11277590-ded9-4adb-a0f6-b05341928e92	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-vision-3	7d3b2e8b9d0a0d68690eff8b4d21d539042569e04b342fd2d33649df1b8123f4d9939aa49f873232d9fcd591da7dd63eb1977d44f0ffd682429d6ff72570318b33590022b0a2ae8ae1e105c83d0a622358226938	gsk_UYvH...	0	inactive	groq	google/gemini-2.0-flash-lite-preview-02-05:free	t	f	t	\N	\N	2026-06-24 06:58:45.194783+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-a502f8e3-0b6e-4c70-bd6e-2a32f7cc3198	4a70824e-8116-4ac8-be58-2837848a6ea0	groq-speech-text-image	bdd1f9f050087b54e3eedc472200655d88f873b8bfcaf8726db024fdbadf186d11ba7d6a91adb97712ad19af94955da208561022626c7c01ea3815d5767a516df2997d073cd72606e3b6b1b69b5e4cac38bada93	gsk_UYvH...	0	inactive	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 06:57:57.310314+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-7f8c5af8-71a8-46b4-8043-df42cbd45289	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-1	8df8f085efad4d2e8e5632ac362d69b4e90588b89fea12519c5cde9c2cdd93a11a31c4ebc2f60616f7248122ee966fe9d5e98c011e1a02b34551eefe02b2e4e9da8d476bb9dacd5f4c7d7a40561bef279de31b80	gsk_QjKx...	0	inactive	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:39:37.801277+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-847acfaa-7572-418a-9796-42d48d6e14b2	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-groq-2	461e6e0592aea8411d3a8e87056554c65ca762f18371a46d3a40c231f0152ee8dc0b2803068973addec9626f4a9208819784f33276fbdbb610a9cab2a6bef8876e67f3f5982ec3243876913919accf49b3e2516e	gsk_xl4N...	0	inactive	groq	whisper-large-v3-turbo	f	t	f	\N	\N	2026-06-24 08:40:12.46659+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-c98fb385-dc93-4eef-a8f0-5236bdf2e9ec	4a70824e-8116-4ac8-be58-2837848a6ea0	openrouter-gemini3	efb303c04da4ea9af6478dcc01c87cfa09630e8957f197e802160ba2d6436bf70ef0798d8a97e0cf451e882874d1e6ed6c45690f5d1b0e596f8730773f59df1e5604459dd71fc5efd8f5f2a730c543efba914ce40a296d11bb3c717572db91a5a12cab8a17	sk-or-v1...	0	inactive	openrouter	google/gemini-3-flash-preview	f	f	t	\N	\N	2026-06-24 08:41:47.35886+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-79f39a70-6d48-4d2c-8afe-289f94ca3104	4a70824e-8116-4ac8-be58-2837848a6ea0	whisper-3	4679403d467b73f7bbf16bed92cae4908caa1c932de113cb4e0fdab9a5f1756a6e9432e2a2f1fefb790987989412bcdc58a208932bc0edc245a2080b9cac1008646c395983485c11152296bbdfb7bff36c8d064bb569cdc8a0abde949014a1a3dac4fe4eae	sk-or-v1...	0	inactive	openrouter	openai/whisper-1	t	f	f	\N	\N	2026-06-24 08:48:52.355313+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-8e95d6bf-1c4b-46ad-8141-99b2539e096b	4a70824e-8116-4ac8-be58-2837848a6ea0	cohere-openrouter	f0286fe80144f9e9bc2686e39551d9bec4fa30fb51aff866867b0564038b70d9de6c36825a0e6c0bb1193fc922c24b2c9d6db838a7e7a7a0a82b2f4c4cf4a5df018ba06ad3a28a6446d31a90d7e988cce6f55a764ae4cc52785a073bc1b05ba4be3934257c	sk-or-v1...	0	inactive	openrouter	cohere/north-mini-code:free	t	f	f	\N	\N	2026-06-24 09:13:33.387515+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-c6ed47d1-ad26-4779-b975-c2781f8beb91	4a70824e-8116-4ac8-be58-2837848a6ea0	memotron-openrouter	074d1c0a4452705cf6cbe627f596f21a4e06deef7a99102ef6ac8c621765b3dcdb95f533d5ed437f2cc966b6aad5af038c9a6ec53705ea91532280ac4e3f402cb9758b16b5c241a260c59fde5723dcdd35314004a15db0353ffa1b7a4c49e68b3b142437d4	sk-or-v1...	0	inactive	openrouter	nvidia/nemotron-3.5-content-safety:free	f	f	t	\N	\N	2026-06-24 09:14:40.335311+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-fdca29b0-c398-4531-a702-357bd2a91855	4a70824e-8116-4ac8-be58-2837848a6ea0	nemotron-3-nano-openrouter	876ce8e6cee74444556e8e536609cc7818310d2d757451fa0298e19c88150cf0341d0a5097a0df99e56bf7df3f5df0b46dddff5dc9897bc04c199ed430c7ef672b0b3183389024ce286db30939bfbc1f72d396ed0259bebbee0512c90b67a0eac72b642348	sk-or-v1...	0	inactive	openrouter	nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free	f	t	f	\N	\N	2026-06-24 09:15:20.484168+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
-563484b1-e00e-409a-a575-c688051f4c4b	4a70824e-8116-4ac8-be58-2837848a6ea0	nvidia-openrouter	350370f855f1b0538a62a13ba980be5f0961ecd0b3f0d4547a70cef9fc3ac2d7f81c03a34493ac126a9934c6285971bd3e5bdaa3314f2ed0847627adee7202d9cb5c47d9c8a4300845064af8b3f2aefbba056f96a3c49a230913fd7cda21b8055036c2380f	sk-or-v1...	0	inactive	openrouter	nvidia/llama-nemotron-rerank-vl-1b-v2:free	f	f	t	\N	\N	2026-06-24 09:13:57.701403+00	2026-10-12 00:41:03.632741+00	t	2026-10-11 08:41:28.714383+00
 \.
 
 
@@ -4577,22 +4510,6 @@ ALTER TABLE ONLY public.feature_flags
 
 
 --
--- Name: gemini_api_keys gemini_api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.gemini_api_keys
-    ADD CONSTRAINT gemini_api_keys_pkey PRIMARY KEY (id);
-
-
---
--- Name: gemini_api_keys gemini_api_keys_user_id_alias_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.gemini_api_keys
-    ADD CONSTRAINT gemini_api_keys_user_id_alias_key UNIQUE (user_id, alias);
-
-
---
 -- Name: income_categories income_categories_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -4934,27 +4851,6 @@ CREATE INDEX idx_feature_flags_enabled ON public.feature_flags USING btree (is_e
 
 
 --
--- Name: idx_gemini_keys_archived; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_gemini_keys_archived ON public.gemini_api_keys USING btree (is_archived);
-
-
---
--- Name: idx_gemini_keys_modality; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_gemini_keys_modality ON public.gemini_api_keys USING btree (user_id, status, supports_text, supports_audio, supports_vision);
-
-
---
--- Name: idx_gemini_keys_user_status_priority; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_gemini_keys_user_status_priority ON public.gemini_api_keys USING btree (user_id, status, priority);
-
-
---
 -- Name: idx_income_categories_active; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -5186,13 +5082,6 @@ CREATE TRIGGER on_feature_flag_updated BEFORE UPDATE ON public.feature_flags FOR
 
 
 --
--- Name: gemini_api_keys on_gemini_key_updated; Type: TRIGGER; Schema: public; Owner: postgres
---
-
-CREATE TRIGGER on_gemini_key_updated BEFORE UPDATE ON public.gemini_api_keys FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-
-
---
 -- Name: income_categories on_income_category_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -5338,14 +5227,6 @@ ALTER TABLE ONLY public.expense_subcategories
 
 ALTER TABLE ONLY public.feature_flags
     ADD CONSTRAINT feature_flags_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
-
-
---
--- Name: gemini_api_keys gemini_api_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.gemini_api_keys
-    ADD CONSTRAINT gemini_api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -5659,13 +5540,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.feature_flags TO fintrack_app;
 
 
 --
--- Name: TABLE gemini_api_keys; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.gemini_api_keys TO fintrack_app;
-
-
---
 -- Name: TABLE income_categories; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -5823,5 +5697,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NwsuPA79KljFvNtVFq6ZNm40s8FZR7DRKFp2fDyiYz8MggjH71Fdk8O2QLjAImk
+\unrestrict VXpsJOZRvhmEM6a4Zk8ttQdT580GPM0C3tp0lxndpziG17nj9UxeG3Fr5Na1Be2
 

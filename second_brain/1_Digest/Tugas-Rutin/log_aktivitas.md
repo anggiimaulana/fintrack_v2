@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-10-12 — Pemusnahan Permanen Tabel gemini_api_keys & Dead Code BYOK (Contract Phase)
+
+Pembersihan fisik tahap akhir (*Contract Phase*) untuk arsitektur BYOK (Bring Your Own Key) setelah AI Gateway terpusat (9router) terbukti mandiri, stabil, dan melayani 100% beban kerja AI produksi:
+
+### Perubahan & Pembersihan
+- **Database Migrasi 0014 (`0014_drop_gemini_api_keys.sql`):**
+  - Mengeksekusi `DROP TABLE IF EXISTS gemini_api_keys CASCADE;` pada database `fintrack` dan `fintrack_test`.
+  - Menghapus keterikatan foreign key dan indeks pada tabel tersebut.
+- **Pembersihan Kode Mati Backend:**
+  - Menghapus berkas: `gemini_key_repo.go`, `gemini_key_usecase.go`, `gemini_key_handler.go`, dan `gemini_key_handler_test.go`.
+  - Menghapus parameter `GeminiKeyUsecase` dari `router.go` dan inisialisasi di `main.go`.
+  - Menghapus dependensi query `DELETE FROM gemini_api_keys` di `anonymize.go`.
+  - Menghapus fallback BYOK internal di `ai_usecase.go`.
+- **Dump Database:**
+  - Berkas `database/dump/fintrack_v2.sql` dan `database/dump/fintrack_v2.dump` diregenerasi (ukuran dump SQL berkurang menjadi 875 KB tanpa jejak tabel `gemini_api_keys`).
+- **Verifikasi Penuh:**
+  - Seluruh unit test dan suite integrasi (`go test ./...`) lulus 100%. Frontend Vitest 105 tests lulus.
+
+---
+
 ## 2026-10-12 — Pengamanan & Sanitasi Universal Seluruh Pesan Error HTTP (CWE-209 Anti-Information Leakage)
 
 Penyempurnaan menyeluruh di seluruh lapisan respons HTTP (bukan hanya 500, melainkan mencakup 400, 401, 403, 404, 409, 429, dan 500) agar tidak pernah mengekspos detail teknis (query SQL, parser error, struct field Go, nama kolom/tabel, SQLSTATE, koneksi internal, atau pesan `err.Error()` mentah) ke pengguna/klien:

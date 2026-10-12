@@ -80,11 +80,7 @@ func (s *AnonymizeService) AnonymizeUserData(ctx context.Context, userID uuid.UU
 	}
 	res.RefreshTokensRevoked = cmd.RowsAffected()
 
-	// 5. Delete BYOK keys
-	_, err = tx.Exec(ctx, `DELETE FROM gemini_api_keys WHERE user_id = $1`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("delete gemini_api_keys: %w", err)
-	}
+
 
 	// 6. Pseudonymize users table
 	anonymizedEmail := fmt.Sprintf("anonymized-%s@deleted.fintrack.internal", userID.String())

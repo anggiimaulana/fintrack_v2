@@ -93,11 +93,7 @@ func TestP08_009_And_010_PDPComplianceAndTaxRetention(t *testing.T) {
 		 VALUES (gen_random_uuid(), $1, 'hash123', NOW() + interval '7 days')`, userID); err != nil {
 		t.Fatalf("insert refresh token: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO gemini_api_keys (id, user_id, alias, encrypted_key, key_preview)
-		 VALUES (gen_random_uuid(), $1, 'my-key', '66d7e1594fc5', 'AIzaSy...')`, userID); err != nil {
-		t.Fatalf("insert gemini key: %v", err)
-	}
+
 
 	// 3. Provision Financial / Tax Data:
 	// Invoice & Payment (statutory tax records)
@@ -132,16 +128,15 @@ func TestP08_009_And_010_PDPComplianceAndTaxRetention(t *testing.T) {
 
 	// Verify TASK-P08-009 (Data Wiped):
 	// a. Chat messages & sessions completely deleted
-	var chatCount, sessionCount, embedCount, tokenCount, keyCount int
+	var chatCount, sessionCount, embedCount, tokenCount int
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM chat_messages WHERE user_id = $1`, userID).Scan(&chatCount)
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM chat_sessions WHERE user_id = $1`, userID).Scan(&sessionCount)
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM transaction_embeddings WHERE user_id = $1`, userID).Scan(&embedCount)
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM refresh_tokens WHERE user_id = $1`, userID).Scan(&tokenCount)
-	_ = pool.QueryRow(ctx, `SELECT count(*) FROM gemini_api_keys WHERE user_id = $1`, userID).Scan(&keyCount)
 
-	if chatCount != 0 || sessionCount != 0 || embedCount != 0 || tokenCount != 0 || keyCount != 0 {
-		t.Errorf("PII data leak! chat=%d, sessions=%d, embeddings=%d, tokens=%d, keys=%d",
-			chatCount, sessionCount, embedCount, tokenCount, keyCount)
+	if chatCount != 0 || sessionCount != 0 || embedCount != 0 || tokenCount != 0 {
+		t.Errorf("PII data leak! chat=%d, sessions=%d, embeddings=%d, tokens=%d",
+			chatCount, sessionCount, embedCount, tokenCount)
 	}
 
 	// b. User record pseudonymized and shredded

@@ -58,7 +58,7 @@ func TestP08_007_CryptographicWebhookSignatureValidation(t *testing.T) {
 
 	engine := deliveryHTTP.SetupRouter(
 		deliveryHTTP.RouterConfig{JWTSecret: entTestSecret},
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, payH, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, payH, nil, nil,
 	)
 
 	orderID := "INV-SEC-TEST-001"

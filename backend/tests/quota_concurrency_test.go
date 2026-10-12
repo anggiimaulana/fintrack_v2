@@ -82,7 +82,7 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 	aiUC := usecase.NewAIUsecase(
 		postgres.NewChatSessionRepo(pool),
 		postgres.NewChatMessageRepo(pool),
-		postgres.NewGeminiKeyRepo(pool),
+		nil,
 		txRepo,
 		postgres.NewIncomeCategoryRepo(pool),
 		postgres.NewExpenseCategoryRepo(pool),
@@ -100,7 +100,7 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 			Ledger:      ledgerService,
 		},
 		usecase.NewTransactionUsecase(txRepo, nil, nil, nil, nil),
-		nil, nil, nil, nil, nil, aiUC, nil,
+		nil, nil, nil, nil, aiUC, nil,
 		usecase.NewReportUsecase(txRepo),
 		nil, nil, nil, nil, nil, nil,
 	)

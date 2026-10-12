@@ -20,7 +20,7 @@ func TestP08_008_PCIDSS_SAQA_AndSecurityHeaders(t *testing.T) {
 
 	engine := deliveryHTTP.SetupRouter(
 		deliveryHTTP.RouterConfig{JWTSecret: entTestSecret},
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

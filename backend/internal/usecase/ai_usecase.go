@@ -418,6 +418,9 @@ var providerEndpoints = map[string]map[string]providerEndpoint{
 }
 
 func (u *AIUsecase) getAvailableKeys(ctx context.Context, userID uuid.UUID) ([]domain.GeminiAPIKey, error) {
+	if u.keyRepo == nil {
+		return nil, nil
+	}
 	return u.keyRepo.ListByUser(ctx, userID)
 }
 
@@ -790,8 +793,9 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 		currentKey.Status = domain.KeyError
 		errStr := callErr.Error()
 		currentKey.LastError = &errStr
-		u.keyRepo.Update(ctx, currentKey)
-
+		if u.keyRepo != nil {
+			u.keyRepo.Update(ctx, currentKey)
+		}
 		msgChan <- domain.ChatStreamEvent{Type: "step", Step: fmt.Sprintf("Key %s error, coba key lain...", currentKey.Alias)}
 		currentKey = u.findNextActiveKey(keys, currentKey.ID)
 	}
@@ -1624,8 +1628,9 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 		currentKey.Status = domain.KeyError
 		errStr := err.Error()
 		currentKey.LastError = &errStr
-		u.keyRepo.Update(ctx, currentKey)
-
+		if u.keyRepo != nil {
+			u.keyRepo.Update(ctx, currentKey)
+		}
 		currentKey = u.findNextActiveKey(keys, currentKey.ID)
 	}
 
@@ -2007,8 +2012,9 @@ func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBas
 		currentKey.Status = domain.KeyError
 		errStr := lastErr.Error()
 		currentKey.LastError = &errStr
-		u.keyRepo.Update(ctx, currentKey)
-
+		if u.keyRepo != nil {
+			u.keyRepo.Update(ctx, currentKey)
+		}
 		currentKey = u.findNextActiveKey(keys, currentKey.ID)
 	}
 

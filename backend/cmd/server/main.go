@@ -135,7 +135,6 @@ func main() {
 	savingsCatRepo := postgres.NewSavingsCategoryRepo(pool)
 	subcatRepo := postgres.NewExpenseSubcategoryRepo(pool)
 	userRepo := postgres.NewUserRepo(pool)
-	geminiKeyRepo := postgres.NewGeminiKeyRepo(pool)
 	spkRepo := postgres.NewSPKRepo(pool)
 	chatSessionRepo := postgres.NewChatSessionRepo(pool)
 	chatMessageRepo := postgres.NewChatMessageRepo(pool)
@@ -286,8 +285,7 @@ func main() {
 	categoryUC := usecase.NewCategoryUsecase(incomeCatRepo, expenseCatRepo, savingsCatRepo, subcatRepo)
 	userUC := usecase.NewUserUsecase(userRepo)
 	dashboardUC := usecase.NewDashboardUsecase(txRepo, spkUC)
-	geminiKeyUC := usecase.NewGeminiKeyUsecase(geminiKeyRepo, encryptionKey)
-	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, geminiKeyRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, encryptionKey, embedder, embedRepo)
+	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, nil, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, encryptionKey, embedder, embedRepo)
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
 	}
@@ -403,7 +401,6 @@ func main() {
 		categoryUC,
 		userUC,
 		dashboardUC,
-		geminiKeyUC,
 		spkUC,
 		aiUC,
 		providerUC,

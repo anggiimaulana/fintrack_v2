@@ -106,32 +106,6 @@ func TestP08_006_AuditCredentialEncryptionAtRest(t *testing.T) {
 			t.Errorf("Invalid ciphertext structure in ai_endpoints %s (len=%d, hexErr=%v)", name, len(raw), err)
 		}
 	}
-
-	// Audit gemini_api_keys
-	keyRows, err := pool.Query(context.Background(), `SELECT id, encrypted_key FROM gemini_api_keys`)
-	if err != nil {
-		t.Fatalf("query gemini_api_keys: %v", err)
-	}
-	defer keyRows.Close()
-
-	var geminiKeyCount int
-	for keyRows.Next() {
-		var id, encKey string
-		if err := keyRows.Scan(&id, &encKey); err != nil {
-			t.Fatalf("scan row: %v", err)
-		}
-		geminiKeyCount++
-
-		if strings.HasPrefix(encKey, "AIza") || strings.HasPrefix(encKey, "sk-") {
-			t.Errorf("CRITICAL: Plaintext API key found in gemini_api_keys %s", id)
-		}
-
-		raw, err := hex.DecodeString(encKey)
-		if err != nil || len(raw) < 28 {
-			t.Errorf("Invalid ciphertext structure in gemini_api_keys %s", id)
-		}
-	}
-
-	t.Logf("Database encryption audit PASSED: %d ai_endpoints and %d gemini_api_keys audited (100%% ciphertext at-rest)",
-		endpointCount, geminiKeyCount)
+	t.Logf("Database encryption audit PASSED: %d ai_endpoints audited (100%% ciphertext at-rest)",
+		endpointCount)
 }

@@ -92,7 +92,6 @@ func SetupRouter(
 	categoryUC *usecase.CategoryUsecase,
 	userUC *usecase.UserUsecase,
 	dashboardUC *usecase.DashboardUsecase,
-	_ *usecase.GeminiKeyUsecase, // BYOK deprecated (TASK-P07-013)
 	spkUC *usecase.SPKUsecase,
 	aiUC *usecase.AIUsecase,
 	providerUC *usecase.ProviderUsecase,

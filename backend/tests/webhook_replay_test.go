@@ -69,7 +69,7 @@ func TestP08_002_WebhookReplayIdempotency(t *testing.T) {
 			JWTSecret: entTestSecret,
 			Pool:      pool,
 		},
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, payH, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, payH, nil, nil,
 	)
 	srv := httptest.NewServer(engine)
 	defer srv.Close()
