@@ -53,13 +53,13 @@ Dokumen ini menjawab ketiganya dengan bukti kode + bukti uji live, lalu memetaka
 | Aspek | Status |
 |---|---|
 | Batas fitur (feature gate) | ✅ Berjalan |
-| Batas limit transaksi/kategori/dompet | ⚠️ Sebagian (transaksi ✅; kategori/dompet belum — F4) |
+| Batas limit transaksi/kategori/dompet | ✅ Transaksi ditegakkan; Kategori/Dompet **jujur disembunyikan** (tidak ditegakkan — F4) |
 | Batas kuota token | ✅ Diperbaiki (F1: token asli per AI call) |
 | Batas kuota OCR | ✅ Diperbaiki (F1: vision dibebankan ke ledger) |
 | Batas request AI | ✅ Diperbaiki (F1: `ai_requests_per_cycle` ditegakkan) |
-| Biaya & markup (pricing) | 🔴 Tidak aktif (selalu 0) — F2 |
+| Biaya & markup (pricing) | ✅ Diperbaiki (F2: `cost_idr` terisi dari rule aktif) |
 | Plan/entitlement/limit dinamis dari admin | ✅ Ya |
-| Pricing rule dinamis dari admin | ❌ Tidak (SQL only) — F5 |
+| Pricing rule dinamis dari admin | ✅ Diperbaiki (F5: CRUD `/admin/pricing-rules` + UI) |
 
 ---
 
@@ -84,9 +84,9 @@ Dokumen ini menjawab ketiganya dengan bukti kode + bukti uji live, lalu memetaka
 | **GAP-01** | OCR/vision tidak menulis ledger → kuota OCR tak terbatas | 🔴 Kritis | ✅ **Diperbaiki (F1)** — live: OCR kini menulis `vision` entries |
 | **GAP-02** | Chat menagih 1 token flat, bukan token asli | 🔴 Kritis | ✅ **Diperbaiki (F1)** — live: commit 9.945 token (sebelumnya 1) |
 | **GAP-03** | `ai_requests_per_cycle` tidak ditegakkan | 🟠 Tinggi | ✅ **Diperbaiki (F1)** — live: 402 saat limit tercapai |
-| **GAP-04** | Pricing engine tidak di-wire → `cost_idr=0` | 🟠 Tinggi | `NewPricingEngine`/`GetActiveRule` tidak dipanggil di `main.go`; DB: `cost_idr=0` |
-| **GAP-05** | `max_categories`/`max_wallets` tidak punya usage resolver | 🟡 Sedang | `usage_resolvers.go` hanya 4 kasus (kategori/dompet belum) |
-| **GAP-06** | `pricing_rules` tanpa endpoint admin (hardcode efektif) | 🟠 Tinggi | `internal/admin/` tidak menyentuh `pricing_rules` |
+| **GAP-04** | Pricing engine tidak di-wire → `cost_idr=0` | 🟠 Tinggi | ✅ **Diperbaiki (F2)** — live: `cost_idr=3733` untuk 9.956 token |
+| **GAP-05** | `max_categories`/`max_wallets` tidak punya usage resolver | 🟡 Sedang | ✅ **Ditangani (F4)** — ditandai `enforced:false`, disembunyikan dari UI user, admin diperingatkan |
+| **GAP-06** | `pricing_rules` tanpa endpoint admin (hardcode efektif) | 🟠 Tinggi | ✅ **Diperbaiki (F5)** — CRUD `/admin/pricing-rules` + UI `/super-admin/pricing` |
 | **GAP-07** | User tidak melihat sisa kuota (tidak ada UI/monitoring mandiri) | 🟡 Sedang | grep frontend = 0 |
 | **GAP-08** | Error kuota ledger (429) tidak dipetakan ke toast upsell di frontend | 🟡 Sedang | `useAiChat.ts` tanpa `notifyEntitlementError` |
 | **BUG-01** | Sidebar: "Langganan" & "Pengaturan" aktif bersamaan | 🟢 Rendah | ✅ **Sudah diperbaiki** (`lib/nav.ts`, longest-prefix) |

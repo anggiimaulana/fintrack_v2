@@ -26,8 +26,26 @@ YYYY-MM-DD_deskripsi-singkat.md
 ```
 Contoh: `2026-10-15_ide-optimasi-cache-per-user.md`
 
+## 🔑 Kredensial Login Demo / Lokal (Quick Reference)
+
+Akun bawaan hasil seed database (`database/seeds/0001_demo.sql`):
+
+| Peran (Role) | Email | Password | Nama Pengguna | Keterangan Akses |
+|---|---|---|---|---|
+| **Admin** | `admin@fintrack.id` | `Admin@123456` | Admin FinTrack | Akses dashboard manajemen (`/admin`) |
+| **User (Demo 1)** | `budi@example.com` | `User@123456` | Budi Santoso | Akun reguler dengan data transaksi aktif |
+| **User (Demo 2)** | `siti@example.com` | `User@123456` | Siti Rahayu | Akun pengujian isolasi data |
+| **User (Demo 3)** | `andi@example.com` | `User@123456` | Andi Wijaya | Akun user reguler |
+
+> 💡 **Akses Super Admin (`/super-admin`):**
+> Bila memerlukan akses Super Admin (manajemen plan, gateway AI, pricing, audit), jalankan query berikut di PostgreSQL:
+> ```sql
+> UPDATE users SET role = 'super_admin' WHERE email = 'admin@fintrack.id';
+> ```
+
 ## Isi Saat Ini
 - `brief_awal.md` — brief awal & 7 keputusan terkunci migrasi FinTrack v2 (belum dipindah, masih jadi acuan).
+- `2026-10-14_kredensial-login-demo.md` — catatan lengkap akun login demo & instruksi pengujian.
 - `ide/2026-10-11_Subscription-AI-Gateway/` — hasil analisis mendalam permintaan platform berlangganan &
   AI gateway terpusat (8 file: ringkasan, analisis, kritik & saran, keputusan, pertanyaan terbuka,
   peta jalan, jawaban+rekomendasi, konfigurasi seed awal).

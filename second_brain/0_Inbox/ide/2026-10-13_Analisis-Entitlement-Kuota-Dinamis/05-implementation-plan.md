@@ -19,7 +19,7 @@
 | **F1** ✅ | Buka blokir akuntansi kuota (OCR, token asli, request count) | 🔴 Kritis | — |
 | **F2** ✅ | Aktifkan pricing & biaya | 🟠 Tinggi | F1 |
 | **F3** ✅ | Worker yang mati (cleaner, downgrade, grace) | 🟠 Tinggi | — |
-| **F4** ⚠️ | Limit yang belum ditegakkan (kategori, dompet) | 🟡 Sedang | F1 |
+| **F4** ✅ | Limit yang belum ditegakkan → UI jujur via flag `enforced` | 🟡 Sedang | F1 |
 | **F5** ✅ | Dinamisasi admin (pricing CRUD, katalog kunci) | 🟠 Tinggi | F2 |
 | **F6** ✅ | UX kuota (sisa kuota user, toast upsell, monitoring admin) | 🟡 Sedang | F1, F5 |
 
@@ -176,28 +176,62 @@
 
 ---
 
-## F4 — Tegakkan Limit yang Belum Ada
+## F4 — Tegakkan Limit yang Belum Ada → **Keputusan: UI Jujur**
 
-### TASK-F4-01 — Usage resolver `max_categories`
+> **KEPUTUSAN PRODUK (2026-10-14):** kedua limit **tidak dapat ditegakkan** dengan skema
+> saat ini (bukti di bawah). Alih-alih memaksa penegakan yang semantiknya salah atau
+> membangun fitur besar yang belum diminta, pendekatan yang dipilih adalah **membuat UI
+> jujur**: limit yang tidak ditegakkan **tidak ditampilkan** sebagai benefit paket, dan
+> admin diberi peringatan. Backend menjadi sumber kebenaran lewat flag `enforced`.
 
-**Langkah:** tambah `CountCategories` di `UsageProviders`, wire dari repo kategori, tambah `case`.
+### TASK-F4-01 — `max_categories` (BLOKIR → ditangani via flag)
+
+**Bukti blokir:** kategori **global & admin-only**, bukan milik user.
+```sql
+-- income_categories / expense_categories / savings_categories: TIDAK ADA kolom user_id
+-- Mutasi hanya via adminRoutes.POST /categories/*
+```
+Tidak ada "kategori milik user" untuk dihitung → limit tidak bermakna sampai ada entitas
+kategori per-user.
+
+**DoD (revisi):**
+- [x] Ditandai `Enforced: false` di `entitlement/catalog.go` (sudah)
+- [x] **Tidak ditampilkan** di halaman Langganan user
+- [x] Admin diberi peringatan saat mengonfigurasi limit ini
+
+### TASK-F4-02 — `max_wallets` (BLOKIR → ditangani via flag)
+
+**Bukti blokir:** **tidak ada entitas "dompet"** di skema (tidak ada tabel `wallets`;
+`savings_categories` bukan dompet dan juga global).
+
+**DoD (revisi):**
+- [x] Ditandai `Enforced: false` di katalog
+- [x] Tidak ditampilkan di halaman Langganan user
+- [x] Admin diberi peringatan
+
+### TASK-F4-03 — Ekspos flag `enforced` ke katalog publik & UI
+
+**Langkah:**
+1. Backend: `payment.CatalogService` menyertakan `limit_meta` (key/label/unit/enforced)
+   pada `GET /api/v1/plans`, bersumber dari `entitlement.LimitCatalog`.
+2. Frontend: `lib/plan-limits.ts` (`enforcedLimitEntries`) menyaring limit yang
+   `enforced=false`; `PlanCard` hanya menampilkan limit yang ditegakkan.
+3. Admin: `useEntitlementCatalog` + peringatan di `PlanFormDialog` saat limit yang
+   dikonfigurasi tidak ditegakkan.
 
 **DoD:**
-- [ ] `max_categories` ditegakkan (Free=5, Pro=30, Business=∞)
-- [ ] Uji: kategori ke-6 pada Free → 402
+- [x] `GET /plans` memuat `limit_meta` dengan flag `enforced`
+- [x] Halaman Langganan **tidak** menampilkan Kategori/Dompet
+- [x] Admin melihat peringatan "belum ditegakkan backend"
+- [x] Test: backend `TestCatalog_UnenforcedLimitsCarryFlag`; frontend `lib/plan-limits.test.ts` (7 test)
 
-> **BLOKIR (2026-10-14):** kategori bersifat **global**, bukan per-user — `income_categories`/`expense_categories`/`savings_categories` tidak punya `user_id` dan hanya dikelola admin. Tidak ada "kategori milik user" untuk dihitung, sehingga limit ini tidak punya arti hingga ada entitas kategori per-user. Ditandai **`Enforced:false`** di `entitlement/catalog.go` (informatif saja). Perlu keputusan produk.
+> **Bukti live (2026-10-14):** `GET /plans` → `max_categories.enforced=false`,
+> `max_wallets.enforced=false`, sisanya `true`. Halaman Langganan kini hanya menampilkan
+> Kuota yang benar-benar berlaku (Token AI, Permintaan AI, Transaksi, Pindai struk).
 
-### TASK-F4-02 — Usage resolver `max_wallets`
-
-**DoD:**
-- [ ] `max_wallets` ditegakkan
-- [ ] Uji: dompet ke-2 pada Free → 402
-
-> **BLOKIR (2026-10-14):** **tidak ada entitas "dompet"** di skema (tidak ada tabel `wallets`; `savings_categories` bukan dompet dan juga global). Tidak ada yang bisa dihitung. Ditandai **`Enforced:false`** di katalog. Perlu keputusan produk + migrasi bila fitur dompet akan dibuat.
-
-> Catatan: perlu klarifikasi definisi "dompet" & "kategori" mana yang dihitung
-> (income/expense/savings digabung atau terpisah). Tentukan sebelum implementasi.
+> **Tindak lanjut (bila fitur dibangun):** jika kelak dibuat entitas kategori per-user
+> dan/atau dompet, ubah `Enforced: true` di katalog, tambah usage resolver, dan gate rute —
+> tanpa perubahan kontrak UI (flag sudah mengalir).
 
 ---
 
@@ -274,10 +308,15 @@
 
 **DoD:**
 - [x] Daftar user dengan kuota < 20%
-- [ ] Grafik konsumsi per modalitas
-- [ ] (Opsional) notifikasi kuota menipis
+- [x] Grafik konsumsi per modalitas
+- [x] (Opsional) notifikasi kuota menipis → *diganti panel ringkasan kritis/mendekati batas di halaman*
 
-> **Bukti live (2026-10-14):** `GET /admin/quota-monitor?threshold=N` 200 (daftar user yang melewati ambang, dengan plan/used/limit/percent/remaining; threshold default 80). **Sisa:** grafik per-modalitas & notifikasi proaktif belum dikerjakan.
+> **Bukti live (2026-10-14):** `GET /admin/quota-monitor?threshold=N` 200. **UI lengkap:**
+> halaman `/super-admin/quota-monitor` (tabel user + progress bar, band kritis ≥90%,
+> ringkasan kritis/mendekati batas, filter ambang via URL `?threshold=`, tombol Segarkan)
+> + grafik batang bertumpuk **Konsumsi Token per Modalitas** (chat/vision/voice/embedding,
+> dari metrics timeseries) + menu sidebar "Pemantauan Kuota". Test: `QuotaMonitorTable.dom.test.tsx`
+> (6) + `lib/quota-monitor.test.ts` (4).
 
 ---
 

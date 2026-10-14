@@ -138,13 +138,23 @@
 
 ---
 
-## 6. Test untuk F4 (Limit Lain)
+## 6. Test untuk F4 (Limit Lain — Keputusan: UI Jujur)
 
-- [ ] **T-CAT-01** Free: kategori ke-6 → 402
-- [ ] **T-CAT-02** Pro: kategori ke-31 → 402
-- [ ] **T-CAT-03** Business (-1) → lolos
-- [ ] **T-WAL-01** Free: dompet ke-2 → 402
-- [ ] **T-WAL-02** Business (-1) → lolos
+> Karena `max_categories`/`max_wallets` **tidak dapat ditegakkan** (kategori global &
+> admin-only; tidak ada entitas dompet), test bergeser dari "harus 402" ke
+> "**tidak boleh dijanjikan** ke user".
+
+- [x] **T-CAT-01** Kategori **tidak tampil** di halaman Langganan (enforced=false)
+- [x] **T-CAT-02** `GET /plans` menandai `max_categories.enforced=false`
+- [x] **T-WAL-01** Dompet **tidak tampil** di halaman Langganan (enforced=false)
+- [x] **T-WAL-02** `GET /plans` menandai `max_wallets.enforced=false`
+- [x] **T-ENF-01** Limit yang ditegakkan (`ai_tokens_per_cycle`, dll) tetap tampil
+- [x] **T-ENF-02** Backend tanpa `limit_meta` → anggap enforced (kompatibel mundur)
+- [x] **T-ENF-03** Admin melihat peringatan saat mengonfigurasi limit tak ditegakkan
+
+> Bukti: backend `TestCatalog_UnenforcedLimitsCarryFlag`, `TestCatalog_NoLimitMetaWhenNotConfigured`;
+> frontend `lib/plan-limits.test.ts` (7 test). Live: `GET /plans` mengembalikan flag
+> `enforced` yang benar; halaman Langganan hanya menampilkan 4 kuota yang berlaku.
 
 ---
 
@@ -182,11 +192,15 @@
 - [x] **T-UX-03** Kartu kuota menampilkan sisa real-time
 - [x] **T-UX-04** Peringatan saat > 80%
 - [x] **T-UX-05** 429 `insufficient_quota` → toast + CTA upgrade
-- [x] **T-UX-06** Super admin: daftar user kuota < 20%
+- [x] **T-UX-06** Super admin: daftar user kuota menipis + grafik modalitas
+- [x] **T-UX-07** Halaman `/super-admin/quota-monitor` render + filter ambang via URL
+- [x] **T-UX-08** Tabel kuota: band kritis (≥90%) vs mendekati batas; a11y lolos
 
 > Bukti live (2026-10-14): `/me/entitlements` memuat `usage` (4 kunci) + `period`;
-> `GET /admin/quota-monitor?threshold=1` 200. UI: `QuotaUsageCard` (bar + ambang 80%),
-> `entitlement-errors.ts` + `useAiChat.ts` + `ChatWindow.tsx` untuk toast upsell.
+> `GET /admin/quota-monitor?threshold=1` 200 (33 baris). UI: `QuotaUsageCard` (bar + ambang 80%),
+> `entitlement-errors.ts` + `useAiChat.ts` + `ChatWindow.tsx` untuk toast upsell; halaman
+> `quota-monitor` + `QuotaMonitorTable` + `ModalityConsumptionChart`.
+> Test: `QuotaMonitorTable.dom.test.tsx` (6, termasuk axe) + `lib/quota-monitor.test.ts` (4).
 
 ---
 
@@ -286,9 +300,9 @@ curl -b $JAR $B/me/entitlements | jq '.data.usage'
 | F1 | 16 | 16 | `usage_counters_test.go`, `usage_resolvers_test.go`, uji live ✅ |
 | F2 | 7 | 7 | `pricing_test.go`, `pricing_live_test.go`, uji live ✅ |
 | F3 | 11 | 11 | `downgrade_worker_test.go`, `TestLedger_CleanerReleasesStale` ✅ |
-| F4 | 5 | 0 | ⛔ diblokir (tanpa entitas kategori/dompet per-user) |
+| F4 | 7 | 7 | `plan-limits.test.ts`, `user_service_test.go` ✅ |
 | F5 | 10 | 9 | `catalog_test.go` + uji live E2E (1 sisa: dropdown plan) |
-| F6 | 6 | 6 | uji live `/me/entitlements`, `quota-monitor`; UI build ✅ |
+| F6 | 8 | 8 | `QuotaMonitorTable.dom.test.tsx` (6, axe), `lib/quota-monitor.test.ts` (4), uji live ✅ |
 | Regression | 8 | 8 | `go test ./...` + `pnpm test/lint/build` hijau ✅ |
 | Negatif | 8 | 8 | 401/403/400/409 terverifikasi live ✅ |
 

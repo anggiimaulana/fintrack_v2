@@ -1133,3 +1133,184 @@ membuat pembatasan kuota AI tidak benar-benar berjalan.
 - `go test ./internal/... ./pkg/...` hijau; `go test ./tests/...` (E2E) hijau.
 - Integrasi `TEST_DATABASE_URL` → `TestBillingRepo_CountAIRequestsAndVisionScans` PASS.
 - Uji live: OCR/chat/limit semuanya terbukti (lihat bukti di atas).
+
+## 2026-10-14 — F2: Verifikasi Independen Aktivasi Pricing + Perbaikan Test Flaky
+
+**Konteks:** F2 (aktifkan pricing) diminta dikerjakan. Saat recon ditemukan repo sudah memuat
+commit yang mengimplementasikan F2/F3/F5/F6 (`c602eef`, `9b99da1`). Sesuai prinsip engagement
+ini — **verifikasi, jangan percaya pesan commit** — F2 diverifikasi ulang terhadap instance live.
+
+### Hasil verifikasi F2 (terbukti bekerja)
+- **F2-01 (`cost_idr` terisi):** chat 9.956 token → `cost_idr=3733` =
+  `floor(300×9.956×1.25×1.0)`; vision 3.729 token → `cost_idr=3495` =
+  `floor(300×3.729×1.25×2.5)`. Sebelumnya selalu `0`.
+- **F2-02 (rule live):** `PUT /admin/pricing-rules/:id` markup 1.25→2.0 → chat berikutnya
+  `cost_idr=6006` (`floor(300×10.011×2.0)`); cost/token `0.3749`→`0.5999`. Revert 1.25 sukses.
+  Engine di-refresh tiap 60s + hook admin.
+- **Wiring:** `billing.NewPricingEngine` → `LedgerService` (bukan `nil`);
+  `startPricingRefresh` aktif; `GetActiveRule` dipanggil saat boot.
+- **F5 (bonus):** `/admin/pricing-rules` CRUD + `/super-admin/pricing` UI ada; mutasi teraudit.
+
+### Perbaikan test flaky (bukan bug produk)
+- `TestLedger_CleanerReleasesStale` — memakai `MaxAge: time.Nanosecond` yang balapan dengan
+  `created_at` reserve (cutoff `now - maxAge`). Ditulis ulang: INSERT reserve bertanggal lampau
+  eksplisit + reserve segar, lalu assert hanya yang lama di-release.
+- `TestBillingRepo_TokenPeriodAndLedger` — idempotency key turunan `period.ID` (deterministik)
+  bentrok antar-run pada DB yang sama. Diperbaiki dengan suffix UUID.
+- Verifikasi: 3× `go test ./internal/repository/postgres/` berturut-turut **0 FAIL**.
+
+### Catatan
+- `TestP08_003_GatewaySustainedLoad` masih gagal (405 RPS vs target 500) — **environmental**,
+  tidak menyentuh pricing/ledger, sudah ada sejak audit awal.
+- **F4 (max_categories/max_wallets)** masih pending; `entitlement/catalog.go` menandainya
+  `Enforced: false` secara eksplisit.
+
+### Verifikasi
+- `go vet ./...`, `go build ./...` hijau; `go test ./internal/... ./pkg/...` hijau.
+- `go test ./tests/` (E2E) hijau kecuali P08 perf (pra-ada).
+- Frontend: `pnpm build` hijau (route `/super-admin/pricing`), `pnpm test` 137/137.
+## 2026-10-14 — Bugfix: AI Chat Flash / Reset ke Initial State
+- **Root Cause**:
+  1. `frontend/hooks/useAiChat.ts`: pemanggilan `fetch("/api/v1/ai/chat")` tidak menyertakan header `"X-Requested-With": "XMLHttpRequest"`. Middleware `OriginCheck` menolaknya dengan HTTP 403 Forbidden seketika (~10ms).
+  2. `frontend/components/ai/ChatWindow.tsx`: `useEffect` penyeragaman pesan menempatkan `isStreaming` sebagai dependency. Ketika stream gagal dalam 0.1s (`isStreaming` jadi `false`), efek tersebut langsung menimpa state `messages` lokal dengan `sessionMessages` dari TanStack Query yang masih berupa array kosong `[]`, sehingga tampilan langsung kembali ke landing kosong ("Tanyakan apapun tentang keuangan Anda").
+- **Solusi**:
+  1. `frontend/hooks/useAiChat.ts` & `frontend/lib/auth-client.ts`: tambahkan `"X-Requested-With": "XMLHttpRequest"` pada request POST.
+  2. `frontend/components/ai/ChatWindow.tsx` & `InlineAiAssistant.tsx`: gunakan `lastLoadedSessionIdRef` dan guard `sessionMessages.length >= messages.length` sehingga query kosong tidak pernah menghapus pesan yang sedang/baru saja dikirim. Inisialisasi `currentSessionId` dan `pendingAutoSend` via lazy `useState`.
+- **Verifikasi**:
+  - `pnpm test`: 173 passed.
+  - `pnpm lint`: 0 errors.
+  - Curl endpoint SSE streaming mengembalikan `200 OK` dengan event stream lengkap.
+
+## 2026-10-14 — Dashboard Transaksi Terbaru: Penomoran & Layout Tabel Terstandarisasi
+- **Fitur / UI**:
+  - `frontend/components/transactions/TransactionTable.tsx`: Diganti dari tampilan list `TransactionRow` menjadi `DataTable` penuh dengan kolom: `#` (penomoran 1..10), `DESKRIPSI` (dengan tanggal & jam), `TIPE` (badge status warna), `KATEGORI` (badge nama kategori), dan `JUMLAH` (format Rupiah mono dengan prefix).
+  - `frontend/components/transactions/TransactionColumns.tsx`: Opsi `hideActions` ditambahkan untuk menyembunyikan kolom aksi saat tabel dirender pada dashboard ringkasan.
+  - `frontend/app/(dashboard)/user/page.tsx`: Limit transaksi dinaikkan menjadi maksimal 10 (`perPage: 10`), dihubungkan dengan `categoryMap` untuk resolusi nama kategori yang tepat.
+- **Verifikasi**:
+  - `pnpm vitest run`: 183 passed (26 test files).
+  - `pnpm lint`: 0 errors.
+  - `pnpm build`: Berhasil tanpa error (`31/31` pages).
+## 2026-10-14 — F4: Limit Kategori/Dompet → Keputusan "UI Jujur"
+
+**Konteks:** F4 meminta menegakkan `max_categories` & `max_wallets`. Recon menemukan kedua
+limit **tidak dapat ditegakkan** dengan skema saat ini.
+
+### Temuan (bukti)
+- **`max_categories`:** kategori bersifat **global & admin-only** — `income_categories`,
+  `expense_categories`, `savings_categories` **tidak punya kolom `user_id`**; mutasi hanya
+  via `adminRoutes.POST /categories/*`. Tidak ada "kategori milik user" untuk dihitung.
+- **`max_wallets`:** **tidak ada entitas dompet** — tidak ada tabel `wallets`/`accounts`;
+  `savings_categories` bukan dompet dan juga global.
+
+### Keputusan produk (dikonfirmasi user)
+**UI jujur** — limit yang tidak ditegakkan **tidak ditampilkan** sebagai benefit paket, dan
+admin diperingatkan. Backend jadi sumber kebenaran lewat flag `enforced`.
+
+### Implementasi
+- **Backend:** `payment.CatalogService` kini menyertakan `limit_meta` (key/label/unit/enforced)
+  di `GET /api/v1/plans`, bersumber dari `entitlement.LimitCatalog`; `NewCatalogService`
+  menerima katalog limit. Wiring di `cmd/server/main.go`.
+- **Frontend:** `lib/plan-limits.ts` (`enforcedLimitEntries`, `limitLabel`) menyaring limit
+  `enforced=false`; `PlanCard` hanya menampilkan limit yang berlaku; `PublicPlan.limit_meta`
+  ditambah di `hooks/use-billing.ts`.
+- **Admin:** `hooks/useEntitlementCatalog.ts` + peringatan di `PlanFormDialog` saat operator
+  mengonfigurasi limit yang belum ditegakkan.
+
+### Verifikasi
+- Live: `GET /plans` → `max_categories.enforced=false`, `max_wallets.enforced=false`,
+  sisanya `true`. Halaman Langganan hanya menampilkan 4 kuota berlaku.
+- Test baru: backend `TestCatalog_UnenforcedLimitsCarryFlag` + `TestCatalog_NoLimitMetaWhenNotConfigured`;
+  frontend `lib/plan-limits.test.ts` (7 test).
+- `go vet`/`go build`/`go test ./internal/... ./pkg/...` hijau; `./tests/` E2E hijau;
+  `pnpm build` hijau; `pnpm test` 183/183 (3 kegagalan awal = flaky timing pada
+  `SearchCommand`/`NotificationBell` dari kerja paralel — lulus saat dijalankan ulang & terisolasi).
+
+### Catatan pertanyaan pricing (refresh 60s)
+Dijelaskan: `CostIDR` **tidak menyentuh DB** (murni in-memory di bawah RWMutex); refresh
+adalah **1 query/menit per proses** (bukan per-user), jadi tidak tumbuh dengan jumlah user;
+dan sudah ada jalur **realtime** via hook admin (`WithPricingReload`) — polling hanya jaring
+pengaman untuk instance lain.
+
+## 2026-10-14 — F6-04: Lengkapi UI Pemantauan Kuota Super Admin
+
+**Konteks:** F6-04 sebelumnya hanya punya API (`GET /admin/quota-monitor`) tanpa UI —
+tidak ada halaman, hook, atau menu. Dilengkapi menjadi fitur penuh.
+
+### Temuan
+- `/admin/quota-monitor` berfungsi (200, daftar user yang melewati ambang), tetapi **tidak
+  ada UI sama sekali** → operator tidak bisa mengaksesnya.
+- Grafik per-modalitas ternyata **sudah tersedia datanya** di `GET /admin/metrics/timeseries`
+  (`tokens_chat/vision/voice/embedding`) → tidak perlu endpoint baru.
+
+### Implementasi
+- **Hook:** `hooks/useSuperAdminQuotaMonitor.ts` (threshold sebagai param, cache key per ambang).
+- **Halaman:** `app/(dashboard)/super-admin/quota-monitor/page.tsx` — filter ambang via URL
+  (`?threshold=`), tombol Segarkan, Suspense boundary (pola sama dengan halaman tokens).
+- **Komponen:** `QuotaMonitorTable` (tabel + progress bar; band **kritis ≥90%** merah,
+  mendekati batas kuning; ringkasan kritis/mendekati batas; empty/error state) dan
+  `ModalityConsumptionChart` (bar bertumpuk chat/vision/voice/embedding).
+- **Utilitas bersama:** `lib/quota-monitor.ts` (`quotaSeverity`, `summariseQuota`).
+- **UI primitive:** `Progress` diberi prop `indicatorClassName` untuk warna band.
+- **Sidebar:** menu "Pemantauan Kuota" ditambahkan.
+
+### Verifikasi
+- `pnpm build` hijau (route `/super-admin/quota-monitor` ter-generate, 32/32 halaman).
+- `pnpm test` **193/193**; `pnpm lint` 0 error pada berkas baru.
+- Test baru: `QuotaMonitorTable.dom.test.tsx` (6, termasuk axe a11y) + `lib/quota-monitor.test.ts` (4).
+- Live: halaman 200; `?threshold=90` 200; data 33 baris (threshold=1); menu sidebar tampil.
+- Backend `go vet`/`go test ./internal/... ./pkg/...` tetap hijau (tidak ada perubahan backend).
+
+## 2026-10-14 — Audit Kuota/Biaya: 2 Bug Kritis Ditemukan & Diperbaiki
+
+**Konteks:** Permintaan user untuk (a) audit semua query ledger tanpa filter `entry_type`,
+(b) bandingkan scan di halaman Transaksi vs AI Chat, (c) verifikasi RBAC plan, (d) analisis
+interaksi kuota OCR vs token, (e) dinamisasi biaya per-10k + markup.
+
+### 🔴 BUG-OCR-01 — Double count kuota OCR (DIPERBAIKI)
+`CountVisionScansInPeriod` menghitung **semua** baris modality=vision (reserve + commit),
+sehingga 1 scan = 2 hitungan. Bukti live: 8 scan → tercatat 16 (user Pro hanya bisa ~50 scan,
+bukan 100). Fix: filter `entry_type='reserve'`. Regression test ditambahkan.
+
+### 🔴 BUG-NEG-01 — Kuota token bisa NEGATIF (DIPERBAIKI)
+Dua lapis:
+1. `/ai/receipt` **tidak** ter-gate `ai_tokens_per_cycle` (padahal OCR mengonsumsi token vision).
+2. `Commit` tidak meng-clamp; reserve=estimasi 1 token, commit=token asli (~4.600).
+Bukti live: kuota 150.000, sisa 100 → 1 OCR → `used_tokens = 154.474` (**−4.474**).
+Fix: (a) tambah gate token untuk OCR; (b) `Commit` clamp ke `quota − used` + log peringatan.
+Bukti: token habis + OCR → **402** (bukan 200); `used` tetap 150.000 (tidak negatif).
+
+### ✅ Audit menyeluruh (16 lokasi query ledger)
+Hanya `CountVisionScansInPeriod` yang bermasalah; 15 lainnya sudah benar memfilter
+`entry_type` (`commit` untuk biaya/token, `reserve` untuk hitungan request).
+
+### ✅ Verifikasi
+- **Scan Transaksi vs AI Chat:** keduanya memanggil **endpoint sama** `POST /ai/receipt`
+  (`ReceiptScanner`, `ReceiptUpload`, `InlineAiAssistant`) → ledger & RBAC identik.
+  Live: 2 scan dari 2 jalur → ocr +2 (tepat), token & request ikut.
+- **RBAC/entitlement:** user Free → `GET /reports` 403, `POST /ai/receipt` 403;
+  user biasa ke `/admin/*` 403; anon 401. Semua rute AI ter-gate sesuai plan.
+
+### 📄 Dokumentasi
+Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
+- `00-audit-kuota-biaya.md` (temuan lengkap + bukti + matriks gate)
+- `01-implementation-testing-plan.md` (P0 selesai; P1–P3 rencana dengan checklist)
+
+### Rekomendasi lanjutan
+- P1: gate `ai_tokens_per_cycle` untuk `/ai/voice` (konsistensi).
+- P2: satuan harga **per 10k** + harga beli provider + tampilan **margin** (permintaan user).
+- P3: estimasi reserve lebih akurat (kurangi over-run clamp) + panel margin di Super Admin.
+
+### Verifikasi teknis
+`go vet`/`go build` hijau; `go test ./internal/... ./pkg/...` hijau; integrasi
+`./internal/repository/postgres/` hijau (termasuk 2 test regression baru).
+## 2026-10-14 — Perbaikan Export CSV, Penutupan Kebocoran Fitur RAG, & Audit Entitlement
+- **Export CSV/PDF Transaksi & Laporan**:
+  - `frontend/app/(dashboard)/user/transactions/page.tsx`: Tombol `Export CSV` sebelumnya memiliki handler mock `toast.info("Ekspor laporan belum tersedia...")`. Diperbaiki dengan memanggil `GET /api/v1/reports/export?format=csv` dan mengunduh berkas CSV asli dari server.
+  - `frontend/app/(dashboard)/user/reports/page.tsx`: Tombol `Export PDF` dihubungkan ke `GET /api/v1/reports/export?format=pdf` untuk mengunduh laporan PDF.
+- **Penutupan Kebocoran Fitur (Feature Leak) RAG**:
+  - Ditemukan kebocoran fitur pada `backend/internal/usecase/ai_usecase.go`: fungsi `retrieveRelevantTransactions` menjalankan pencarian vektor semantik untuk semua user chat tanpa memverifikasi switch `rag_search`. User `Free` mendapatkan pencarian cerdas secara gratis meskipun plan menonaktifkannya.
+  - Diperbaiki dengan menginjeksi `entitlement.Resolver` ke `AIUsecase` (`WithEntitlements`) dan memverifikasi `res.Feature("rag_search")` sebelum melakukan vector search. Ditambahkan unit test regresi `TestRetrieveRelevantTransactions_GatedByFeature`.
+- **Verifikasi**:
+  - `go test ./internal/...`: 27 packages ok.
+  - `pnpm test`: 234 passed (31 test files).
+  - `pnpm build`: Berhasil tanpa error (`32/32` pages).
