@@ -40,6 +40,19 @@ $$\text{available\_quota} = \text{daily\_quota} - (\text{used\_tokens} + \text{r
 | `release` | `-REL` | `-reserved_amount` | Tidak berubah | Mengembalikan kuota yang terkunci akibat kegagalan AI. |
 | `grant` | `+GRN` | Tidak berubah | `-amount` atau tambah kuota | Pemberian kompensasi token ekstra dari super admin. |
 | `adjust` | `±ADJ` | Sesuai rekonsiliasi | Sesuai rekonsiliasi | Penyesuaian manual koreksi audit oleh super admin. |
+| `refund` | `-REF` | Tidak berubah | `-amount` | Mengembalikan token yang **sudah** ditagih (`used_tokens`) saat fitur gagal setelah `commit` — mis. OCR yang tidak menghasilkan data terpakai. Nilai di-*clamp* ke `used_tokens` sehingga saldo tidak pernah negatif; idempoten via `idempotency_key`. |
+
+> **Reserve adalah estimasi (P3), bukan tagihan.** `reserve` mengunci *estimasi* token
+> per modalitas (`settings.ai_estimate_chat|reasoning|vision|voice|embedding`, default
+> 2000/4000/5000/2000/1000). Pengguna yang sisa kuotanya tidak cukup untuk estimasi
+> ditolak **di depan** (HTTP 429 `insufficient_quota`) tanpa pemotongan apa pun. Biaya
+> riil baru ditetapkan saat `commit` (di-*clamp* ke sisa kuota agar `used_tokens` tidak
+> pernah melebihi `quota_tokens`).
+>
+> **Turn tanpa jawaban AI tidak ditagih.** Event terminal chat membawa penanda
+> `NoCharge` (kill switch, filter konten, cooldown, error gateway, template sapaan).
+> Billing meresponsnya dengan `release`, bukan `commit` — sehingga kegagalan fitur
+> tidak pernah mengurangi saldo pengguna.
 
 ---
 

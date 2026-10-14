@@ -22,14 +22,21 @@ timeline
 
 ## 2. Rincian Tahapan Dunning
 
-### Tahap 1: Pengingat H-3 (72 Jam Sebelum Jatuh Tempo)
-- **Kondisi**: Waktu saat ini berada di antara 72 hingga 48 jam sebelum `subscriptions.current_period_end`.
+> **Konfigurasi dinamis (2026-10-14):** ambang pengingat tidak lagi hardcoded. Worker membaca
+> `settings.dunning_hours_urgent` (default 24) dan `settings.dunning_hours_soon` (default 72)
+> setiap kali `RunOnce` dijalankan, sehingga Super Admin dapat mengubah jeda pengingat dari
+> halaman **Pengaturan** tanpa deploy ulang. Nilai `urgent` otomatis dibatasi agar tidak
+> melebihi `soon` (monotonik), dan horizon pemindaian mengikuti nilai `soon`. Angka H-3/H-1
+> di bawah adalah *default* bawaan.
+
+### Tahap 1: Pengingat "Segera" (default ≤ 72 Jam Sebelum Jatuh Tempo)
+- **Kondisi**: sisa waktu sebelum jatuh tempo ≤ `dunning_hours_soon` (default 72 jam) namun > `dunning_hours_urgent`.
 - **Aksi Sistem**:
   1. Background worker membuat entri notifikasi tipe `SUBSCRIPTION_EXPIRING_SOON`.
   2. Menerbitkan event SSE ke frontend untuk menampilkan banner pengingat ramah: *"Masa aktif paket Anda tersisa 3 hari lagi. Perpanjang sekarang untuk menjaga kuota token AI Anda."*
 
-### Tahap 2: Pengingat H-1 (24 Jam Sebelum Jatuh Tempo)
-- **Kondisi**: Waktu saat ini berada di antara 24 hingga 1 jam sebelum `current_period_end`.
+### Tahap 2: Pengingat "Mendesak" (default ≤ 24 Jam Sebelum Jatuh Tempo)
+- **Kondisi**: sisa waktu ≤ `dunning_hours_urgent` (default 24 jam) namun > 0.
 - **Aksi Sistem**:
   1. Membuat entri notifikasi tipe `SUBSCRIPTION_EXPIRING_URGENT`.
   2. Banner frontend berubah warna menjadi kuning peringatan disertai tombol *Quick Renew*.

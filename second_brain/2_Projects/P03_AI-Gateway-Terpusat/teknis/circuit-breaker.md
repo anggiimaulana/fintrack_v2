@@ -173,8 +173,17 @@ func (cb *CircuitBreaker) GetState() State {
 
 ## 4. Parameter Konfigurasi Default
 
+> **Konfigurasi dinamis (2026-10-14):** parameter di bawah tidak lagi hardcoded. Nilainya
+> dibaca dari tabel `settings` saat boot dan diterapkan ulang seketika ketika Super Admin
+> mengubahnya dari halaman **Pengaturan** — tanpa restart. Kunci: `breaker_failure_threshold`,
+> `breaker_cooldown_seconds`, `breaker_half_open_probes` (breaker endpoint) dan
+> `route_breaker_threshold`, `route_breaker_cooldown_secs` (breaker rute). Nilai di bawah
+> adalah default bawaan saat kunci belum diisi.
+
 | Parameter | Nilai Default | Rasional |
 |---|---|---|
 | `FailureThreshold` | **5** kegagalan berurutan | Menghindari over-sensitivitas akibat fluktuasi sesaat (glitch jaringan). |
 | `CooldownDuration` | **30 detik** | Waktu yang cukup bagi pod upstream atau vendor AI untuk memulihkan beban. |
 | `ProbeConcurrency` | **1 request** | Membatasi dampak latensi ke user saat menguji status pemulihan upstream. |
+| `route_breaker_threshold` | **2** kegagalan berurutan | Breaker rute (endpoint+model) lebih agresif: model mati 2x hampir pasti salah konfigurasi. |
+| `route_breaker_cooldown_secs` | **60 detik** | Karantina rute mati sebelum dicoba lagi; sibling sehat tetap melayani. |

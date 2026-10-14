@@ -51,6 +51,13 @@ Pada respons standar OpenAI-compatible:
 ---
 
 ## 3. Sumber Data Fallback: Heuristic Estimator
+> **Konfigurasi Heuristik Dinamis (2026-10-14):** Parameter heuristik tidak lagi berupa konstanta kaku di kode. Nilainya dibaca dari tabel `settings` dan dapat diatur secara instan oleh Super Admin melalui antarmuka **Pengaturan** tanpa perlu restart aplikasi:
+> - `metering_chars_per_token`: Rasio karakter per token (default: `4`, range: 1..100).
+> - `metering_safety_buffer_pct`: Overhead safety buffer (default: `10%`, range: 0..100).
+> - `metering_image_tokens`: Estimasi kuota token per gambar/struk (default: `85`, range: 1..10000).
+> - `metering_audio_tokens_per_sec`: Estimasi kuota token per detik audio (default: `25`, range: 1..1000).
+> Perubahan parameter di Settings langsung diaplikasikan ke `metering.Estimator` secara thread-safe saat itu juga.
+
 
 ### 3.1. Kapan Fallback Diaktifkan?
 Heuristic estimator otomatis aktif jika:

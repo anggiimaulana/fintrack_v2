@@ -16,15 +16,24 @@ Dokumen ini menjelaskan arsitektur dan kalkulasi matematis mesin penetapan harga
 
 Biaya akhir dalam mata uang Rupiah dihitung menggunakan rumus:
 
-$$\text{Cost}_{\text{IDR}} = \left\lceil \left( \frac{\text{Tokens}}{1000} \right) \times \text{Base}_{\text{per\_1k}} \times \text{Markup}_{\text{mult}} \times \text{Modality}_{\text{mult}} \times \left(1 + \frac{\text{Markup}_{\text{pct}}}{100}\right) \right\rceil$$
+$$\text{Cost}_{\text{IDR}} = \left\lfloor \left( \frac{\text{Tokens}}{1000} \right) \times \text{Sell}_{\text{per\_1k}} \times \text{Markup}_{\text{mult}} \times \text{Modality}_{\text{mult}} \times \left(1 + \frac{\text{Markup}_{\text{pct}}}{100}\right) \right\rfloor$$
 
 ### Definisi Variabel:
 - $\text{Tokens}$: Jumlah token aktual yang dikonsumsi (integer).
-- $\text{Base}_{\text{per\_1k}}$: Harga dasar modalitas teks per 1.000 token dalam Rupiah (misal: Rp 300).
+- $\text{Sell}_{\text{per\_1k}}$: Harga jual dasar per 1.000 token dalam Rupiah, **dinormalkan** dari kolom `base_per_1k_idr` sesuai `price_unit`. Bila `price_unit = 'per_10k'` (mis. Super Admin mengetik "Rp 3.000 / 10.000 token"), nilai dibagi 10 (integer floor) menjadi Rp 300 / 1.000 token sebelum dipakai. Ini memisahkan *satuan input* dari *satuan kalkulasi*.
 - $\text{Markup}_{\text{mult}}$: Faktor pengali margin keuntungan kotor (misal: 1.25x untuk margin laba 25%).
 - $\text{Modality}_{\text{mult}}$: Bobot pengali berdasarkan modalitas pemanggilan AI.
 - $\text{Markup}_{\text{pct}}$: Tambahan persentase margin tambahan (integer, default: 0%).
-- $\lceil \cdot \rceil$: Pembulatan ke atas (*ceiling*) ke bilangan bulat integer IDR terdekat.
+- $\lfloor \cdot \rfloor$: Pembulatan ke bawah (*floor*) ke bilangan bulat IDR terdekat — menguntungkan pengguna dan deterministik.
+
+### Basis Biaya & Margin (P2):
+Tabel `pricing_rules` menyimpan juga **harga modal** (`provider_cost_per_1k_idr`) — berapa yang kita bayar ke provider per 1.000 token. Dari sini sistem dapat melaporkan margin kotor per modalitas:
+
+$$\text{ProviderCost}_{\text{IDR}} = \left\lfloor \frac{\text{Tokens}}{1000} \times \text{ProviderCost}_{\text{per\_1k}} \times \text{Modality}_{\text{mult}} \right\rfloor$$
+
+$$\text{Margin}_{\text{IDR}} = \text{Cost}_{\text{IDR}} - \text{ProviderCost}_{\text{IDR}}$$
+
+Margin dapat bernilai negatif bila harga jual di bawah modal — ditampilkan berwarna merah di UI Super Admin sebagai peringatan. Endpoint `POST/PUT /admin/pricing-rules` memvalidasi `price_unit` ∈ {`per_1k`, `per_10k`} dan `provider_cost_per_1k_idr` ≥ 0.
 
 ---
 

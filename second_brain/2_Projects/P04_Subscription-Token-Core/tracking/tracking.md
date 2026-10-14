@@ -61,3 +61,8 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 - [x] Tidak ada data finansial pengguna yang terhapus saat terjadi penurunan paket (soft-limit aktif).
 - [x] Latensi middleware hak akses berada di bawah 2ms untuk cache hit (L1 in-memory).
 - [x] Dokumen teknis pada direktori `teknis/` terisi lengkap dan akurat.
+- **2026-10-14**: **Refund & estimasi reserve realistis (P1–P3).** Menutup celah "fitur gagal tapi kuota tetap terpotong":
+  - `billing/ledger.go` — metode `Refund` (append-only `entry_type='refund'`, idempoten via idempotency key, di-clamp ke `used_tokens` agar saldo tak pernah negatif). Migrasi `0018` menambah `'refund'` ke CHECK `token_ledger`.
+  - `billing/estimate.go` + `settings` (`ai_estimate_chat|reasoning|vision|voice|embedding`) — reserve kini memakai estimasi realistis per modalitas (default 2000/4000/5000/2000/1000), bukan flat 1 token. Pengguna yang tidak mampu membayar penuh ditolak **di depan** (429 `insufficient_quota`) tanpa pemotongan.
+  - `domain/chat.go` + `ai_handler.go` + `ai_usecase.go`/`ai_gateway_adapter.go` — event terminal `NoCharge` menandai turn yang tidak menghasilkan jawaban AI (kill switch, filter konten, cooldown, gateway error, template sapaan). Billing **release** reservasi pada kasus ini, bukan commit. Vision/voice ikut di-release bila hasil tidak terpakai.
+  - Bukti: `TestLedger_RefundReturnsChargedTokens`, `TestLedger_RefundClampedToUsed`, `TestBilling_UnservedChatTurnIsNotCharged`, `TestAdminE2E_EstimateSettingsWritable` — semua PASS (DB live). Ditemukan & diperbaiki bug: `chatViaGateway` mengirim `done` tanpa `NoCharge` saat gateway gagal, sehingga turn gagal tetap tertagih.
