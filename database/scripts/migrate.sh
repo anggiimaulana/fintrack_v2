@@ -16,7 +16,7 @@ set -euo pipefail
 
 # --- locate psql/pg_dump if not on PATH (Windows-friendly) ---
 if ! command -v psql >/dev/null 2>&1; then
-    for d in "/c/Program Files/PostgreSQL"/*/bin "/mnt/c/Program Files/PostgreSQL"/*/bin /usr/lib/postgresql/*/bin /opt/homebrew/opt/postgresql*/bin; do
+    for d in "/c/Program Files/PostgreSQL"/*/bin "/mnt/c/Program Files/PostgreSQL"/*/bin "C:/Program Files/PostgreSQL"/*/bin /usr/lib/postgresql/*/bin /opt/homebrew/opt/postgresql*/bin; do
         [[ -x "$d/psql" || -x "$d/psql.exe" ]] && export PATH="$d:$PATH" && break
     done
 fi
@@ -47,14 +47,39 @@ done
 
 export PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD
 
-echo "==> Migrating ${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+# --- fall back to the running db container when no local psql exists ---
+DB_CONTAINER="${DB_CONTAINER:-fintrack_v2_db}"
+PSQL_VIA="local"
+if ! command -v psql >/dev/null 2>&1; then
+    PSQL_VIA=""
+    for candidate in docker docker.exe "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"; do
+        if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" exec "${DB_CONTAINER}" psql --version >/dev/null 2>&1; then
+            PSQL_VIA="${candidate}"
+            break
+        fi
+    done
+    if [[ -z "${PSQL_VIA}" ]]; then
+        echo "psql not found locally and container '${DB_CONTAINER}' is not reachable" >&2
+        exit 1
+    fi
+fi
+
+echo "==> Migrating ${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE} (via ${PSQL_VIA})"
 
 for f in $(ls "${MIG_DIR}"/*.sql | sort); do
     name="$(basename "$f")"
     echo "    -> ${name}"
-    psql -v ON_ERROR_STOP=1 \
-         -v app_password="${APP_DB_PASSWORD}" \
-         -q -f "$f"
+    if [[ "${PSQL_VIA}" == "local" ]]; then
+        psql -v ON_ERROR_STOP=1 \
+             -v app_password="${APP_DB_PASSWORD}" \
+             -q -f "$f"
+    else
+        cat "$f" | "${PSQL_VIA}" exec -i "${DB_CONTAINER}" psql \
+             -U "${PGUSER}" -d "${PGDATABASE}" \
+             -v ON_ERROR_STOP=1 \
+             -v app_password="${APP_DB_PASSWORD}" \
+             -q
+    fi
 done
 
 echo "==> Migrations applied."
@@ -64,7 +89,14 @@ if [[ "$RUN_SEED" == "1" ]]; then
     for f in $(ls "${SEED_DIR}"/*.sql | sort); do
         name="$(basename "$f")"
         echo "    -> ${name}"
-        psql -v ON_ERROR_STOP=1 -q -f "$f"
+        if [[ "${PSQL_VIA}" == "local" ]]; then
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
+        else
+            cat "$f" | "${PSQL_VIA}" exec -i "${DB_CONTAINER}" psql \
+                 -U "${PGUSER}" -d "${PGDATABASE}" \
+                 -v ON_ERROR_STOP=1 \
+                 -q
+        fi
     done
     echo "==> Seed applied."
 fi

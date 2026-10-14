@@ -11,11 +11,18 @@ UNION ALL SELECT 'savings_categories', count(*) FROM savings_categories
 UNION ALL SELECT 'expense_subcategories', count(*) FROM expense_subcategories
 UNION ALL SELECT 'transactions', count(*) FROM transactions
 UNION ALL SELECT 'transaction_embeddings', count(*) FROM transaction_embeddings
-UNION ALL SELECT 'gemini_api_keys', count(*) FROM gemini_api_keys
 UNION ALL SELECT 'spk_results', count(*) FROM spk_results
 UNION ALL SELECT 'chat_sessions', count(*) FROM chat_sessions
 UNION ALL SELECT 'chat_messages', count(*) FROM chat_messages
 UNION ALL SELECT 'ai_providers', count(*) FROM ai_providers
+UNION ALL SELECT 'audit_logs', count(*) FROM audit_logs
+UNION ALL SELECT 'feature_flags', count(*) FROM feature_flags
+UNION ALL SELECT 'ai_endpoints', count(*) FROM ai_endpoints
+UNION ALL SELECT 'ai_routes', count(*) FROM ai_routes
+UNION ALL SELECT 'plans', count(*) FROM plans
+UNION ALL SELECT 'subscriptions', count(*) FROM subscriptions
+UNION ALL SELECT 'invoices', count(*) FROM invoices
+UNION ALL SELECT 'payments', count(*) FROM payments
 ORDER BY table_name;
 
 \echo ''
