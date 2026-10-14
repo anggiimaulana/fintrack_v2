@@ -142,7 +142,7 @@ Dokumen ini mendefinisikan rincian pekerjaan teknis (*work breakdown structure*)
 - **Tipe:** HTTP Middleware
 - **Deskripsi:** Membangun middleware Gin HTTP:
   - `RequireFeature(featureKey string)`: Memeriksa apakah fitur boolean diaktifkan untuk user. Mengembalikan status HTTP `403 Forbidden` jika dinonaktifkan.
-  - `WithinLimit(limitKey string, usageProvider func(c *gin.Context) (int64, error))`: Memeriksa apakah penggunaan entitas masih di bawah limit kuota. Mengembalikan HTTP `429 Too Many Requests` jika limit terlampaui.
+  - `WithinLimit(limitKey string, usageProvider func(c *gin.Context) (int64, error))`: Memeriksa apakah penggunaan entitas masih di bawah limit kuota. Mengembalikan HTTP `402 Payment Required` (kode `limit_exceeded`) jika limit terlampaui.
 - **Kriteria Penerimaan (Acceptance Criteria):**
   1. Menggunakan data entitlement dari versioned cache.
   2. Mengembalikan response JSON standar yang memuat detail alasan penolakan dan link upgrade.

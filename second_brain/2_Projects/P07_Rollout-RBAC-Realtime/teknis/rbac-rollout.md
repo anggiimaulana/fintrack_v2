@@ -87,10 +87,12 @@ func RequireEntitlement(entitlementService EntitlementService, featureKey string
 
 		if !allowed {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error": "ENTITLEMENT_REQUIRED",
-				"feature": featureKey,
-				"message": "Fitur ini membutuhkan peningkatan paket langganan",
-				"upgrade_url": "/settings/subscription",
+				"success":      false,
+				"error":        "feature_not_in_plan",
+				"feature_key":  featureKey,
+				"message":      "Fitur ini tidak tersedia pada paket Anda. Silakan tingkatkan paket.",
+				"upgrade_hint": true,
+				"upgrade_url":  "/user/settings/subscription",
 			})
 			return
 		}
@@ -113,12 +115,14 @@ func RequireLimit(entitlementService EntitlementService, limitKey string, countC
 		}
 
 		if !permitted {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "LIMIT_EXCEEDED",
-				"limit_key": limitKey,
-				"remaining": remaining,
-				"message": "Batas kuota penggunaan Anda telah habis untuk periode ini",
-				"upgrade_url": "/settings/subscription",
+			c.AbortWithStatusJSON(http.StatusPaymentRequired, gin.H{
+				"success":       false,
+				"error":         "limit_exceeded",
+				"limit_key":     limitKey,
+				"current_usage": remaining,
+				"message":       "Anda telah mencapai batas paket Anda. Silakan tingkatkan paket.",
+				"upgrade_hint":  true,
+				"upgrade_url":   "/user/settings/subscription",
 			})
 			return
 		}

@@ -71,12 +71,12 @@ func RequireFeature(entitlementService service.EntitlementService, featureKey st
 
         if !hasAccess {
             c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-                "error": gin.H{
-                    "code":        "FEATURE_NOT_AVAILABLE",
-                    "message":     "Fitur ini tidak tersedia pada paket langganan Anda saat ini.",
-                    "feature":     featureKey,
-                    "upgrade_url": "/pricing",
-                },
+                "success":      false,
+                "error":        "feature_not_in_plan",
+                "message":      "Fitur ini tidak tersedia pada paket Anda. Silakan tingkatkan paket.",
+                "feature_key":  featureKey,
+                "upgrade_hint": true,
+                "upgrade_url":  UpgradeURL, // "/user/settings/subscription"
             })
             return
         }
@@ -98,7 +98,7 @@ Middleware ini memvalidasi bahwa jumlah entitas yang dimiliki atau pemakaian pen
 3. Ambil nilai limit yang diizinkan untuk pengguna dari cache (`limitValue`).
 4. Jika `limitValue == -1` (unlimited), lanjutkan request (`c.Next()`).
 5. Eksekusi `currentUsageResolver(c)` untuk menghitung pemakaian saat ini dari basis data (misal: hitung jumlah dompet aktif yang ada).
-6. Jika `currentUsage >= limitValue`, hentikan request dengan HTTP `429 Too Many Requests`.
+6. Jika `currentUsage >= limitValue`, hentikan request dengan HTTP `402 Payment Required` (kode `limit_exceeded`).
 
 ### 3.2. Implementasi Go
 ```go
@@ -149,15 +149,15 @@ func WithinLimit(entitlementService service.EntitlementService, limitKey string,
 
         // 3. Evaluasi soft-limit
         if currentUsage >= limitValue {
-            c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-                "error": gin.H{
-                    "code":        "LIMIT_EXCEEDED",
-                    "message":     "Anda telah mencapai batas maksimum kuota untuk paket Anda.",
-                    "limit_key":   limitKey,
-                    "current":     currentUsage,
-                    "max_allowed": limitValue,
-                    "upgrade_url": "/pricing",
-                },
+            c.AbortWithStatusJSON(http.StatusPaymentRequired, gin.H{
+                "success":       false,
+                "error":         "limit_exceeded",
+                "message":       "Anda telah mencapai batas paket Anda. Silakan tingkatkan paket.",
+                "limit_key":     limitKey,
+                "limit_value":   limitValue,
+                "current_usage": currentUsage,
+                "upgrade_hint":  true,
+                "upgrade_url":   UpgradeURL, // "/user/settings/subscription"
             })
             return
         }

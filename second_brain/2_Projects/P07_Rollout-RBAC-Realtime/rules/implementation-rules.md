@@ -10,8 +10,8 @@ Dokumen ini memuat aturan rekayasa perangkat lunak yang **WAJIB (BINDING)** dipa
 - **RULE-P07-SEC-02**: **Dilarang Menyimpan Entitlement / Role di Payload JWT**. JWT hanya memuat identitas subjek (`sub`), issuer, tanggal kedaluwarsa (`exp`), dan versi sesi (`session_ver`). Data hak akses dan kuota wajib diambil dari Redis cache berversi atau database per-request.
 - **RULE-P07-SEC-03**: **Format Response Error Terstandarisasi**:
   - Pelanggaran izin role: kembalikan `HTTP 403 Forbidden` dengan format JSON `{ "error": "FORBIDDEN", "message": "Akses memerlukan role super_admin" }`.
-  - Pelanggaran izin fitur: kembalikan `HTTP 403 Forbidden` dengan kode spesifik `{ "error": "ENTITLEMENT_REQUIRED", "feature": "export_csv", "upgrade_url": "/settings/subscription" }`.
-  - Batas kuota habis: kembalikan `HTTP 429 Too Many Requests` dengan header `Retry-After` dan payload `{ "error": "LIMIT_EXCEEDED", "limit_type": "monthly_transactions", "current": 50, "max": 50 }`.
+  - Pelanggaran izin fitur: kembalikan `HTTP 403 Forbidden` dengan payload `{ "error": "feature_not_in_plan", "feature_key": "reports_export", "upgrade_hint": true, "upgrade_url": "/user/settings/subscription" }`.
+  - Batas kuota paket habis: kembalikan `HTTP 402 Payment Required` dengan payload `{ "error": "limit_exceeded", "limit_key": "max_transactions", "limit_value": 100, "current_usage": 100, "upgrade_hint": true, "upgrade_url": "/user/settings/subscription" }`. (`429` dipakai rate limiter dan kuota ledger token `insufficient_quota`, bukan limit paket.)
 
 ---
 

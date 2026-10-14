@@ -49,27 +49,29 @@ Dokumen ini berisi aturan implementasi yang mengikat (*binding rules*) bagi selu
    - Penolakan fitur mengembalikan HTTP `403 Forbidden` dengan kode error terstruktur:
      ```json
      {
-       "error": {
-         "code": "FEATURE_NOT_AVAILABLE",
-         "message": "Fitur ini memerlukan paket Pro atau lebih tinggi.",
-         "feature": "ocr_receipt",
-         "upgrade_url": "/pricing"
-       }
+       "success": false,
+       "error": "feature_not_in_plan",
+       "message": "Fitur ini tidak tersedia pada paket Anda. Silakan tingkatkan paket.",
+       "feature_key": "ocr_receipt",
+       "upgrade_hint": true,
+       "upgrade_url": "/user/settings/subscription"
      }
      ```
-   - Penolakan limit kuota mengembalikan HTTP `429 Too Many Requests`:
+   - Penolakan limit kuota mengembalikan HTTP `402 Payment Required`:
      ```json
      {
-       "error": {
-         "code": "LIMIT_EXCEEDED",
-         "message": "Batas maksimum dompet telah tercapai.",
-         "limit": "max_wallets",
-         "current": 5,
-         "max": 5,
-         "upgrade_url": "/pricing"
-       }
+       "success": false,
+       "error": "limit_exceeded",
+       "message": "Anda telah mencapai batas paket Anda. Silakan tingkatkan paket.",
+       "limit_key": "max_wallets",
+       "limit_value": 5,
+       "current_usage": 5,
+       "upgrade_hint": true,
+       "upgrade_url": "/user/settings/subscription"
      }
      ```
+   > Catatan: kuota dijawab **402** (bukan 429) agar tidak ambigu dengan rate limiter;
+   > `upgrade_url` mengarah ke halaman langganan swalayan `/user/settings/subscription`.
 
 ---
 

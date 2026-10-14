@@ -203,12 +203,12 @@ Menyediakan mesin **Subscription & Token Core** yang kuat, aman secara finansial
      - Ekstrak user dari context JWT/session.
      - Jika user role `super_admin`, bypass pengecekan (`c.Next()`).
      - Ambil entitlement dari `VersionedCache`.
-     - Jika flag `featureKey` bernilai false / tidak ditemukan, hentikan request dengan HTTP `403 Forbidden` JSON (`code: "FEATURE_LOCKED"`, `upgrade_url: "/pricing"`).
+     - Jika flag `featureKey` bernilai false / tidak ditemukan, hentikan request dengan HTTP `403 Forbidden` JSON (`error: "feature_not_in_plan"`, `feature_key`, `upgrade_hint: true`, `upgrade_url: "/user/settings/subscription"`).
   2. Implementasikan `WithinLimit(limitKey string, countProvider func(c *gin.Context) (int64, error)) gin.HandlerFunc`:
      - Bypass jika role `super_admin`.
      - Ambil entitlement limit numerik. Jika limit bernilai `-1` (unlimited), izinkan request.
-     - Hitung pemakaian terkini via `countProvider`. Jika `currentUsage >= maxAllowed`, hentikan request dengan HTTP `429 Too Many Requests` JSON (`code: "LIMIT_EXCEEDED"`, info batasan dan upgrade link).
-- **Verifikasi (Bukti):** Unit test handler Gin dengan mock middleware: validasi status HTTP 403, 429, dan 200 untuk berbagai peran pengguna.
+     - Hitung pemakaian terkini via `countProvider`. Jika `currentUsage >= maxAllowed`, hentikan request dengan HTTP `402 Payment Required` JSON (`error: "limit_exceeded"`, `limit_key`, `limit_value`, `current_usage`, `upgrade_url: "/user/settings/subscription"`).
+- **Verifikasi (Bukti):** Unit test handler Gin dengan mock middleware: validasi status HTTP 403 (fitur) & 402 (limit), dan 200 untuk berbagai peran pengguna.
 
 #### TASK-P04-013 — Handler REST API Endpoint /api/v1/me/entitlements
 - **Target File:** `backend/internal/billing/handler/entitlement_handler.go`, registrasi rute di router API
@@ -319,7 +319,7 @@ Menyediakan mesin **Subscription & Token Core** yang kuat, aman secara finansial
 | **TASK-P04-009** | Entitlement Domain & Repo | `backend/internal/entitlement/domain/`, `repository/` | Test resolusi entitlement fallback paket default `free` |
 | **TASK-P04-010** | Versioned Cache L1/L2 | `backend/internal/entitlement/cache/versioned_cache.go` | Benchmark latensi L1 < 0.5ms, L2 < 2ms, invalidasi counter |
 | **TASK-P04-011** | Redis Pub/Sub Synchronization | `backend/internal/entitlement/cache/pubsub_listener.go` | Multi-instance simulation test invalidasi memori lokal < 50ms |
-| **TASK-P04-012** | Entitlement Middleware Gin | `backend/internal/entitlement/middleware/*.go` | HTTP test: 403 Forbidden, 429 Too Many Requests, admin bypass |
+| **TASK-P04-012** | Entitlement Middleware Gin | `backend/internal/entitlement/middleware/*.go` | HTTP test: 403 Forbidden (fitur), 402 Payment Required (limit), admin bypass |
 | **TASK-P04-013** | Endpoint /me/entitlements | `backend/internal/billing/handler/entitlement_handler.go` | HTTP integration test status 200 OK dengan payload lengkap |
 | **TASK-P04-014** | Lifecycle State Transitions | `backend/internal/billing/service/subscription_lifecycle.go` | Unit test state machine & verifikasi rekaman audit event |
 | **TASK-P04-015** | Upgrade Prorata & Downgrade | `backend/internal/billing/service/subscription_management.go` | Unit test kalkulasi prorata floor IDR & pengujian soft-limit |

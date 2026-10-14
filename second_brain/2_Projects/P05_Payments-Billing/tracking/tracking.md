@@ -39,3 +39,5 @@ Status ditandai dengan:
 | Tanggal | ID Tugas | Perubahan | Oleh |
 |---|---|---|---|
 | 2026-10-11 | Semua | Inisialisasi daftar tugas fase P05 dengan status backlog | Tim Arsitek FinTrack v2 |
+| 2026-10-11 | Semua | Implementasi selesai (17/17). Migrasi `0009`, `internal/payment/` (gateway, webhook, invoice, prorata, dunning, grace), endpoint webhook + review manual; test idempotensi & replay hijau | Backend/QA |
+| 2026-10-13 | TASK-P05 (UI) | Melengkapi sisi user: checkout, riwayat pembayaran, tagihan, instruksi transfer, dan unggah bukti transfer (menutup alur manual → review admin). Endpoint `GET /payments`, `GET /invoices`, `POST /payments/:id/proof`, `GET /payment-proofs/:id` | Fullstack |

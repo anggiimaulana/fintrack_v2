@@ -3,6 +3,12 @@
 **Kode Dokumen**: AUDIT-FLOW-01  
 **Klasifikasi**: Alur Fungsional Bisnis & Monetisasi (Monetization & Checkout Integration)  
 
+> **STATUS: SELESAI (2026-10-13).** Seluruh kesenjangan pada dokumen ini telah diperbaiki di
+> P0/P1: endpoint `POST /api/v1/payments/checkout` terdaftar, halaman langganan menjadi hub
+> swalayan (upgrade/downgrade/riwayat/tagihan/unggah bukti), instruksi transfer tampil, dan
+> unggah bukti transfer menutup alur manual → review admin. Lihat
+> `second_brain/1_Digest/Tugas-Rutin/log_aktivitas.md` (entri 2026-10-13 P0+P1).
+
 ---
 
 ## 1. Lokasi & Fakta Kesenjangan

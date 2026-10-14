@@ -14,7 +14,7 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 
 | Total Tugas | Belum Dimulai (⬜) | Sedang Dikerjakan (🔄) | Selesai (✅) | Persentase Selesai |
 |---|---|---|---|---|
-| **17** | **17** | **0** | **0** | **0%** |
+| **17** | **0** | **0** | **17** | **100%** |
 
 ---
 
@@ -45,17 +45,19 @@ Dokumen ini memantau progres eksekusi tugas (*task tracking*) untuk Fase P04 sec
 ## Log Pembaruan Terkini
 
 - **2026-10-11**: Perencanaan & spesifikasi teknis fase P04 disusun (17 task, analisis K-P04-01..K-P04-20).
-  **Implementasi belum dimulai.**
+- **2026-10-11**: Implementasi selesai (17/17). Backend `internal/billing/` + `internal/entitlement/`, migrasi `0008`, seeder `0002`, middleware enforcement, dan endpoint `GET /api/v1/me/entitlements`. Verifikasi: `go test ./...` hijau (ledger concurrency, pricing floor, resolver cache).
+- **2026-10-12**: Enforcement **diaktifkan** di produksi (P07 slice A) — `NewEntitlementMiddleware` dikonstruksi di `cmd/server/main.go`; `upgrade_url` = `/user/settings/subscription` (bukan `/pricing`); valve `ENTITLEMENT_ENFORCEMENT`.
+- **2026-10-13**: UI swalayan (checkout, riwayat, invoice, unggah bukti, downgrade) ditambahkan di P0/P1 — melengkapi sisi frontend yang sebelumnya read-only.
 
 ---
 
 ## Checklist Definition of Done Umum (Fase P04)
 
-- [ ] `go vet && go test && go build` hijau.
-- [ ] Migrasi database `0008_subscription_token_core.sql` replayable maju dan mundur tanpa error.
-- [ ] Fitur penegakan kuota terpasang di balik feature flag konfigurasi.
-- [ ] Test konkurensi membuktikan zero double-spending pada token ledger (`go test -race`).
-- [ ] Audit log mencatat mutasi status langganan dan koreksi ledger secara append-only.
-- [ ] Tidak ada data finansial pengguna yang terhapus saat terjadi penurunan paket (soft-limit aktif).
-- [ ] Latensi middleware hak akses berada di bawah 2ms untuk cache hit.
-- [ ] Dokumen teknis pada direktori `teknis/` terisi lengkap dan akurat.
+- [x] `go vet && go test && go build` hijau.
+- [x] Migrasi database `0008_subscription_token_core.sql` replayable maju dan mundur tanpa error.
+- [x] Fitur penegakan kuota terpasang di balik feature flag konfigurasi (`ENTITLEMENT_ENFORCEMENT`).
+- [x] Test konkurensi membuktikan zero double-spending pada token ledger (`go test -race`).
+- [x] Audit log mencatat mutasi status langganan dan koreksi ledger secara append-only.
+- [x] Tidak ada data finansial pengguna yang terhapus saat terjadi penurunan paket (soft-limit aktif).
+- [x] Latensi middleware hak akses berada di bawah 2ms untuk cache hit (L1 in-memory).
+- [x] Dokumen teknis pada direktori `teknis/` terisi lengkap dan akurat.

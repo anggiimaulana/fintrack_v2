@@ -97,7 +97,7 @@ const LimitUnlimited = int64(-1)
 ### Aturan Evaluasi Nilai Limit:
 - Jika `limit_value == -1`: Pemeriksaan batas selalu lolos (*allow any amount*).
 - Jika `limit_value >= 0`: Jumlah pemakaian aktual (*current usage*) tidak boleh melampaui `limit_value`.
-- Upaya penambahan data baru saat `current_usage >= limit_value` menghasilkan error HTTP `429 Too Many Requests` dengan kode `LIMIT_EXCEEDED`.
+- Upaya penambahan data baru saat `current_usage >= limit_value` menghasilkan error HTTP `402 Payment Required` dengan kode `limit_exceeded` (bukan `429` — `429` dipakai rate limiter & kuota ledger `insufficient_quota`).
 
 ---
 

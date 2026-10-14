@@ -119,3 +119,27 @@ func (r *Router) ResolveRoutes(ctx context.Context, useCase string, combo string
 1. **Zero-Code Model Upgrade**: Jika vendor merilis model baru yang lebih murah dan cepat (misal `gpt-4o-mini-2026`), admin cukup mengubah nilai kolom `model` pada rute tanpa compile ulang Go backend.
 2. **Perlindungan Terhadap Lonjakan Biaya**: Fitur `reasoning` (DeepSeek-R1) atau `vision` dapat diatur batas timeout dan kuotanya tanpa mengganggu stabilitas chat harian.
 3. **Pemberlakuan Kill Switch Per-Fitur**: Admin dapat menonaktifkan rute `voice` hanya dengan `UPDATE ai_routes SET is_active = false WHERE use_case = 'voice'`, menghentikan pengeluaran tanpa mematikan seluruh asisten.
+
+---
+
+## 5. Bootstrap Konfigurasi dari Environment (default env → DB menimpa)
+
+Rute dan endpoint **tidak lagi hardcoded** dan tidak perlu di-seed manual. Paket
+`backend/internal/aigateway/bootstrap` menyemai konfigurasi dari environment
+**hanya ketika tabel terkait masih kosong**, lalu berhenti total:
+
+| Tabel | Kondisi seed | Env |
+|---|---|---|
+| `ai_endpoints` | `count(*) = 0` | `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_ENDPOINT_NAME`, `AI_GATEWAY_PROVIDER` |
+| `ai_routes` | `count(*) = 0` (dan ada endpoint aktif) | `AI_GATEWAY_MODEL_{CHAT,REASONING,VISION,VOICE,EMBEDDING}` |
+| `feature_flags` (`feature_ai_gateway_centralized`) | baris belum ada | `AI_GATEWAY_ENABLED=true` |
+
+**Kontrak "DB menimpa":** begitu ada ≥1 baris (dari Super Admin atau bootstrap
+sebelumnya), env **diabaikan untuk tabel itu** dan tidak pernah menimpa keputusan
+operator. Ini menjaga checkout baru bisa self-configuring dengan satu env var,
+sekaligus menjamin seluruh konfigurasi produksi sepenuhnya dinamis dari portal
+Super Admin (`/api/v1/admin/ai-gateway/*`) tanpa redeploy.
+
+Bootstrap dijalankan di `cmd/server/main.go` **sebelum** health checker; checker
+kemudian menjalankan `RunOnce()` sinkron agar keputusan ON/OFF gateway tidak
+membaca health `unknown` yang basi (endpoint yang baru di-seed langsung diprobe).

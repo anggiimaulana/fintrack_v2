@@ -11,12 +11,16 @@ Platform manajemen keuangan modern, cerdas, dan siap produksi (production-ready)
   - Failover berjenjang di dalam combo (`priority ASC`) dan lintas-combo.
   - Circuit Breaker per-endpoint dengan isolasi kegagalan otomatis.
   - Dukungan multi-model: DeepSeek-R1 (penalaran mendalam), Gemini 2.5 Flash (chat & OCR vision), dan Gemini Embedding 768d (pgvector RAG).
+  - **Satu-satunya transport AI** — jalur BYOK (Bring Your Own Key) per-user telah dihapus total; kunci AI dipusatkan pada pool endpoint yang dikelola Super Admin.
+  - **Konfigurasi dinamis tanpa redeploy**: endpoint, kredensial, rute per-use-case, bobot, breaker, dan kill switch diatur dari portal Super Admin. Nilai default diambil dari environment **hanya saat database masih kosong**; begitu ada data, database otoritatif dan env diabaikan.
 - **Sistem Pendukung Keputusan Finansial (SPK)**:
   - Analisis kesehatan finansial pengguna berbasis data transaksi nyata menggunakan metode pembobotan multi-kriteria (metode 50/30/20, rasio tabungan, tren arus kas).
 - **Billing, Langganan & Pembayaran (P05/P06/P09)**:
   - Tingkatan paket: **Free**, **Pro** (Rp 39.000/bln), dan **Business** (Rp 99.000/bln).
   - Integrasi Midtrans Snap (kartu kredit, QRIS, GoPay, VA) & transfer manual dengan alur unggah bukti bayar.
   - Portal Super Admin untuk verifikasi pembayaran, persetujuan/penolakan instan, dan refund transaksional.
+  - **Self-service pengguna**: halaman Langganan untuk upgrade/downgrade paket, riwayat pembayaran, daftar tagihan, instruksi transfer, dan unggah bukti bayar.
+  - **Penyimpanan bukti fleksibel**: driver `local` (disk server) atau `r2` (Cloudflare R2) yang dapat **diganti saat runtime** dari portal Super Admin tanpa restart; berkas lama tetap dapat dibaca lintas-driver.
 - **Entitlement & RBAC Enforcement (P07)**:
   - Feature gating (`ai_chat`, `ocr_receipt`, `voice_input`, `reports_export`, dll.).
   - Limit enforcement numerik per siklus (`ai_tokens_per_cycle`, `max_transactions`, `ocr_scans_per_cycle`).
@@ -93,6 +97,8 @@ fintrack_v2/
    cp .env.example .env
    ```
    *Edit file `.env` dan sesuaikan kunci rahasia (`JWT_SECRET`, `ENCRYPTION_KEY`, `APP_DB_PASSWORD`).*
+
+   **AI Gateway (opsional, sekali saja):** agar AI langsung aktif tanpa konfigurasi manual, isi `AI_GATEWAY_BASE_URL` (mis. `http://127.0.0.1:20128/v1`) dan `AI_GATEWAY_API_KEY`, lalu set `AI_GATEWAY_ENABLED=true`. Nilai ini **hanya menyemai database saat `ai_endpoints`/`ai_routes`/flag masih kosong**; setelah Super Admin mengonfigurasi gateway lewat `/super-admin/ai-gateway`, database menjadi otoritatif dan env diabaikan. Kosongkan `AI_GATEWAY_BASE_URL` untuk melewati bootstrap dan mengonfigurasi 100% dari UI.
 
 3. **Jalankan Seluruh Stack**:
    ```bash
@@ -214,6 +220,7 @@ Seluruh dokumentasi teknis, keputusan arsitektur (ADR), runbook insiden, dan aud
 - **Runbook Penanganan Insiden**: [`second_brain/2_Projects/P08_Hardening-GoLive/teknis/runbook-incidents.md`](second_brain/2_Projects/P08_Hardening-GoLive/teknis/runbook-incidents.md)
 - **Checklist Kesiapan Go-Live**: [`second_brain/2_Projects/P08_Hardening-GoLive/teknis/go-live-checklist.md`](second_brain/2_Projects/P08_Hardening-GoLive/teknis/go-live-checklist.md)
 - **Panduan Migrasi Database**: [`database/README.md`](database/README.md)
+- **Panduan Penyimpanan Bukti (Local & Cloudflare R2)**: [`docs/storage-pembayaran.md`](docs/storage-pembayaran.md)
 
 ---
 

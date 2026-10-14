@@ -129,7 +129,7 @@ export function EntitlementGuard({
             Fitur ini memerlukan paket langganan lebih tinggi untuk dapat digunakan.
           </div>
           <Button asChild size="sm" variant="default" className="cursor-pointer">
-            <Link href="/settings/subscription">Tingkatkan Paket</Link>
+            <Link href="/user/settings/subscription">Tingkatkan Paket</Link>
           </Button>
         </div>
       </div>
@@ -239,7 +239,8 @@ Sebagian dokumen di atas bersifat aspirational; berikut kondisi nyata setelah Sl
 | Hook entitlement | `frontend/hooks/use-entitlements.ts` | `useEntitlements()` → `hasFeature`, `withinLimit`, `limitValue`; query key `["entitlements","me"]`; fail-closed saat data null |
 | Hook role | `frontend/hooks/use-role.ts` | Wrapper tipis atas `useSession()`; **tidak** fetch `/me` ulang |
 | Handler error terpusat | `frontend/lib/entitlement-errors.ts` | `isEntitlementError`, `notifyEntitlementError` → toast + aksi menuju `UPGRADE_URL` |
-| Halaman tujuan upsell | `frontend/app/(dashboard)/user/settings/subscription/page.tsx` | Read-only: nama paket, status, daftar fitur, tabel batas (`-1` = "Tak terbatas") |
+| Halaman tujuan upsell | `frontend/app/(dashboard)/user/settings/subscription/page.tsx` | Hub swalayan (P0/P1, 2026-10-13): katalog paket dinamis, upgrade, downgrade (soft-limit), riwayat pembayaran, tagihan, dan unggah bukti transfer |
+| Hook billing | `frontend/hooks/use-billing.ts` | `usePublicPlans`, `useMyPayments`, `useMyInvoices`, `useMySubscription`, `useCheckout`, `useUploadProof`, `useScheduleDowngrade`, `useCancelDowngrade`, `useCancelSubscription` |
 | Mirror aksi | `app/(dashboard)/user/transactions/page.tsx` | Tombol "Analisis Struk" & "Export CSV" `disabled` bila fitur tidak ada di paket |
 
 **Nama API yang dipakai (bukan nama di contoh dokumen di atas):** `hasFeature(key)` dan
