@@ -71,7 +71,9 @@ func (u *TransactionUsecase) Create(ctx context.Context, userID uuid.UUID, req d
 		return nil, err
 	}
 
-	u.spkQueue.Enqueue(userID)
+	if u.spkQueue != nil {
+		u.spkQueue.Enqueue(userID)
+	}
 	u.embedAndStore(ctx, tx)
 
 	return tx, nil
@@ -136,7 +138,9 @@ func (u *TransactionUsecase) Update(ctx context.Context, userID uuid.UUID, id uu
 		return nil, err
 	}
 
-	u.spkQueue.Enqueue(userID)
+	if u.spkQueue != nil {
+		u.spkQueue.Enqueue(userID)
+	}
 	u.embedAndStore(ctx, tx)
 
 	return tx, nil
@@ -147,7 +151,9 @@ func (u *TransactionUsecase) SoftDelete(ctx context.Context, id, userID uuid.UUI
 		return err
 	}
 
-	u.spkQueue.Enqueue(userID)
+	if u.spkQueue != nil {
+		u.spkQueue.Enqueue(userID)
+	}
 	if u.embedRepo != nil {
 		if err := u.embedRepo.DeleteByTransactionID(ctx, id); err != nil {
 			logger.Warn("failed to delete embedding", zap.Error(err), zap.String("transaction_id", id.String()))

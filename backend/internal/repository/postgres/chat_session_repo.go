@@ -106,6 +106,12 @@ func (r *ChatSessionRepo) Update(ctx context.Context, s *domain.ChatSession) err
 }
 
 func (r *ChatSessionRepo) Delete(ctx context.Context, id, userID uuid.UUID) error {
-	_, err := q(ctx, r.pool).Exec(ctx, `DELETE FROM chat_sessions WHERE id = $1 AND user_id = $2`, id, userID)
-	return err
+	tag, err := q(ctx, r.pool).Exec(ctx, `DELETE FROM chat_sessions WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

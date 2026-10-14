@@ -282,9 +282,15 @@ func (r *TransactionRepo) HasTransactions(ctx context.Context, userID uuid.UUID)
 }
 
 func (r *TransactionRepo) SoftDelete(ctx context.Context, id, userID uuid.UUID) error {
-	query := `UPDATE transactions SET is_deleted = true, deleted_at = now() WHERE id = $1 AND user_id = $2`
-	_, err := q(ctx, r.pool).Exec(ctx, query, id, userID)
-	return err
+	query := `UPDATE transactions SET is_deleted = true, deleted_at = now() WHERE id = $1 AND user_id = $2 AND is_deleted = false`
+	tag, err := q(ctx, r.pool).Exec(ctx, query, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func (r *TransactionRepo) GetStats(ctx context.Context, userID uuid.UUID, period domain.StatsPeriod) (*domain.TransactionStats, error) {

@@ -108,7 +108,7 @@ func (u *CategoryUsecase) UpdateIncome(ctx context.Context, id uuid.UUID, req do
 		return nil, err
 	}
 	if c == nil {
-		return nil, nil
+		return nil, domain.ErrNotFound
 	}
 	if req.Name != nil {
 		c.Name = *req.Name
@@ -140,7 +140,7 @@ func (u *CategoryUsecase) UpdateExpense(ctx context.Context, id uuid.UUID, req d
 		return nil, err
 	}
 	if c == nil {
-		return nil, nil
+		return nil, domain.ErrNotFound
 	}
 	if req.Name != nil {
 		c.Name = *req.Name
@@ -172,7 +172,7 @@ func (u *CategoryUsecase) UpdateSubcategory(ctx context.Context, id uuid.UUID, r
 		return nil, err
 	}
 	if s == nil {
-		return nil, nil
+		return nil, domain.ErrNotFound
 	}
 	if req.Name != nil {
 		s.Name = *req.Name
@@ -238,7 +238,7 @@ func (u *CategoryUsecase) UpdateSavings(ctx context.Context, id uuid.UUID, req d
 		return nil, err
 	}
 	if c == nil {
-		return nil, nil
+		return nil, domain.ErrNotFound
 	}
 	if req.Name != nil {
 		c.Name = *req.Name

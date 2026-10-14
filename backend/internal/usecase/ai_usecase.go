@@ -642,6 +642,9 @@ func (u *AIUsecase) UpdateSession(ctx context.Context, userID, id uuid.UUID, tit
 	if err != nil {
 		return nil, err
 	}
+	if s == nil {
+		return nil, domain.ErrNotFound
+	}
 	s.Title = title
 	if err := u.chatSessionRepo.Update(ctx, s); err != nil {
 		return nil, err

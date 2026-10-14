@@ -62,8 +62,12 @@ func (r *BudgetRepo) Upsert(ctx context.Context, userID uuid.UUID, req domain.Up
 
 func (r *BudgetRepo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	const query = `DELETE FROM budgets WHERE id = $1 AND user_id = $2`
-	if _, err := q(ctx, r.pool).Exec(ctx, query, id, userID); err != nil {
+	tag, err := q(ctx, r.pool).Exec(ctx, query, id, userID)
+	if err != nil {
 		return fmt.Errorf("delete budget: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
 	}
 	return nil
 }

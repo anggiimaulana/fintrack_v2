@@ -218,9 +218,12 @@ func (r *NotificationRepo) MarkReadMany(ctx context.Context, userID uuid.UUID, i
 
 // Delete removes one notification owned by the user.
 func (r *NotificationRepo) Delete(ctx context.Context, userID, id uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM notifications WHERE id = $1 AND user_id = $2`, id, userID)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM notifications WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete notification: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotificationNotFound
 	}
 	return nil
 }
@@ -238,9 +241,25 @@ func (r *NotificationRepo) DeleteMany(ctx context.Context, userID uuid.UUID, ids
 }
 
 func (r *NotificationRepo) MarkRead(ctx context.Context, userID, id uuid.UUID) error {
-	_, err := r.pool.Exec(ctx,
+	tag, err := r.pool.Exec(ctx,
 		`UPDATE notifications SET read_at = now() WHERE id = $1 AND user_id = $2 AND read_at IS NULL`, id, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark notification read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Either the notification does not exist, is not owned by the user, or
+		// was already read. Distinguish the first two (404) from "already read"
+		// (idempotent success) by checking existence.
+		var exists bool
+		if err := r.pool.QueryRow(ctx,
+			`SELECT true FROM notifications WHERE id = $1 AND user_id = $2`, id, userID).Scan(&exists); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrNotificationNotFound
+			}
+			return fmt.Errorf("check notification: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *NotificationRepo) MarkAllRead(ctx context.Context, userID uuid.UUID) error {

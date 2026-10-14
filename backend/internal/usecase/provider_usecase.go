@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 
@@ -38,7 +37,7 @@ func (u *ProviderUsecase) Create(ctx context.Context, adminID uuid.UUID, req dom
 		return nil, err
 	}
 	if existing != nil {
-		return nil, fmt.Errorf("provider with name '%s' already exists", req.Name)
+		return nil, domain.ErrAlreadyExists
 	}
 
 	provider := &domain.AIProvider{
@@ -64,7 +63,7 @@ func (u *ProviderUsecase) Update(ctx context.Context, id uuid.UUID, req domain.U
 		return nil, err
 	}
 	if provider == nil {
-		return nil, fmt.Errorf("provider not found")
+		return nil, domain.ErrNotFound
 	}
 
 	if req.Name != nil {

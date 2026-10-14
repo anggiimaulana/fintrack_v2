@@ -84,8 +84,14 @@ func (r *UserRepo) Update(ctx context.Context, p *domain.Profile) error {
 
 // SetActive toggles a user's is_active flag.
 func (r *UserRepo) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
-	_, err := q(ctx, r.pool).Exec(ctx, `UPDATE users SET is_active = $2 WHERE id = $1`, id, active)
-	return err
+	tag, err := q(ctx, r.pool).Exec(ctx, `UPDATE users SET is_active = $2 WHERE id = $1`, id, active)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // UpdatePasswordHash replaces the user's bcrypt hash.

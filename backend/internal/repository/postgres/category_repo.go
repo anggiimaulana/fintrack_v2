@@ -85,9 +85,15 @@ func (r *IncomeCategoryRepo) Update(ctx context.Context, c *domain.IncomeCategor
 }
 
 func (r *IncomeCategoryRepo) SoftDelete(ctx context.Context, id uuid.UUID) error {
-	_, err := q(ctx, r.pool).Exec(ctx,
+	tag, err := q(ctx, r.pool).Exec(ctx,
 		`UPDATE income_categories SET is_active = false WHERE id = $1`, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 type ExpenseCategoryRepo struct {
@@ -164,9 +170,15 @@ func (r *ExpenseCategoryRepo) Update(ctx context.Context, c *domain.ExpenseCateg
 }
 
 func (r *ExpenseCategoryRepo) SoftDelete(ctx context.Context, id uuid.UUID) error {
-	_, err := q(ctx, r.pool).Exec(ctx,
+	tag, err := q(ctx, r.pool).Exec(ctx,
 		`UPDATE expense_categories SET is_active = false WHERE id = $1`, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 type ExpenseSubcategoryRepo struct {
@@ -243,7 +255,13 @@ func (r *ExpenseSubcategoryRepo) Update(ctx context.Context, s *domain.ExpenseSu
 }
 
 func (r *ExpenseSubcategoryRepo) SoftDelete(ctx context.Context, id uuid.UUID) error {
-	_, err := q(ctx, r.pool).Exec(ctx,
+	tag, err := q(ctx, r.pool).Exec(ctx,
 		`UPDATE expense_subcategories SET is_active = false WHERE id = $1`, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
