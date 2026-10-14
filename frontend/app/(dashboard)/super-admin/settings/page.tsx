@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Settings, Flag } from 'lucide-react'
 import { useSuperAdminSettings } from '@/hooks/useSuperAdminSettings'
+import { useSuperAdminStorage } from '@/hooks/useSuperAdminStorage'
 import { GlobalSettingsTab } from '@/components/super-admin/settings/GlobalSettingsTab'
 import { FeatureFlagsTab } from '@/components/super-admin/settings/FeatureFlagsTab'
 
@@ -25,6 +26,8 @@ export default function SuperAdminSettingsPage() {
     updateFeatureFlag,
     isSavingFeatureFlag,
   } = useSuperAdminSettings()
+
+  const { storageStatus } = useSuperAdminStorage()
 
   return (
     <div className="space-y-6">
@@ -57,6 +60,7 @@ export default function SuperAdminSettingsPage() {
             onSave={updateSettings}
             isSaving={isSavingSettings}
             onRefresh={refetchSettings}
+            storageStatus={storageStatus}
           />
         </TabsContent>
 

@@ -56,5 +56,4 @@ export const staleTimeConfig = {
   ai: 1000 * 60 * 1,
   admin: 1000 * 60 * 5,
   profile: 1000 * 60 * 60,
-  geminiKeys: 1000 * 60 * 5,
 };

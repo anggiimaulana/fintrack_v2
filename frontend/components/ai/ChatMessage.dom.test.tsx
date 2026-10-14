@@ -21,3 +21,26 @@ describe("ChatMessage markdown link sanitization (TASK-FIX-01)", () => {
     expect(link).toHaveAttribute("href", "#");
   });
 });
+
+describe("ChatMessage assistant mode badge", () => {
+  it("shows a Penalaran badge for reasoning replies", () => {
+    render(<ChatMessage author="assistant" content="jawaban" mode="reasoning" modelUsed="deepseek-r1" />);
+    expect(screen.getByText("Penalaran")).toBeInTheDocument();
+  });
+
+  it("shows a Cepat badge for fast replies", () => {
+    render(<ChatMessage author="assistant" content="jawaban" mode="fast" />);
+    expect(screen.getByText("Cepat")).toBeInTheDocument();
+  });
+
+  it("renders no badge when the mode is unknown (legacy messages)", () => {
+    render(<ChatMessage author="assistant" content="jawaban" />);
+    expect(screen.queryByText("Cepat")).not.toBeInTheDocument();
+    expect(screen.queryByText("Penalaran")).not.toBeInTheDocument();
+  });
+
+  it("never badges user messages", () => {
+    render(<ChatMessage author="user" content="halo" mode="reasoning" />);
+    expect(screen.queryByText("Penalaran")).not.toBeInTheDocument();
+  });
+});

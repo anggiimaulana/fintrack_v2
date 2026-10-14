@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { TransactionData } from "@/components/transactions/TransactionRow";
-import { Sparkles, Loader2, CheckCircle2, Send, X, ChevronDown, ChevronUp, Plus, Camera, MessageSquare } from "lucide-react";
+import { Sparkles, Loader2, CheckCircle2, Send, X, ChevronDown, ChevronUp, Plus, Camera, MessageSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "./ChatMessage";
 import { useAiChat } from "@/hooks/useAiChat";
@@ -139,16 +139,17 @@ export function InlineAiAssistant() {
     // Don't clear chartDataMap — previous charts should persist
     shouldAutoScroll.current = true;
     try {
-      const resultContent = await streamChat(text, sid, () => {}, "fast");
+      const result = await streamChat(text, sid, () => {}, "fast");
       // Add the assistant response to messages after stream completes
-      if (resultContent) {
+      if (result) {
         setMessages((prev) => {
           const next = [...prev];
           const lastIdx = next.length - 1;
+          const patch = { content: result.content, mode: (result.mode as "fast" | "reasoning" | undefined) ?? "fast", modelUsed: result.model ?? null };
           if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
-            next[lastIdx] = { ...next[lastIdx], content: resultContent };
+            next[lastIdx] = { ...next[lastIdx], ...patch };
           } else {
-            next.push({ role: "assistant", content: resultContent });
+            next.push({ role: "assistant", ...patch });
           }
           return next;
         });
@@ -517,19 +518,26 @@ export function InlineAiAssistant() {
                     ref={fileInputRef}
                     onChange={handlePhotoSelect}
                   />
-                  <button
-                    onClick={() => handleSend(inputText)}
-                    disabled={!inputText.trim() || isStreaming}
-                    className="p-1.5 border-2 border-foreground bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                  {isStreaming && (
+                  {isStreaming ? (
                     <button
+                      type="button"
                       onClick={cancelStream}
-                      className="p-1.5 border-2 border-foreground bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer"
+                      className="p-1.5 border-2 border-foreground bg-red-600 text-white hover:bg-red-700 shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
+                      title="Hentikan respons"
+                      aria-label="Hentikan respons"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSend(inputText)}
+                      disabled={!inputText.trim() || isStreaming}
+                      className="p-1.5 border-2 border-foreground bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                      title="Kirim pesan"
+                      aria-label="Kirim pesan"
+                    >
+                      <Send className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>

@@ -6,6 +6,7 @@ import {
   parseTableParams,
   buildTableParams,
   updateTableState,
+  FILTER_PREFIX,
   type TableState,
   type TableDefaults,
   type SortOrder,
@@ -48,10 +49,21 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
 
   const commit = useCallback(
     (next: TableState) => {
-      const qs = buildTableParams(next, defaults).toString();
+      const current = new URLSearchParams(searchParams.toString());
+      current.delete("page");
+      current.delete("per_page");
+      current.delete("sort");
+      current.delete("order");
+      current.delete("q");
+      Array.from(current.keys()).forEach((k) => {
+        if (k.startsWith(FILTER_PREFIX)) current.delete(k);
+      });
+      const tableParams = buildTableParams(next, defaults);
+      tableParams.forEach((v, k) => current.set(k, v));
+      const qs = current.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [router, pathname, defaults]
+    [router, pathname, defaults, searchParams]
   );
 
   const setPage = useCallback(
@@ -81,13 +93,7 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
 
   const setFilter = useCallback(
     (key: string, value: string) => {
-      const filters = { ...state.filters };
-      if (value === "") {
-        delete filters[key];
-      } else {
-        filters[key] = value;
-      }
-      commit(updateTableState(state, { filters }));
+      commit(updateTableState(state, { filters: { [key]: value } }));
     },
     [commit, state]
   );

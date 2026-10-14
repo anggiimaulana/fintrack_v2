@@ -11,6 +11,7 @@ import { Trash2, Plus, MessageSquare, Loader2, CheckCircle2, Search, PenLine, Ba
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
+import { notifyEntitlementError } from "@/lib/entitlement-errors";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 
 import { BarChartView } from "@/components/charts/BarChartView";
@@ -44,9 +45,8 @@ export default function ChatWindow() {
   const { sessions, sessionsLoading, createSession, deleteSession, updateSession, streamChat, cancelStream, isStreaming, streamingContent, toolSteps, lastToolSteps, cooldownSeconds } = useAiChat("chatbot");
   const queryClient = useQueryClient();
 
-  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
+  const [messages, setMessages] = useState<Array<{ role: string; content: string; mode?: "fast" | "reasoning" | null; modelUsed?: string | null }>>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   // Focus the rename field when it appears. Programmatic focus rather than the
   // `autoFocus` prop: same UX, and it does not steal focus on first render.
@@ -76,7 +76,6 @@ export default function ChatWindow() {
       catch { return []; }
     },
     enabled: !!currentSessionId,
-    placeholderData: (prev: unknown) => prev as never,
   });
 
   useEffect(() => {
@@ -93,11 +92,15 @@ export default function ChatWindow() {
   }, []);
 
   useEffect(() => {
-    if (sessionMessages && !isStreaming && activeSessionId !== currentSessionId) {
-      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
-      setActiveSessionId(currentSessionId);
+    if (sessionMessages && !isStreaming) {
+      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string, mode?: "fast" | "reasoning" | null, model_used?: string | null }) => ({
+        role: m.role,
+        content: m.content,
+        mode: m.mode ?? null,
+        modelUsed: m.model_used ?? null,
+      })));
     }
-  }, [sessionMessages, isStreaming, currentSessionId, activeSessionId]);
+  }, [sessionMessages, isStreaming, currentSessionId]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -164,33 +167,67 @@ export default function ChatWindow() {
     if (!sessionId) return;
 
     try {
-      const resultContent = await streamChat(
+      const result = await streamChat(
         message,
         sessionId,
         (msg) => {
           if (msg.role === "assistant" && !msg.content) {
-            setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+            setMessages((prev) => [...prev, { role: "assistant", content: "", mode: aiMode }]);
           }
         },
         aiMode,
       );
 
-      if (resultContent) {
+      if (result) {
+        const resultMode = (result.mode as "fast" | "reasoning" | undefined) ?? aiMode;
         setMessages((prev) => {
           const next = [...prev];
           const lastIdx = next.length - 1;
+          const patch = { content: result.content, mode: resultMode, modelUsed: result.model ?? null };
           if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
-            next[lastIdx] = { ...next[lastIdx], content: resultContent };
+            next[lastIdx] = { ...next[lastIdx], ...patch };
           } else {
-            next.push({ role: "assistant", content: resultContent });
+            next.push({ role: "assistant", ...patch });
           }
           return next;
+        });
+      } else {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && !last.content) {
+            return prev.slice(0, -1);
+          }
+          return prev;
         });
       }
       // Refresh from server
       queryClient.invalidateQueries({ queryKey: ["chat-messages", sessionId] });
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi. " + (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)) }]);
+      if (err instanceof Error && err.name === "AbortError") {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && !last.content) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      } else {
+        // A quota gate is a plan issue, not a bug: show the upgrade CTA instead
+        // of a generic error bubble.
+        const code = err instanceof Error ? err.message : String(err);
+        if (code === "insufficient_quota" || code === "quota_exceeded") {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant" && !last.content) {
+              return prev.slice(0, -1);
+            }
+            return prev;
+          });
+          notifyEntitlementError({ response: { status: 429, data: { error: code } } });
+        } else {
+          setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi. " + code }]);
+        }
+      }
     }
   };
 
@@ -201,7 +238,6 @@ export default function ChatWindow() {
     createSession.mutateAsync(msg.substring(0, 50)).then((newSession) => {
       if (newSession) {
         setCurrentSessionId(newSession.id);
-        setActiveSessionId(newSession.id);
         updateUrlSession(newSession.id);
         setTimeout(() => handleSend(msg, newSession.id), 300);
       }
@@ -213,13 +249,17 @@ export default function ChatWindow() {
   const switchSession = async (id: string) => {
     if (isStreaming) cancelStream();
     setMessages([]);
-    setActiveSessionId(id);
     setCurrentSessionId(id);
     updateUrlSession(id);
     try {
       const res = await api.get(`/ai/sessions/${id}/messages`);
       const msgs = res.data?.data || [];
-      setMessages(msgs.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
+      setMessages(msgs.map((m: { role: "user" | "assistant", content: string, mode?: "fast" | "reasoning" | null, model_used?: string | null }) => ({
+        role: m.role,
+        content: m.content,
+        mode: m.mode ?? null,
+        modelUsed: m.model_used ?? null,
+      })));
     } catch {
       setMessages([]);
     }
@@ -298,7 +338,6 @@ export default function ChatWindow() {
     if (newSession) {
       setMessages([]);
       setCurrentSessionId(newSession.id);
-      setActiveSessionId(newSession.id);
       updateUrlSession(newSession.id);
     }
   };
@@ -413,7 +452,7 @@ export default function ChatWindow() {
 
       return (
         <div key={index}>
-          <ChatMessage author={msg.role} content={displayContent} />
+          <ChatMessage author={msg.role} content={displayContent} mode={msg.mode} modelUsed={msg.modelUsed} />
           {hasChart && !isStreaming && renderPersistedToolSteps(msgChartData)}
         </div>
       );
@@ -675,7 +714,8 @@ export default function ChatWindow() {
                     <button
                       key={i}
                       onClick={() => handleSend(item.text)}
-                      className="w-full text-left border-2 border-foreground px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card transition-all cursor-pointer flex items-center gap-2"
+                      disabled={isStreaming}
+                      className="w-full text-left border-2 border-foreground px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-2"
                     >
                       <item.icon className="w-3.5 h-3.5 text-primary shrink-0" />
                       {item.text}
@@ -703,7 +743,7 @@ export default function ChatWindow() {
                 Cooldown {cooldownSeconds} detik. Tunggu sebelum mengirim pesan lagi.
               </div>
             )}
-            <ChatInput onSend={handleSend} isSending={isStreaming || cooldownSeconds > 0} onReceiptResult={handleReceiptResult} />
+            <ChatInput onSend={handleSend} onStop={cancelStream} isSending={cooldownSeconds > 0} isStreaming={isStreaming} onReceiptResult={handleReceiptResult} />
           </>
         )}
       </div>

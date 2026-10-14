@@ -28,8 +28,10 @@ interface TransactionFilter {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
-  sortBy?: "date" | "amount" | "category";
+  sortBy?: string;
   sortOrder?: "asc" | "desc";
+  sort?: string;
+  order?: "asc" | "desc";
 }
 
 export function useTransactions(filter: TransactionFilter = {}) {
@@ -40,8 +42,16 @@ export function useTransactions(filter: TransactionFilter = {}) {
   if (filter.search) params.set("search", filter.search);
   if (filter.dateFrom) params.set("date_from", filter.dateFrom);
   if (filter.dateTo) params.set("date_to", filter.dateTo);
-  if (filter.sortBy) params.set("sortBy", filter.sortBy);
-  if (filter.sortOrder) params.set("sortOrder", filter.sortOrder);
+  const sort = filter.sort || filter.sortBy;
+  if (sort) {
+    params.set("sort", sort);
+    params.set("sortBy", sort);
+  }
+  const order = filter.order || filter.sortOrder;
+  if (order) {
+    params.set("order", order);
+    params.set("sortOrder", order);
+  }
 
   return useQuery({
     queryKey: [...queryKeys.transactions.all, filter],
@@ -58,12 +68,33 @@ export function useTransactions(filter: TransactionFilter = {}) {
     placeholderData: (previousData) => previousData,
   });
 }
+export interface TransactionStatsData {
+  total_income: number;
+  total_expense: number;
+  total_savings: number;
+  net_balance: number;
+  income_count: number;
+  expense_count: number;
+  savings_count: number;
+}
 
-export function useTransactionStats(period: string = "current_month") {
-  return useQuery({
-    queryKey: queryKeys.transactions.stats(period),
+export function useTransactionStats(params?: string | { startDate?: string; endDate?: string; period?: string }) {
+  const query = new URLSearchParams();
+  let key = "default";
+  if (typeof params === "string") {
+    query.set("period", params);
+    key = params;
+  } else if (params) {
+    if (params.startDate) query.set("date_from", params.startDate);
+    if (params.endDate) query.set("date_to", params.endDate);
+    if (params.period) query.set("period", params.period);
+    key = `${params.startDate || ""}_${params.endDate || ""}_${params.period || ""}`;
+  }
+  const qStr = query.toString();
+  return useQuery<TransactionStatsData>({
+    queryKey: [...queryKeys.transactions.stats(key)],
     queryFn: async () => {
-      const res = await api.get(`/transactions/stats?period=${period}`);
+      const res = await api.get(qStr ? `/transactions/stats?${qStr}` : `/transactions/stats`);
       return res.data?.data;
     },
     staleTime: staleTimeConfig.transactions,

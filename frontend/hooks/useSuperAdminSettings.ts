@@ -83,6 +83,8 @@ export function useSuperAdminSettings() {
       }
       toast.success(msg)
       queryClient.invalidateQueries({ queryKey: settingsQueryKeys.settings })
+      // A storage_driver change alters the active driver, so refresh its status.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'storage-status'] })
     },
     onError: (err: unknown) => {
       let msg = 'Gagal menyimpan pengaturan'

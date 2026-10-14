@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldCheck,
   LogOut,
+  Tag,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -77,6 +78,12 @@ const superAdminMenuItems = [
     title: 'Token & Kuota',
     href: '/super-admin/tokens',
     icon: Coins,
+    exact: false,
+  },
+  {
+    title: 'Harga & Biaya AI',
+    href: '/super-admin/pricing',
+    icon: Tag,
     exact: false,
   },
   {

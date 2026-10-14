@@ -113,7 +113,16 @@ export function updateTableState(
   patch: Partial<TableState>,
   opts: { resetPage?: boolean } = {}
 ): TableState {
-  const next: TableState = { ...state, ...patch, filters: { ...state.filters, ...(patch.filters ?? {}) } };
+  let nextFilters = state.filters;
+  if (patch.filters !== undefined) {
+    nextFilters = { ...state.filters, ...patch.filters };
+    for (const [k, v] of Object.entries(nextFilters)) {
+      if (v === "" || v === undefined) {
+        delete nextFilters[k];
+      }
+    }
+  }
+  const next: TableState = { ...state, ...patch, filters: nextFilters };
   const resetPage = opts.resetPage ?? Object.keys(patch).some((k) => k !== "page");
   if (resetPage) next.page = 1;
   return next;

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { User, Mail, Phone, Save, Download, Trash2, ShieldAlert } from "lucide-react";
+import { useRef, useState } from "react";
+import { User, Mail, Phone, Save, Download, Trash2, ShieldAlert, Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { AxiosError } from "axios";
 import api from "@/lib/api";
 import { useSession } from "@/lib/session-context";
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const ACCEPTED_AVATAR = "image/png,image/jpeg,image/webp";
+
+/** Extracts a human-readable message from an Axios error, falling back safely. */
+function apiErrorMessage(err: unknown, fallback: string): string {
+  const ax = err as AxiosError<{ message?: string }>;
+  return ax?.response?.data?.message || fallback;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -28,23 +39,33 @@ export default function ProfilePage() {
     },
   });
 
-  const [formOverride, setFormOverride] = useState<{ fullName?: string; phone?: string; avatarUrl?: string }>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [formOverride, setFormOverride] = useState<{ fullName?: string; phone?: string }>({});
 
   const fullName = formOverride.fullName ?? profile?.full_name ?? "";
   const phone = formOverride.phone ?? profile?.phone ?? "";
-  const avatarUrl = formOverride.avatarUrl ?? profile?.avatar_url ?? "";
+  const avatarUrl: string = profile?.avatar_url ?? "";
 
   const setFullName = (v: string) => setFormOverride((s) => ({ ...s, fullName: v }));
   const setPhone = (v: string) => setFormOverride((s) => ({ ...s, phone: v }));
 
   const email = sessionUser?.email ?? profile?.email ?? "";
 
-
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const initials = (fullName || email || "US")
+    .split(" ")
+    .map((w: string) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   const handleExportData = async () => {
     try {
@@ -85,26 +106,61 @@ export default function ProfilePage() {
       setIsDeleting(false);
     }
   };
+
   const updateMutation = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
       const res = await api.put("/me", data);
       return res.data;
     },
     onSuccess: () => {
+      // Refresh both the profile card and the session mirror so the Header /
+      // Sidebar reflect a new name or avatar immediately.
       queryClient.invalidateQueries({ queryKey: ["profile", "me"] });
       queryClient.invalidateQueries({ queryKey: ["session", "me"] });
     },
   });
 
+  const avatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api.post("/me/avatar", fd);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile", "me"] });
+      queryClient.invalidateQueries({ queryKey: ["session", "me"] });
+      toast.success("Foto profil berhasil diperbarui!");
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Gagal mengunggah foto profil.")),
+  });
+
+  const submitAvatar = (file: File | undefined) => {
+    if (!file) return;
+    if (!ACCEPTED_AVATAR.split(",").includes(file.type)) {
+      toast.error("Format tidak didukung. Gunakan JPG, PNG, atau WEBP.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error("Ukuran foto melebihi 2 MB.");
+      return;
+    }
+    avatarMutation.mutate(file);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateMutation.mutateAsync({ full_name: fullName, phone: phone || null, avatar_url: avatarUrl || null });
+      // Empty string (not null) signals "clear this field": the backend treats a
+      // blank phone as NULL, which is what lets the UI remove a number.
+      await updateMutation.mutateAsync({ full_name: fullName, phone: phone, avatar_url: avatarUrl });
       toast.success("Profil berhasil diperbarui!");
-    } catch {
-      toast.error("Gagal memperbarui profil.");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Gagal memperbarui profil."));
     }
   };
+
+  const isSaving = updateMutation.isPending;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -116,19 +172,63 @@ export default function ProfilePage() {
       <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6">
         {isLoading ? (
           <div className="space-y-4">
-            {[1,2,3,4].map(i => (
+            {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-10 bg-muted border-2 border-foreground animate-pulse" />
             ))}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 border-2 border-foreground bg-primary/10 flex items-center justify-center">
-                <User className="w-8 h-8 text-primary" />
-              </div>
-              <div>
-                <p className="font-black text-lg text-foreground">{fullName || "User"}</p>
-                <p className="text-sm font-bold text-muted-foreground">{email}</p>
+            {/* Avatar */}
+            <div className="flex items-center gap-4 mb-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_AVATAR}
+                className="hidden"
+                onChange={(e) => {
+                  submitAvatar(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Unggah foto profil"
+                disabled={avatarMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  submitAvatar(e.dataTransfer.files?.[0]);
+                }}
+                className={`group relative w-20 h-20 shrink-0 border-2 border-foreground overflow-hidden flex items-center justify-center transition-all cursor-pointer ${
+                  isDragging ? "bg-primary/20 ring-4 ring-primary/30" : "bg-primary/10"
+                }`}
+              >
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="Foto profil" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xl font-black text-primary">{initials}</span>
+                )}
+                <span className="absolute inset-0 bg-foreground/60 text-background opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                  {avatarMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Camera className="w-5 h-5" />
+                  )}
+                </span>
+              </button>
+              <div className="min-w-0">
+                <p className="font-black text-lg text-foreground truncate">{fullName || "User"}</p>
+                <p className="text-sm font-bold text-muted-foreground truncate">{email}</p>
+                <p className="text-[11px] font-bold text-muted-foreground mt-1">
+                  Klik atau tarik foto untuk mengganti (JPG/PNG/WEBP, maks 2 MB).
+                </p>
               </div>
             </div>
 
@@ -174,9 +274,9 @@ export default function ProfilePage() {
               />
             </div>
 
-            <Button type="submit" disabled={updateMutation.isPending} className="w-full">
-              <Save className="w-4 h-4 mr-2" />
-              {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            <Button type="submit" disabled={isSaving} className="w-full">
+              {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              {isSaving ? "Menyimpan..." : "Simpan Perubahan"}
             </Button>
           </form>
         )}

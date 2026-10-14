@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2, Clock } from "lucide-react";
+import { Pencil, Trash2, Clock, Eye } from "lucide-react";
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header";
 
 /** A transaction row as returned by GET /transactions. */
@@ -10,15 +10,34 @@ export interface TransactionItem {
   type: "income" | "expense" | "savings";
   amount: number;
   category_name?: string;
+  category?: string;
+  subcategory_name?: string;
+  subcategory?: string;
   expense_category_id?: string | null;
   income_category_id?: string | null;
   savings_category_id?: string | null;
   description?: string | null;
+  notes?: string | null;
   transaction_date?: string;
   date?: string;
   created_at?: string;
+  source?: "manual" | "ai" | "voice" | "receipt";
 }
 
+export function getCategoryName(
+  tx: TransactionItem,
+  categoryMap?: Map<string, { name: string; color?: string; icon?: string }>
+): string {
+  const catId = tx.expense_category_id || tx.income_category_id || tx.savings_category_id;
+  if (catId && categoryMap?.has(catId)) {
+    return categoryMap.get(catId)!.name;
+  }
+  if (tx.category_name) return tx.category_name;
+  if (tx.category) return tx.category;
+  if (tx.type === "savings") return "Tabungan";
+  if (tx.type === "income") return "Pemasukan";
+  return "Pengeluaran";
+}
 function formatAmount(tx: TransactionItem): string {
   const formatted = new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -39,10 +58,11 @@ export interface TransactionColumnsOptions {
   /** 1-based page number, used for absolute row numbering. */
   page: number;
   perPage: number;
+  categoryMap?: Map<string, { name: string; color?: string; icon?: string }>;
+  onDetail?: (tx: TransactionItem) => void;
   onEdit: (tx: TransactionItem) => void;
   onDelete: (id: string) => void;
 }
-
 /**
  * Column definitions for the transactions table.
  *
@@ -52,6 +72,8 @@ export interface TransactionColumnsOptions {
 export function transactionColumns({
   page,
   perPage,
+  categoryMap,
+  onDetail,
   onEdit,
   onDelete,
 }: TransactionColumnsOptions): ColumnDef<TransactionItem, unknown>[] {
@@ -73,7 +95,7 @@ export function transactionColumns({
       header: (ctx) => (
         <DataTableColumnHeader
           title="Deskripsi"
-          columnId="date"
+          columnId="description"
           sortable
           currentSort={(ctx as { sort?: string }).sort}
           currentOrder={(ctx as { order?: "asc" | "desc" }).order}
@@ -86,11 +108,9 @@ export function transactionColumns({
         return (
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-foreground">
-              {tx.description || tx.category_name || "Transaksi"}
+              {tx.description || getCategoryName(tx, categoryMap) || "Transaksi"}
             </p>
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-muted-foreground">
-              <span>{tx.type === "savings" ? "Tabungan" : tx.category_name}</span>
-              <span aria-hidden="true">&middot;</span>
               <span>{when.toLocaleDateString("id-ID")}</span>
               {tx.created_at && (
                 <>
@@ -106,6 +126,54 @@ export function transactionColumns({
               )}
             </div>
           </div>
+        );
+      },
+    },
+    {
+      id: "type",
+      header: (ctx) => (
+        <DataTableColumnHeader
+          title="Tipe"
+          columnId="type"
+          sortable
+          currentSort={(ctx as { sort?: string }).sort}
+          currentOrder={(ctx as { order?: "asc" | "desc" }).order}
+          onSort={(ctx as { onSort?: (id: string, order: "asc" | "desc") => void }).onSort}
+        />
+      ),
+      cell: ({ row }) => {
+        const txType = row.original.type;
+        const typeConfig =
+          txType === "savings"
+            ? { label: "Tabungan", style: "bg-blue-100 text-blue-900 border-blue-900/40" }
+            : txType === "income"
+            ? { label: "Pemasukan", style: "bg-emerald-100 text-emerald-900 border-emerald-900/40" }
+            : { label: "Pengeluaran", style: "bg-rose-100 text-rose-900 border-rose-900/40" };
+        return (
+          <span className={`inline-block border-2 px-2 py-0.5 text-xs font-black uppercase tracking-wider ${typeConfig.style}`}>
+            {typeConfig.label}
+          </span>
+        );
+      },
+    },
+    {
+      id: "category",
+      header: (ctx) => (
+        <DataTableColumnHeader
+          title="Kategori"
+          columnId="category"
+          sortable
+          currentSort={(ctx as { sort?: string }).sort}
+          currentOrder={(ctx as { order?: "asc" | "desc" }).order}
+          onSort={(ctx as { onSort?: (id: string, order: "asc" | "desc") => void }).onSort}
+        />
+      ),
+      cell: ({ row }) => {
+        const catName = getCategoryName(row.original, categoryMap);
+        return (
+          <span className="inline-block border-2 border-foreground bg-muted px-2.5 py-0.5 text-xs font-bold text-foreground">
+            {catName}
+          </span>
         );
       },
     },
@@ -135,12 +203,24 @@ export function transactionColumns({
       header: () => <span className="block text-center">Aksi</span>,
       enableSorting: false,
       cell: ({ row }) => (
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-1.5">
+          {onDetail && (
+            <button
+              type="button"
+              onClick={() => onDetail(row.original)}
+              aria-label="Detail transaksi"
+              title="Detail transaksi"
+              className="cursor-pointer border-2 border-foreground bg-card p-1.5 text-foreground transition-all hover:bg-muted shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onEdit(row.original)}
             aria-label="Ubah transaksi"
-            className="cursor-pointer border-2 border-transparent p-1.5 text-muted-foreground transition-all hover:border-foreground hover:bg-primary/10 hover:text-primary-strong"
+            title="Ubah transaksi"
+            className="cursor-pointer border-2 border-blue-600 bg-blue-50 p-1.5 text-blue-600 transition-all hover:bg-blue-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -148,7 +228,8 @@ export function transactionColumns({
             type="button"
             onClick={() => onDelete(row.original.id)}
             aria-label="Hapus transaksi"
-            className="cursor-pointer border-2 border-transparent p-1.5 text-muted-foreground transition-all hover:border-foreground hover:bg-red-100 hover:text-red-700"
+            title="Hapus transaksi"
+            className="cursor-pointer border-2 border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           </button>

@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import { ThemeProvider } from "next-themes";
 import { SessionProvider } from "@/lib/session-context";
 import { RealtimeProvider } from "@/providers/realtime-provider";
+import { shouldRetry } from "@/lib/query-retry";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -17,7 +18,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
             staleTime: 1000 * 60 * 2,
             gcTime: 1000 * 60 * 30,
             refetchOnWindowFocus: true,
-            retry: 1,
+            // Never retry 4xx (401/402/403): the answer is definitive, and a
+            // retry just duplicates the request. 5xx gets a single retry.
+            retry: shouldRetry,
             refetchOnMount: true,
           },
           mutations: {

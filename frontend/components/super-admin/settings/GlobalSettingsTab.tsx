@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Lock, AlertCircle, Save, RotateCcw } from 'lucide-react'
 import { SettingRow } from '@/hooks/useSuperAdminSettings'
+import type { StorageStatusInfo } from '@/hooks/useSuperAdminStorage'
 import { SettingsConfirmDialog, SettingDiff } from './SettingsConfirmDialog'
 import { formatTanggal } from '@/lib/format'
 
@@ -19,6 +20,8 @@ interface GlobalSettingsTabProps {
   onSave: (dirtySettings: Record<string, unknown>) => Promise<unknown>
   isSaving: boolean
   onRefresh: () => void
+  /** Current proof-storage driver status (from GET /admin/settings/storage). */
+  storageStatus?: StorageStatusInfo | null
 }
 
 interface FormState {
@@ -26,6 +29,7 @@ interface FormState {
   grace_period_hours: string
   tax_rate_percent: string
   invoice_due_hours: string
+  storage_driver: string
 }
 
 interface ValidationErrors {
@@ -33,6 +37,7 @@ interface ValidationErrors {
   grace_period_hours?: string
   tax_rate_percent?: string
   invoice_due_hours?: string
+  storage_driver?: string
 }
 
 const SETTING_LABELS: Record<string, string> = {
@@ -40,6 +45,7 @@ const SETTING_LABELS: Record<string, string> = {
   grace_period_hours: 'Grace Period (Jam)',
   tax_rate_percent: 'Tarif Pajak PPN (%)',
   invoice_due_hours: 'Jatuh Tempo Invoice (Jam)',
+  storage_driver: 'Penyimpanan Bukti Transfer',
 }
 
 const KNOWN_KEYS: Record<string, true> = {
@@ -47,6 +53,7 @@ const KNOWN_KEYS: Record<string, true> = {
   grace_period_hours: true,
   tax_rate_percent: true,
   invoice_due_hours: true,
+  storage_driver: true,
 }
 
 export function GlobalSettingsTab({
@@ -56,12 +63,14 @@ export function GlobalSettingsTab({
   onSave,
   isSaving,
   onRefresh,
+  storageStatus,
 }: GlobalSettingsTabProps) {
   const [initialForm, setInitialForm] = React.useState<FormState>({
     payment_gateway_default: 'manual',
     grace_period_hours: '72',
     tax_rate_percent: '11',
     invoice_due_hours: '24',
+    storage_driver: 'local',
   })
 
   const [form, setForm] = React.useState<FormState>(initialForm)
@@ -87,6 +96,7 @@ export function GlobalSettingsTab({
         settingsMap.grace_period_hours?.value ?? null,
         settingsMap.tax_rate_percent?.value ?? null,
         settingsMap.invoice_due_hours?.value ?? null,
+        settingsMap.storage_driver?.value ?? null,
       ]),
     [settingsMap],
   )
@@ -98,12 +108,14 @@ export function GlobalSettingsTab({
     const graceRow = settingsMap.grace_period_hours
     const taxRow = settingsMap.tax_rate_percent
     const invRow = settingsMap.invoice_due_hours
+    const storageRow = settingsMap.storage_driver
 
     const nextInit: FormState = {
       payment_gateway_default: typeof gwRow?.value === 'string' ? gwRow.value : 'manual',
       grace_period_hours: graceRow?.value != null ? String(graceRow.value) : '72',
       tax_rate_percent: taxRow?.value != null ? String(taxRow.value) : '11',
       invoice_due_hours: invRow?.value != null ? String(invRow.value) : '24',
+      storage_driver: typeof storageRow?.value === 'string' ? storageRow.value : 'local',
     }
     setInitialForm(nextInit)
     setForm(nextInit)
@@ -156,6 +168,15 @@ export function GlobalSettingsTab({
       })
     }
 
+    if (form.storage_driver !== initialForm.storage_driver) {
+      res.push({
+        key: 'storage_driver',
+        label: SETTING_LABELS.storage_driver,
+        before: initialForm.storage_driver,
+        after: form.storage_driver,
+      })
+    }
+
     return res
   }, [form, initialForm])
 
@@ -191,6 +212,11 @@ export function GlobalSettingsTab({
       errs.invoice_due_hours = 'Rentang yang diizinkan: 1 sampai 720 jam'
     }
 
+    // Storage driver: local | r2
+    if (form.storage_driver !== 'local' && form.storage_driver !== 'r2') {
+      errs.storage_driver = 'Harus memilih local atau r2'
+    }
+
     setClientErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -215,6 +241,8 @@ export function GlobalSettingsTab({
         dirtyPayload[d.key] = parseFloat(form.tax_rate_percent)
       } else if (d.key === 'invoice_due_hours') {
         dirtyPayload[d.key] = parseInt(form.invoice_due_hours, 10)
+      } else if (d.key === 'storage_driver') {
+        dirtyPayload[d.key] = form.storage_driver
       }
     }
 
@@ -485,6 +513,60 @@ export function GlobalSettingsTab({
               {backendErrors.invoice_due_hours && (
                 <p className="text-xs text-destructive font-medium">
                   {backendErrors.invoice_due_hours}
+                </p>
+              )}
+            </div>
+
+            {/* Field 5: storage_driver */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="storage_driver" className="font-medium">
+                  {SETTING_LABELS.storage_driver}
+                </Label>
+                {settingsMap.storage_driver && (
+                  <span className="text-xs text-muted-foreground">
+                    Diperbarui: {formatTanggal(settingsMap.storage_driver.updated_at)}
+                    {settingsMap.storage_driver.updated_by
+                      ? ` oleh ${settingsMap.storage_driver.updated_by}`
+                      : ''}
+                  </span>
+                )}
+              </div>
+              <Select
+                value={form.storage_driver}
+                onValueChange={(val) => {
+                  setForm((prev) => ({ ...prev, storage_driver: val }))
+                  setClientErrors((prev) => ({ ...prev, storage_driver: undefined }))
+                  setBackendErrors((prev) => ({ ...prev, storage_driver: undefined }))
+                }}
+              >
+                <SelectTrigger id="storage_driver" aria-label="Penyimpanan Bukti Transfer">
+                  <SelectValue placeholder="Pilih penyimpanan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">local (Penyimpanan Lokal Server)</SelectItem>
+                  <SelectItem value="r2">r2 (Cloudflare R2 Object Storage)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {settingsMap.storage_driver?.description ||
+                  'Tempat penyimpanan berkas bukti transfer. Perubahan berlaku seketika untuk unggahan baru; berkas lama tetap dapat dibaca.'}
+              </p>
+              {storageStatus && (
+                <p className="text-xs font-medium text-muted-foreground">
+                  Aktif saat ini: <span className="font-mono font-bold uppercase">{storageStatus.active}</span>
+                  {' · '}
+                  R2 {storageStatus.r2_configured ? (storageStatus.r2_healthy ? 'terkonfigurasi & sehat' : 'terkonfigurasi (tidak sehat)') : 'belum dikonfigurasi'}
+                </p>
+              )}
+              {clientErrors.storage_driver && (
+                <p className="text-xs text-destructive font-medium">
+                  {clientErrors.storage_driver}
+                </p>
+              )}
+              {backendErrors.storage_driver && (
+                <p className="text-xs text-destructive font-medium">
+                  {backendErrors.storage_driver}
                 </p>
               )}
             </div>

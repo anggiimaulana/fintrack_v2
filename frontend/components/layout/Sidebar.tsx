@@ -3,10 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { 
-  Home, ArrowLeftRight, FileText, MessageSquare, Settings, 
-  LogOut, Wallet, User, MessagesSquare, History, Mic
-} from "lucide-react";
+import { LogOut, Wallet, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -19,19 +16,18 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/lib/auth-client";
+import { useSession } from "@/lib/session-context";
+import { USER_NAV_ITEMS, isNavItemActive } from "@/lib/nav";
+import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
+import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/user", icon: Home, label: "Dashboard" },
-  { href: "/user/transactions", icon: ArrowLeftRight, label: "Transaksi" },
-  { href: "/user/ai", icon: MessageSquare, label: "AI Chat" },
-  { href: "/user/reports", icon: FileText, label: "Laporan" },
-  { href: "/user/profile", icon: User, label: "Profil" },
-  { href: "/user/settings", icon: Settings, label: "Pengaturan" },
-];
+const navItems = USER_NAV_ITEMS;
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { user } = useSession();
+  const { collapsed, toggle } = useSidebarCollapsed();
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
@@ -41,59 +37,142 @@ export function Sidebar() {
     router.refresh();
   };
 
+  const displayName = user?.full_name || "User";
+  const initials = displayName
+    .split(" ")
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
-    <aside className="hidden md:flex w-[240px] flex-col bg-sidebar text-sidebar-foreground h-screen sticky top-0 border-r-2 border-foreground">
-      <div className="p-6 border-b-2 border-sidebar-border">
-        <Link href="/user" className="flex items-center gap-2 text-xl font-black tracking-tight">
-          <Wallet className="w-6 h-6 text-primary" />
-          Fin<span className="text-primary">Track</span>
+    <aside
+      data-collapsed={collapsed}
+      className={cn(
+        "hidden md:flex flex-col bg-sidebar text-sidebar-foreground h-screen sticky top-0 border-r-2 border-foreground shrink-0",
+        "transition-[width] duration-300 ease-in-out",
+        collapsed ? "w-[76px]" : "w-[240px]"
+      )}
+    >
+      {/* Brand + collapse toggle */}
+      <div className={cn("border-b-2 border-sidebar-border flex items-center", collapsed ? "p-3 justify-center" : "p-4 justify-between gap-2")}>
+        <Link href="/user" className="flex items-center gap-2 text-xl font-black tracking-tight overflow-hidden">
+          <Wallet className="w-6 h-6 text-primary shrink-0" />
+          <span
+            className={cn(
+              "whitespace-nowrap transition-all duration-200",
+              collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+            )}
+          >
+            Fin<span className="text-primary">Track</span>
+          </span>
         </Link>
+        {!collapsed && (
+          <button
+            type="button"
+            aria-label="Tutup sidebar"
+            aria-expanded={!collapsed}
+            onClick={toggle}
+            className="p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent cursor-pointer transition-colors"
+          >
+            <PanelLeftClose className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      {collapsed && (
+        <div className="pt-2 flex justify-center">
+          <button
+            type="button"
+            aria-label="Buka sidebar"
+            aria-expanded={!collapsed}
+            onClick={toggle}
+            className="p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent cursor-pointer transition-colors"
+          >
+            <PanelLeftOpen className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/user" && pathname.startsWith(item.href));
+          const isActive = isNavItemActive(pathname, item.href);
           return (
-            <Link 
-              key={item.href} 
+            <Link
+              key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 text-sm font-bold transition-all cursor-pointer ${
-                isActive 
-                  ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground" 
+              title={collapsed ? item.label : undefined}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "group relative flex items-center gap-3 px-3 py-2.5 text-sm font-bold transition-all cursor-pointer",
+                collapsed && "justify-center px-0",
+                isActive
+                  ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
                   : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-              }`}
+              )}
             >
-              <item.icon className="w-5 h-5" />
-              {item.label}
+              <item.icon className="w-5 h-5 shrink-0" />
+              <span
+                className={cn(
+                  "whitespace-nowrap transition-all duration-200",
+                  collapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100"
+                )}
+              >
+                {item.label}
+              </span>
+              {/* Tooltip when collapsed */}
+              {collapsed && (
+                <span className="pointer-events-none absolute left-full ml-3 z-50 hidden group-hover:block whitespace-nowrap bg-foreground text-background text-xs font-bold px-2.5 py-1.5 border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground/40">
+                  {item.label}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t-2 border-sidebar-border">
-        <div className="flex items-center gap-3 px-3 py-2 border-2 border-sidebar-border bg-sidebar-accent mb-2">
-          <Avatar className="w-8 h-8 border-2 border-foreground">
-            <AvatarImage src="" />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">US</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-sidebar-foreground truncate">User Biasa</p>
-            <p className="text-xs text-sidebar-foreground/60 font-bold truncate uppercase">Premium</p>
+      <div className={cn("border-t-2 border-sidebar-border", collapsed ? "p-2" : "p-4")}>
+        {collapsed ? (
+          <div className="flex justify-center mb-2" title={displayName}>
+            <Avatar className="w-9 h-9 border-2 border-foreground">
+              {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
+              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
+            </Avatar>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 px-3 py-2 border-2 border-sidebar-border bg-sidebar-accent mb-2">
+            <Avatar className="w-8 h-8 border-2 border-foreground">
+              {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
+              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-sidebar-foreground truncate">{displayName}</p>
+              <p className="text-xs text-sidebar-foreground/60 font-bold truncate uppercase">{user?.role ?? "user"}</p>
+            </div>
+          </div>
+        )}
+
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <button className="flex items-center gap-3 px-3 py-2.5 w-full text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all cursor-pointer">
-              <LogOut className="w-5 h-5" />
-              Logout
+            <button
+              aria-label="Logout"
+              title={collapsed ? "Logout" : undefined}
+              className={cn(
+                "flex items-center gap-3 py-2.5 w-full text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all cursor-pointer",
+                collapsed ? "justify-center px-0" : "px-3"
+              )}
+            >
+              <LogOut className="w-5 h-5 shrink-0" />
+              <span className={cn("whitespace-nowrap transition-all duration-200", collapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100")}>
+                Logout
+              </span>
             </button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Konfirmasi Logout</DialogTitle>
-              <DialogDescription>
-                Apakah Anda yakin ingin logout?
-              </DialogDescription>
+              <DialogDescription>Apakah Anda yakin ingin logout?</DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>

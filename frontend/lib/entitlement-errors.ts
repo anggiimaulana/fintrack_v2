@@ -40,28 +40,45 @@ interface AxiosLikeError {
   };
 }
 
+/**
+ * QUOTA_ERRORS are the ledger/quota errors that also warrant an upgrade CTA.
+ * They are returned by the token ledger (HTTP 429 `insufficient_quota`), which
+ * is a different code path from the plan-gate middleware (403/402).
+ */
+const QUOTA_ERRORS: Record<string, true> = {
+  insufficient_quota: true,
+  quota_exceeded: true,
+};
+
 /** isEntitlementError reports whether an error came from a plan gate. */
 export function isEntitlementError(err: unknown): boolean {
   const body = (err as AxiosLikeError)?.response?.data;
-  if (!body) return false;
-  return body.error === "feature_not_in_plan" || body.error === "limit_exceeded" || body.error === "limit_not_in_plan";
+  if (!body?.error) return false;
+  return (
+    body.error === "feature_not_in_plan" ||
+    body.error === "limit_exceeded" ||
+    body.error === "limit_not_in_plan" ||
+    QUOTA_ERRORS[body.error] === true
+  );
 }
 
 /**
- * notifyEntitlementError shows an upgrade toast when `err` is a plan gate.
- * Returns true when it handled the error, so callers can skip their generic
- * failure message.
+ * notifyEntitlementError shows an upgrade toast when `err` is a plan or quota
+ * gate. Returns true when it handled the error, so callers can skip their
+ * generic failure message.
  */
 export function notifyEntitlementError(err: unknown): boolean {
   const response = (err as AxiosLikeError)?.response;
   const body = response?.data;
-  if (!body || !isEntitlementError(err)) return false;
+  if (!body?.error || !isEntitlementError(err)) return false;
 
   const url = body.upgrade_url || UPGRADE_URL;
   let message: string;
 
   if (body.error === "feature_not_in_plan") {
     message = FEATURE_MESSAGES[body.feature_key ?? ""] ?? "Fitur ini tidak tersedia pada paket Anda.";
+  } else if (QUOTA_ERRORS[body.error] === true) {
+    message = "Sisa kuota token Anda tidak mencukupi. Tingkatkan paket untuk melanjutkan.";
   } else {
     message = "Anda telah mencapai batas paket Anda untuk periode ini.";
   }

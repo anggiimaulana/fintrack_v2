@@ -20,7 +20,26 @@ export interface Entitlements {
   status: string;
   features: Record<string, boolean>;
   limits: Record<string, number>;
+  /** Real-time consumption per limit key (F6). Absent on older backends. */
+  usage?: Record<string, UsageEntry>;
+  /** Active quota cycle (F6), when the backend tracks one. */
+  period?: Period | null;
   version: number;
+}
+
+/** UsageEntry is the consumption for one limit key. */
+export interface UsageEntry {
+  used: number;
+  limit: number;
+  /** -1 when the limit is unlimited. */
+  remaining: number;
+  unlimited: boolean;
+}
+
+/** Period is the active quota cycle bounds (RFC3339). */
+export interface Period {
+  start: string;
+  end: string;
 }
 
 /** An empty entitlement set, used while loading and on failure (fail-closed). */
@@ -81,6 +100,8 @@ export function useEntitlements() {
     planCode: data?.plan_code ?? "",
     planName: data?.plan_name ?? "",
     status: data?.status ?? "",
+    usage: data?.usage ?? {},
+    period: data?.period ?? null,
     hasFeature: (featureKey: string) => hasFeature(data, featureKey),
     withinLimit: (limitKey: string, current: number) => withinLimit(data, limitKey, current),
     limitValue: (limitKey: string) => limitValue(data, limitKey),

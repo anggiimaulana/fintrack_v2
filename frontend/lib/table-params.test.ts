@@ -131,6 +131,12 @@ describe("updateTableState", () => {
     const next = updateTableState(withFilters, { filters: { type: "expense" } });
     expect(next.filters).toEqual({ status: "active", type: "expense" });
   });
+
+  it("clears a filter when set to empty string", () => {
+    const withFilters = updateTableState(base, { filters: { status: "active", type: "expense" } });
+    const next = updateTableState(withFilters, { filters: { type: "" } });
+    expect(next.filters).toEqual({ status: "active" });
+  });
 });
 
 describe("helpers", () => {

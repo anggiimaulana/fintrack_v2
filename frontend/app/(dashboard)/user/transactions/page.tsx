@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Plus, Download, Camera } from "lucide-react";
+import { Plus, Download, Camera, ArrowDownLeft, ArrowUpRight, PiggyBank, Wallet, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,11 +12,12 @@ import { ReceiptScanner } from "@/components/ai/ReceiptScanner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/components/shared/DateRangeFilter";
 import { InlineAiAssistant } from "@/components/ai/InlineAiAssistant";
-import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
+import { useTransactions, useTransactionStats, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
+import { formatRupiah } from "@/lib/format";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTablePagination } from "@/components/data-table/data-table-pagination";
 import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
-import { transactionColumns, type TransactionItem } from "@/components/transactions/TransactionColumns";
+import { transactionColumns, getCategoryName, type TransactionItem } from "@/components/transactions/TransactionColumns";
 import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useEntitlements } from "@/hooks/use-entitlements";
@@ -41,6 +42,7 @@ function TransactionsContent() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [detailTx, setDetailTx] = useState<TransactionItem | null>(null);
 
   // Date filter from URL
   const initialPreset = searchParams.get("preset") || "this_month";
@@ -57,11 +59,18 @@ function TransactionsContent() {
 
   const setDateFilter = useCallback((val: DateRangeValue) => {
     setDateFilterState(val);
-    const p: Record<string, string> = {};
-    if (val.preset !== "custom") p.preset = val.preset;
-    if (val.preset === "custom" || val.startDate) { p.start = val.startDate; p.end = val.endDate; }
-    const qs = new URLSearchParams(p).toString();
-    router.replace(`/user/transactions?${qs}`, { scroll: false });
+    const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (val.preset !== "custom") {
+      p.set("preset", val.preset);
+      p.delete("start");
+      p.delete("end");
+    } else {
+      p.delete("preset");
+      if (val.startDate) p.set("start", val.startDate);
+      if (val.endDate) p.set("end", val.endDate);
+    }
+    const qs = p.toString();
+    router.replace(qs ? `/user/transactions?${qs}` : `/user/transactions`, { scroll: false });
   }, [router]);
 
   const { data: txData, isLoading } = useTransactions({
@@ -71,8 +80,12 @@ function TransactionsContent() {
     search,
     dateFrom: dateFilter.startDate,
     dateTo: dateFilter.endDate,
-    sortBy: (table.sort || undefined) as "date" | "amount" | "category" | undefined,
-    sortOrder: table.order,
+    sort: table.sort || undefined,
+    order: table.order,
+  });
+  const { data: statsData, isLoading: isStatsLoading } = useTransactionStats({
+    startDate: dateFilter.startDate,
+    endDate: dateFilter.endDate,
   });
   const { mutateAsync: createTransaction, isPending: isCreating } = useCreateTransaction();
   const { mutateAsync: updateTransaction, isPending: isUpdating } = useUpdateTransaction();
@@ -90,6 +103,14 @@ function TransactionsContent() {
   const { categories: expenseCategories } = useAdminCategories("expense");
   const { categories: savingsCategories } = useAdminCategories("savings");
   const categories = formType === "income" ? (incomeCategories || []) : formType === "expense" ? (expenseCategories || []) : (savingsCategories || []);
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, { name: string; color?: string; icon?: string }>();
+    incomeCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    expenseCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    savingsCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    return map;
+  }, [incomeCategories, expenseCategories, savingsCategories]);
 
   const transactions = txData?.data || [];
   const totalPages = Math.ceil((txData?.total || 0) / 20);
@@ -289,6 +310,75 @@ function TransactionsContent() {
       <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-3">
         <DateRangeFilter value={dateFilter} onChange={setDateFilter} showCompare={false} />
       </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Pemasukan</span>
+            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-emerald-100 text-emerald-800">
+              <ArrowDownLeft className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-lg sm:text-xl font-black font-mono text-foreground">
+              {isStatsLoading ? "..." : formatRupiah(statsData?.total_income || 0)}
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+              {isStatsLoading ? "memuat..." : `${statsData?.income_count || 0} transaksi`}
+            </p>
+          </div>
+        </div>
+
+        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Pengeluaran</span>
+            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-rose-100 text-rose-800">
+              <ArrowUpRight className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-lg sm:text-xl font-black font-mono text-foreground">
+              {isStatsLoading ? "..." : formatRupiah(statsData?.total_expense || 0)}
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+              {isStatsLoading ? "memuat..." : `${statsData?.expense_count || 0} transaksi`}
+            </p>
+          </div>
+        </div>
+
+        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Tabungan</span>
+            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-blue-100 text-blue-800">
+              <PiggyBank className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-lg sm:text-xl font-black font-mono text-foreground">
+              {isStatsLoading ? "..." : formatRupiah(statsData?.total_savings || 0)}
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+              {isStatsLoading ? "memuat..." : `${statsData?.savings_count || 0} transaksi`}
+            </p>
+          </div>
+        </div>
+
+        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Sisa Bersih</span>
+            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-amber-100 text-amber-800">
+              <Wallet className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className={`text-lg sm:text-xl font-black font-mono ${(statsData?.net_balance || 0) >= 0 ? "text-foreground" : "text-rose-600"}`}>
+              {isStatsLoading ? "..." : formatRupiah(statsData?.net_balance || 0)}
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+              {isStatsLoading ? "memuat..." : "Pemasukan - Pengeluaran"}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
         <div className="p-4 border-b-2 border-foreground flex flex-col md:flex-row gap-4 justify-between items-center bg-muted">
@@ -318,6 +408,8 @@ function TransactionsContent() {
           columns={transactionColumns({
             page,
             perPage: table.perPage,
+            categoryMap,
+            onDetail: setDetailTx,
             onEdit: openEditDialog,
             onDelete: handleDeleteClick,
           })}
@@ -353,6 +445,119 @@ function TransactionsContent() {
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
       />
+      <Dialog open={!!detailTx} onOpenChange={(open) => { if (!open) setDetailTx(null); }}>
+        <DialogContent className="sm:max-w-lg border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground">
+          <DialogHeader className="pr-8">
+            <DialogTitle className="font-black uppercase tracking-wide flex items-center gap-2.5">
+              <span>Detail Transaksi</span>
+              {detailTx && (
+                <span className={`text-[10px] px-2 py-0.5 border-2 border-foreground ${
+                  detailTx.type === "income" ? "bg-emerald-100 text-emerald-800" : detailTx.type === "savings" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
+                }`}>
+                  {detailTx.type === "income" ? "Pemasukan" : detailTx.type === "savings" ? "Tabungan" : "Pengeluaran"}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {detailTx && (
+            <div className="py-2 space-y-4">
+              <div className="border-2 border-foreground bg-muted p-4 flex flex-col items-center justify-center gap-1 text-center">
+                <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Nominal Transaksi</span>
+                <span className={`text-2xl sm:text-3xl font-black font-mono ${
+                  detailTx.type === "income" ? "text-emerald-700" : detailTx.type === "savings" ? "text-blue-700" : "text-foreground"
+                }`}>
+                  {detailTx.type === "income" ? "+" : detailTx.type === "savings" ? "→" : "-"}
+                  {formatRupiah(detailTx.amount)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Kategori</p>
+                  <p className="font-black text-sm text-foreground">
+                    {getCategoryName(detailTx, categoryMap)}
+                  </p>
+                </div>
+
+                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Tanggal & Waktu</p>
+                  <p className="font-black text-sm text-foreground">
+                    {new Date(detailTx.transaction_date || detailTx.date || "").toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                    {detailTx.created_at && ` · ${new Date(detailTx.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`}
+                  </p>
+                </div>
+
+                <div className="col-span-2 border-2 border-foreground p-3 bg-card space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Deskripsi / Nama</p>
+                  <p className="font-bold text-sm text-foreground">
+                    {detailTx.description || "-"}
+                  </p>
+                </div>
+
+                {detailTx.notes && (
+                  <div className="col-span-2 border-2 border-foreground p-3 bg-card space-y-1">
+                    <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Catatan</p>
+                    <p className="font-bold text-sm text-muted-foreground">
+                      {detailTx.notes}
+                    </p>
+                  </div>
+                )}
+
+                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Sumber Input</p>
+                  <p className="font-black text-xs uppercase text-foreground">
+                    {detailTx.source || "manual"}
+                  </p>
+                </div>
+
+                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">ID Transaksi</p>
+                  <p className="font-mono text-[10px] text-muted-foreground truncate" title={detailTx.id}>
+                    {detailTx.id}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 cursor-pointer"
+                  onClick={() => setDetailTx(null)}
+                >
+                  Tutup
+                </Button>
+                <Button
+                  className="border-2 border-blue-600 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                  onClick={() => {
+                    const tx = detailTx;
+                    setDetailTx(null);
+                    openEditDialog(tx);
+                  }}
+                >
+                  <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                  Ubah
+                </Button>
+                <Button
+                  className="border-2 border-red-600 bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+                  onClick={() => {
+                    const id = detailTx.id;
+                    setDetailTx(null);
+                    handleDeleteClick(id);
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Hapus
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

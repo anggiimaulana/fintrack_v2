@@ -1,10 +1,15 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Zap, Brain } from "lucide-react";
 
 interface ChatMessageProps {
   /** Message author. Named `author` (not `role`) to avoid being read as the ARIA role attribute. */
   author: string;
   content: string;
+  /** Assistant mode that produced the message, when known. Renders a badge. */
+  mode?: "fast" | "reasoning" | null;
+  /** Concrete upstream model that served the reply, shown as a tooltip. */
+  modelUsed?: string | null;
 }
 
 type CodeProps = {
@@ -28,7 +33,7 @@ function isSafeUrl(url?: string): boolean {
   }
 }
 
-export function ChatMessage({ author, content }: ChatMessageProps) {
+export function ChatMessage({ author, content, mode, modelUsed }: ChatMessageProps) {
   const isUser = author === "user";
 
   // Strip complete and partial tool call blocks (security: never expose internal tool JSON to user)
@@ -39,6 +44,10 @@ export function ChatMessage({ author, content }: ChatMessageProps) {
     .replace(/<TOOL_RESULT>[\s\S]*$/g, "")         // partial: no closing tag yet
     .trim();
 
+  // Only assistant replies carry a mode badge; user messages never do.
+  const showModeBadge = !isUser && (mode === "fast" || mode === "reasoning");
+  const isReasoning = mode === "reasoning";
+
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
@@ -48,6 +57,21 @@ export function ChatMessage({ author, content }: ChatMessageProps) {
             : "bg-card text-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
         }`}
       >
+        {showModeBadge && (
+          <div className="mb-1.5">
+            <span
+              title={modelUsed ? `Model: ${modelUsed}` : undefined}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide border-2 border-foreground ${
+                isReasoning
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-foreground"
+              }`}
+            >
+              {isReasoning ? <Brain className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
+              {isReasoning ? "Penalaran" : "Cepat"}
+            </span>
+          </div>
+        )}
         <div className="text-sm font-medium markdown-content">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import * as z from "zod";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
 import { staleTimeConfig } from "@/lib/cache-invalidation";
@@ -77,15 +78,48 @@ function mapChartData(data: unknown): ChartDataPoint[] {
   }));
 }
 
-export function useCategoryChart(startDate: string, endDate: string) {
-  return useQuery({
+export interface CategoryChartData {
+  labels: string[];
+  series: Array<{ name: string; data: number[]; color: string }>;
+}
+
+const categoryChartSchema = z.object({
+  labels: z.array(z.string()),
+  series: z.array(
+    z.object({
+      name: z.string(),
+      data: z.array(z.number()),
+      color: z.string().optional(),
+    })
+  ),
+});
+
+/**
+ * Parse the raw `/dashboard/charts/categories` payload. The backend may emit
+ * `null` for `labels`/`series` (Go marshals empty slices to null), so we treat
+ * any malformed shape as "no data" rather than letting it reach the chart.
+ */
+export function normalizeCategoryChart(data: unknown): CategoryChartData | null {
+  const parsed = categoryChartSchema.safeParse(data);
+  if (!parsed.success) return null;
+  return {
+    labels: parsed.data.labels,
+    series: parsed.data.series.map((s) => ({ name: s.name, data: s.data, color: s.color ?? "#3b5bdb" })),
+  };
+}
+
+export function useCategoryChart(startDate: string, endDate: string, options?: { enabled?: boolean }) {
+  return useQuery<CategoryChartData | null>({
     queryKey: ["dashboard", "category-chart", startDate, endDate],
+    // Callers that will not render the chart (e.g. a plan-locked reports page)
+    // pass `enabled: false` so the request is skipped entirely.
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const res = await api.get(`/dashboard/charts/categories?start_date=${startDate}&end_date=${endDate}`);
-      return (res.data?.data as { labels: string[]; series: Array<{ name: string; data: number[]; color: string }> }) || null;
+      return normalizeCategoryChart(res.data?.data);
     },
     staleTime: staleTimeConfig.dashboard,
-    placeholderData: (prev: unknown) => prev as { labels: string[]; series: Array<{ name: string; data: number[]; color: string }> },
+    placeholderData: (prev) => prev,
   });
 }
 

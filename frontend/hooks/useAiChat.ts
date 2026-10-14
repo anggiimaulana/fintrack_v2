@@ -2,11 +2,15 @@
 
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import api from "@/lib/api";
+import api, { refreshSession } from "@/lib/api";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  /** Assistant mode that produced the message, when known. */
+  mode?: "fast" | "reasoning" | null;
+  /** Concrete upstream model that served the reply, when known. */
+  modelUsed?: string | null;
 }
 
 interface StreamEvent {
@@ -15,6 +19,8 @@ interface StreamEvent {
   step?: string;
   step_label?: string;
   step_status?: string;
+  mode?: string;
+  model?: string;
   tool_call?: { tool: string; parameters: Record<string, unknown> };
   tool_result?: { tool: string; data?: unknown; error?: string };
 }
@@ -107,7 +113,7 @@ export function useAiChat(source?: string) {
       sessionId: string | null,
       onMessage: (msg: ChatMessage) => void,
       mode: "fast" | "reasoning" = "fast",
-    ): Promise<string | null> => {
+    ): Promise<{ content: string; mode?: string; model?: string } | null> => {
       setIsStreaming(true);
       setStreamingContent("");
       setToolSteps([]);
@@ -118,11 +124,13 @@ export function useAiChat(source?: string) {
       abortRef.current = new AbortController();
 
       let lastContent = "";
+      let doneMode: string | undefined;
+      let doneModel: string | undefined;
       try {
         let url = `/api/v1/ai/chat?source=${source || "chatbot"}`;
         if (sessionId) url += `&session_id=${sessionId}`;
 
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message, mode }),
@@ -130,8 +138,35 @@ export function useAiChat(source?: string) {
           signal: abortRef.current.signal,
         });
 
+        if (response.status === 401) {
+          try {
+            await refreshSession();
+            response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message, mode }),
+              credentials: "same-origin",
+              signal: abortRef.current.signal,
+            });
+          } catch {
+            if (typeof window !== "undefined") {
+              window.location.href = "/login";
+            }
+            throw new Error("HTTP 401");
+          }
+        }
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          // Preserve the server's error code so quota gates (429
+          // insufficient_quota) can be surfaced as an upsell instead of a
+          // generic failure. The body is JSON for non-streaming errors.
+          let code = `HTTP ${response.status}`;
+          try {
+            const body = await response.json();
+            if (body && typeof body.error === "string") code = body.error;
+          } catch {
+            // Non-JSON body; keep the HTTP status code.
+          }
+          throw new Error(code);
         }
 
 		const reader = response.body?.getReader();
@@ -238,6 +273,8 @@ export function useAiChat(source?: string) {
                   }
                   break;
                 case "done":
+                  if (event.mode) doneMode = event.mode;
+                  if (event.model) doneModel = event.model;
                   break;
                 case "error":
                   if (event.content) lastContent += event.content;
@@ -252,12 +289,14 @@ export function useAiChat(source?: string) {
 		setStreamingContent("");
 		setLastToolSteps([...toolStepsRef.current]);
 		setIsStreaming(false);
-		return lastContent || null;
+		if (!lastContent) return null;
+		return { content: lastContent, mode: doneMode, model: doneModel };
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
           setLastToolSteps([...toolStepsRef.current]);
           setIsStreaming(false);
-          return lastContent || null;
+          if (!lastContent) return null;
+          return { content: lastContent, mode: doneMode, model: doneModel };
         }
         setLastToolSteps([...toolStepsRef.current]);
         setIsStreaming(false);

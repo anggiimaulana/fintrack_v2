@@ -8,7 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
-import { Home, ArrowLeftRight, FileText, MessageSquare, Settings, Wallet, LogOut } from "lucide-react";
+import { Wallet, LogOut } from "lucide-react";
+import { USER_NAV_ITEMS, isNavItemActive } from "@/lib/nav";
 import {
   Dialog,
   DialogContent,
@@ -22,13 +23,7 @@ import { Button } from "@/components/ui/button";
 import { logout } from "@/lib/auth-client";
 import { useSession } from "@/lib/session-context";
 
-const navItems = [
-  { href: "/user", icon: Home, label: "Dashboard" },
-  { href: "/user/transactions", icon: ArrowLeftRight, label: "Transaksi" },
-  { href: "/user/reports", icon: FileText, label: "Laporan" },
-  { href: "/user/ai", icon: MessageSquare, label: "AI Chat" },
-  { href: "/user/settings", icon: Settings, label: "Pengaturan" },
-];
+const navItems = USER_NAV_ITEMS;
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -74,6 +69,8 @@ export function Header() {
     if (pathname.startsWith("/user/transactions")) return "Transaksi";
     if (pathname.startsWith("/user/reports")) return "Laporan";
     if (pathname.startsWith("/user/ai")) return "AI Chat";
+    if (pathname.startsWith("/user/profile")) return "Profil";
+    if (pathname.startsWith("/user/settings/subscription")) return "Langganan";
     if (pathname.startsWith("/user/settings")) return "Pengaturan";
     return "Dashboard";
   };
@@ -103,7 +100,7 @@ export function Header() {
 
               <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
                 {navItems.map((item) => {
-                  const isActive = pathname === item.href || (item.href !== "/user" && pathname.startsWith(item.href));
+                  const isActive = isNavItemActive(pathname, item.href);
                   return (
                     <Link
                       key={item.href}

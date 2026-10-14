@@ -42,6 +42,12 @@ export const queryKeys = {
   entitlements: {
     me: ["entitlements", "me"] as const,
   },
+  billing: {
+    plans: ["billing", "plans"] as const,
+    payments: ["billing", "payments"] as const,
+    invoices: ["billing", "invoices"] as const,
+    subscription: ["billing", "subscription"] as const,
+  },
   providers: {
     all: ["providers"] as const,
   },

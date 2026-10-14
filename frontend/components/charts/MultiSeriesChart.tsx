@@ -37,13 +37,21 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
 }
 
 export function MultiSeriesChart({ labels, series, type }: MultiSeriesChartProps) {
-  const chartData = labels.map((label, i) => {
+  // Defensive: the API may return `null` for these fields when a slice is
+  // empty (Go marshals nil slices to null), so never assume they are arrays.
+  const safeLabels = Array.isArray(labels) ? labels : [];
+  const safeSeries = (Array.isArray(series) ? series : []).filter(
+    (s): s is { name: string; data: number[]; color: string } =>
+      !!s && typeof s.name === "string" && Array.isArray(s.data)
+  );
+
+  const chartData = safeLabels.map((label, i) => {
     const point: Record<string, number | string> = { name: label };
-    series.forEach(s => { point[s.name] = s.data[i] || 0; });
+    safeSeries.forEach(s => { point[s.name] = s.data[i] || 0; });
     return point;
   });
 
-  if (chartData.length === 0) {
+  if (chartData.length === 0 || safeSeries.length === 0) {
     return <div className="flex items-center justify-center h-full text-xs font-bold text-muted-foreground">Tidak ada data</div>;
   }
 
@@ -62,7 +70,7 @@ export function MultiSeriesChart({ labels, series, type }: MultiSeriesChartProps
             <YAxis hide />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {series.map((s) => (
+            {safeSeries.map((s) => (
               <Bar key={s.name} dataKey={s.name} name={s.name} fill={s.color} stackId="a" />
             ))}
           </BarChart>
@@ -78,7 +86,7 @@ export function MultiSeriesChart({ labels, series, type }: MultiSeriesChartProps
             <YAxis hide domain={["dataMin", "auto"]} />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {series.map((s) => (
+            {safeSeries.map((s) => (
               <Line key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             ))}
           </LineChart>
@@ -94,7 +102,7 @@ export function MultiSeriesChart({ labels, series, type }: MultiSeriesChartProps
             <YAxis hide domain={["dataMin", "auto"]} />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {series.map((s) => (
+            {safeSeries.map((s) => (
               <Area key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} fill={s.color} fillOpacity={0.15} strokeWidth={2} />
             ))}
           </AreaChart>

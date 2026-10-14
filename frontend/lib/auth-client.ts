@@ -9,6 +9,7 @@ export type AuthUser = {
   id: string;
   email: string;
   full_name: string;
+  phone?: string | null;
   role: Role;
   avatar_url?: string | null;
   is_active: boolean;
