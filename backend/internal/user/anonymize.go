@@ -36,7 +36,7 @@ type AnonymizeResult struct {
 
 // AnonymizeUserData executes atomic data erasure and pseudonimization:
 // 1. Hard deletes AI chat messages, chat sessions, and vector embeddings (768d).
-// 2. Revokes refresh tokens and deletes BYOK keys.
+// 2. Revokes refresh tokens.
 // 3. Pseudonimizes users table: PII overwritten with anonymous identifier, password shredded.
 // 4. Invoices, payments, and token_ledger records remain intact with original sums and dates.
 // 5. Writes compliance entry to audit_logs.
@@ -90,6 +90,7 @@ func (s *AnonymizeService) AnonymizeUserData(ctx context.Context, userID uuid.UU
 		UPDATE users
 		SET email = $2,
 		    full_name = 'Eks Pengguna (Teranonimkan)',
+		    phone = NULL,
 		    password_hash = 'DELETED_CRYPTOGRAPHIC_SHREDDING',
 		    avatar_url = NULL,
 		    is_active = false,
@@ -160,9 +161,10 @@ func (s *AnonymizeService) ExportUserData(ctx context.Context, userID uuid.UUID)
 
 	// 1. Profile
 	var email, fullName, role string
+	var phone *string
 	var createdAt time.Time
-	err := s.pool.QueryRow(ctx, `SELECT email, full_name, role, created_at FROM users WHERE id = $1`, userID).
-		Scan(&email, &fullName, &role, &createdAt)
+	err := s.pool.QueryRow(ctx, `SELECT email, full_name, phone, role, created_at FROM users WHERE id = $1`, userID).
+		Scan(&email, &fullName, &phone, &role, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("read profile: %w", err)
 	}
@@ -170,6 +172,7 @@ func (s *AnonymizeService) ExportUserData(ctx context.Context, userID uuid.UUID)
 		"id":         userID.String(),
 		"email":      email,
 		"full_name":  fullName,
+		"phone":      phone,
 		"role":       role,
 		"created_at": createdAt,
 	}

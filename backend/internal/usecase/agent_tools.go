@@ -562,7 +562,7 @@ func (u *AIUsecase) execCreateTransaction(ctx context.Context, userID uuid.UUID,
 	}
 
 	return toolExecResult{Tool: "create_transaction", Data: map[string]interface{}{
-		"id": tx.ID.String(), "type": cType, "amount": amount,
+		"id": tx.ID.String(), "type": string(cType), "amount": amount,
 		"category": categoryName, "description": desc,
 		"date": txDate.Format("2006-01-02"),
 	}}

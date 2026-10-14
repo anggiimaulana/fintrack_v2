@@ -110,6 +110,8 @@ type TransactionFilter struct {
 	DateFrom   *time.Time
 	DateTo     *time.Time
 	Search     string
+	SortBy     string
+	SortOrder  string
 }
 
 type StatsPeriod struct {

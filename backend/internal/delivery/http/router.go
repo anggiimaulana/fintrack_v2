@@ -17,6 +17,7 @@ import (
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/realtime"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/user"
 	"github.com/fintrack/backend/pkg/logger"
@@ -42,6 +43,8 @@ type RouterConfig struct {
 	// in tests; the probe then reports the dependency as down/degraded.
 	Pool  *pgxpool.Pool
 	Redis *infraRedis.Client
+	// Storage, when non-nil, enables avatar upload/serving on the auth handler.
+	Storage *storage.Provider
 	// Ledger, when non-nil, enables two-phase token reservations on AI routes.
 	Ledger *billing.LedgerService
 }
@@ -133,6 +136,9 @@ func SetupRouter(
 	if config.Pool != nil {
 		ah.WithAnonymize(user.NewAnonymizeService(config.Pool))
 	}
+	if config.Storage != nil {
+		ah.WithStorage(config.Storage)
+	}
 	adminH := handler.NewAdminHandler(userUC)
 	providerH := handler.NewProviderHandler(providerUC)
 	rh := handler.NewReportHandler(reportUC)
@@ -174,6 +180,7 @@ func SetupRouter(
 		{
 			protected.GET("/me", ah.GetProfile)
 			protected.PUT("/me", ah.UpdateProfile)
+			protected.POST("/me/avatar", ah.UploadAvatar)
 			protected.DELETE("/me", ah.DeleteAccount)
 			protected.POST("/user/delete-account", ah.DeleteAccount)
 			protected.GET("/user/export-data", ah.ExportData)
@@ -215,12 +222,30 @@ func SetupRouter(
 				userRoutes.DELETE("/transactions/:id", th.Delete)
 				if paymentH != nil {
 					userRoutes.POST("/payments/checkout", paymentH.Checkout)
+
+					// Self-service billing (P0/P1): catalog, history, invoices,
+					// manual proof upload, and plan changes.
+					userRoutes.GET("/plans", paymentH.ListPublicPlans)
+					userRoutes.GET("/payments", paymentH.ListMyPayments)
+					userRoutes.GET("/payments/:id", paymentH.GetMyPayment)
+					userRoutes.GET("/payments/:id/instructions", paymentH.GetMyPaymentInstructions)
+					userRoutes.POST("/payments/:id/proof", paymentH.UploadMyProof)
+					userRoutes.GET("/payment-proofs/:id", paymentH.ServeProof)
+					userRoutes.GET("/invoices", paymentH.ListMyInvoices)
+
+					userRoutes.GET("/subscriptions/me", paymentH.MySubscription)
+					userRoutes.POST("/subscriptions/me/downgrade", paymentH.ScheduleDowngrade)
+					userRoutes.DELETE("/subscriptions/me/downgrade", paymentH.CancelDowngrade)
+					userRoutes.POST("/subscriptions/me/cancel", paymentH.CancelSubscription)
 				}
 				ai := userRoutes.Group("/ai")
 				{
 					// ai_chat is in every plan; the token quota is the real gate.
+					// ai_requests_per_cycle bounds the number of AI calls per cycle
+					// across chat, OCR, and voice.
 					ai.POST("/chat", gated(aiH.Chat,
 						featureGate(config, "ai_chat"),
+						limitGate(config, "ai_requests_per_cycle"),
 						limitGate(config, "ai_tokens_per_cycle"))...)
 					ai.POST("/sessions", aiH.CreateSession)
 					ai.GET("/sessions", aiH.ListSessions)
@@ -230,11 +255,14 @@ func SetupRouter(
 					// OCR: Pro/Business only, bounded by ocr_scans_per_cycle.
 					ai.POST("/receipt", gated(aiH.AnalyzeReceipt,
 						featureGate(config, "ocr_receipt"),
+						limitGate(config, "ai_requests_per_cycle"),
 						limitGate(config, "ocr_scans_per_cycle"))...)
 					ai.POST("/receipt/transaction", gated(aiH.CreateTransactionFromReceipt,
 						featureGate(config, "ocr_receipt"))...)
 					// Voice input: Pro/Business only.
-					ai.POST("/voice", gated(aiH.ProcessVoice, featureGate(config, "voice_input"))...)
+					ai.POST("/voice", gated(aiH.ProcessVoice,
+						featureGate(config, "voice_input"),
+						limitGate(config, "ai_requests_per_cycle"))...)
 				}
 
 				userRoutes.POST("/spk/calculate", sh.Calculate)
@@ -296,6 +324,11 @@ func SetupRouter(
 	r.GET("/health", healthH.Live)
 	r.GET("/health/live", healthH.Live)
 	r.GET("/health/ready", healthH.Ready)
+
+	// Public avatar images: an <img> tag cannot send the auth cookie, and the
+	// filename embeds an unguessable user UUID, so this is served unauthenticated
+	// (the handler still verifies the profile points at the requested file).
+	r.GET("/api/v1/avatars/:file", ah.ServeAvatar)
 
 	if config.Metrics != nil {
 		r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(config.Metrics.Registry(), promhttp.HandlerOpts{})))

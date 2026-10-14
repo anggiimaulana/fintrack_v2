@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fintrack/backend/internal/aigateway/metering"
 	"github.com/fintrack/backend/internal/domain"
 )
 
 // receiptPrompt is the vision prompt for receipt extraction. Shared by the
-// legacy BYOK path and the centralized gateway adapter.
+// centralized gateway adapter.
 func receiptPrompt() string {
 	return `Anda adalah asisten analisis struk keuangan. Ekstrak informasi dari gambar struk berikut.
 
@@ -51,7 +52,7 @@ Format respons JSON (multiple transactions dari 1 struk):
 }
 
 // parseReceiptResponse turns the model's raw text into the receipt result map.
-// Shared by the legacy BYOK path and the gateway adapter.
+// Shared by the vision adapter and the receipt error path.
 func parseReceiptResponse(text string) map[string]interface{} {
 	if text == "" {
 		return map[string]interface{}{
@@ -89,31 +90,35 @@ func parseReceiptResponse(text string) map[string]interface{} {
 
 // analyzeReceiptViaGateway analyzes a receipt image through the centralized
 // gateway (vision use case).
-func (u *AIUsecase) analyzeReceiptViaGateway(ctx context.Context, imageData []byte, contentType string) (map[string]interface{}, error) {
+func (u *AIUsecase) analyzeReceiptViaGateway(ctx context.Context, imageData []byte, contentType string) (map[string]interface{}, domain.TokenUsage, error) {
 	base64Image := base64.StdEncoding.EncodeToString(imageData)
 
-	text, _, err := u.gateway.AnalyzeVision(ctx, &domain.AIVisionRequest{
+	text, usage, err := u.gateway.AnalyzeVision(ctx, &domain.AIVisionRequest{
 		Prompt:      receiptPrompt(),
 		ImageBase64: base64Image,
 		ImageMIME:   contentType,
 	})
 	if err != nil {
-		return u.receiptErrorResult(err), nil
+		return u.receiptErrorResult(err), usage, nil
 	}
-	return parseReceiptResponse(text), nil
+	// Provider-reported usage wins; otherwise estimate (text + flat per-image).
+	if usage.TotalTokens == 0 {
+		usage = metering.EstimateVision(receiptPrompt(), text)
+	}
+	return parseReceiptResponse(text), usage, nil
 }
 
 // voicePrompt is the transcription prompt shared by both paths.
 const voicePrompt = "Transkripsikan audio berikut dengan akurat. Hanya keluarkan teks hasil transkripsi, tanpa penjelasan tambahan."
 
 // processVoiceViaGateway transcribes audio through the centralized gateway.
-func (u *AIUsecase) processVoiceViaGateway(ctx context.Context, audioBase64 string) (map[string]interface{}, error) {
+func (u *AIUsecase) processVoiceViaGateway(ctx context.Context, audioBase64 string) (map[string]interface{}, domain.TokenUsage, error) {
 	audio, err := base64.StdEncoding.DecodeString(audioBase64)
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": "Data audio tidak valid.", "transcript": ""}, nil
+		return map[string]interface{}{"success": false, "message": "Data audio tidak valid.", "transcript": ""}, domain.TokenUsage{}, nil
 	}
 
-	transcript, _, err := u.gateway.TranscribeAudio(ctx, &domain.AIAudioTranscriptionRequest{
+	transcript, usage, err := u.gateway.TranscribeAudio(ctx, &domain.AIAudioTranscriptionRequest{
 		Filename: "audio.webm",
 		Audio:    audio,
 		MIME:     "audio/webm",
@@ -123,7 +128,12 @@ func (u *AIUsecase) processVoiceViaGateway(ctx context.Context, audioBase64 stri
 			"success":    false,
 			"message":    "Gagal memproses audio. Silakan coba lagi.",
 			"transcript": "",
-		}, nil
+		}, usage, nil
+	}
+
+	// Provider-reported usage wins; otherwise estimate from audio length.
+	if usage.TotalTokens == 0 {
+		usage = metering.EstimateAudio(estimateAudioSeconds(audio), transcript)
 	}
 
 	// Some providers return a JSON object as text; keep the existing behaviour
@@ -131,7 +141,18 @@ func (u *AIUsecase) processVoiceViaGateway(ctx context.Context, audioBase64 stri
 	return map[string]interface{}{
 		"success":    true,
 		"transcript": strings.TrimSpace(transcript),
-	}, nil
+	}, usage, nil
+}
+
+// estimateAudioSeconds approximates audio duration from the encoded size. WebM
+// opus at ~32 kbps is roughly 4 KB/s; this is only used when the provider omits
+// usage, so a coarse estimate is acceptable.
+func estimateAudioSeconds(audio []byte) float64 {
+	const bytesPerSecond = 4000.0
+	if len(audio) == 0 {
+		return 0
+	}
+	return float64(len(audio)) / bytesPerSecond
 }
 
 var _ = fmt.Sprintf

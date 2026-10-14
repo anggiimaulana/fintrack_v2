@@ -142,10 +142,12 @@ func calculateChange(current, prev *domain.TransactionStats) domain.ChangeSummar
 
 func (u *DashboardUsecase) GetChartData(ctx context.Context, userID uuid.UUID, req domain.ChartRequest) (*domain.ChartData, error) {
 	now := time.Now()
-	var labels []string
-	var incomeData []float64
-	var expenseData []float64
-	var savingsData []float64
+	// Initialize as empty (non-nil) slices so an empty result marshals to
+	// `[]` instead of `null` — the frontend renders these arrays directly.
+	labels := []string{}
+	incomeData := []float64{}
+	expenseData := []float64{}
+	savingsData := []float64{}
 
 	if req.StartDate != "" && req.EndDate != "" {
 		start, err := time.Parse("2006-01-02", req.StartDate)
@@ -289,9 +291,10 @@ func (u *DashboardUsecase) GetCategoryChartData(ctx context.Context, userID uuid
 	}
 
 	catColors := []string{"#3b5bdb", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#8b5cf6", "#ec4899", "#14b8a6", "#eab308", "#a855f7"}
-	var series []domain.ChartSeries
+	// Non-nil so an empty result marshals to `[]` instead of `null`.
+	series := []domain.ChartSeries{}
 	for i, cat := range catOrder {
-		var data []float64
+		data := []float64{}
 		for _, lbl := range labels {
 			data = append(data, catMap[cat][lbl])
 		}

@@ -1,15 +1,10 @@
 package usecase
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,19 +14,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/internal/domain"
-	"github.com/fintrack/backend/internal/infrastructure/crypto"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
 	"github.com/fintrack/backend/pkg/logger"
 )
-
-type geminiInlineData struct {
-	MimeType string `json:"mime_type"`
-	Data     string `json:"data"`
-}
-
-func base64Encode(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data)
-}
 
 type sessionRateLimit struct {
 	count         int
@@ -41,39 +26,39 @@ type sessionRateLimit struct {
 type AIUsecase struct {
 	chatSessionRepo domain.ChatSessionRepository
 	chatMessageRepo domain.ChatMessageRepository
-	keyRepo         domain.GeminiKeyRepository
 	txRepo          domain.TransactionRepository
 	incomeCatRepo   domain.IncomeCategoryRepository
 	expenseCatRepo  domain.ExpenseCategoryRepository
 	savingsCatRepo  domain.SavingsCategoryRepository
 	profileRepo     domain.ProfileRepository
-	cryptoKey       []byte
-	httpClient      *http.Client
 	rateLimits      map[string]*sessionRateLimit
 	rateLimitMu     sync.Mutex
 	embedder        embedding.Embedder
 	embedRepo       domain.EmbeddingRepository
 	ragWarned       bool
 
-	// gateway routes AI traffic through the centralized pool (P03). When nil,
-	// the legacy BYOK path is used (feature-flag off / graceful degradation).
+	// gateway routes ALL AI traffic (chat, vision, voice) through the
+	// centralized endpoint pool (P03). The legacy per-user BYOK path was removed
+	// in the P03 contract phase; when the gateway is nil, AI endpoints report
+	// that the service is temporarily unavailable instead of falling back.
 	gateway domain.AIGatewayService
 
 	// killSwitch reports emergency-stop state per use case ("chat", "vision",
-	// "voice"). Wired to the admin store so the operator stop applies to BOTH
-	// the centralized gateway and the legacy BYOK path.
+	// "voice"). Wired to the admin store so the operator stop applies to the
+	// centralized gateway.
 	killSwitch func(useCase string) bool
 }
 
-// WithGateway attaches the centralized AI gateway. When set, chat/vision/voice
-// traffic is routed through the pooled endpoints instead of per-user keys.
+// WithGateway attaches the centralized AI gateway. All AI traffic (chat,
+// vision, voice) is routed through the pooled endpoints; there is no per-user
+// key fallback anymore.
 func (u *AIUsecase) WithGateway(gw domain.AIGatewayService) *AIUsecase {
 	u.gateway = gw
 	return u
 }
 
 // WithKillSwitch attaches the emergency-stop predicate. It is consulted before
-// every model call, regardless of which transport (gateway or BYOK) serves it.
+// every model call.
 func (u *AIUsecase) WithKillSwitch(stopped func(useCase string) bool) *AIUsecase {
 	u.killSwitch = stopped
 	return u
@@ -88,19 +73,19 @@ func (u *AIUsecase) stopped(useCase string) bool {
 func (u *AIUsecase) UseGateway() bool { return u.gateway != nil }
 
 // errGatewayEmpty signals that the gateway returned without producing any
-// content — treated as a failure so the BYOK fallback can take over.
+// content — treated as a failure.
 var errGatewayEmpty = errors.New("gateway returned no content")
 
 // forwardGatewayAttempt runs one gateway attempt, relaying its events to msgChan
 // while observing whether any user-visible content was produced.
 //
 // It returns sentAny = true once any non-empty content event has been forwarded.
-// The caller must NOT fall back to another transport when sentAny is true: the
-// user has already seen output, and restarting would duplicate or contradict it.
+// The caller must not restart the attempt when sentAny is true: the user has
+// already seen output, and restarting would duplicate or contradict it.
 //
 // A gateway that "succeeds" while emitting nothing is reported as errGatewayEmpty
-// so the fallback still runs — an empty answer is a failure from the user's point
-// of view.
+// so the caller can surface a friendly error — an empty answer is a failure from
+// the user's point of view.
 func forwardGatewayAttempt(
 	attempt func(out chan domain.ChatStreamEvent) error,
 	msgChan chan<- domain.ChatStreamEvent,
@@ -131,27 +116,22 @@ func forwardGatewayAttempt(
 func NewAIUsecase(
 	chatSessionRepo domain.ChatSessionRepository,
 	chatMessageRepo domain.ChatMessageRepository,
-	keyRepo domain.GeminiKeyRepository,
 	txRepo domain.TransactionRepository,
 	incomeCatRepo domain.IncomeCategoryRepository,
 	expenseCatRepo domain.ExpenseCategoryRepository,
 	savingsCatRepo domain.SavingsCategoryRepository,
 	profileRepo domain.ProfileRepository,
-	cryptoKey []byte,
 	embedder embedding.Embedder,
 	embedRepo domain.EmbeddingRepository,
 ) *AIUsecase {
 	return &AIUsecase{
 		chatSessionRepo: chatSessionRepo,
 		chatMessageRepo: chatMessageRepo,
-		keyRepo:         keyRepo,
 		txRepo:          txRepo,
 		incomeCatRepo:   incomeCatRepo,
 		expenseCatRepo:  expenseCatRepo,
 		savingsCatRepo:  savingsCatRepo,
 		profileRepo:     profileRepo,
-		cryptoKey:       cryptoKey,
-		httpClient:      &http.Client{Timeout: 120 * time.Second},
 		rateLimits:      make(map[string]*sessionRateLimit),
 		embedder:        embedder,
 		embedRepo:       embedRepo,
@@ -387,87 +367,6 @@ INSTRUKSI:
 - Inget konteks chat sebelumnya biar gak nanya ulang`, time.Now().Format("2006-01-02"), userContext)
 }
 
-// ─── Multi-Provider Key Management (Round-Robin Callback) ──────
-
-type providerEndpoint struct {
-	baseURL string
-	model   string
-	path    string
-}
-
-var providerEndpoints = map[string]map[string]providerEndpoint{
-	"fast": {
-		"gemini":     {baseURL: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash-lite", path: "/models/gemini-2.0-flash-lite:generateContent"},
-		"openai":     {baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini", path: "/chat/completions"},
-		"groq":       {baseURL: "https://api.groq.com/openai/v1", model: "meta-llama/llama-4-scout-17b-16e-instruct", path: "/chat/completions"},
-		"openrouter": {baseURL: "https://openrouter.ai/api/v1", model: "meta-llama/llama-3.1-8b-instruct:free", path: "/chat/completions"},
-		"qwen":       {baseURL: "https://api.qwen.ai/v1", model: "qwen-turbo", path: "/chat/completions"},
-		"deepseek":   {baseURL: "https://api.deepseek.com/v1", model: "deepseek-chat", path: "/chat/completions"},
-		"mistral":    {baseURL: "https://api.mistral.ai/v1", model: "mistral-small-latest", path: "/chat/completions"},
-		"cohere":     {baseURL: "https://api.cohere.ai/v1", model: "command-r", path: "/generate"},
-		"perplexity": {baseURL: "https://api.perplexity.ai", model: "sonar-pro", path: "/chat/completions"},
-		"claude":     {baseURL: "https://api.anthropic.com/v1", model: "claude-3-haiku-20240307", path: "/messages"},
-	},
-	"reasoning": {
-		"gemini":     {baseURL: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-pro-exp-02-05", path: "/models/gemini-2.0-pro-exp-02-05:generateContent"},
-		"openai":     {baseURL: "https://api.openai.com/v1", model: "o3-mini", path: "/chat/completions"},
-		"openrouter": {baseURL: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-r1:free", path: "/chat/completions"},
-		"deepseek":   {baseURL: "https://api.deepseek.com/v1", model: "deepseek-reasoner", path: "/chat/completions"},
-		"claude":     {baseURL: "https://api.anthropic.com/v1", model: "claude-3-opus-20240229", path: "/messages"},
-	},
-}
-
-func (u *AIUsecase) getAvailableKeys(ctx context.Context, userID uuid.UUID) ([]domain.GeminiAPIKey, error) {
-	if u.keyRepo == nil {
-		return nil, nil
-	}
-	return u.keyRepo.ListByUser(ctx, userID)
-}
-
-func (u *AIUsecase) findWorkingKey(ctx context.Context, keys []domain.GeminiAPIKey) *domain.GeminiAPIKey {
-	for i := range keys {
-		if keys[i].Status == domain.KeyActive {
-			key := keys[i]
-			return &key
-		}
-	}
-	return nil
-}
-
-func (u *AIUsecase) findWorkingKeyByModality(ctx context.Context, keys []domain.GeminiAPIKey, modality string) *domain.GeminiAPIKey {
-	for i := range keys {
-		if keys[i].Status != domain.KeyActive {
-			continue
-		}
-		switch modality {
-		case domain.ModalityAudio:
-			if keys[i].SupportsAudio {
-				key := keys[i]
-				return &key
-			}
-		case domain.ModalityVision:
-			if keys[i].SupportsVision {
-				key := keys[i]
-				return &key
-			}
-		default:
-			if keys[i].SupportsText {
-				key := keys[i]
-				return &key
-			}
-		}
-	}
-	return nil
-}
-
-func (u *AIUsecase) decryptAPIKey(encrypted string) (string, error) {
-	plaintext, err := crypto.Decrypt(encrypted, u.cryptoKey)
-	if err != nil {
-		return "", err
-	}
-	return string(plaintext), nil
-}
-
 // ─── Template Responses ────────────────────────────────────────
 
 func getTemplateResponse(msg string) (string, bool) {
@@ -571,6 +470,17 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 		msgChan <- domain.ChatStreamEvent{Type: "session_created", Content: session.ID.String()}
 	}
 
+	// The client may send a session_id that no longer exists (session deleted in
+	// another tab, stale URL state, or a browser restored after the row was
+	// purged). Persisting messages then violates the chat_messages session FK.
+	// Recreate the session under the supplied id so the turn is still saved.
+	if existing, _ := u.chatSessionRepo.GetByID(ctx, *sessionID, userID); existing == nil {
+		title := "Percakapan baru"
+		_ = u.chatSessionRepo.CreateWithID(ctx, &domain.ChatSession{
+			ID: *sessionID, UserID: userID, Title: title, Source: source,
+		})
+	}
+
 	u.rateLimitMu.Lock()
 	rl, exists := u.rateLimits[sessionID.String()]
 	if !exists {
@@ -598,389 +508,33 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 
 	systemPrompt := u.buildSystemPrompt(userContext) + u.buildToolsSystemPrompt()
 
-	// Centralized AI gateway (P03): route through the pooled endpoints instead of
-	// per-user keys, falling back to the legacy BYOK path when the gateway fails.
-	//
-	// The fallback only applies when NOTHING has been streamed to the client yet:
-	// once the user has seen partial output, restarting on another transport would
-	// duplicate or contradict what is already on screen. `sentAny` is the signal
-	// for that.
-	if u.gateway != nil {
-		sentAny, gerr := forwardGatewayAttempt(func(out chan domain.ChatStreamEvent) error {
-			return u.chatViaGateway(ctx, userID, req, sessionID, systemPrompt, out)
-		}, msgChan)
+	// Centralized AI gateway (P03): ALL AI traffic is routed through the pooled
+	// endpoints. The legacy per-user BYOK path was removed in the P03 contract
+	// phase (the gemini_api_keys table was dropped in migration 0014), so there is
+	// no key fallback: when the gateway cannot serve the request the user gets a
+	// friendly, sanitized error instead.
+	if u.gateway == nil {
+		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Layanan AI sedang tidak tersedia. Silakan coba beberapa saat lagi."}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		return nil
+	}
 
-		if gerr == nil {
-			return nil
-		}
+	var chatUsage domain.TokenUsage
+	sentAny, gerr := forwardGatewayAttempt(func(out chan domain.ChatStreamEvent) error {
+		return u.chatViaGateway(ctx, userID, req, sessionID, systemPrompt, out, &chatUsage)
+	}, msgChan)
+	if gerr != nil {
 		if sentAny {
 			// Partial output already delivered: surface the failure rather than
-			// silently starting over and duplicating what is on screen.
-			logger.Warn("gateway chat failed after partial output; not falling back",
-				zap.Error(gerr))
-			return nil
-		}
-		logger.Warn("gateway chat failed; falling back to BYOK", zap.Error(gerr))
-	}
-
-	keys, err := u.getAvailableKeys(ctx, userID)
-
-	keys, keyErr := u.getAvailableKeys(ctx, userID)
-	if keyErr != nil || len(keys) == 0 {
-		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Anda belum menambahkan API key. Silakan tambahkan API key terlebih dahulu di menu API Keys."}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
-		return nil
-	}
-
-	history, _ := u.chatMessageRepo.ListBySession(ctx, *sessionID, userID)
-	// Trim history to last 20 messages to prevent token overflow on small-context models
-	if len(history) > 20 {
-		history = history[len(history)-20:]
-	}
-
-	mode := req.Mode
-	if mode == "" {
-		mode = domain.LLMFast
-	}
-
-	key := u.findWorkingKeyByModality(ctx, keys, domain.ModalityText)
-	if key == nil {
-		key = u.findWorkingKey(ctx, keys)
-	}
-	if key == nil {
-		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Semua API key Anda saat ini tidak aktif atau mencapai limit. Silakan periksa dan tambahkan key baru di menu API Keys."}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
-		return nil
-	}
-
-	decryptedKey, err := u.decryptAPIKey(key.EncryptedKey)
-	if err != nil {
-		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Gagal mendekripsi API key. Silakan hapus dan tambahkan kembali."}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
-		return nil
-	}
-
-	endpoints, ok := providerEndpoints[string(mode)][key.Provider]
-	if !ok {
-		endpoints = providerEndpoints[string(mode)]["gemini"]
-	}
-	if key.Model != "" {
-		endpoints.model = key.Model
-	}
-
-	msgChan <- domain.ChatStreamEvent{
-		Type:       "agent_step",
-		StepLabel:  "Menganalisis perintah...",
-		StepStatus: "running",
-	}
-
-	// Streaming content filter: strips <TOOL_CALL> and <TOOL_RESULT> blocks
-	// so raw tool JSON is never exposed to the client
-	var streamBuf string
-	var insideToolTag bool
-	var curTagName string
-
-	onContent := func(chunk string) {
-		streamBuf += chunk
-
-		for {
-			if insideToolTag {
-				endTag := "</" + curTagName + ">"
-				endIdx := strings.Index(streamBuf, endTag)
-				if endIdx == -1 {
-					break // still inside tag, buffer more
-				}
-				streamBuf = streamBuf[endIdx+len(endTag):]
-				insideToolTag = false
-				continue
-			}
-
-			callIdx := strings.Index(streamBuf, "<TOOL_CALL>")
-			resultIdx := strings.Index(streamBuf, "<TOOL_RESULT>")
-
-			tagIdx := -1
-			tagLen := 0
-			tagName := ""
-
-			if callIdx >= 0 && (resultIdx < 0 || callIdx < resultIdx) {
-				tagIdx = callIdx
-				tagLen = len("<TOOL_CALL>")
-				tagName = "TOOL_CALL"
-			} else if resultIdx >= 0 {
-				tagIdx = resultIdx
-				tagLen = len("<TOOL_RESULT>")
-				tagName = "TOOL_RESULT"
-			}
-
-			if tagIdx == -1 {
-				// check for partial tag start ("<TOOL_") near the end
-				ltIdx := strings.LastIndex(streamBuf, "<TOOL_")
-				if ltIdx >= 0 && ltIdx > len(streamBuf)-20 {
-					safe := streamBuf[:ltIdx]
-					if safe != "" {
-						msgChan <- domain.ChatStreamEvent{Type: "content", Content: safe}
-					}
-					streamBuf = streamBuf[ltIdx:]
-				} else {
-					ltIdx2 := strings.LastIndex(streamBuf, "<")
-					if ltIdx2 >= 0 && ltIdx2 > len(streamBuf)-12 {
-						safe := streamBuf[:ltIdx2]
-						if safe != "" {
-							msgChan <- domain.ChatStreamEvent{Type: "content", Content: safe}
-						}
-						streamBuf = streamBuf[ltIdx2:]
-					} else if streamBuf != "" {
-						msgChan <- domain.ChatStreamEvent{Type: "content", Content: streamBuf}
-						streamBuf = ""
-					}
-				}
-				break
-			}
-
-			if tagIdx > 0 {
-				msgChan <- domain.ChatStreamEvent{Type: "content", Content: streamBuf[:tagIdx]}
-			}
-			streamBuf = streamBuf[tagIdx+tagLen:]
-			insideToolTag = true
-			curTagName = tagName
+			// silently restarting and duplicating what is already on screen.
+			logger.Warn("gateway chat failed after partial output", zap.Error(gerr))
+		} else {
+			logger.Warn("gateway chat failed", zap.Error(gerr))
+			msgChan <- domain.ChatStreamEvent{Type: "content", Content: gatewayFriendlyError(gerr)}
+			msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
 		}
 	}
 
-	flushStreamBuf := func() {
-		if !insideToolTag && streamBuf != "" {
-			msgChan <- domain.ChatStreamEvent{Type: "content", Content: streamBuf}
-			streamBuf = ""
-		}
-	}
-
-	msgChan <- domain.ChatStreamEvent{
-		Type:       "agent_step",
-		StepLabel:  "Menganalisis perintah...",
-		StepStatus: "success",
-	}
-
-	var responseText string
-	var callErr error
-	currentKey := key
-	currentDecrypted := decryptedKey
-	currentEndpoints := endpoints
-
-	for attempt := 0; attempt < len(keys); attempt++ {
-		if currentKey == nil {
-			break
-		}
-
-		currentDecrypted, callErr = u.decryptAPIKey(currentKey.EncryptedKey)
-		if callErr != nil {
-			currentKey = u.findNextActiveKey(keys, currentKey.ID)
-			continue
-		}
-
-		var epOk bool
-		currentEndpoints, epOk = providerEndpoints[string(mode)][currentKey.Provider]
-		if !epOk {
-			currentEndpoints = providerEndpoints[string(mode)]["gemini"]
-		}
-		if currentKey.Model != "" {
-			currentEndpoints.model = currentKey.Model
-		}
-
-		responseText, callErr = u.callProvider(ctx, currentEndpoints, currentDecrypted, systemPrompt, history, req.Message, onContent)
-		if callErr == nil {
-			break
-		}
-
-		currentKey.Status = domain.KeyError
-		errStr := callErr.Error()
-		currentKey.LastError = &errStr
-		if u.keyRepo != nil {
-			u.keyRepo.Update(ctx, currentKey)
-		}
-		msgChan <- domain.ChatStreamEvent{Type: "step", Step: fmt.Sprintf("Key %s error, coba key lain...", currentKey.Alias)}
-		currentKey = u.findNextActiveKey(keys, currentKey.ID)
-	}
-
-	flushStreamBuf()
-
-	if callErr != nil {
-		msgChan <- domain.ChatStreamEvent{Type: "content", Content: fmt.Sprintf("Maaf, terjadi kesalahan saat menghubungi layanan AI: %s", callErr.Error())}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
-		return nil
-	}
-
-	// ─── Agent Loop ────────────────────────────────────────────────
-
-	var fullResponse strings.Builder
-	if currentEndpoints.model == "" {
-		currentEndpoints.model = endpoints.model
-	}
-	if currentKey != nil && currentKey.Model != "" {
-		currentEndpoints.model = currentKey.Model
-	}
-
-	agentHistory := make([]domain.ChatMessage, 0, len(history)+4)
-	agentHistory = append(agentHistory, history...)
-	agentHistory = append(agentHistory, domain.ChatMessage{
-		SessionID: *sessionID,
-		UserID:    userID,
-		Role:      "user",
-		Content:   req.Message,
-	})
-
-	for iteration := 0; iteration < 2; iteration++ {
-		toolCalls := parseToolCalls(ctx, responseText)
-		if len(toolCalls) == 0 {
-			fullResponse.WriteString(responseText)
-			break
-		}
-
-		cleanText := stripToolCalls(responseText)
-
-		var results []toolExecResult
-		for _, call := range toolCalls {
-			msgChan <- domain.ChatStreamEvent{
-				Type:       "agent_step",
-				StepLabel:  u.getToolLabel(ctx, call.Tool),
-				StepStatus: "running",
-			}
-			// Only send tool name to client — never expose raw parameters
-			msgChan <- domain.ChatStreamEvent{
-				Type: "tool_call",
-				ToolCall: &domain.ToolCallInfo{
-					Tool:       call.Tool,
-					Parameters: nil,
-				},
-			}
-
-			result := u.executeTool(ctx, userID, call)
-			results = append(results, result)
-
-			// Only expose chart data to client — hide transaction IDs & internal data
-			sanitizedData := interface{}(nil)
-			if result.Tool == "generate_chart" && result.Data != nil {
-				sanitizedData = result.Data
-			}
-			msgChan <- domain.ChatStreamEvent{
-				Type: "tool_result",
-				ToolResult: &domain.ToolResultInfo{
-					Tool:  result.Tool,
-					Data:  sanitizedData,
-					Error: result.Error,
-				},
-			}
-			status := "success"
-			if result.Error != "" {
-				status = "error"
-			}
-			msgChan <- domain.ChatStreamEvent{
-				Type:       "agent_step",
-				StepLabel:  u.getToolLabel(ctx, call.Tool),
-				StepStatus: status,
-			}
-		}
-
-		// Skip re-invoking LLM if all tools are simple CRUD that don't need analysis
-		if allToolsSimple(results) {
-			// The LLM may have already generated text alongside tool calls (streamed via onContent).
-			// Use that text if present; otherwise generate a fallback response.
-			// IMPORTANT: Only write ONE of them to prevent duplication.
-			cleanText = strings.TrimSpace(cleanText)
-			if cleanText != "" {
-				fullResponse.WriteString(cleanText)
-			} else {
-				fullResponse.WriteString(u.generateToolResponse(results))
-			}
-			break
-		}
-
-		agentHistory = append(agentHistory, domain.ChatMessage{
-			SessionID: *sessionID,
-			UserID:    userID,
-			Role:      "assistant",
-			Content:   responseText,
-		})
-		// Cap agent history to prevent token overflow
-		if len(agentHistory) > 12 {
-			agentHistory = agentHistory[len(agentHistory)-12:]
-		}
-
-		toolMessage := u.buildToolResultPrompt(results)
-		responseText, err = u.callProvider(ctx, currentEndpoints, currentDecrypted, systemPrompt, agentHistory, toolMessage, onContent)
-		flushStreamBuf()
-		if err != nil {
-			logger.Error("agent loop provider call failed", zap.Error(err))
-			fullResponse.WriteString(fmt.Sprintf("\n\nMaaf, terjadi kesalahan saat memproses tool: %s", err.Error()))
-			break
-		}
-	}
-
-	userMsg := &domain.ChatMessage{
-		SessionID: *sessionID,
-		UserID:    userID,
-		Role:      "user",
-		Content:   req.Message,
-	}
-	u.chatMessageRepo.Create(ctx, userMsg)
-
-	assistantContent := fullResponse.String()
-	assistantMsg := &domain.ChatMessage{
-		SessionID: *sessionID,
-		UserID:    userID,
-		Role:      "assistant",
-		Content:   assistantContent,
-	}
-	u.chatMessageRepo.Create(ctx, assistantMsg)
-
-	if _, ok := getTemplateResponse(msgLower); !ok {
-		session, _ := u.chatSessionRepo.GetByID(ctx, *sessionID, userID)
-		if session != nil && session.Title == "Percakapan baru" {
-			title := u.generateTitle(ctx, req.Message)
-			if title != "" && title != "Percakapan baru" {
-				if err := u.chatSessionRepo.Update(ctx, &domain.ChatSession{
-					ID:     *sessionID,
-					UserID: userID,
-					Title:  title,
-				}); err == nil {
-					msgChan <- domain.ChatStreamEvent{Type: "title_update", Content: title}
-				}
-			}
-		}
-	}
-
-	u.rateLimitMu.Lock()
-	rl, exists = u.rateLimits[sessionID.String()]
-	if exists {
-		rl.count++
-		if rl.count >= 20 {
-			rl.cooldownUntil = time.Now().Add(5 * time.Second)
-			rl.count = 0
-		}
-	}
-	u.rateLimitMu.Unlock()
-
-	msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
-
-	return nil
-}
-
-func (u *AIUsecase) findNextActiveKey(keys []domain.GeminiAPIKey, currentID uuid.UUID) *domain.GeminiAPIKey {
-	found := false
-	for i := range keys {
-		if keys[i].ID == currentID {
-			found = true
-			continue
-		}
-		if found && keys[i].Status == domain.KeyActive {
-			key := keys[i]
-			return &key
-		}
-	}
-	for i := range keys {
-		if keys[i].ID != currentID && keys[i].Status == domain.KeyActive {
-			key := keys[i]
-			return &key
-		}
-	}
 	return nil
 }
 
@@ -1026,295 +580,6 @@ func extractJSONBlock(text string) string {
 	}
 
 	return text
-}
-
-// ─── Provider Call ─────────────────────────────────────────────
-
-type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type openAIRequest struct {
-	Model     string          `json:"model"`
-	Messages  []openAIMessage `json:"messages"`
-	Stream    bool            `json:"stream"`
-	MaxTokens int             `json:"max_tokens,omitempty"`
-}
-
-type openAIVisionContent struct {
-	Type     string          `json:"type"`
-	Text     string          `json:"text,omitempty"`
-	ImageURL *openAIImageURL `json:"image_url,omitempty"`
-}
-
-type openAIImageURL struct {
-	URL string `json:"url"`
-}
-
-type openAIVisionMessage struct {
-	Role    string                `json:"role"`
-	Content []openAIVisionContent `json:"content"`
-}
-
-type openAIVisionRequest struct {
-	Model     string                `json:"model"`
-	Messages  []openAIVisionMessage `json:"messages"`
-	MaxTokens int                   `json:"max_tokens,omitempty"`
-}
-
-type geminiRequest struct {
-	Contents []geminiContent `json:"contents"`
-}
-
-type geminiContent struct {
-	Role  string       `json:"role"`
-	Parts []geminiPart `json:"parts"`
-}
-
-type geminiPart struct {
-	Text       string            `json:"text,omitempty"`
-	InlineData *geminiInlineData `json:"inline_data,omitempty"`
-}
-
-type anthropicRequest struct {
-	Model     string          `json:"model"`
-	Messages  []openAIMessage `json:"messages"`
-	System    string          `json:"system,omitempty"`
-	MaxTokens int             `json:"max_tokens"`
-}
-
-func (u *AIUsecase) callProvider(ctx context.Context, ep providerEndpoint, apiKey, systemPrompt string, history []domain.ChatMessage, userMessage string, onContent func(string)) (string, error) {
-	switch {
-	case strings.Contains(ep.baseURL, "generativelanguage"):
-		return u.callGemini(ctx, ep, apiKey, systemPrompt, history, userMessage, onContent)
-	case strings.Contains(ep.baseURL, "anthropic"):
-		return u.callAnthropic(ctx, ep, apiKey, systemPrompt, history, userMessage, onContent)
-	default:
-		return u.callOpenAICompatible(ctx, ep, apiKey, systemPrompt, history, userMessage, onContent)
-	}
-}
-
-func (u *AIUsecase) callOpenAICompatible(ctx context.Context, ep providerEndpoint, apiKey, systemPrompt string, history []domain.ChatMessage, userMessage string, onContent func(string)) (string, error) {
-	messages := []openAIMessage{
-		{Role: "system", Content: systemPrompt},
-	}
-	for _, h := range history {
-		role := "user"
-		if h.Role == "assistant" {
-			role = "assistant"
-		}
-		messages = append(messages, openAIMessage{Role: role, Content: h.Content})
-	}
-	messages = append(messages, openAIMessage{Role: "user", Content: userMessage})
-
-	body := openAIRequest{
-		Model:     ep.model,
-		Messages:  messages,
-		Stream:    true,
-		MaxTokens: 4096,
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, "POST", ep.baseURL+ep.path, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("User-Agent", "FinTrack/1.0")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var fullText strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-
-		for _, choice := range chunk.Choices {
-			if choice.Delta.Content != "" {
-				fullText.WriteString(choice.Delta.Content)
-				if onContent != nil {
-					onContent(choice.Delta.Content)
-				}
-			}
-		}
-	}
-
-	if fullText.Len() == 0 {
-		return "", fmt.Errorf("empty response from API")
-	}
-
-	return fullText.String(), nil
-}
-
-func (u *AIUsecase) callGemini(ctx context.Context, ep providerEndpoint, apiKey, systemPrompt string, history []domain.ChatMessage, userMessage string, onContent func(string)) (string, error) {
-	var contents []geminiContent
-
-	for _, h := range history {
-		role := "user"
-		if h.Role == "assistant" {
-			role = "model"
-		}
-		contents = append(contents, geminiContent{
-			Role:  role,
-			Parts: []geminiPart{{Text: h.Content}},
-		})
-	}
-
-	contents = append(contents, geminiContent{
-		Role:  "user",
-		Parts: []geminiPart{{Text: systemPrompt + "\n\n" + userMessage}},
-	})
-
-	body := geminiRequest{Contents: contents}
-	jsonBody, _ := json.Marshal(body)
-
-	streamPath := strings.Replace(ep.path, ":generateContent", ":streamGenerateContent", 1)
-	if streamPath == ep.path {
-		streamPath = ep.path + "?alt=sse"
-	}
-	url := ep.baseURL + streamPath + "?key=" + apiKey + "&alt=sse"
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("Gemini call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("Gemini returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var fullText strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-
-		var chunk struct {
-			Candidates []struct {
-				Content struct {
-					Parts []struct {
-						Text string `json:"text"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-
-		for _, c := range chunk.Candidates {
-			for _, p := range c.Content.Parts {
-				if p.Text != "" {
-					fullText.WriteString(p.Text)
-					if onContent != nil {
-						onContent(p.Text)
-					}
-				}
-			}
-		}
-	}
-
-	if fullText.Len() == 0 {
-		return "", fmt.Errorf("empty Gemini response")
-	}
-
-	return fullText.String(), nil
-}
-
-func (u *AIUsecase) callAnthropic(ctx context.Context, ep providerEndpoint, apiKey, systemPrompt string, history []domain.ChatMessage, userMessage string, onContent func(string)) (string, error) {
-	messages := []openAIMessage{}
-
-	for _, h := range history {
-		role := "user"
-		if h.Role == "assistant" {
-			role = "assistant"
-		}
-		messages = append(messages, openAIMessage{Role: role, Content: h.Content})
-	}
-	messages = append(messages, openAIMessage{Role: "user", Content: userMessage})
-
-	body := anthropicRequest{
-		Model:     ep.model,
-		Messages:  messages,
-		System:    systemPrompt,
-		MaxTokens: 4096,
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, "POST", ep.baseURL+ep.path, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("Anthropic call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("Anthropic returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("failed to parse Anthropic response: %w", err)
-	}
-
-	fullText := ""
-	if len(result.Content) > 0 {
-		fullText = result.Content[0].Text
-	}
-
-	if fullText == "" {
-		return "", fmt.Errorf("empty Anthropic response")
-	}
-
-	if onContent != nil {
-		onContent(fullText)
-	}
-
-	return fullText, nil
 }
 
 // ─── Session CRUD ──────────────────────────────────────────────
@@ -1401,7 +666,13 @@ func (u *AIUsecase) generateToolResponse(results []toolExecResult) string {
 			}
 			amount, _ := data["amount"].(float64)
 			desc, _ := data["description"].(string)
-			txType, _ := data["type"].(string)
+			var txType string
+			switch v := data["type"].(type) {
+			case string:
+				txType = v
+			case domain.TransactionType:
+				txType = string(v)
+			}
 			typeLabel := "Pengeluaran"
 			switch txType {
 			case "income":
@@ -1533,9 +804,9 @@ func (u *AIUsecase) generateTitle(ctx context.Context, message string) string {
 
 // ─── Receipt Analysis ──────────────────────────────────────────
 
-func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageData []byte, contentType string) (map[string]interface{}, error) {
+func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageData []byte, contentType string) (map[string]interface{}, domain.TokenUsage, error) {
 	if len(imageData) == 0 || len(imageData) > 10*1024*1024 {
-		return nil, fmt.Errorf("invalid image data")
+		return nil, domain.TokenUsage{}, fmt.Errorf("invalid image data")
 	}
 
 	if u.stopped("vision") {
@@ -1543,108 +814,35 @@ func (u *AIUsecase) AnalyzeReceipt(ctx context.Context, userID uuid.UUID, imageD
 			"success": false,
 			"message": "Fitur AI sedang dinonaktifkan sementara oleh administrator.",
 			"items":   []interface{}{},
-		}, nil
+		}, domain.TokenUsage{}, nil
 	}
 
-	// Centralized AI gateway (P03): route vision through the pooled endpoints,
-	// falling back to BYOK when the gateway cannot serve the request.
-	//
-	// The gateway's vision route points at a model the provider may not serve
-	// (measured: 503), so without this fallback enabling the gateway would break
-	// receipt scanning entirely. Unlike chat there is no partial-output problem:
-	// the result is a single JSON object returned at the end.
-	if u.gateway != nil {
-		res, err := u.analyzeReceiptViaGateway(ctx, imageData, contentType)
-		if err == nil && !gatewayResultFailed(res) {
-			return res, nil
-		}
-		logger.Warn("gateway vision failed; falling back to BYOK", zap.Error(err))
-	}
-
-	keys, err := u.getAvailableKeys(ctx, userID)
-	if err != nil || len(keys) == 0 {
+	// Centralized AI gateway (P03): route vision through the pooled endpoints.
+	// The legacy per-user BYOK path was removed in the contract phase, so a
+	// gateway failure is surfaced as a friendly, sanitized error rather than
+	// falling back to per-user keys (which no longer exist).
+	if u.gateway == nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Silakan tambahkan API key terlebih dahulu untuk menggunakan fitur ini.",
+			"message": "Layanan analisis struk sedang tidak tersedia. Silakan coba beberapa saat lagi.",
 			"items":   []interface{}{},
-		}, nil
+		}, domain.TokenUsage{}, nil
 	}
 
-	base64Image := base64Encode(imageData)
-	prompt := receiptPrompt()
-
-	key := u.findWorkingKeyByModality(ctx, keys, domain.ModalityVision)
-	if key == nil {
-		key = u.findWorkingKey(ctx, keys)
-	}
-	if key == nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Semua API key tidak aktif. Periksa di menu API Keys.",
-			"items":   []interface{}{},
-		}, nil
-	}
-
-	var text string
-	var lastErr error
-	currentKey := key
-
-	for attempt := 0; attempt < len(keys); attempt++ {
-		if currentKey == nil {
-			break
-		}
-
-		decryptedKey, decryptErr := u.decryptAPIKey(currentKey.EncryptedKey)
-		if decryptErr != nil {
-			lastErr = decryptErr
-			currentKey = u.findNextActiveKey(keys, currentKey.ID)
-			continue
-		}
-
-		endpoints, ok := providerEndpoints["fast"][currentKey.Provider]
-		if !ok {
-			endpoints = providerEndpoints["fast"]["gemini"]
-		}
-
-		model := endpoints.model
-		if currentKey.Model != "" {
-			model = currentKey.Model
-		}
-
-		switch {
-		case strings.Contains(endpoints.baseURL, "generativelanguage"):
-			text, err = u.analyzeReceiptGemini(ctx, endpoints, decryptedKey, prompt, base64Image, contentType)
-		case strings.Contains(endpoints.baseURL, "anthropic"):
-			text, err = u.analyzeReceiptAnthropic(ctx, endpoints, model, decryptedKey, prompt, base64Image, contentType)
-		default:
-			text, err = u.analyzeReceiptOpenAI(ctx, endpoints, model, decryptedKey, prompt, base64Image, contentType)
-		}
-
-		if err == nil {
-			break
-		}
-
-		lastErr = err
-		currentKey.Status = domain.KeyError
-		errStr := err.Error()
-		currentKey.LastError = &errStr
-		if u.keyRepo != nil {
-			u.keyRepo.Update(ctx, currentKey)
-		}
-		currentKey = u.findNextActiveKey(keys, currentKey.ID)
-	}
-
+	res, usage, err := u.analyzeReceiptViaGateway(ctx, imageData, contentType)
 	if err != nil {
-		return u.receiptErrorResult(lastErr), nil
+		logger.Warn("gateway vision failed", zap.Error(err))
+		return u.receiptErrorResult(err), usage, nil
 	}
-
-	return parseReceiptResponse(text), nil
+	if gatewayResultFailed(res) {
+		logger.Warn("gateway vision returned no usable result")
+	}
+	return res, usage, nil
 }
 
 // gatewayResultFailed reports whether a gateway result map represents a failure.
 // The vision/voice adapters swallow upstream errors into a map with
-// success=false, so the fallback decision must inspect the map, not just the
-// returned error.
+// success=false, so callers must inspect the map, not just the returned error.
 func gatewayResultFailed(res map[string]interface{}) bool {
 	if res == nil {
 		return true
@@ -1667,35 +865,35 @@ func (u *AIUsecase) receiptErrorResult(err error) map[string]interface{} {
 		strings.Contains(msgLower, "quota") || strings.Contains(msgLower, "too many requests") ||
 		strings.Contains(msgLower, "insufficient_quota") || strings.Contains(msgLower, "insufficient quota") ||
 		strings.Contains(msgLower, "exceeded"):
-		friendly = "Kuota API telah habis atau batas permintaan terlampaui. Silakan ganti API Key atau tunggu beberapa saat."
+		friendly = "Kuota layanan AI telah habis atau batas permintaan terlampaui. Silakan coba beberapa saat lagi."
 
 	case strings.Contains(msg, "401") || strings.Contains(msg, "403") ||
 		strings.Contains(msgLower, "unauthorized") || strings.Contains(msgLower, "forbidden") ||
 		strings.Contains(msgLower, "api key") || strings.Contains(msgLower, "invalid key") ||
 		strings.Contains(msgLower, "not valid") || strings.Contains(msgLower, "permission") ||
 		strings.Contains(msgLower, "auth"):
-		friendly = "API Key tidak valid. Periksa kembali API Key di menu API Keys."
+		friendly = "Layanan AI menolak kredensial. Hubungi administrator."
 
 	case strings.Contains(msgLower, "model not found") || strings.Contains(msgLower, "model_not_found") ||
 		strings.Contains(msgLower, "does not exist"):
-		friendly = "Model tidak ditemukan. Periksa kembali nama model di pengaturan API Key."
+		friendly = "Model AI tidak ditemukan. Hubungi administrator."
 
 	case strings.Contains(msgLower, "does not support") || strings.Contains(msgLower, "image_url") ||
 		strings.Contains(msgLower, "vision") || strings.Contains(msgLower, "image input") ||
 		strings.Contains(msgLower, "not support") || strings.Contains(msgLower, "image is not supported") ||
 		strings.Contains(msgLower, "cannot parse image") || strings.Contains(msgLower, "invalid image") ||
 		strings.Contains(msgLower, "unable to process image"):
-		friendly = "Model ini tidak mendukung analisis gambar. Silakan ganti ke model vision di menu API Keys (contoh: meta-llama/llama-4-scout-17b-16e-instruct, qwen/qwen3.6-27b, gpt-4o-mini)."
+		friendly = "Model AI tidak mendukung analisis gambar. Hubungi administrator."
 
 	case strings.Contains(msgLower, "decommissioned") || strings.Contains(msgLower, "deprecated") ||
 		strings.Contains(msgLower, "no longer supported") || strings.Contains(msgLower, "has been discontinued"):
-		friendly = "Model sudah tidak tersedia (decommissioned/deprecated). Silakan ganti model di menu API Keys."
+		friendly = "Model AI sudah tidak tersedia. Hubungi administrator."
 
 	case strings.Contains(msgLower, "not a valid model") || strings.Contains(msgLower, "invalid model"):
-		friendly = "Model ID tidak valid. Periksa kembali nama model di pengaturan API Key."
+		friendly = "Model AI tidak valid. Hubungi administrator."
 
 	case strings.Contains(msg, "400") && strings.Contains(msgLower, "current quota"):
-		friendly = "Kuota model saat ini tidak mencukupi untuk memproses gambar. Silakan ganti model atau API Key."
+		friendly = "Kuota model saat ini tidak mencukupi untuk memproses gambar. Silakan coba beberapa saat lagi."
 
 	case strings.Contains(msgLower, "timeout") || strings.Contains(msgLower, "timed out") ||
 		strings.Contains(msgLower, "deadline"):
@@ -1752,176 +950,15 @@ func extractAPIErrorMessage(msg string) string {
 	return ""
 }
 
-func (u *AIUsecase) analyzeReceiptGemini(ctx context.Context, ep providerEndpoint, apiKey, prompt, base64Image, contentType string) (string, error) {
-	body := geminiRequest{
-		Contents: []geminiContent{
-			{
-				Role: "user",
-				Parts: []geminiPart{
-					{Text: prompt},
-					{InlineData: &geminiInlineData{MimeType: contentType, Data: base64Image}},
-				},
-			},
-		},
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	url := ep.baseURL + ep.path + "?key=" + apiKey
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var geminiResp struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return "", nil
-	}
-
-	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
-}
-
-func (u *AIUsecase) analyzeReceiptOpenAI(ctx context.Context, ep providerEndpoint, model, apiKey, prompt, base64Image, contentType string) (string, error) {
-	body := openAIVisionRequest{
-		Model: model,
-		Messages: []openAIVisionMessage{
-			{
-				Role: "user",
-				Content: []openAIVisionContent{
-					{Type: "text", Text: prompt},
-					{Type: "image_url", ImageURL: &openAIImageURL{URL: "data:" + contentType + ";base64," + base64Image}},
-				},
-			},
-		},
-		MaxTokens: 4096,
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, "POST", ep.baseURL+ep.path, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var openAIResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(openAIResp.Choices) == 0 {
-		return "", nil
-	}
-
-	return openAIResp.Choices[0].Message.Content, nil
-}
-
-func (u *AIUsecase) analyzeReceiptAnthropic(ctx context.Context, ep providerEndpoint, model, apiKey, prompt, base64Image, contentType string) (string, error) {
-	mediaType := contentType
-	if mediaType == "" {
-		mediaType = "image/jpeg"
-	}
-
-	body := map[string]interface{}{
-		"model":      model,
-		"max_tokens": 4096,
-		"messages": []map[string]interface{}{
-			{
-				"role": "user",
-				"content": []map[string]interface{}{
-					{"type": "text", "text": prompt},
-					{
-						"type": "image",
-						"source": map[string]interface{}{
-							"type":       "base64",
-							"media_type": mediaType,
-							"data":       base64Image,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, "POST", ep.baseURL+ep.path, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var anthropicResp struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-
-	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(anthropicResp.Content) == 0 {
-		return "", nil
-	}
-
-	return anthropicResp.Content[0].Text, nil
-}
-
 func (u *AIUsecase) CreateTransaction(ctx context.Context, tx *domain.Transaction) error {
 	return u.txRepo.Create(ctx, tx)
 }
 
 // ─── Voice Processing ──────────────────────────────────────────
 
-func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBase64 string) (map[string]interface{}, error) {
+func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBase64 string) (map[string]interface{}, domain.TokenUsage, error) {
 	if len(audioBase64) > 5*1024*1024 {
-		return nil, fmt.Errorf("audio too large")
+		return nil, domain.TokenUsage{}, fmt.Errorf("audio too large")
 	}
 
 	if u.stopped("voice") {
@@ -1929,249 +966,27 @@ func (u *AIUsecase) ProcessVoice(ctx context.Context, userID uuid.UUID, audioBas
 			"success":    false,
 			"message":    "Fitur AI sedang dinonaktifkan sementara oleh administrator.",
 			"transcript": "",
-		}, nil
+		}, domain.TokenUsage{}, nil
 	}
 
-	// Centralized AI gateway (P03): route voice through the pooled endpoints,
-	// falling back to BYOK when the gateway cannot serve the request (its voice
-	// route points at a model the provider may not serve).
-	if u.gateway != nil {
-		res, err := u.processVoiceViaGateway(ctx, audioBase64)
-		if err == nil && !gatewayResultFailed(res) {
-			return res, nil
-		}
-		logger.Warn("gateway voice failed; falling back to BYOK", zap.Error(err))
-	}
-
-	keys, err := u.getAvailableKeys(ctx, userID)
-	if err != nil || len(keys) == 0 {
+	// Centralized AI gateway (P03): route voice through the pooled endpoints.
+	// The legacy per-user BYOK path was removed in the contract phase.
+	if u.gateway == nil {
 		return map[string]interface{}{
 			"success":    false,
-			"message":    "Silakan tambahkan API key terlebih dahulu.",
+			"message":    "Layanan transkripsi suara sedang tidak tersedia. Silakan coba beberapa saat lagi.",
 			"transcript": "",
-		}, nil
+		}, domain.TokenUsage{}, nil
 	}
 
-	currentKey := u.findWorkingKeyByModality(ctx, keys, domain.ModalityAudio)
-	if currentKey == nil {
-		currentKey = u.findWorkingKey(ctx, keys)
-	}
-	if currentKey == nil {
+	res, usage, err := u.processVoiceViaGateway(ctx, audioBase64)
+	if err != nil {
+		logger.Warn("gateway voice failed", zap.Error(err))
 		return map[string]interface{}{
 			"success":    false,
-			"message":    "Semua API key tidak aktif.",
+			"message":    "Gagal memproses audio. Silakan coba lagi.",
 			"transcript": "",
-		}, nil
+		}, usage, nil
 	}
-
-	prompt := "Transkripsikan audio berikut dengan akurat. Hanya keluarkan teks hasil transkripsi, tanpa penjelasan tambahan."
-
-	var transcript string
-	var lastErr error
-
-	for attempt := 0; attempt < len(keys); attempt++ {
-		if currentKey == nil {
-			break
-		}
-
-		decryptedKey, decryptErr := u.decryptAPIKey(currentKey.EncryptedKey)
-		if decryptErr != nil {
-			lastErr = decryptErr
-			currentKey = u.findNextActiveKey(keys, currentKey.ID)
-			continue
-		}
-
-		endpoints, ok := providerEndpoints["fast"][currentKey.Provider]
-		if !ok {
-			endpoints = providerEndpoints["fast"]["gemini"]
-		}
-
-		model := endpoints.model
-		if currentKey.Model != "" {
-			model = currentKey.Model
-		}
-
-		switch {
-		case strings.Contains(endpoints.baseURL, "generativelanguage"):
-			transcript, lastErr = u.voiceProcessGemini(ctx, endpoints, decryptedKey, prompt, audioBase64)
-		default:
-			if strings.Contains(endpoints.baseURL, "openai") || strings.Contains(endpoints.baseURL, "groq") || strings.Contains(endpoints.baseURL, "openrouter") {
-				transcript, lastErr = u.voiceProcessOpenAI(ctx, endpoints, model, decryptedKey, prompt, audioBase64)
-			} else {
-				lastErr = fmt.Errorf("provider %s does not support voice processing", currentKey.Provider)
-			}
-		}
-
-		if lastErr == nil {
-			return map[string]interface{}{
-				"success":    true,
-				"transcript": transcript,
-			}, nil
-		}
-
-		currentKey.Status = domain.KeyError
-		errStr := lastErr.Error()
-		currentKey.LastError = &errStr
-		if u.keyRepo != nil {
-			u.keyRepo.Update(ctx, currentKey)
-		}
-		currentKey = u.findNextActiveKey(keys, currentKey.ID)
-	}
-
-	return map[string]interface{}{
-		"success":    false,
-		"message":    "Semua API key gagal. Periksa key atau coba lagi nanti.",
-		"transcript": "",
-	}, nil
-}
-
-func (u *AIUsecase) voiceProcessGemini(ctx context.Context, ep providerEndpoint, apiKey, prompt, audioBase64 string) (string, error) {
-	// Detect MIME type from base64 header
-	mimeType := "audio/webm"
-	if len(audioBase64) > 20 {
-		header := audioBase64[:20]
-		if strings.Contains(header, "UklGR") {
-			mimeType = "audio/wav"
-		} else if strings.Contains(header, "Ogg") || strings.Contains(header, "T2dn") {
-			mimeType = "audio/ogg"
-		} else if strings.Contains(header, "AAAA") || strings.Contains(header, "fLCG") {
-			mimeType = "audio/mp4"
-		}
-	}
-
-	body := geminiRequest{
-		Contents: []geminiContent{
-			{
-				Role: "user",
-				Parts: []geminiPart{
-					{Text: prompt},
-					{InlineData: &geminiInlineData{MimeType: mimeType, Data: audioBase64}},
-				},
-			},
-		},
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	url := ep.baseURL + ep.path + "?key=" + apiKey
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var geminiResp struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
-	}
-	return "", nil
-}
-
-func (u *AIUsecase) voiceProcessOpenAI(ctx context.Context, ep providerEndpoint, model, apiKey, prompt, audioBase64 string) (string, error) {
-	// Use OpenAI-compatible audio input format with vision-style multimodal messages
-	type audioContentPart struct {
-		Type       string `json:"type"`
-		Text       string `json:"text,omitempty"`
-		InputAudio *struct {
-			Data   string `json:"data"`
-			Format string `json:"format"`
-		} `json:"input_audio,omitempty"`
-	}
-
-	type audioMessage struct {
-		Role    string             `json:"role"`
-		Content []audioContentPart `json:"content"`
-	}
-
-	type audioRequest struct {
-		Model     string         `json:"model"`
-		Messages  []audioMessage `json:"messages"`
-		MaxTokens int            `json:"max_tokens,omitempty"`
-	}
-
-	// Detect audio format from the base64 data header
-	audioFormat := "wav"
-	if len(audioBase64) > 20 {
-		header := audioBase64[:20]
-		if strings.Contains(header, "UklGR") { // RIFF/WAV base64 starts with UklGR
-			audioFormat = "wav"
-		} else if strings.Contains(header, "Ogg") || strings.Contains(header, "T2dn") { // OGG/Opus
-			audioFormat = "opus"
-		} else if strings.Contains(header, "AAAA") || strings.Contains(header, "fLCG") { // MP4/M4A
-			audioFormat = "mp4"
-		} else {
-			audioFormat = "webm"
-		}
-	}
-
-	body := audioRequest{
-		Model: model,
-		Messages: []audioMessage{
-			{
-				Role: "user",
-				Content: []audioContentPart{
-					{Type: "text", Text: prompt},
-					{Type: "input_audio", InputAudio: &struct {
-						Data   string `json:"data"`
-						Format string `json:"format"`
-					}{Data: audioBase64, Format: audioFormat}},
-				},
-			},
-		},
-		MaxTokens: 4096,
-	}
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, "POST", ep.baseURL+ep.path, bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var openAIResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(openAIResp.Choices) > 0 {
-		return openAIResp.Choices[0].Message.Content, nil
-	}
-	return "", nil
+	return res, usage, nil
 }

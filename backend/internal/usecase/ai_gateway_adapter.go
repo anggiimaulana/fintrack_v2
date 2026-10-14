@@ -3,14 +3,39 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/aigateway/metering"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/pkg/logger"
 )
+
+// gatewayUseCaseForMode maps the user-selected assistant mode onto a gateway
+// use case. "reasoning" traffic is routed to the dedicated reasoning route pool
+// (e.g. deepseek-r1); everything else uses the standard chat pool.
+func gatewayUseCaseForMode(mode domain.LLMMode) domain.UseCase {
+	if mode == domain.LLMReasoning {
+		return domain.UseCaseReasoning
+	}
+	return domain.UseCaseChat
+}
+
+// reasoningEffortForMode returns the `reasoning_effort` value forwarded upstream
+// for the given mode. It is opt-in via AI_REASONING_EFFORT ("low"|"medium"|"high")
+// because some OpenAI-compatible providers reject the field for models that do
+// not support it. When unset, the mode still changes routing (use case + model)
+// without sending any extra field — which keeps non-reasoning providers working.
+func reasoningEffortForMode(mode domain.LLMMode) string {
+	if mode != domain.LLMReasoning {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv("AI_REASONING_EFFORT"))
+}
 
 // chatViaGateway runs the Chat flow through the centralized AI gateway (P03).
 // It reuses the same agent-loop semantics as the legacy path but obtains the
@@ -22,6 +47,7 @@ func (u *AIUsecase) chatViaGateway(
 	sessionID *uuid.UUID,
 	systemPrompt string,
 	msgChan chan<- domain.ChatStreamEvent,
+	usage *domain.TokenUsage,
 ) error {
 	history, _ := u.chatMessageRepo.ListBySession(ctx, *sessionID, userID)
 	if len(history) > 20 {
@@ -33,6 +59,12 @@ func (u *AIUsecase) chatViaGateway(
 		StepLabel:  "Menganalisis perintah...",
 		StepStatus: "success",
 	}
+
+	// Mode → gateway use case. "reasoning" is served by the dedicated reasoning
+	// route pool; "fast" (default) by the standard chat pool. This is the single
+	// point where the user's CEPAT/PENALARAN choice takes effect.
+	useCase := gatewayUseCaseForMode(req.Mode)
+	reasoningEffort := reasoningEffortForMode(req.Mode)
 
 	// Streaming filter: strip <TOOL_CALL>/<TOOL_RESULT> blocks so raw tool JSON
 	// is never exposed to the client. Identical to the legacy path.
@@ -95,7 +127,8 @@ func (u *AIUsecase) chatViaGateway(
 	}
 
 	// First gateway call: stream the assistant response.
-	responseText, callErr := u.gatewayStream(ctx, systemPrompt, history, req.Message, onContent)
+	var servedModel string
+	responseText, callErr := u.gatewayStream(ctx, useCase, reasoningEffort, systemPrompt, history, req.Message, onContent, &servedModel, usage)
 	flushStreamBuf()
 	if callErr != nil {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: gatewayFriendlyError(callErr)}
@@ -142,7 +175,9 @@ func (u *AIUsecase) chatViaGateway(
 			if cleanText != "" {
 				fullResponse.WriteString(cleanText)
 			} else {
-				fullResponse.WriteString(u.generateToolResponse(results))
+				resp := u.generateToolResponse(results)
+				fullResponse.WriteString(resp)
+				msgChan <- domain.ChatStreamEvent{Type: "content", Content: resp}
 			}
 			break
 		}
@@ -156,7 +191,7 @@ func (u *AIUsecase) chatViaGateway(
 
 		toolMessage := u.buildToolResultPrompt(results)
 		var err error
-		responseText, err = u.gatewayStream(ctx, systemPrompt, agentHistory, toolMessage, onContent)
+		responseText, err = u.gatewayStream(ctx, useCase, reasoningEffort, systemPrompt, agentHistory, toolMessage, onContent, &servedModel, usage)
 		flushStreamBuf()
 		if err != nil {
 			logger.Error("gateway agent loop failed", zap.Error(err))
@@ -165,25 +200,57 @@ func (u *AIUsecase) chatViaGateway(
 		}
 	}
 
-	// Persist messages + title, mirroring the legacy path.
-	_ = u.chatMessageRepo.Create(ctx, &domain.ChatMessage{SessionID: *sessionID, UserID: userID, Role: "user", Content: req.Message})
-	_ = u.chatMessageRepo.Create(ctx, &domain.ChatMessage{SessionID: *sessionID, UserID: userID, Role: "assistant", Content: fullResponse.String()})
+	// Persist messages + title using a detached context so cancellation of the
+	// request (e.g. user clicked stop or connection closed) does not abort DB write.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 
-	if session, _ := u.chatSessionRepo.GetByID(ctx, *sessionID, userID); session != nil && session.Title == "Percakapan baru" {
-		if title := u.generateTitle(ctx, req.Message); title != "" && title != "Percakapan baru" {
-			if err := u.chatSessionRepo.Update(ctx, &domain.ChatSession{ID: *sessionID, UserID: userID, Title: title}); err == nil {
+	if err := u.chatMessageRepo.Create(persistCtx, &domain.ChatMessage{SessionID: *sessionID, UserID: userID, Role: "user", Content: req.Message}); err != nil {
+		logger.Error("failed to persist user chat message", zap.Error(err))
+	}
+	modeStr := string(req.Mode)
+	if modeStr == "" {
+		modeStr = string(domain.LLMFast)
+	}
+	assistantMsg := &domain.ChatMessage{SessionID: *sessionID, UserID: userID, Role: "assistant", Content: fullResponse.String(), Mode: &modeStr}
+	if servedModel != "" {
+		assistantMsg.ModelUsed = &servedModel
+	}
+	if err := u.chatMessageRepo.Create(persistCtx, assistantMsg); err != nil {
+		logger.Error("failed to persist assistant chat message", zap.Error(err))
+	}
+	if session, _ := u.chatSessionRepo.GetByID(persistCtx, *sessionID, userID); session != nil && session.Title == "Percakapan baru" {
+		if title := u.generateTitle(persistCtx, req.Message); title != "" && title != "Percakapan baru" {
+			if err := u.chatSessionRepo.Update(persistCtx, &domain.ChatSession{ID: *sessionID, UserID: userID, Title: title}); err == nil {
 				msgChan <- domain.ChatStreamEvent{Type: "title_update", Content: title}
 			}
 		}
 	}
 
-	msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+	var usagePtr *domain.TokenUsage
+	if usage != nil && usage.TotalTokens > 0 {
+		u := *usage
+		usagePtr = &u
+	}
+	msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, Mode: string(req.Mode), Model: servedModel, Usage: usagePtr}
 	return nil
 }
 
 // gatewayStream issues one streaming chat call through the gateway and returns
-// the full assistant text.
-func (u *AIUsecase) gatewayStream(ctx context.Context, systemPrompt string, history []domain.ChatMessage, userMessage string, onContent func(string)) (string, error) {
+// the full assistant text. It routes to the given use case (chat vs reasoning),
+// forwards the optional reasoning effort, and records the concrete upstream
+// model that served the request into servedModel (when non-nil).
+func (u *AIUsecase) gatewayStream(
+	ctx context.Context,
+	useCase domain.UseCase,
+	reasoningEffort string,
+	systemPrompt string,
+	history []domain.ChatMessage,
+	userMessage string,
+	onContent func(string),
+	servedModel *string,
+	usage *domain.TokenUsage,
+) (string, error) {
 	msgs := make([]domain.AIChatMessage, 0, len(history)+2)
 	msgs = append(msgs, domain.AIChatMessage{Role: "system", Content: systemPrompt})
 	for _, h := range history {
@@ -191,20 +258,64 @@ func (u *AIUsecase) gatewayStream(ctx context.Context, systemPrompt string, hist
 	}
 	msgs = append(msgs, domain.AIChatMessage{Role: "user", Content: userMessage})
 
-	ch, err := u.gateway.ChatStream(ctx, &domain.AIChatRequest{UseCase: domain.UseCaseChat, Messages: msgs})
+	ch, err := u.gateway.ChatStream(ctx, &domain.AIChatRequest{
+		UseCase:         useCase,
+		Messages:        msgs,
+		ReasoningEffort: reasoningEffort,
+	})
 	if err != nil {
-		return "", err
+		// Graceful degradation: if the reasoning pool cannot serve the request
+		// (no active route / all endpoints down), fall back to the standard chat
+		// pool rather than failing the turn. This is safe because ChatStream only
+		// returns an error before any content has been streamed. We also drop the
+		// reasoning_effort field, since chat models generally reject it.
+		if useCase == domain.UseCaseReasoning {
+			logger.Warn("reasoning route unavailable; falling back to chat pool", zap.Error(err))
+			ch, err = u.gateway.ChatStream(ctx, &domain.AIChatRequest{
+				UseCase:  domain.UseCaseChat,
+				Messages: msgs,
+			})
+		}
+		if err != nil {
+			return "", err
+		}
 	}
 
 	var sb strings.Builder
+	// Streamed token usage reported by the provider on the terminal chunk
+	// (IncludeUsage is requested upstream). When the provider omits it, the
+	// metering fallback below derives a deterministic estimate.
+	var streamUsage domain.TokenUsage
 	for chunk := range ch {
 		if chunk.Done {
+			if chunk.Model != "" && servedModel != nil {
+				*servedModel = chunk.Model
+			}
+			streamUsage = chunk.Usage
 			break
 		}
+		// Reasoning deltas are not part of the answer text; drop them from the
+		// assistant content (they are surfaced separately if ever needed).
 		if chunk.Content != "" {
 			sb.WriteString(chunk.Content)
 			onContent(chunk.Content)
 		}
+	}
+
+	// Accumulate this call's usage into the caller's total. Provider-reported
+	// values win; otherwise fall back to a heuristic estimate over the prompt and
+	// response text so the ledger never charges a flat amount.
+	if usage != nil {
+		promptText := systemPrompt + "\n" + userMessage
+		call := metering.FromProvider(
+			streamUsage.PromptTokens, streamUsage.CompletionTokens, streamUsage.TotalTokens,
+			useCase, promptText, sb.String(),
+		)
+		usage.PromptTokens += call.PromptTokens
+		usage.CompletionTokens += call.CompletionTokens
+		usage.TotalTokens += call.TotalTokens
+		usage.Source = call.Source
+		usage.Modality = call.Modality
 	}
 	return sb.String(), nil
 }

@@ -199,8 +199,10 @@ func (u *AuthUsecase) Me(ctx context.Context, userID uuid.UUID) (*domain.Profile
 	return u.userRepo.GetByID(ctx, userID)
 }
 
-// UpdateProfile updates the current user's profile fields.
-func (u *AuthUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullName *string, avatarURL *string) (*domain.Profile, error) {
+// UpdateProfile replaces the current user's editable profile fields. It is a
+// full update (PUT semantics): an empty phone/avatar clears the field, which is
+// how the UI removes a value.
+func (u *AuthUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullName string, phone *string, avatarURL *string) (*domain.Profile, error) {
 	p, err := u.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -208,12 +210,25 @@ func (u *AuthUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullN
 	if p == nil {
 		return nil, nil
 	}
-	if fullName != nil {
-		p.FullName = *fullName
+	p.FullName = fullName
+	p.Phone = phone
+	p.AvatarURL = avatarURL
+	if err := u.userRepo.Update(ctx, p); err != nil {
+		return nil, err
 	}
-	if avatarURL != nil {
-		p.AvatarURL = avatarURL
+	return p, nil
+}
+
+// SetAvatarURL updates only the avatar, leaving other profile fields untouched.
+func (u *AuthUsecase) SetAvatarURL(ctx context.Context, userID uuid.UUID, url string) (*domain.Profile, error) {
+	p, err := u.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
+	if p == nil {
+		return nil, nil
+	}
+	p.AvatarURL = &url
 	if err := u.userRepo.Update(ctx, p); err != nil {
 		return nil, err
 	}

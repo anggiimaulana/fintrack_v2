@@ -22,6 +22,9 @@ type UsageProviders struct {
 	// CurrentTokens returns the tokens consumed in the current period
 	// (used + reserved) — the usage for limit key `ai_tokens_per_cycle`.
 	CurrentTokens func(ctx context.Context, userID uuid.UUID) (int64, error)
+	// CountAIRequests returns the number of AI calls made in the current period
+	// — the usage for limit key `ai_requests_per_cycle`.
+	CountAIRequests func(ctx context.Context, userID uuid.UUID) (int64, error)
 	// Now supplies the current time (injectable for tests).
 	Now func() time.Time
 }
@@ -37,9 +40,18 @@ func (p *UsageProviders) UsageFor(limitKey string) UsageResolver {
 		return p.currentTokens
 	case "ocr_scans_per_cycle":
 		return p.countVisionScans
+	case "ai_requests_per_cycle":
+		return p.countAIRequests
 	default:
 		return nil
 	}
+}
+
+func (p *UsageProviders) countAIRequests(ctx context.Context, userID uuid.UUID, _ string) (int64, error) {
+	if p.CountAIRequests == nil {
+		return 0, nil
+	}
+	return p.CountAIRequests(ctx, userID)
 }
 
 func (p *UsageProviders) countTransactions(ctx context.Context, userID uuid.UUID, _ string) (int64, error) {

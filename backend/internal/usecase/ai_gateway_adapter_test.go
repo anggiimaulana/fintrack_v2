@@ -12,6 +12,12 @@ import (
 type fakeGateway struct {
 	chatResponse string
 	chatErr      error
+	// servedModel is stamped on the terminal chunk, mirroring a real upstream
+	// reporting which model produced the reply.
+	servedModel string
+	// reasoningErr, when set, fails only requests tagged with the reasoning use
+	// case — used to exercise the chat-pool fallback.
+	reasoningErr error
 
 	visionResponse string
 	visionErr      error
@@ -29,6 +35,9 @@ type fakeGateway struct {
 
 func (f *fakeGateway) ChatStream(_ context.Context, req *domain.AIChatRequest) (<-chan domain.AIChatStreamChunk, error) {
 	f.lastChatReq = req
+	if f.reasoningErr != nil && req.UseCase == domain.UseCaseReasoning {
+		return nil, f.reasoningErr
+	}
 	if f.chatErr != nil {
 		return nil, f.chatErr
 	}
@@ -36,7 +45,7 @@ func (f *fakeGateway) ChatStream(_ context.Context, req *domain.AIChatRequest) (
 	go func() {
 		defer close(ch)
 		ch <- domain.AIChatStreamChunk{Content: f.chatResponse}
-		ch <- domain.AIChatStreamChunk{Done: true, Usage: domain.TokenUsage{TotalTokens: 5, Source: "provider_reported"}}
+		ch <- domain.AIChatStreamChunk{Done: true, Model: f.servedModel, Usage: domain.TokenUsage{TotalTokens: 5, Source: "provider_reported"}}
 	}()
 	return ch, nil
 }
@@ -66,7 +75,7 @@ func TestAnalyzeReceiptViaGateway_ParsesJSON(t *testing.T) {
 	gw := &fakeGateway{visionResponse: `{"merchant":"Toko A","total":50000,"category":"Makanan","type":"expense","items":[]}`}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("fakeimg"), "image/jpeg")
+	res, _, err := u.analyzeReceiptViaGateway(context.Background(), []byte("fakeimg"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -90,7 +99,7 @@ func TestAnalyzeReceiptViaGateway_ErrorFriendly(t *testing.T) {
 	gw := &fakeGateway{visionErr: domain.ErrAllEndpointsExhausted}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
+	res, _, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("adapter must swallow upstream errors, got %v", err)
 	}
@@ -104,7 +113,7 @@ func TestProcessVoiceViaGateway_Success(t *testing.T) {
 	gw := &fakeGateway{voiceResponse: "  halo dunia  "}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.processVoiceViaGateway(context.Background(), "aGVsbG8=") // base64 "hello"
+	res, _, err := u.processVoiceViaGateway(context.Background(), "aGVsbG8=") // base64 "hello"
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -123,7 +132,7 @@ func TestProcessVoiceViaGateway_Success(t *testing.T) {
 func TestProcessVoiceViaGateway_InvalidBase64(t *testing.T) {
 	gw := &fakeGateway{}
 	u := (&AIUsecase{}).WithGateway(gw)
-	res, err := u.processVoiceViaGateway(context.Background(), "!!!not-base64!!!")
+	res, _, err := u.processVoiceViaGateway(context.Background(), "!!!not-base64!!!")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -271,7 +280,7 @@ func TestAnalyzeReceiptViaGateway_ErrorIsDetectable(t *testing.T) {
 	gw := &fakeGateway{visionErr: domain.ErrAllEndpointsExhausted}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
+	res, _, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("adapter should not return a raw error, got %v", err)
 	}
@@ -285,7 +294,7 @@ func TestProcessVoiceViaGateway_ErrorIsDetectable(t *testing.T) {
 	gw := &fakeGateway{voiceErr: domain.ErrAllEndpointsExhausted}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.processVoiceViaGateway(context.Background(), "aGVsbG8=")
+	res, _, err := u.processVoiceViaGateway(context.Background(), "aGVsbG8=")
 	if err != nil {
 		t.Fatalf("adapter should not return a raw error, got %v", err)
 	}
@@ -300,11 +309,130 @@ func TestGatewayVisionSuccessIsNotTreatedAsFailure(t *testing.T) {
 	gw := &fakeGateway{visionResponse: `{"merchant":"Toko A","total":50000,"category":"Makanan","type":"expense","items":[]}`}
 	u := (&AIUsecase{}).WithGateway(gw)
 
-	res, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
+	res, _, err := u.analyzeReceiptViaGateway(context.Background(), []byte("img"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if gatewayResultFailed(res) {
 		t.Fatalf("a successful gateway response must NOT trigger the fallback: %+v", res)
+	}
+}
+
+// ─── Mode routing (fast vs reasoning) ──────────────────────────
+
+// TestGatewayUseCaseForMode pins the mapping that makes the user's CEPAT /
+// PENALARAN choice take effect: reasoning must hit the reasoning route pool,
+// everything else the standard chat pool.
+func TestGatewayUseCaseForMode(t *testing.T) {
+	cases := []struct {
+		mode domain.LLMMode
+		want domain.UseCase
+	}{
+		{domain.LLMReasoning, domain.UseCaseReasoning},
+		{domain.LLMFast, domain.UseCaseChat},
+		{"", domain.UseCaseChat},
+		{"unknown", domain.UseCaseChat},
+	}
+	for _, tc := range cases {
+		if got := gatewayUseCaseForMode(tc.mode); got != tc.want {
+			t.Errorf("gatewayUseCaseForMode(%q) = %q, want %q", tc.mode, got, tc.want)
+		}
+	}
+}
+
+// TestReasoningEffortForMode_OnlyForReasoning verifies that the extra
+// `reasoning_effort` field is only ever attached to reasoning requests, and only
+// when explicitly opted in via the environment — so providers that reject the
+// field keep working for fast mode.
+func TestReasoningEffortForMode_OnlyForReasoning(t *testing.T) {
+	t.Setenv("AI_REASONING_EFFORT", "")
+
+	if got := reasoningEffortForMode(domain.LLMReasoning); got != "" {
+		t.Fatalf("expected empty effort when env unset, got %q", got)
+	}
+	if got := reasoningEffortForMode(domain.LLMFast); got != "" {
+		t.Fatalf("fast mode must never send reasoning_effort, got %q", got)
+	}
+
+	t.Setenv("AI_REASONING_EFFORT", "high")
+	if got := reasoningEffortForMode(domain.LLMReasoning); got != "high" {
+		t.Fatalf("expected opt-in effort for reasoning, got %q", got)
+	}
+	if got := reasoningEffortForMode(domain.LLMFast); got != "" {
+		t.Fatalf("fast mode must stay empty even when env set, got %q", got)
+	}
+}
+
+// TestGatewayStream_RoutesReasoningAndCapturesModel is the end-to-end adapter
+// check: a reasoning request must reach the gateway tagged as the reasoning use
+// case, and the model reported on the terminal chunk must be captured.
+func TestGatewayStream_RoutesReasoningAndCapturesModel(t *testing.T) {
+	t.Setenv("AI_REASONING_EFFORT", "medium")
+	gw := &fakeGateway{chatResponse: "jawaban", servedModel: "deepseek-r1"}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	var served string
+	got, err := u.gatewayStream(context.Background(), domain.UseCaseReasoning, reasoningEffortForMode(domain.LLMReasoning),
+		"sys", nil, "hai", func(string) {}, &served, nil)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "jawaban" {
+		t.Fatalf("expected streamed text, got %q", got)
+	}
+	if served != "deepseek-r1" {
+		t.Fatalf("expected served model captured, got %q", served)
+	}
+	if gw.lastChatReq == nil || gw.lastChatReq.UseCase != domain.UseCaseReasoning {
+		t.Fatalf("expected reasoning use case forwarded, got %+v", gw.lastChatReq)
+	}
+	if gw.lastChatReq.ReasoningEffort != "medium" {
+		t.Fatalf("expected reasoning effort forwarded, got %q", gw.lastChatReq.ReasoningEffort)
+	}
+}
+
+// TestGatewayStream_FastModeSendsNoReasoningEffort guards the fast path against
+// regressions that would leak reasoning parameters into ordinary chat.
+func TestGatewayStream_FastModeSendsNoReasoningEffort(t *testing.T) {
+	t.Setenv("AI_REASONING_EFFORT", "high")
+	gw := &fakeGateway{chatResponse: "ok", servedModel: "gemini-2.5-flash"}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	var served string
+	if _, err := u.gatewayStream(context.Background(), domain.UseCaseChat, reasoningEffortForMode(domain.LLMFast),
+		"sys", nil, "hai", func(string) {}, &served, nil); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if gw.lastChatReq == nil || gw.lastChatReq.UseCase != domain.UseCaseChat {
+		t.Fatalf("expected chat use case, got %+v", gw.lastChatReq)
+	}
+	if gw.lastChatReq.ReasoningEffort != "" {
+		t.Fatalf("fast mode must not forward reasoning effort, got %q", gw.lastChatReq.ReasoningEffort)
+	}
+}
+
+// TestGatewayStream_ReasoningFallsBackToChatPool verifies graceful degradation:
+// if the reasoning pool cannot serve the request, the turn still completes via
+// the standard chat pool (and without leaking reasoning_effort).
+func TestGatewayStream_ReasoningFallsBackToChatPool(t *testing.T) {
+	t.Setenv("AI_REASONING_EFFORT", "high")
+	gw := &fakeGateway{chatResponse: "fallback ok", servedModel: "gemini-2.5-flash", reasoningErr: domain.ErrNoRoute}
+	u := (&AIUsecase{}).WithGateway(gw)
+
+	var served string
+	got, err := u.gatewayStream(context.Background(), domain.UseCaseReasoning, reasoningEffortForMode(domain.LLMReasoning),
+		"sys", nil, "hai", func(string) {}, &served, nil)
+	if err != nil {
+		t.Fatalf("expected graceful fallback, got err: %v", err)
+	}
+	if got != "fallback ok" {
+		t.Fatalf("expected chat-pool answer, got %q", got)
+	}
+	// The fallback call must be tagged as chat and must not carry reasoning effort.
+	if gw.lastChatReq == nil || gw.lastChatReq.UseCase != domain.UseCaseChat {
+		t.Fatalf("expected fallback to chat use case, got %+v", gw.lastChatReq)
+	}
+	if gw.lastChatReq.ReasoningEffort != "" {
+		t.Fatalf("fallback must drop reasoning_effort, got %q", gw.lastChatReq.ReasoningEffort)
 	}
 }

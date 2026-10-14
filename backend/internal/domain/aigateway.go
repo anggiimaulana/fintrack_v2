@@ -77,6 +77,10 @@ type AIChatRequest struct {
 	Messages    []AIChatMessage `json:"messages"`
 	Temperature *float64        `json:"temperature,omitempty"`
 	MaxTokens   int             `json:"max_tokens,omitempty"`
+	// ReasoningEffort is forwarded to providers that support it (e.g. OpenAI
+	// o-series "low"|"medium"|"high"). Empty means "do not send the field", which
+	// keeps providers that reject unknown parameters working unchanged.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// ImageBase64, when set, is attached as a multimodal content part (vision).
 	ImageBase64 string `json:"-"`
 	ImageMIME   string `json:"-"`
@@ -84,9 +88,16 @@ type AIChatRequest struct {
 
 // AIChatStreamChunk is one streamed delta.
 type AIChatStreamChunk struct {
-	Content string     `json:"content"`
-	Done    bool       `json:"done"`
-	Usage   TokenUsage `json:"usage,omitempty"`
+	Content string `json:"content"`
+	Done    bool   `json:"done"`
+	// Reasoning carries a "thinking" delta when the upstream model exposes one
+	// (e.g. deepseek-r1's reasoning_content). It is separate from Content so
+	// callers can decide whether to surface it.
+	Reasoning string `json:"reasoning,omitempty"`
+	// Model is the concrete upstream model that served the request. It is set on
+	// the final (Done) chunk so callers can record which model produced a reply.
+	Model string     `json:"model,omitempty"`
+	Usage TokenUsage `json:"usage,omitempty"`
 }
 
 // AIEmbeddingRequest asks for a vector embedding of a single text.

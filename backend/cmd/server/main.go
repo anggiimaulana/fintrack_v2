@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/internal/admin"
+	"github.com/fintrack/backend/internal/aigateway/bootstrap"
 	"github.com/fintrack/backend/internal/aigateway/breaker"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/audit"
@@ -32,6 +33,7 @@ import (
 	"github.com/fintrack/backend/internal/payment"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/repository/postgres"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/contracts"
 	"github.com/fintrack/backend/pkg/logger"
@@ -46,6 +48,37 @@ func shutdownTimeout() time.Duration {
 		}
 	}
 	return 30 * time.Second
+}
+
+// startPricingRefresh keeps the pricing engine's active rule in sync with the
+// database. It refreshes periodically so a Super Admin change (or an out-of-band
+// edit) is picked up without a restart, and returns a stop function.
+//
+// The refresh is cheap (one indexed row) and best-effort: a transient DB error
+// leaves the previous rule in place rather than zeroing costs.
+func startPricingRefresh(ctx context.Context, repo *postgres.BillingRepo, engine *billing.PricingEngine) func() {
+	ticker := time.NewTicker(1 * time.Minute)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				rule, err := repo.GetActiveRule(ctx)
+				if err != nil {
+					logger.Warn("pricing rule refresh failed", zap.Error(err))
+					continue
+				}
+				engine.SetRule(rule)
+			}
+		}
+	}()
+	return func() {
+		ticker.Stop()
+		<-done
+	}
 }
 
 func main() {
@@ -186,7 +219,28 @@ func main() {
 			},
 		},
 	})
+
+	// Seed the AI gateway configuration from environment defaults the FIRST time
+	// the platform runs against an empty database. Once the Super Admin has
+	// configured endpoints/routes/flags through the admin UI, the database is
+	// authoritative and the env defaults are ignored for that table.
+	//
+	// This runs BEFORE the health checker starts so a freshly seeded endpoint is
+	// probed on the first tick and the gateway can come up in the same boot.
+	bootRes, bootErr := bootstrap.EnsureSeeded(bgCtx, pool, encryptionKey, bootstrap.ConfigFromEnv(os.Getenv))
+	if bootErr != nil {
+		logger.Warn("AI gateway bootstrap failed", zap.Error(bootErr))
+	} else if bootRes.EndpointSeeded || bootRes.RoutesSeeded > 0 || bootRes.FlagSeeded {
+		logger.Info("AI gateway bootstrap: seeded from environment defaults",
+			zap.Bool("endpoint", bootRes.EndpointSeeded),
+			zap.Int("routes", bootRes.RoutesSeeded),
+			zap.Bool("flag", bootRes.FlagSeeded))
+	}
+
 	healthChecker := gateway.NewHealthChecker(aiGatewayRepo, gateway.HealthConfig{Interval: 60 * time.Second, Timeout: 5 * time.Second})
+	// Probe synchronously first: the enablement decision below must not read a
+	// stale "unknown" health for an endpoint we just seeded.
+	healthChecker.RunOnce(bgCtx)
 	healthChecker.Start(bgCtx)
 	defer healthChecker.Stop()
 
@@ -202,17 +256,15 @@ func main() {
 	// any partial rollout — which is how this gateway silently stayed off).
 	//
 	// Safety guard: switching the platform onto the gateway with no routes
-	// configured would send every AI request into a dead end and break AI for all
-	// users. So the flag alone is not sufficient — at least one active chat route
-	// must exist. With none configured, the gateway stays off and BYOK keeps
-	// serving traffic.
+	// configured would send every AI request into a dead end. So the flag alone is
+	// not sufficient — at least one active chat route must exist.
 	gatewayEnabled := flagSvc.IsEnabledForPlatform(bgCtx, "feature_ai_gateway_centralized")
 	if gatewayEnabled {
-		// A route alone is not sufficient: the gateway path has no BYOK fallback,
-		// so pointing the platform at an endpoint whose health check is failing
-		// would break AI for every user. Both a route AND a healthy endpoint are
-		// required. "unknown" health does not count — an unprobed endpoint is not
-		// evidence that it can serve traffic.
+		// A route alone is not sufficient: the gateway is the only AI transport
+		// (the legacy BYOK path was removed), so pointing the platform at an
+		// endpoint whose health check is failing would break AI for every user.
+		// Both a route AND a healthy endpoint are required. "unknown" health does
+		// not count — an unprobed endpoint is not evidence that it can serve traffic.
 		healthy, err := aiGatewayRepo.HasHealthyEndpoint(bgCtx, domain.UseCaseChat)
 		if err != nil {
 			logger.Warn("AI gateway: endpoint health check failed; keeping gateway disabled", zap.Error(err))
@@ -222,10 +274,10 @@ func main() {
 			hasRoutes, rerr := aiGatewayRepo.HasActiveRoutes(bgCtx, domain.UseCaseChat)
 			if rerr == nil && hasRoutes {
 				logger.Warn("AI gateway: flag is ON and a chat route exists, but no endpoint is healthy; " +
-					"gateway stays disabled (BYOK fallback in use)")
+					"gateway stays disabled (AI unavailable)")
 			} else {
 				logger.Warn("AI gateway: flag is ON but no active chat route is configured; " +
-					"gateway stays disabled (BYOK fallback in use)")
+					"gateway stays disabled (AI unavailable)")
 			}
 		}
 		gatewayEnabled = healthy
@@ -285,9 +337,17 @@ func main() {
 	categoryUC := usecase.NewCategoryUsecase(incomeCatRepo, expenseCatRepo, savingsCatRepo, subcatRepo)
 	userUC := usecase.NewUserUsecase(userRepo)
 	dashboardUC := usecase.NewDashboardUsecase(txRepo, spkUC)
-	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, nil, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, encryptionKey, embedder, embedRepo)
+	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, embedder, embedRepo)
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
+	} else {
+		// The centralized gateway is the only transport that can actually serve
+		// chat: per-user BYOK keys were removed (migration 0014 dropped
+		// gemini_api_keys), so with the gateway off every chat request ends in the
+		// degraded "unreachable" message. Surface this loudly rather than letting
+		// AI appear silently broken.
+		logger.Warn("AI gateway centralized: DISABLED — chat has no working transport " +
+			"(BYOK keys removed); enable feature_ai_gateway_centralized with a healthy chat route")
 	}
 	// The emergency stop applies regardless of which transport serves a model
 	// call, so it is wired outside the gateway feature flag.
@@ -316,20 +376,80 @@ func main() {
 	payInvoice := payment.NewInvoiceService(paymentRepo, settingsRepo, payTax)
 	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver)
 	payWebhook := payment.NewWebhookProcessor(paymentRepo, payRegistry, subActivator, txManager)
-	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, nil)
+
+	// Proof object storage (P0). Local by default; R2 when configured. The
+	// active driver is read from the `storage_driver` setting at runtime, so an
+	// admin can switch local <-> r2 without a restart.
+	localStore, err := storage.NewLocalStore(os.Getenv("STORAGE_LOCAL_DIR"))
+	if err != nil {
+		logger.Fatal("Failed to initialise local storage", zap.Error(err))
+	}
+	var r2Store *storage.R2Store
+	r2cfg := storage.R2Config{
+		AccountID:       os.Getenv("R2_ACCOUNT_ID"),
+		Endpoint:        os.Getenv("R2_ENDPOINT"),
+		Region:          os.Getenv("R2_REGION"),
+		AccessKeyID:     os.Getenv("R2_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("R2_SECRET_ACCESS_KEY"),
+		Bucket:          os.Getenv("R2_BUCKET"),
+		Prefix:          os.Getenv("R2_PREFIX"),
+		PublicBaseURL:   os.Getenv("R2_PUBLIC_BASE_URL"),
+	}
+	if r2cfg.Enabled() {
+		if s, serr := storage.NewR2Store(bgCtx, r2cfg); serr != nil {
+			logger.Warn("R2 storage not initialised; falling back to local", zap.Error(serr))
+		} else {
+			r2Store = s
+			logger.Info("R2 storage configured", zap.String("bucket", r2cfg.Bucket))
+		}
+	} else {
+		logger.Info("R2 storage not configured (using local storage)")
+	}
+	defaultDriver := os.Getenv("STORAGE_DRIVER")
+	if defaultDriver == "" {
+		defaultDriver = storage.DriverLocal
+	}
+	storageProvider := storage.NewProvider(storage.Config{
+		DefaultDriver: defaultDriver,
+		Local:         localStore,
+		R2:            r2Store,
+		Settings:      settingsRepo,
+	})
+	proofStore := storage.NewProofStore(storageProvider)
+
+	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, proofStore)
 	payAdmin := payment.NewAdminService(payManual)
 	payCheckout := payment.NewCheckoutService(paymentRepo, settingsRepo, payRegistry, payInvoice, nil)
+	payUserSvc := payment.NewUserService(paymentRepo, settingsRepo, payRegistry, payManual)
+	payCatalog := payment.NewCatalogService(billingRepo, billingRepo)
+	paySubSvc := payment.NewSubscriptionService(billingRepo, billingRepo, nil, func(ctx context.Context, uid uuid.UUID) {
+		entBroadcaster.PublishInvalidate(ctx, uid)
+	})
 	payHandler := handler.NewPaymentHandler(payWebhook).
 		WithManual(payManual).
 		WithAdmin(payAdmin).
-		WithCheckout(payCheckout, billingRepo, userRepo)
+		WithCheckout(payCheckout, billingRepo, userRepo).
+		WithUserService(payUserSvc).
+		WithCatalog(payCatalog).
+		WithSubscriptionService(paySubSvc, billingRepo).
+		WithStorage(proofStore)
+
 	// Realtime producers (P07 slice B).
 	payWebhook.SetEmitter(realtimePublisher)
 	payManual.SetEmitter(realtimePublisher)
 
-	// Dunning & grace workers.
+	// Dunning & grace workers. The grace worker needs a status setter so an
+	// overdue subscription actually transitions to `grace`/`past_due`; without it
+	// the scan ran but nothing changed (F3).
+	setSubStatus := func(ctx context.Context, userIDStr string, status string) error {
+		uid, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return err
+		}
+		return billingRepo.SetSubscriptionStatus(ctx, uid, billing.SubscriptionStatus(status))
+	}
 	dunningWorker := payment.NewDunningWorker(paymentRepo, nil, time.Hour)
-	graceWorker := payment.NewGraceWorker(paymentRepo, settingsRepo, nil, 30*time.Minute)
+	graceWorker := payment.NewGraceWorker(paymentRepo, settingsRepo, setSubStatus, 30*time.Minute)
 	dunningWorker.Start(bgCtx)
 	graceWorker.Start(bgCtx)
 	defer dunningWorker.Stop()
@@ -346,10 +466,34 @@ func main() {
 	entUsage := &middleware.UsageProviders{
 		CountTransactions: txRepo.CountActiveByUser,
 		CurrentTokens:     middleware.TokenPeriodUsage(billingRepo),
+		CountAIRequests: func(ctx context.Context, userID uuid.UUID) (int64, error) {
+			return billingRepo.CountAIRequestsInPeriod(ctx, userID, time.Now().UTC().Unix())
+		},
 		CountVisionScans: func(ctx context.Context, userID uuid.UUID) (int64, error) {
 			return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix())
 		},
 	}
+
+	// F6: expose real-time usage on GET /me/entitlements. The counters mirror the
+	// middleware's resolvers so the UI shows exactly what the gate enforces.
+	entHandler.WithUsage(&handler.UsageProvidersFn{
+		Counters: map[string]func(ctx context.Context, userID uuid.UUID) (int64, error){
+			"ai_tokens_per_cycle":   middleware.TokenPeriodUsage(billingRepo),
+			"max_transactions":      txRepo.CountActiveByUser,
+			"ocr_scans_per_cycle":   func(ctx context.Context, userID uuid.UUID) (int64, error) { return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix()) },
+			"ai_requests_per_cycle": func(ctx context.Context, userID uuid.UUID) (int64, error) { return billingRepo.CountAIRequestsInPeriod(ctx, userID, time.Now().UTC().Unix()) },
+		},
+		Period: func(ctx context.Context, userID uuid.UUID) (*entitlement.Period, error) {
+			p, err := billingRepo.GetCurrentPeriod(ctx, userID, time.Now().UTC().Unix())
+			if err != nil || p == nil {
+				return nil, err
+			}
+			return &entitlement.Period{
+				Start: p.PeriodStart.Format(time.RFC3339),
+				End:   p.PeriodEnd.Format(time.RFC3339),
+			}, nil
+		},
+	})
 
 	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
 		res, err := entResolver.Resolve(ctx, userID)
@@ -367,7 +511,41 @@ func main() {
 		start := at.Truncate(24 * time.Hour)
 		return start, start.AddDate(0, 0, 30), quota, nil
 	})
-	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, nil)
+	// Pricing engine (F2): converts committed tokens to integer Rupiah. The
+	// active rule lives in `pricing_rules`; the engine starts from the current
+	// rule and is refreshed on demand (admin mutation) and periodically, so a
+	// Super Admin change takes effect without a restart.
+	pricingEngine := billing.NewPricingEngine(nil)
+	if rule, perr := billingRepo.GetActiveRule(bgCtx); perr != nil {
+		logger.Warn("No active pricing rule; AI cost will be recorded as 0", zap.Error(perr))
+	} else {
+		pricingEngine.SetRule(rule)
+	}
+	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, pricingEngine)
+	stopPricingRefresh := startPricingRefresh(bgCtx, billingRepo, pricingEngine)
+	defer stopPricingRefresh()
+
+	// Ledger cleaner (F3): auto-releases reservations that were never committed
+	// or released (e.g. the process crashed mid-request), so quota does not stay
+	// locked forever.
+	ledgerCleaner := billing.NewCleanerWorker(billingRepo, ledgerService, billing.CleanerConfig{})
+	ledgerCleaner.Start(bgCtx)
+	defer ledgerCleaner.Stop()
+
+	// Scheduled downgrades (F3): applies end-of-cycle downgrades written by
+	// ScheduleDowngrade. Without this worker the schedule was recorded but never
+	// applied, so users kept the higher plan indefinitely.
+	subManager := billing.NewSubscriptionManager(billingRepo, billingRepo, nil, txManager)
+	downgradeWorker := billing.NewDowngradeWorker(billingRepo, func(ctx context.Context, uid uuid.UUID) error {
+		if err := subManager.ApplyScheduledDowngrade(ctx, uid); err != nil {
+			return err
+		}
+		// The plan changed, so the entitlement cache must be invalidated.
+		entBroadcaster.PublishInvalidate(ctx, uid)
+		return nil
+	}, billing.DowngradeConfig{})
+	downgradeWorker.Start(bgCtx)
+	defer downgradeWorker.Stop()
 
 	routerConfig := deliveryHTTP.RouterConfig{
 		JWTSecret:    jwtSecret,
@@ -378,6 +556,7 @@ func main() {
 		Usage:        entUsage,
 		Pool:         pool,
 		Redis:        redisClient,
+		Storage:      storageProvider,
 		Ledger:       ledgerService,
 	}
 
@@ -391,6 +570,14 @@ func main() {
 		admin.WithCache(cacheEngine),
 		admin.WithEntitlementInvalidator(entBroadcaster),
 		admin.WithRealtimeEmitter(realtimePublisher),
+		admin.WithStorage(storageProvider, storageProvider),
+		admin.WithPricingReload(func(ctx context.Context) {
+			if rule, err := billingRepo.GetActiveRule(ctx); err == nil {
+				pricingEngine.SetRule(rule)
+			} else {
+				logger.Warn("pricing reload after admin change failed", zap.Error(err))
+			}
+		}),
 	)
 	superAdminH := admin.NewHandler(adminSvc)
 	adminRoleResolver := admin.NewRoleResolver(pool, cacheEngine)

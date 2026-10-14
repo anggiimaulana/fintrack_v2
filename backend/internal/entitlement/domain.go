@@ -11,6 +11,21 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 )
 
+// UsageEntry is the current consumption for one limit key.
+type UsageEntry struct {
+	Used      int64 `json:"used"`
+	Limit     int64 `json:"limit"`
+	Remaining int64 `json:"remaining"`
+	// Unlimited is true when the limit is the unlimited sentinel (-1).
+	Unlimited bool `json:"unlimited"`
+}
+
+// Period describes the active quota cycle (nil when none is tracked).
+type Period struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
 // Resolved is the effective entitlement for a user.
 type Resolved struct {
 	UserID   uuid.UUID        `json:"user_id"`
@@ -20,6 +35,11 @@ type Resolved struct {
 	Status   string           `json:"status"`
 	Features map[string]bool  `json:"features"`
 	Limits   map[string]int64 `json:"limits"`
+	// Usage is the real-time consumption per limit key (F6). Additive: older
+	// clients ignore it.
+	Usage map[string]UsageEntry `json:"usage,omitempty"`
+	// Period is the active quota cycle, when one is tracked (F6).
+	Period *Period `json:"period,omitempty"`
 	// Version is the user's entitlement version at resolve time.
 	Version int64 `json:"version"`
 	// PlanVersion is the plan's version this payload was built against; a
@@ -63,4 +83,14 @@ type Source interface {
 	// GetEntitlements and GetLimits return the plan's switches/limits.
 	GetEntitlements(ctx context.Context, planID uuid.UUID) (map[string]bool, error)
 	GetLimits(ctx context.Context, planID uuid.UUID) (map[string]int64, error)
+}
+
+// UsageSource computes real-time consumption per limit key. It is deliberately
+// separate from Source and from the cache: usage changes on every AI call, so it
+// must never be cached alongside the (slow-changing) plan resolution.
+type UsageSource interface {
+	// Usage returns consumption for the given plan limits plus the active quota
+	// period (nil when no period is tracked). Implementations must be
+	// best-effort: a single limit that cannot be computed is omitted, not fatal.
+	Usage(ctx context.Context, userID uuid.UUID, limits map[string]int64) (map[string]UsageEntry, *Period, error)
 }

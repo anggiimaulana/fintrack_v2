@@ -11,12 +11,17 @@ import (
 // 768-dimension lock on the returned vector.
 type GatewayEmbedder struct {
 	gateway domain.AIGatewayService
-	model   string
+	// model, when non-empty, overrides the model configured on the embedding
+	// route. It is intentionally left empty by default so the Super Admin owns
+	// the model choice through the `ai_routes` table (no hardcoding).
+	model string
 }
 
-// NewGatewayEmbedder builds a gateway-backed embedder.
+// NewGatewayEmbedder builds a gateway-backed embedder. The upstream model is
+// resolved from the active `embedding` route, so it stays configurable from the
+// Super Admin UI.
 func NewGatewayEmbedder(gateway domain.AIGatewayService) *GatewayEmbedder {
-	return &GatewayEmbedder{gateway: gateway, model: "text-embedding-004"}
+	return &GatewayEmbedder{gateway: gateway}
 }
 
 // Enabled reports whether the gateway is configured.

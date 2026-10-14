@@ -23,6 +23,7 @@ type ChatMessage struct {
 	Role       string    `json:"role" db:"role"`
 	Content    string    `json:"content" db:"content"`
 	ModelUsed  *string   `json:"model_used,omitempty" db:"model_used"`
+	Mode       *string   `json:"mode,omitempty" db:"mode"`
 	TokensUsed *int      `json:"tokens_used,omitempty" db:"tokens_used"`
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
@@ -83,12 +84,27 @@ type ChatStreamEvent struct {
 	StepLabel  string          `json:"step_label,omitempty"`
 	StepStatus string          `json:"step_status,omitempty"`
 	Done       bool            `json:"done,omitempty"`
+	// Mode echoes the requested assistant mode ("fast" | "reasoning") so the
+	// client can label the answer it is about to receive.
+	Mode string `json:"mode,omitempty"`
+	// Model is the concrete upstream model that produced the reply (e.g.
+	// "deepseek-r1"). Set on the terminal "done" event.
+	Model string `json:"model,omitempty"`
+	// Reasoning carries a chain-of-thought delta when the model exposes one.
+	Reasoning  string          `json:"reasoning,omitempty"`
 	ToolCall   *ToolCallInfo   `json:"tool_call,omitempty"`
 	ToolResult *ToolResultInfo `json:"tool_result,omitempty"`
+	// Usage carries the upstream token usage on the terminal "done" event so the
+	// billing ledger can charge the real amount instead of a flat estimate.
+	Usage *TokenUsage `json:"usage,omitempty"`
 }
 
 type ChatSessionRepository interface {
 	Create(ctx context.Context, session *ChatSession) error
+	// CreateWithID inserts a session with a caller-supplied id, used to restore a
+	// session that a client referenced but that no longer exists (so follow-up
+	// messages do not violate the chat_messages session foreign key).
+	CreateWithID(ctx context.Context, session *ChatSession) error
 	GetByID(ctx context.Context, id, userID uuid.UUID) (*ChatSession, error)
 	ListByUser(ctx context.Context, userID uuid.UUID) ([]ChatSession, error)
 	ListByUserAndSource(ctx context.Context, userID uuid.UUID, source string) ([]ChatSession, error)

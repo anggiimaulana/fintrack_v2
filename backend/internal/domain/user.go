@@ -26,6 +26,7 @@ type Profile struct {
 	ID        uuid.UUID `json:"id" db:"id"`
 	Email     string    `json:"email" db:"email"`
 	FullName  string    `json:"full_name" db:"full_name"`
+	Phone     *string   `json:"phone,omitempty" db:"phone"`
 	Role      UserRole  `json:"role" db:"role"`
 	AvatarURL *string   `json:"avatar_url,omitempty" db:"avatar_url"`
 	IsActive  bool      `json:"is_active" db:"is_active"`

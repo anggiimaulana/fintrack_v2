@@ -16,6 +16,9 @@ type sseChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
+			// ReasoningContent carries a model's chain-of-thought when exposed
+			// (e.g. deepseek-r1, some OpenRouter reasoning models).
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -27,11 +30,13 @@ type sseChunk struct {
 }
 
 // streamSSE reads an SSE body line by line, forwarding content deltas to out and
-// emitting a final chunk carrying usage (when provided) with Done=true.
+// emitting a final chunk carrying usage (when provided) with Done=true. The
+// supplied model is stamped on the final chunk so callers can record which
+// upstream model produced the reply.
 //
 // It tolerates: "data: " prefixes, blank lines, "[DONE]" sentinels, and
 // keep-alive comments (lines starting with ':').
-func streamSSE(r io.Reader, out chan<- domain.AIChatStreamChunk) {
+func streamSSE(r io.Reader, model string, out chan<- domain.AIChatStreamChunk) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -65,12 +70,18 @@ func streamSSE(r io.Reader, out chan<- domain.AIChatStreamChunk) {
 			}
 		}
 
-		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-			out <- domain.AIChatStreamChunk{Content: chunk.Choices[0].Delta.Content}
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta
+			if delta.Content != "" {
+				out <- domain.AIChatStreamChunk{Content: delta.Content}
+			}
+			if delta.ReasoningContent != "" {
+				out <- domain.AIChatStreamChunk{Reasoning: delta.ReasoningContent}
+			}
 		}
 	}
 
-	final := domain.AIChatStreamChunk{Done: true}
+	final := domain.AIChatStreamChunk{Done: true, Model: model}
 	if lastUsage != nil {
 		final.Usage = *lastUsage
 	}

@@ -29,17 +29,29 @@ func (g *ManualGateway) Name() string { return "manual" }
 // CreateTransaction returns transfer instructions; status stays pending until
 // proof is uploaded and approved.
 func (g *ManualGateway) CreateTransaction(_ context.Context, req CreateTxRequest) (*CreateTxResponse, error) {
+	instr := map[string]any{
+		"amount_idr": req.AmountIDR,
+		"order_id":   req.OrderID,
+	}
+	// Only advertise fields that are actually configured, so the UI never shows
+	// an empty "transfer to ''" instruction.
+	if g.BankName != "" {
+		instr["bank_name"] = g.BankName
+	}
+	if g.AccountNumber != "" {
+		instr["account_number"] = g.AccountNumber
+	}
+	if g.AccountHolder != "" {
+		instr["account_holder"] = g.AccountHolder
+	}
+	if g.QRISURL != "" {
+		instr["qris_url"] = g.QRISURL
+	}
 	return &CreateTxResponse{
 		GatewayRef: req.OrderID,
 		Status:     PaymentPending,
 		Raw: map[string]any{
-			"instructions": map[string]any{
-				"bank_name":      g.BankName,
-				"account_number": g.AccountNumber,
-				"account_holder": g.AccountHolder,
-				"amount_idr":     req.AmountIDR,
-				"qris_url":       g.QRISURL,
-			},
+			"instructions": instr,
 		},
 	}, nil
 }
@@ -108,6 +120,34 @@ func ValidateProof(content []byte, _ string) (mime, ext string, err error) {
 		ext = ".webp"
 	}
 	return mime, ext, nil
+}
+
+// MaxAvatarBytes caps avatar uploads at 2 MB.
+const MaxAvatarBytes = 2 << 20
+
+// ValidateAvatar validates an avatar image by size and magic bytes, returning
+// the safe file extension. It accepts the same image types as payment proofs
+// (JPG/PNG/WEBP) and rejects anything else.
+func ValidateAvatar(content []byte) (string, error) {
+	if len(content) == 0 {
+		return "", ErrInvalidProof
+	}
+	if len(content) > MaxAvatarBytes {
+		return "", ErrProofTooLarge
+	}
+	mime := DetectImageMIME(content)
+	if mime == "" || !AllowedProofMIME[mime] {
+		return "", ErrInvalidProof
+	}
+	switch mime {
+	case "image/jpeg":
+		return ".jpg", nil
+	case "image/png":
+		return ".png", nil
+	case "image/webp":
+		return ".webp", nil
+	}
+	return "", ErrInvalidProof
 }
 
 // SafeProofFilename builds a UUID-based filename with the validated extension.

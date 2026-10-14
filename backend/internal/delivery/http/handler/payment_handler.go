@@ -10,6 +10,7 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -21,7 +22,14 @@ type PaymentHandler struct {
 	checkout  *payment.CheckoutService
 	planRepo  billing.PlanRepository
 	userRepo  domain.ProfileRepository
+	// P0/P1 user self-service surface.
+	userSvc *payment.UserService
+	catalog *payment.CatalogService
+	subSvc  *payment.SubscriptionService
+	subRepo billing.SubscriptionRepository
+	proofs  *storage.ProofStore
 }
+
 // NewPaymentHandler builds the handler.
 func NewPaymentHandler(processor *payment.WebhookProcessor) *PaymentHandler {
 	return &PaymentHandler{processor: processor}

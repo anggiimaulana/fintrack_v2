@@ -19,6 +19,7 @@ import (
 	"github.com/fintrack/backend/internal/featureflag"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/pkg/contracts"
 )
 
@@ -39,6 +40,15 @@ type Service struct {
 	entInvalidator EntitlementInvalidator
 	// emitter publishes realtime domain events (nil-safe: checks before use).
 	emitter RealtimeEmitter
+
+	// storage reports proof-storage driver status; storageSwitcher invalidates
+	// its cached selection when `storage_driver` changes.
+	storage         StorageStatus
+	storageSwitcher StorageSwitcher
+
+	// pricingChanged, when set, reloads the active pricing rule in the running
+	// engine so a Super Admin change applies to the next commit (F5).
+	pricingChanged func(ctx context.Context)
 
 	now func() time.Time
 }
@@ -68,6 +78,29 @@ func WithEncryptionKey(key []byte) Option { return func(s *Service) { s.encKey =
 
 // WithCache installs a Redis-backed cache engine.
 func WithCache(c *infraRedis.CacheEngine) Option { return func(s *Service) { s.cache = c } }
+
+// StorageSwitcher lets the settings handler invalidate the storage driver cache
+// so a `storage_driver` change applies immediately.
+type StorageSwitcher interface {
+	Invalidate()
+}
+
+// StorageStatus reports the active/available proof storage drivers.
+type StorageStatus interface {
+	Status(ctx context.Context) storage.Status
+	DriverNames() []string
+}
+
+// WithStorage installs the proof-storage provider (runtime driver switch).
+func WithStorage(p StorageStatus, switcher StorageSwitcher) Option {
+	return func(s *Service) { s.storage = p; s.storageSwitcher = switcher }
+}
+
+// WithPricingReload installs a callback invoked after a pricing-rule mutation so
+// the running PricingEngine reloads the active rule immediately (F5).
+func WithPricingReload(fn func(ctx context.Context)) Option {
+	return func(s *Service) { s.pricingChanged = fn }
+}
 
 // EntitlementInvalidator invalidates cached entitlements. *entitlement.Broadcaster
 // satisfies it; a narrow interface keeps the admin package free of a hard

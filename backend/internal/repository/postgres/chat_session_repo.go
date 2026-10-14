@@ -36,6 +36,20 @@ func (r *ChatSessionRepo) Create(ctx context.Context, s *domain.ChatSession) err
 	return q(ctx, r.pool).QueryRow(ctx, query, s.UserID, s.Title, s.Source).Scan(&s.ID, &s.UserID, &s.Title, &s.Source, &s.CreatedAt, &s.UpdatedAt)
 }
 
+// CreateWithID inserts a session with a caller-supplied id. Used to restore a
+// session a client referenced but that no longer exists, so its follow-up
+// messages do not violate the chat_messages session foreign key.
+func (r *ChatSessionRepo) CreateWithID(ctx context.Context, s *domain.ChatSession) error {
+	query := `INSERT INTO chat_sessions (id, user_id, title, source) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO NOTHING RETURNING ` + chatSessionCols
+	err := q(ctx, r.pool).QueryRow(ctx, query, s.ID, s.UserID, s.Title, s.Source).Scan(&s.ID, &s.UserID, &s.Title, &s.Source, &s.CreatedAt, &s.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		// A concurrent insert already created it; treat as success.
+		return nil
+	}
+	return err
+}
+
 func (r *ChatSessionRepo) GetByID(ctx context.Context, id, userID uuid.UUID) (*domain.ChatSession, error) {
 	query := `SELECT ` + chatSessionCols + ` FROM chat_sessions WHERE id = $1 AND user_id = $2`
 	s, err := scanChatSession(q(ctx, r.pool).QueryRow(ctx, query, id, userID))

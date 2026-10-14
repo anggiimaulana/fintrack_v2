@@ -67,6 +67,9 @@ var writableSettings = map[string]settingSpec{
 	"grace_period_hours":      {kind: "int", min: 0, max: 720},
 	"tax_rate_percent":        {kind: "int", min: 0, max: 100},
 	"invoice_due_hours":       {kind: "int", min: 1, max: 720},
+	// Proof storage backend. Switching takes effect within seconds for new
+	// uploads; reads fall back to the other driver so existing proofs stay served.
+	"storage_driver": {kind: "enum", enum: []string{"local", "r2"}},
 }
 
 type updateSettingsRequest struct {
@@ -130,15 +133,36 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	// A storage_driver change must take effect immediately for new uploads.
+	if _, ok := req.Settings["storage_driver"]; ok && h.svc.storageSwitcher != nil {
+		h.svc.storageSwitcher.Invalidate()
+	}
+
 	h.audit(c, "update", "settings", "bulk", rawMapToAny(before), rawMapToAny(req.Settings))
 	response.OK(c, "Pengaturan disimpan", nil)
+}
+
+// StorageStatus handles GET /admin/settings/storage. It reports which proof
+// storage driver is active and whether each driver is configured/healthy.
+func (h *Handler) StorageStatus(c *gin.Context) {
+	if h.svc.storage == nil {
+		response.OK(c, "Penyimpanan bukti belum dikonfigurasi", gin.H{
+			"active": "local", "default": "local", "local_ready": false,
+		})
+		return
+	}
+	st := h.svc.storage.Status(c.Request.Context())
+	response.OK(c, "Status penyimpanan berhasil dimuat", gin.H{
+		"status":  st,
+		"drivers": h.svc.storage.DriverNames(),
+	})
 }
 
 // settingsSnapshot reads the current values of the writable keys.
 func (h *Handler) settingsSnapshot(ctx contextT) (map[string]json.RawMessage, error) {
 	rows, err := h.svc.pool.Query(ctx, `
 		SELECT key, value FROM settings
-		WHERE key = ANY($1)`, []string{"payment_gateway_default", "grace_period_hours", "tax_rate_percent", "invoice_due_hours"})
+		WHERE key = ANY($1)`, []string{"payment_gateway_default", "grace_period_hours", "tax_rate_percent", "invoice_due_hours", "storage_driver"})
 	if err != nil {
 		return map[string]json.RawMessage{}, err
 	}

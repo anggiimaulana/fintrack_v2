@@ -48,7 +48,7 @@ func TestKillSwitch_StopsVisionAndVoice(t *testing.T) {
 	gw := &fakeGateway{visionResponse: `{"merchant":"X","total":1,"type":"expense"}`}
 	u := (&AIUsecase{}).WithGateway(gw).WithKillSwitch(func(string) bool { return true })
 
-	vision, err := u.AnalyzeReceipt(context.Background(), uuid.New(), []byte("img"), "image/jpeg")
+	vision, _, err := u.AnalyzeReceipt(context.Background(), uuid.New(), []byte("img"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("vision err: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestKillSwitch_StopsVisionAndVoice(t *testing.T) {
 		t.Fatalf("expected disabled vision result, got %+v", vision)
 	}
 
-	voice, err := u.ProcessVoice(context.Background(), uuid.New(), "YXVkaW8=")
+	voice, _, err := u.ProcessVoice(context.Background(), uuid.New(), "YXVkaW8=")
 	if err != nil {
 		t.Fatalf("voice err: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestKillSwitch_OffLeavesTrafficAlone(t *testing.T) {
 	gw := &fakeGateway{visionResponse: `{"merchant":"Toko B","total":9000,"type":"expense"}`}
 	u := (&AIUsecase{}).WithGateway(gw).WithKillSwitch(func(string) bool { return false })
 
-	res, err := u.AnalyzeReceipt(context.Background(), uuid.New(), []byte("img"), "image/jpeg")
+	res, _, err := u.AnalyzeReceipt(context.Background(), uuid.New(), []byte("img"), "image/jpeg")
 	if err != nil {
 		t.Fatalf("vision err: %v", err)
 	}

@@ -21,13 +21,13 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
 
-const userCols = "id, email, full_name, role, avatar_url, is_active, created_at, updated_at"
+const userCols = "id, email, full_name, phone, role, avatar_url, is_active, created_at, updated_at"
 
 func scanUser(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.Profile, error) {
 	p := &domain.Profile{}
-	err := row.Scan(&p.ID, &p.Email, &p.FullName, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -49,7 +49,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*domain.Profil
 	p := &domain.Profile{}
 	var hash string
 	err := q(ctx, r.pool).QueryRow(ctx, query, email).Scan(
-		&p.ID, &p.Email, &p.FullName, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt, &hash,
+		&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt, &hash,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -74,10 +74,11 @@ func (r *UserRepo) Create(ctx context.Context, p *domain.Profile, passwordHash s
 
 func (r *UserRepo) Update(ctx context.Context, p *domain.Profile) error {
 	query := `UPDATE users SET
-		full_name = COALESCE($2, full_name),
-		avatar_url = $3
+		full_name = $2,
+		phone = $3,
+		avatar_url = $4
 		WHERE id = $1 RETURNING updated_at`
-	return q(ctx, r.pool).QueryRow(ctx, query, p.ID, p.FullName, p.AvatarURL).Scan(&p.UpdatedAt)
+	return q(ctx, r.pool).QueryRow(ctx, query, p.ID, p.FullName, p.Phone, p.AvatarURL).Scan(&p.UpdatedAt)
 }
 
 // SetActive toggles a user's is_active flag.

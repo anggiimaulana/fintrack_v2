@@ -66,12 +66,30 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 		ai.POST("/kill-switch", h.SetKillSwitch)
 	}
 
+	// Pricing rules (F5): dynamic token pricing + markup, fully audited.
+	pricing := rg.Group("/pricing-rules")
+	{
+		pricing.GET("", h.ListPricingRules)
+		pricing.GET("/active", h.GetActivePricingRule)
+		pricing.POST("", h.CreatePricingRule)
+		pricing.PUT("/:id", h.UpdatePricingRule)
+		pricing.POST("/:id/activate", h.ActivatePricingRule)
+		pricing.DELETE("/:id", h.DeletePricingRule)
+	}
+
+	// Entitlement key catalog (F5): powers the plan-editor dropdowns.
+	rg.GET("/entitlement-catalog", h.EntitlementCatalog)
+
+	// Quota monitoring (F6): users running low on a plan limit.
+	rg.GET("/quota-monitor", h.QuotaMonitor)
+
 	// Audit trail (append-only: read only)
 	rg.GET("/audit-logs", h.ListAuditLogs)
 
 	// Global settings & feature flags
 	rg.GET("/settings", h.ListSettings)
 	rg.PUT("/settings", h.UpdateSettings)
+	rg.GET("/settings/storage", h.StorageStatus)
 	rg.GET("/feature-flags", h.ListFeatureFlags)
 	rg.PUT("/feature-flags", h.UpdateFeatureFlag)
 }

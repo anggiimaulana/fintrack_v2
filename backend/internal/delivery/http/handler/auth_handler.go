@@ -2,13 +2,21 @@ package handler
 
 import (
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/user"
 	"github.com/fintrack/backend/pkg/response"
@@ -17,12 +25,16 @@ import (
 const (
 	accessCookieMaxAge  = 900     // 15 minutes
 	refreshCookieMaxAge = 2592000 // 30 days
+
+	// MaxAvatarBytes caps avatar uploads at 2 MB.
+	MaxAvatarBytes = 2 << 20
 )
 
 type AuthHandler struct {
 	authUsecase  *usecase.AuthUsecase
 	cookieSecure bool
 	anonymizeSvc *user.AnonymizeService
+	store        *storage.Provider
 }
 
 func NewAuthHandler(authUsecase *usecase.AuthUsecase, cookieSecure bool) *AuthHandler {
@@ -31,6 +43,12 @@ func NewAuthHandler(authUsecase *usecase.AuthUsecase, cookieSecure bool) *AuthHa
 
 func (h *AuthHandler) WithAnonymize(anonymizeSvc *user.AnonymizeService) *AuthHandler {
 	h.anonymizeSvc = anonymizeSvc
+	return h
+}
+
+// WithStorage attaches the object store used for avatar uploads/serving.
+func (h *AuthHandler) WithStorage(p *storage.Provider) *AuthHandler {
+	h.store = p
 	return h
 }
 
@@ -151,7 +169,8 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
 	var req struct {
-		FullName  *string `json:"full_name"`
+		FullName  string  `json:"full_name"`
+		Phone     *string `json:"phone"`
 		AvatarURL *string `json:"avatar_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -159,7 +178,22 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.authUsecase.UpdateProfile(c.Request.Context(), userID, req.FullName, req.AvatarURL)
+	fullName := strings.TrimSpace(req.FullName)
+	if fullName == "" {
+		response.BadRequest(c, "Nama lengkap wajib diisi", "validation")
+		return
+	}
+	// An empty phone clears the field (NULL) instead of storing a blank string.
+	phone := req.Phone
+	if phone != nil {
+		if trimmed := strings.TrimSpace(*phone); trimmed == "" {
+			phone = nil
+		} else {
+			phone = &trimmed
+		}
+	}
+
+	profile, err := h.authUsecase.UpdateProfile(c.Request.Context(), userID, fullName, phone, req.AvatarURL)
 	if err != nil {
 		response.InternalError(c, "Gagal memperbarui profil")
 		return
@@ -221,4 +255,129 @@ func (h *AuthHandler) ExportData(c *gin.Context) {
 
 	c.Header("Content-Disposition", "attachment; filename=fintrack-data-export.json")
 	response.OK(c, "Data pribadi berhasil diekspor", data)
+}
+
+// ─── Avatar upload + serving ──────────────────────────────────
+
+// UploadAvatar handles POST /api/v1/me/avatar (multipart form field "file").
+// The image is validated by magic bytes, stored under a per-user key, and the
+// resulting URL is persisted on the profile.
+func (h *AuthHandler) UploadAvatar(c *gin.Context) {
+	if h.store == nil {
+		response.InternalError(c, "Penyimpanan berkas belum dikonfigurasi")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "Berkas gambar wajib diunggah", "invalid_payload")
+		return
+	}
+	if file.Size > MaxAvatarBytes {
+		response.BadRequest(c, "Ukuran berkas melebihi 2 MB", "avatar_too_large")
+		return
+	}
+	content, err := readUpload(file)
+	if err != nil {
+		response.BadRequest(c, "Gagal membaca berkas", "invalid_payload")
+		return
+	}
+	// Magic-byte validation: only real JPG/PNG/WEBP images pass, so a renamed
+	// script or PDF is rejected regardless of its declared content type.
+	ext, err := payment.ValidateAvatar(content)
+	if err != nil {
+		response.BadRequest(c, "Format gambar tidak didukung (gunakan JPG, PNG, atau WEBP)", "invalid_image")
+		return
+	}
+
+	store, err := h.store.Active(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "Penyimpanan berkas tidak tersedia")
+		return
+	}
+	filename := userID.String() + ext
+	if err := store.Put(c.Request.Context(), storage.AvatarKey(filename), content, storage.ContentTypeFor(filename)); err != nil {
+		response.InternalError(c, "Gagal menyimpan foto profil")
+		return
+	}
+
+	url := avatarURLFor(filename)
+	if _, err := h.authUsecase.SetAvatarURL(c.Request.Context(), userID, url); err != nil {
+		response.InternalError(c, "Gagal menyimpan foto profil")
+		return
+	}
+
+	response.OK(c, "Foto profil berhasil diperbarui", gin.H{"avatar_url": url})
+}
+
+// ServeAvatar handles GET /api/v1/avatars/:file, where :file is
+// "<uuid>.<ext>". It is intentionally public so an <img> tag can load the
+// avatar without the auth cookie; the UUID is unguessable, and the lookup is
+// scoped to the owning user so a missing file is a 404 rather than a leak.
+func (h *AuthHandler) ServeAvatar(c *gin.Context) {
+	if h.store == nil {
+		response.NotFound(c, "Berkas tidak ditemukan")
+		return
+	}
+	filename := c.Param("file")
+	idPart := strings.TrimSuffix(filename, filepath.Ext(filename))
+	userID, err := uuid.Parse(idPart)
+	if err != nil {
+		response.NotFound(c, "Berkas tidak ditemukan")
+		return
+	}
+	profile, err := h.authUsecase.Me(c.Request.Context(), userID)
+	if err != nil || profile == nil || profile.AvatarURL == nil || *profile.AvatarURL == "" {
+		response.NotFound(c, "Berkas tidak ditemukan")
+		return
+	}
+	// Only serve the file the profile actually points at (defends against
+	// probing other extensions for the same user). The stored URL carries a
+	// cache-busting `?v=` query that must be stripped before comparing.
+	storedPath := *profile.AvatarURL
+	if i := strings.IndexByte(storedPath, '?'); i >= 0 {
+		storedPath = storedPath[:i]
+	}
+	if filepath.Base(storedPath) != filename {
+		response.NotFound(c, "Berkas tidak ditemukan")
+		return
+	}
+
+	obj, err := h.store.Open(c.Request.Context(), storage.AvatarKey(filename))
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			response.NotFound(c, "Berkas tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal membaca berkas")
+		return
+	}
+	defer obj.Body.Close()
+
+	if obj.ContentType != "" {
+		c.Header("Content-Type", obj.ContentType)
+	}
+	if obj.Size > 0 {
+		c.Header("Content-Length", strconv.FormatInt(obj.Size, 10))
+	}
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("Content-Disposition", "inline")
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, obj.Body)
+}
+
+// avatarURLFor builds the public, cache-busted URL for an avatar filename.
+func avatarURLFor(filename string) string {
+	return "/api/v1/avatars/" + filename + "?v=" + strconv.FormatInt(time.Now().Unix(), 10)
+}
+
+// readUpload reads a bounded multipart file into memory.
+func readUpload(fh *multipart.FileHeader) ([]byte, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, MaxAvatarBytes+1))
 }

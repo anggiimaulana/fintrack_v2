@@ -94,6 +94,40 @@ func (m *memRepo) SetPaymentProof(context.Context, uuid.UUID, string) error { re
 func (m *memRepo) ListPaymentsPendingReview(context.Context, int) ([]*Payment, error) {
 	return nil, nil
 }
+
+func (m *memRepo) ListPaymentsByUser(_ context.Context, userID uuid.UUID, _ int) ([]*UserPayment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*UserPayment
+	for _, p := range m.payments {
+		if p.UserID == userID {
+			out = append(out, &UserPayment{Payment: *p})
+		}
+	}
+	return out, nil
+}
+
+func (m *memRepo) GetPaymentForUser(_ context.Context, userID, paymentID uuid.UUID) (*UserPayment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p := m.payments[paymentID]
+	if p == nil || p.UserID != userID {
+		return nil, nil
+	}
+	return &UserPayment{Payment: *p}, nil
+}
+
+func (m *memRepo) ListInvoicesByUser(_ context.Context, userID uuid.UUID, _ int) ([]*Invoice, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*Invoice
+	for _, inv := range m.invoices {
+		if inv.UserID == userID {
+			out = append(out, inv)
+		}
+	}
+	return out, nil
+}
 func (m *memRepo) ListInvoicesDueBefore(_ context.Context, beforeUnix int64) ([]*Invoice, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

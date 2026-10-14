@@ -20,7 +20,7 @@ func (u *UserUsecase) GetProfile(ctx context.Context, userID uuid.UUID) (*domain
 	return u.userRepo.GetByID(ctx, userID)
 }
 
-func (u *UserUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullName *string, avatarURL *string) (*domain.Profile, error) {
+func (u *UserUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullName *string, phone *string, avatarURL *string) (*domain.Profile, error) {
 	p, err := u.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -31,6 +31,9 @@ func (u *UserUsecase) UpdateProfile(ctx context.Context, userID uuid.UUID, fullN
 
 	if fullName != nil {
 		p.FullName = *fullName
+	}
+	if phone != nil {
+		p.Phone = phone
 	}
 	if avatarURL != nil {
 		p.AvatarURL = avatarURL

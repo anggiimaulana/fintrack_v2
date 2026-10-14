@@ -82,13 +82,11 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 	aiUC := usecase.NewAIUsecase(
 		postgres.NewChatSessionRepo(pool),
 		postgres.NewChatMessageRepo(pool),
-		nil,
 		txRepo,
 		postgres.NewIncomeCategoryRepo(pool),
 		postgres.NewExpenseCategoryRepo(pool),
 		postgres.NewSavingsCategoryRepo(pool),
 		postgres.NewUserRepo(pool),
-		make([]byte, 32),
 		nil, nil,
 	)
 

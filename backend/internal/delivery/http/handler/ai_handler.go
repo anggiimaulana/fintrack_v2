@@ -34,6 +34,17 @@ func (h *AIHandler) WithLedger(l *billing.LedgerService) *AIHandler {
 	return h
 }
 
+// resultSucceeded reports whether a vision/voice result map represents success.
+// The adapters swallow upstream errors into a map with success=false, so callers
+// must inspect the map, not just the returned error, before charging the ledger.
+func resultSucceeded(res map[string]interface{}) bool {
+	if res == nil {
+		return false
+	}
+	ok, _ := res["success"].(bool)
+	return ok
+}
+
 // ─── Chat with SSE Streaming ───────────────────────────────────
 
 func (h *AIHandler) Chat(c *gin.Context) {
@@ -57,7 +68,13 @@ func (h *AIHandler) Chat(c *gin.Context) {
 			reqID = uuid.New().String()
 		}
 		idempotencyKey := "chat-reserve:" + reqID
-		res, err := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityChat, idempotencyKey)
+		// Reasoning mode is billed at its own weight (reasoning multiplier),
+		// mirroring the use case it is routed to upstream.
+		modality := billing.ModalityChat
+		if req.Mode == domain.LLMReasoning {
+			modality = billing.ModalityReasoning
+		}
+		res, err := h.ledger.Reserve(c.Request.Context(), userID, 1, modality, idempotencyKey)
 		if err != nil {
 			if errors.Is(err, billing.ErrInsufficientQuota) {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -87,7 +104,14 @@ func (h *AIHandler) Chat(c *gin.Context) {
 
 	msgChan := make(chan domain.ChatStreamEvent, 100)
 
-	go h.aiUC.Chat(c.Request.Context(), userID, req, sessionID, source, msgChan)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("chat worker panicked", zap.Any("panic", r))
+			}
+		}()
+		h.aiUC.Chat(c.Request.Context(), userID, req, sessionID, source, msgChan)
+	}()
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -95,10 +119,17 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 
 	var gotContent bool
+	// actualTokens accumulates the real token usage reported on the terminal
+	// event. It defaults to the reserved estimate so the ledger always settles
+	// with a sane value even if the provider omits usage.
+	actualTokens := int64(1)
+	if reservation != nil && reservation.Amount > 0 {
+		actualTokens = reservation.Amount
+	}
 	defer func() {
 		if reservation != nil {
 			if gotContent {
-				_ = h.ledger.Commit(context.Background(), userID, reservation.ID, 1, "commit:"+reservation.ID.String())
+				_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actualTokens, "commit:"+reservation.ID.String())
 			} else {
 				_ = h.ledger.Release(context.Background(), userID, reservation.ID, "release:"+reservation.ID.String())
 			}
@@ -112,6 +143,9 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		}
 		if event.Type == "content" && event.Content != "" {
 			gotContent = true
+		}
+		if event.Type == "done" && event.Usage != nil && event.Usage.TotalTokens > 0 {
+			actualTokens = int64(event.Usage.TotalTokens)
 		}
 
 		data, _ := json.Marshal(event)
@@ -262,7 +296,47 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		return
 	}
 
-	result, err := h.aiUC.AnalyzeReceipt(c.Request.Context(), userID, imageData, contentType)
+	// Charge the vision scan to the ledger (reserve → call → commit/release).
+	// The estimated amount is 1 unit of the modality weight; the commit settles
+	// the provider-reported (or estimated) token count. This is what makes
+	// `ocr_scans_per_cycle` count and `ai_tokens_per_cycle` decrease for OCR.
+	var reservation *billing.Reservation
+	if h.ledger != nil {
+		reqID := c.GetHeader("X-Request-Id")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityVision, "vision-reserve:"+reqID)
+		if rerr != nil {
+			if errors.Is(rerr, billing.ErrInsufficientQuota) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"success": false,
+					"error":   "insufficient_quota",
+					"message": "Sisa kuota Anda tidak mencukupi untuk memindai struk ini.",
+				})
+				return
+			}
+			response.InternalError(c, "Gagal mengalokasikan kuota")
+			return
+		}
+		reservation = res
+	}
+
+	result, usage, err := h.aiUC.AnalyzeReceipt(c.Request.Context(), userID, imageData, contentType)
+
+	// Settle the reservation: commit the real usage on success, release on failure.
+	if reservation != nil {
+		if err == nil && resultSucceeded(result) {
+			actual := int64(usage.TotalTokens)
+			if actual <= 0 {
+				actual = 1
+			}
+			_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actual, "vision-commit:"+reservation.ID.String())
+		} else {
+			_ = h.ledger.Release(context.Background(), userID, reservation.ID, "vision-release:"+reservation.ID.String())
+		}
+	}
+
 	if err != nil {
 		logger.Error("receipt analysis failed", zap.Error(err))
 		response.InternalError(c, "Gagal menganalisis struk belanja. Silakan coba beberapa saat lagi.")
@@ -323,7 +397,43 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		return
 	}
 
-	result, err := h.aiUC.ProcessVoice(c.Request.Context(), userID, req.Audio)
+	// Charge voice to the ledger (reserve → call → commit/release).
+	var reservation *billing.Reservation
+	if h.ledger != nil {
+		reqID := c.GetHeader("X-Request-Id")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityVoice, "voice-reserve:"+reqID)
+		if rerr != nil {
+			if errors.Is(rerr, billing.ErrInsufficientQuota) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"success": false,
+					"error":   "insufficient_quota",
+					"message": "Sisa kuota Anda tidak mencukupi untuk memproses suara ini.",
+				})
+				return
+			}
+			response.InternalError(c, "Gagal mengalokasikan kuota")
+			return
+		}
+		reservation = res
+	}
+
+	result, usage, err := h.aiUC.ProcessVoice(c.Request.Context(), userID, req.Audio)
+
+	if reservation != nil {
+		if err == nil && resultSucceeded(result) {
+			actual := int64(usage.TotalTokens)
+			if actual <= 0 {
+				actual = 1
+			}
+			_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actual, "voice-commit:"+reservation.ID.String())
+		} else {
+			_ = h.ledger.Release(context.Background(), userID, reservation.ID, "voice-release:"+reservation.ID.String())
+		}
+	}
+
 	if err != nil {
 		response.InternalError(c, "Failed to process voice")
 		return

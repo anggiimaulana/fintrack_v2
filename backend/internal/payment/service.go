@@ -29,6 +29,28 @@ type Repository interface {
 	SetPaymentProof(ctx context.Context, id uuid.UUID, proofURL string) error
 	ListPaymentsPendingReview(ctx context.Context, limit int) ([]*Payment, error)
 	ListInvoicesDueBefore(ctx context.Context, beforeUnix int64) ([]*Invoice, error)
+
+	// User-scoped reads (self-service history). Payments are joined with their
+	// invoice so the UI can render one row per attempt without extra queries.
+	ListPaymentsByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*UserPayment, error)
+	// GetPaymentForUser returns one payment with invoice details, scoped to the
+	// owner so a user can never read another user's payment.
+	GetPaymentForUser(ctx context.Context, userID, paymentID uuid.UUID) (*UserPayment, error)
+	ListInvoicesByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*Invoice, error)
+}
+
+// UserPayment is a payment attempt joined with its invoice, for the user-facing
+// billing history. Money fields stay integer Rupiah (int64).
+type UserPayment struct {
+	Payment
+	InvoiceNumber string        `json:"invoice_number"`
+	InvoiceStatus InvoiceStatus `json:"invoice_status"`
+	PlanCode      string        `json:"plan_code,omitempty"`
+	PlanName      string        `json:"plan_name,omitempty"`
+	SubtotalIDR   int64         `json:"subtotal_idr"`
+	TaxIDR        int64         `json:"tax_idr"`
+	TotalIDR      int64         `json:"total_idr"`
+	InvoiceDueAt  *string       `json:"invoice_due_at,omitempty"`
 }
 
 // SettingsRepository reads/writes the global settings store.

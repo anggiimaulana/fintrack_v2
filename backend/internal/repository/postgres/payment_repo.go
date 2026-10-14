@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -214,6 +215,109 @@ func (r *PaymentRepo) ListPaymentsPendingReview(ctx context.Context, limit int) 
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ─── User-scoped history ──────────────────────────────────────
+
+// userPaymentSelect joins payments with their invoice (and the invoice's plan,
+// resolved from notes) for the self-service history view.
+const userPaymentSelect = `SELECT p.id, p.invoice_id, p.user_id, p.gateway, p.gateway_ref,
+    p.amount_idr, p.status, p.payment_method, p.proof_url, p.idempotency_key,
+    p.payload_snapshot, p.created_at, p.updated_at,
+    COALESCE(i.invoice_number,''), COALESCE(i.status::text,''),
+    COALESCE(pl.code,''), COALESCE(pl.name,''),
+    COALESCE(i.subtotal_idr,0), COALESCE(i.tax_idr,0), COALESCE(i.total_idr,0),
+    i.due_at
+    FROM payments p
+    LEFT JOIN invoices i ON i.id = p.invoice_id
+    LEFT JOIN plans pl ON pl.code = i.notes`
+
+func scanUserPayment(row rowScanner) (*payment.UserPayment, error) {
+	var (
+		up            payment.UserPayment
+		payload       []byte
+		invoiceStatus string
+		dueAt         *time.Time
+	)
+	if err := row.Scan(
+		&up.ID, &up.InvoiceID, &up.UserID, &up.Gateway, &up.GatewayRef,
+		&up.AmountIDR, &up.Status, &up.PaymentMethod, &up.ProofURL, &up.IdempotencyKey,
+		&payload, &up.CreatedAt, &up.UpdatedAt,
+		&up.InvoiceNumber, &invoiceStatus,
+		&up.PlanCode, &up.PlanName,
+		&up.SubtotalIDR, &up.TaxIDR, &up.TotalIDR,
+		&dueAt,
+	); err != nil {
+		return nil, err
+	}
+	if len(payload) > 0 {
+		_ = json.Unmarshal(payload, &up.PayloadSnapshot)
+	}
+	up.InvoiceStatus = payment.InvoiceStatus(invoiceStatus)
+	if dueAt != nil {
+		s := dueAt.Format(time.RFC3339)
+		up.InvoiceDueAt = &s
+	}
+	return &up, nil
+}
+
+// ListPaymentsByUser returns the user's payment attempts, newest first.
+func (r *PaymentRepo) ListPaymentsByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*payment.UserPayment, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := q(ctx, r.pool).Query(ctx,
+		userPaymentSelect+` WHERE p.user_id = $1 ORDER BY p.created_at DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*payment.UserPayment
+	for rows.Next() {
+		up, err := scanUserPayment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, up)
+	}
+	return out, rows.Err()
+}
+
+// GetPaymentForUser returns one payment (with invoice details) scoped to its
+// owner. Returns (nil, nil) when the payment does not exist or belongs to
+// someone else, so callers can answer 404 without leaking existence.
+func (r *PaymentRepo) GetPaymentForUser(ctx context.Context, userID, paymentID uuid.UUID) (*payment.UserPayment, error) {
+	up, err := scanUserPayment(q(ctx, r.pool).QueryRow(ctx,
+		userPaymentSelect+` WHERE p.id = $1 AND p.user_id = $2`, paymentID, userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return up, nil
+}
+
+// ListInvoicesByUser returns the user's invoices, newest first.
+func (r *PaymentRepo) ListInvoicesByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*payment.Invoice, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := q(ctx, r.pool).Query(ctx,
+		invoiceSelect+` WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*payment.Invoice
+	for rows.Next() {
+		inv, err := r.scanInvoice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
 	}
 	return out, rows.Err()
 }

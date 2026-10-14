@@ -148,12 +148,15 @@ func (r *BillingRepo) Create(ctx context.Context, s *billing.Subscription) error
 }
 
 func (r *BillingRepo) Update(ctx context.Context, s *billing.Subscription) error {
+	if s.Metadata == nil {
+		s.Metadata = map[string]any{}
+	}
 	tag, err := q(ctx, r.pool).Exec(ctx,
 		`UPDATE subscriptions SET plan_id=$2, status=$3, current_period_start=$4, current_period_end=$5,
-            cancel_at_period_end=$6, canceled_at=$7, gateway=$8, updated_at=now()
+            cancel_at_period_end=$6, canceled_at=$7, gateway=$8, metadata=$9, updated_at=now()
          WHERE id=$1`,
 		s.ID, s.PlanID, s.Status, s.CurrentPeriodStart, s.CurrentPeriodEnd,
-		s.CancelAtPeriodEnd, s.CanceledAt, s.Gateway)
+		s.CancelAtPeriodEnd, s.CanceledAt, s.Gateway, s.Metadata)
 	if err != nil {
 		return err
 	}
@@ -269,6 +272,28 @@ func (r *BillingRepo) AdjustPeriod(ctx context.Context, periodID uuid.UUID, used
 		`UPDATE token_periods SET used_tokens = used_tokens + $2, reserved_tokens = reserved_tokens + $3, updated_at = now()
          WHERE id = $1`, periodID, usedDelta, reservedDelta)
 	return err
+}
+
+// CountAIRequestsInPeriod counts AI reserve entries (one per AI call: chat,
+// vision, or voice) for the user's current period. Used as the usage value for
+// the `ai_requests_per_cycle` limit. A user with no current period has made no
+// requests, so it returns 0.
+//
+// Reserve entries are counted (not commits) because a reserve marks the start of
+// a request; counting commits would miss in-flight or failed calls.
+func (r *BillingRepo) CountAIRequestsInPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (int64, error) {
+	now := time.Unix(nowUnix, 0).UTC()
+	var count int64
+	err := q(ctx, r.pool).QueryRow(ctx, `
+		SELECT COUNT(*) FROM token_ledger l
+		JOIN token_periods p ON p.id = l.period_id
+		WHERE l.user_id = $1 AND l.entry_type = $2
+		  AND p.period_start <= $3 AND p.period_end >= $3`,
+		userID, string(billing.EntryReserve), now).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // CountVisionScansInPeriod counts vision-modality ledger entries for the user's
@@ -401,3 +426,38 @@ var (
 )
 
 var _ = fmt.Sprintf
+
+// ListDueScheduledDowngrades returns the user ids whose scheduled end-of-cycle
+// downgrade is now due: a `metadata.scheduled_plan_code` is set and the current
+// period has ended. The partial index on cancel_at_period_end keeps this cheap.
+func (r *BillingRepo) ListDueScheduledDowngrades(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	rows, err := q(ctx, r.pool).Query(ctx,
+		`SELECT user_id FROM subscriptions
+         WHERE cancel_at_period_end = true
+           AND metadata ? 'scheduled_plan_code'
+           AND current_period_end IS NOT NULL
+           AND current_period_end <= $1`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// SetSubscriptionStatus transitions a user's subscription to a new status. Used
+// by the grace/dunning worker to enforce the lifecycle (F3). A missing
+// subscription is a no-op, not an error: users without a row fall back to the
+// default plan anyway.
+func (r *BillingRepo) SetSubscriptionStatus(ctx context.Context, userID uuid.UUID, status billing.SubscriptionStatus) error {
+	_, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE subscriptions SET status = $2 WHERE user_id = $1`, userID, status)
+	return err
+}

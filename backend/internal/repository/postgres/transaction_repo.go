@@ -145,6 +145,33 @@ func (r *TransactionRepo) List(ctx context.Context, userID uuid.UUID, filter dom
 	}
 
 	offset := (filter.Page - 1) * filter.PerPage
+
+	orderCol := "transaction_date"
+	switch strings.ToLower(filter.SortBy) {
+	case "amount":
+		orderCol = "amount"
+	case "type":
+		orderCol = "type"
+	case "description":
+		orderCol = "COALESCE(description, '')"
+	case "created_at":
+		orderCol = "created_at"
+	case "category":
+		orderCol = `COALESCE(
+			(SELECT name FROM income_categories WHERE id = transactions.income_category_id),
+			(SELECT name FROM expense_categories WHERE id = transactions.expense_category_id),
+			(SELECT name FROM savings_categories WHERE id = transactions.savings_category_id),
+			''
+		)`
+	case "date", "transaction_date":
+		orderCol = "transaction_date"
+	}
+
+	orderDir := "DESC"
+	if strings.EqualFold(filter.SortOrder, "asc") {
+		orderDir = "ASC"
+	}
+
 	dataQuery := fmt.Sprintf(`
 		SELECT id, user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
 			subcategory_id, description, notes, tags, transaction_date,
@@ -152,8 +179,8 @@ func (r *TransactionRepo) List(ctx context.Context, userID uuid.UUID, filter dom
 			created_at, updated_at
 		FROM transactions
 		WHERE %s
-		ORDER BY transaction_date DESC, created_at DESC
-		LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
+		ORDER BY %s %s, created_at %s
+		LIMIT $%d OFFSET $%d`, whereClause, orderCol, orderDir, orderDir, argIdx, argIdx+1)
 
 	args = append(args, filter.PerPage, offset)
 

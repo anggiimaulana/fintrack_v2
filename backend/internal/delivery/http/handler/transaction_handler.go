@@ -64,6 +64,16 @@ func (h *TransactionHandler) List(c *gin.Context) {
 		filter.Search = validator.SanitizeString(search)
 	}
 
+	sortBy := c.Query("sort")
+	if sortBy == "" {
+		sortBy = c.Query("sortBy")
+	}
+	sortOrder := c.Query("order")
+	if sortOrder == "" {
+		sortOrder = c.Query("sortOrder")
+	}
+	filter.SortBy = sortBy
+	filter.SortOrder = sortOrder
 	transactions, total, err := h.usecase.List(c.Request.Context(), userID, filter)
 	if err != nil {
 		response.InternalError(c, "Failed to list transactions")
@@ -184,12 +194,32 @@ func (h *TransactionHandler) GetStats(c *gin.Context) {
 
 	now := time.Now()
 	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	endDate := now
+
+	if fromStr := c.Query("date_from"); fromStr != "" {
+		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			startDate = t
+		}
+	} else if fromStr := c.Query("start_date"); fromStr != "" {
+		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			startDate = t
+		}
+	}
+
+	if toStr := c.Query("date_to"); toStr != "" {
+		if t, err := time.Parse("2006-01-02", toStr); err == nil {
+			endDate = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
+		}
+	} else if toStr := c.Query("end_date"); toStr != "" {
+		if t, err := time.Parse("2006-01-02", toStr); err == nil {
+			endDate = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
+		}
+	}
 
 	period := domain.StatsPeriod{
 		StartDate: startDate,
-		EndDate:   now,
+		EndDate:   endDate,
 	}
-
 	stats, err := h.usecase.GetStats(c.Request.Context(), userID, period)
 	if err != nil {
 		response.InternalError(c, "Failed to get transaction stats")

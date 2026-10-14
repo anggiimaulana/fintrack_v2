@@ -58,12 +58,13 @@ func New(cfg Config) *Client {
 // ─── Chat ─────────────────────────────────────────────────────
 
 type chatCompletionRequest struct {
-	Model         string         `json:"model"`
-	Messages      []chatMessage  `json:"messages"`
-	Stream        bool           `json:"stream"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	Temperature   *float64       `json:"temperature,omitempty"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
+	Model           string         `json:"model"`
+	Messages        []chatMessage  `json:"messages"`
+	Stream          bool           `json:"stream"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	Temperature     *float64       `json:"temperature,omitempty"`
+	MaxTokens       int            `json:"max_tokens,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 }
 
 type streamOptions struct {
@@ -91,12 +92,13 @@ type imageURL struct {
 // when the stream ends or ctx is cancelled.
 func (c *Client) ChatStream(ctx context.Context, model string, req *domain.AIChatRequest, timeout time.Duration) (<-chan domain.AIChatStreamChunk, error) {
 	body := chatCompletionRequest{
-		Model:         model,
-		Messages:      buildMessages(req),
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-		Temperature:   req.Temperature,
-		MaxTokens:     req.MaxTokens,
+		Model:           model,
+		Messages:        buildMessages(req),
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: req.ReasoningEffort,
 	}
 
 	raw, err := json.Marshal(body)
@@ -123,7 +125,7 @@ func (c *Client) ChatStream(ctx context.Context, model string, req *domain.AICha
 	go func() {
 		defer close(out)
 		defer resp.Body.Close()
-		streamSSE(resp.Body, out)
+		streamSSE(resp.Body, model, out)
 	}()
 	return out, nil
 }
@@ -131,11 +133,12 @@ func (c *Client) ChatStream(ctx context.Context, model string, req *domain.AICha
 // ChatSync issues a non-streaming chat completion and returns the content.
 func (c *Client) ChatSync(ctx context.Context, model string, req *domain.AIChatRequest, timeout time.Duration) (string, domain.TokenUsage, error) {
 	body := chatCompletionRequest{
-		Model:       model,
-		Messages:    buildMessages(req),
-		Stream:      false,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:           model,
+		Messages:        buildMessages(req),
+		Stream:          false,
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: req.ReasoningEffort,
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

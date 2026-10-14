@@ -69,7 +69,7 @@ func TestP08_006_AuditCredentialEncryptionAtRest(t *testing.T) {
 		t.Fatal("expected wrong key to fail decryption, but decrypt succeeded")
 	}
 
-	// 2. Live database audit against PostgreSQL tables (ai_endpoints & gemini_api_keys)
+	// 2. Live database audit against the PostgreSQL `ai_endpoints` table
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL not set; skipping live DB encryption audit")

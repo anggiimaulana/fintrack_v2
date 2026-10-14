@@ -64,6 +64,14 @@ func NewHealthChecker(repo domain.AIEndpointRepository, cfg HealthConfig) *Healt
 	}
 }
 
+// RunOnce performs a single synchronous probe pass and persists the results.
+//
+// Callers use it during startup, right after seeding, so the first gateway
+// enablement decision already sees real health instead of "unknown" (which is
+// deliberately not treated as healthy). The background Start loop still runs
+// its own immediate pass afterwards; probing twice at boot is harmless.
+func (c *HealthChecker) RunOnce(ctx context.Context) { c.runOnce(ctx) }
+
 // Start launches the background probe loop.
 func (c *HealthChecker) Start(ctx context.Context) {
 	go func() {
