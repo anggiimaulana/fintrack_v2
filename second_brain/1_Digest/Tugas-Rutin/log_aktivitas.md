@@ -4,6 +4,59 @@
 
 ---
 
+## 2026-10-14 — Audit Kontrak & Response API: Koreksi Status Code (404/409/500/429)
+
+Audit menyeluruh seluruh endpoint `/api/v1` terhadap pemetaan status code
+(200/201/400/401/402/403/404/409/422/429/500). Ditemukan & diperbaiki sejumlah
+ketidaktepatan yang membuat klien tidak bisa membedakan "tidak ada" dari
+"berhasil" atau "error server".
+
+### Bug kritis (500/panic → status benar)
+- **`usecase/ai_usecase.go` `UpdateSession`**: dereference `nil` saat sesi tidak
+  ada → **panic → 500**. Kini mengembalikan `domain.ErrNotFound` → handler 404.
+- **`usecase/transaction_usecase.go`**: `u.spkQueue.Enqueue` tanpa nil-check →
+  panic pada konfigurasi tanpa worker. Kini nil-safe.
+- **`admin/payments.go`**: `h.svc.manual` tanpa guard → panic 500; kini 503
+  `not_configured`.
+- **`middleware/super_admin.go`**: `c.MustGet("user_id")` → panic; kini
+  `c.Get` + type-assert dengan 401.
+- **`handler/notification_handler.go` `SendTestEmail`**: `c.MustGet("email")` →
+  panic; kini 401 bila konteks sesi tidak lengkap.
+
+### Status "not found" yang sebelumnya 200/500
+- Delete/soft-delete yang tidak match baris kini mengembalikan
+  `domain.ErrNotFound` → **404**: transaksi, budget, kategori (income/expense/
+  subcategory/savings), notifikasi (delete + mark-read), AI session, dan
+  `SetActive` user (`admin/users/:id/status`).
+- Update kategori yang tidak ada: `nil,nil` → `ErrNotFound` → **404**.
+- Provider update/create: string error → sentinel `ErrNotFound`/`ErrAlreadyExists`
+  → **404/409**.
+- Handler admin (pricing/tokens/subscriptions/plans): `err == pgx.ErrNoRows`
+  diganti `errors.Is`, dan pemetaan 404 yang terlalu longgar (semua error → 404)
+  kini membedakan not-found vs kegagalan DB (500).
+
+### Envelope & konsistensi
+- **`pkg/response`**: helper baru `QuotaExceeded` (429 `insufficient_quota` +
+  `upgrade_hint`/`upgrade_url`) menyatukan bentuk respons kuota AI dengan gate
+  entitlement, sehingga FE punya satu jalur "upgrade to continue".
+- `handler/payment_admin_handler.go`: envelope `gin.H` mentah → helper
+  `response.*`; error review manual dipetakan tepat (404 not-found, 409 sudah
+  diproses, 500 lainnya).
+- `handler/payment_handler.go` webhook: `err ==` → `errors.Is` (tahan wrapping).
+
+### Verifikasi
+- `go vet ./...` & `go build ./...` hijau.
+- `go test ./...` (serial) hijau seluruh paket.
+- Tes regresi baru `tests/api_contract_status_test.go` (7 kasus) mengunci
+  kontrak: 404 resource hilang, 400 id malformed, 404 delete-ganda, 404
+  kategori/user hilang, 400 self-deactivate.
+- `pnpm test`: 271 lulus (36 file).
+- Catatan lingkungan: DB tes (`fintrack_test`) belum menerapkan migrasi
+  `0020_budgets`/`0023_billing_hardening`; migrasi diterapkan agar suite hijau
+  (bukan bug kode).
+
+---
+
 ## 2026-10-14 — F2–F6: Aktivasi Pricing, Hidupkan Worker, Dinamisasi Admin & UX Kuota
 
 Menindaklanjuti rencana `second_brain/0_Inbox/ide/2026-10-13_Analisis-Entitlement-Kuota-Dinamis/`
