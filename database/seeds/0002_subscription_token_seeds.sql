@@ -99,3 +99,54 @@ ON CONFLICT (rule_name) DO UPDATE SET
     markup_multiplier = EXCLUDED.markup_multiplier,
     markup_percent = EXCLUDED.markup_percent,
     modality_multipliers = EXCLUDED.modality_multipliers;
+
+-- ------------------------------------------------------------
+-- E. AI RESERVE ESTIMATES (P3) — tokens held before an AI call
+-- ------------------------------------------------------------
+-- Editable from Super Admin > Pengaturan. These are HOLDS, not charges: the real
+-- cost is settled at commit with the provider-reported token count. Tune them to
+-- match typical usage so a commit rarely exceeds the hold (which would clamp).
+INSERT INTO settings (key, value, description) VALUES
+    ('ai_estimate_chat',      '2000'::jsonb, 'Token di-reserve sebelum panggilan AI chat'),
+    ('ai_estimate_reasoning', '4000'::jsonb, 'Token di-reserve sebelum panggilan AI reasoning'),
+    ('ai_estimate_vision',    '5000'::jsonb, 'Token di-reserve sebelum panggilan AI vision (OCR)'),
+    ('ai_estimate_voice',     '2000'::jsonb, 'Token di-reserve sebelum transkripsi suara'),
+    ('ai_estimate_embedding', '1000'::jsonb, 'Token di-reserve sebelum pembuatan embedding')
+ON CONFLICT (key) DO NOTHING;
+
+-- ------------------------------------------------------------
+-- F. DUNNING REMINDER OFFSETS (hours before an invoice is due)
+-- ------------------------------------------------------------
+-- Editable from Super Admin > Pengaturan. A renewal reminder is emitted once per
+-- bucket: urgent at <= dunning_hours_urgent, soon at <= dunning_hours_soon, and
+-- a due reminder at H-0. Kept monotonic (urgent <= soon) by the worker.
+INSERT INTO settings (key, value, description) VALUES
+    ('dunning_hours_urgent', '24'::jsonb, 'Ingatkan (mendesak) saat sisa waktu invoice <= N jam'),
+    ('dunning_hours_soon',   '72'::jsonb, 'Ingatkan (segera) saat sisa waktu invoice <= N jam')
+ON CONFLICT (key) DO NOTHING;
+
+-- ------------------------------------------------------------
+-- G. AI GATEWAY CIRCUIT BREAKER TUNING
+-- ------------------------------------------------------------
+-- Editable from Super Admin > Pengaturan. Read at boot and re-applied on change.
+-- The endpoint breaker guards a whole upstream; the route breaker a single
+-- (endpoint, model) pair so a dead model is skipped while its siblings serve.
+INSERT INTO settings (key, value, description) VALUES
+    ('breaker_failure_threshold',   '5'::jsonb,  'Kegagalan beruntun sebelum circuit breaker endpoint terbuka'),
+    ('breaker_cooldown_seconds',    '30'::jsonb, 'Durasi (detik) breaker endpoint terbuka sebelum uji coba'),
+    ('breaker_half_open_probes',    '1'::jsonb,  'Jumlah probe paralel yang diizinkan saat half-open'),
+    ('route_breaker_threshold',     '2'::jsonb,  'Kegagalan beruntun sebelum rute (endpoint+model) dikarantina'),
+    ('route_breaker_cooldown_secs', '60'::jsonb, 'Durasi (detik) karantina rute sebelum dicoba lagi')
+ON CONFLICT (key) DO NOTHING;
+
+-- ------------------------------------------------------------
+-- H. AI TOKEN METERING HEURISTICS ESTIMATION
+-- ------------------------------------------------------------
+-- Editable from Super Admin > Pengaturan. Used when an upstream provider omits
+-- token usage. Read at boot and re-applied immediately upon change.
+INSERT INTO settings (key, value, description) VALUES
+    ('metering_chars_per_token',      '4'::jsonb,  'Rasio rata-rata karakter per token untuk teks latin/Indonesia'),
+    ('metering_safety_buffer_pct',    '10'::jsonb, 'Persentase buffer pengaman overhead estimasi teks'),
+    ('metering_image_tokens',         '85'::jsonb, 'Estimasi kuota token per gambar/struk (OCR low-res patch)'),
+    ('metering_audio_tokens_per_sec', '25'::jsonb, 'Estimasi kuota token per detik audio transkripsi suara')
+ON CONFLICT (key) DO NOTHING;
