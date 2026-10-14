@@ -19,3 +19,6 @@ frontend/build.log
 # Lint scratch
 frontend/lint_out*.txt
 frontend/build_clean.txt
+
+# Local proof-storage uploads (dev driver: local)
+backend/uploads/
