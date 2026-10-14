@@ -24,33 +24,38 @@ var knownModalities = map[string]bool{
 }
 
 type pricingRuleDTO struct {
-	ID                  string             `json:"id"`
-	RuleName            string             `json:"rule_name"`
-	BasePer1kIDR        int64              `json:"base_per_1k_idr"`
-	MarkupMultiplier    float64            `json:"markup_multiplier"`
-	MarkupPercent       int                `json:"markup_percent"`
-	ModalityMultipliers map[string]float64 `json:"modality_multipliers"`
-	IsActive            bool               `json:"is_active"`
-	CreatedAt           string             `json:"created_at"`
-	UpdatedAt           string             `json:"updated_at"`
+	ID                   string             `json:"id"`
+	RuleName             string             `json:"rule_name"`
+	BasePer1kIDR         int64              `json:"base_per_1k_idr"`
+	PriceUnit            string             `json:"price_unit"`
+	ProviderCostPer1kIDR int64              `json:"provider_cost_per_1k_idr"`
+	MarkupMultiplier     float64            `json:"markup_multiplier"`
+	MarkupPercent        int                `json:"markup_percent"`
+	ModalityMultipliers  map[string]float64 `json:"modality_multipliers"`
+	IsActive             bool               `json:"is_active"`
+	CreatedAt            string             `json:"created_at"`
+	UpdatedAt            string             `json:"updated_at"`
 }
 
 type pricingRuleRequest struct {
-	RuleName            string             `json:"rule_name"`
-	BasePer1kIDR        *int64             `json:"base_per_1k_idr"`
-	MarkupMultiplier    *float64           `json:"markup_multiplier"`
-	MarkupPercent       *int               `json:"markup_percent"`
-	ModalityMultipliers map[string]float64 `json:"modality_multipliers"`
-	IsActive            *bool              `json:"is_active"`
+	RuleName             string             `json:"rule_name"`
+	BasePer1kIDR         *int64             `json:"base_per_1k_idr"`
+	PriceUnit            *string            `json:"price_unit"`
+	ProviderCostPer1kIDR *int64             `json:"provider_cost_per_1k_idr"`
+	MarkupMultiplier     *float64           `json:"markup_multiplier"`
+	MarkupPercent        *int               `json:"markup_percent"`
+	ModalityMultipliers  map[string]float64 `json:"modality_multipliers"`
+	IsActive             *bool              `json:"is_active"`
 }
 
-const pricingCols = `id, rule_name, base_per_1k_idr, markup_multiplier::float8, markup_percent,
-    modality_multipliers, is_active, created_at, updated_at`
+const pricingCols = `id, rule_name, base_per_1k_idr, price_unit, provider_cost_per_1k_idr,
+    markup_multiplier::float8, markup_percent, modality_multipliers, is_active, created_at, updated_at`
 
 func scanPricingRule(row pgx.Row) (*pricingRuleDTO, error) {
 	var d pricingRuleDTO
 	var createdAt, updatedAt time.Time
-	if err := row.Scan(&d.ID, &d.RuleName, &d.BasePer1kIDR, &d.MarkupMultiplier, &d.MarkupPercent,
+	if err := row.Scan(&d.ID, &d.RuleName, &d.BasePer1kIDR, &d.PriceUnit, &d.ProviderCostPer1kIDR,
+		&d.MarkupMultiplier, &d.MarkupPercent,
 		&d.ModalityMultipliers, &d.IsActive, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
@@ -63,6 +68,12 @@ func scanPricingRule(row pgx.Row) (*pricingRuleDTO, error) {
 func validatePricingRequest(req *pricingRuleRequest) (msg, code string, ok bool) {
 	if req.BasePer1kIDR != nil && *req.BasePer1kIDR < 0 {
 		return "base_per_1k_idr tidak boleh negatif", "validation", false
+	}
+	if req.PriceUnit != nil && *req.PriceUnit != "per_1k" && *req.PriceUnit != "per_10k" {
+		return "price_unit harus 'per_1k' atau 'per_10k'", "validation", false
+	}
+	if req.ProviderCostPer1kIDR != nil && *req.ProviderCostPer1kIDR < 0 {
+		return "provider_cost_per_1k_idr tidak boleh negatif", "validation", false
 	}
 	if req.MarkupMultiplier != nil && *req.MarkupMultiplier < 0 {
 		return "markup_multiplier tidak boleh negatif", "validation", false
@@ -140,6 +151,14 @@ func (h *Handler) CreatePricingRule(c *gin.Context) {
 	if req.BasePer1kIDR != nil {
 		base = *req.BasePer1kIDR
 	}
+	priceUnit := "per_1k"
+	if req.PriceUnit != nil {
+		priceUnit = *req.PriceUnit
+	}
+	providerCost := int64(0)
+	if req.ProviderCostPer1kIDR != nil {
+		providerCost = *req.ProviderCostPer1kIDR
+	}
 	mult := 1.25
 	if req.MarkupMultiplier != nil {
 		mult = *req.MarkupMultiplier
@@ -160,9 +179,10 @@ func (h *Handler) CreatePricingRule(c *gin.Context) {
 	ctx := c.Request.Context()
 	var id uuid.UUID
 	err := h.svc.pool.QueryRow(ctx, `
-		INSERT INTO pricing_rules (rule_name, base_per_1k_idr, markup_multiplier, markup_percent, modality_multipliers, is_active)
-		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		req.RuleName, base, mult, percent, multipliers, active).Scan(&id)
+		INSERT INTO pricing_rules (rule_name, base_per_1k_idr, price_unit, provider_cost_per_1k_idr,
+			markup_multiplier, markup_percent, modality_multipliers, is_active)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+		req.RuleName, base, priceUnit, providerCost, mult, percent, multipliers, active).Scan(&id)
 	if err != nil {
 		if isUniqueViolation(err) {
 			response.Conflict(c, "Nama aturan sudah dipakai")
@@ -176,7 +196,8 @@ func (h *Handler) CreatePricingRule(c *gin.Context) {
 	}
 	h.pricingChanged(c)
 	h.audit(c, "create", "pricing_rule", id.String(), nil,
-		map[string]any{"rule_name": req.RuleName, "base_per_1k_idr": base, "is_active": active})
+		map[string]any{"rule_name": req.RuleName, "base_per_1k_idr": base, "price_unit": priceUnit,
+			"provider_cost_per_1k_idr": providerCost, "is_active": active})
 	response.Created(c, "Aturan harga dibuat", gin.H{"id": id})
 }
 
@@ -211,14 +232,17 @@ func (h *Handler) UpdatePricingRule(c *gin.Context) {
 	// while still allowing an explicit 0.
 	tag, err := h.svc.pool.Exec(ctx, `
 		UPDATE pricing_rules SET
-			rule_name         = COALESCE(NULLIF($2,''), rule_name),
-			base_per_1k_idr   = COALESCE($3, base_per_1k_idr),
-			markup_multiplier = COALESCE($4, markup_multiplier),
-			markup_percent    = COALESCE($5, markup_percent),
-			modality_multipliers = COALESCE($6, modality_multipliers),
-			is_active         = COALESCE($7, is_active)
+			rule_name                = COALESCE(NULLIF($2,''), rule_name),
+			base_per_1k_idr          = COALESCE($3, base_per_1k_idr),
+			price_unit               = COALESCE($4, price_unit),
+			provider_cost_per_1k_idr = COALESCE($5, provider_cost_per_1k_idr),
+			markup_multiplier        = COALESCE($6, markup_multiplier),
+			markup_percent           = COALESCE($7, markup_percent),
+			modality_multipliers     = COALESCE($8, modality_multipliers),
+			is_active                = COALESCE($9, is_active)
 		WHERE id = $1`,
-		id, req.RuleName, req.BasePer1kIDR, req.MarkupMultiplier, req.MarkupPercent, req.ModalityMultipliers, req.IsActive)
+		id, req.RuleName, req.BasePer1kIDR, req.PriceUnit, req.ProviderCostPer1kIDR,
+		req.MarkupMultiplier, req.MarkupPercent, req.ModalityMultipliers, req.IsActive)
 	if err != nil {
 		if isUniqueViolation(err) {
 			response.Conflict(c, "Nama aturan sudah dipakai")

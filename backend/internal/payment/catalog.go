@@ -9,11 +9,28 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 )
 
+// LimitMeta is display metadata for a plan limit key: its human label, unit,
+// and — crucially — whether the backend actually enforces it. A limit that is
+// not enforced must never be advertised to users as a plan benefit (F4).
+type LimitMeta struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Unit     string `json:"unit"`
+	Enforced bool   `json:"enforced"`
+}
+
 // CatalogService exposes the public plan catalog (dynamic, from the DB) so the
 // pricing UI no longer hardcodes names, prices, features, or limits.
 type CatalogService struct {
 	plans     billing.PlanRepository
 	entSource PlanEntitlementSource
+	// limitMeta maps a limit key to its display metadata. Sourced from the
+	// authoritative entitlement catalog so the UI can label limits and hide the
+	// ones the backend does not enforce.
+	limitMeta map[string]LimitMeta
+	// tax computes the same tax the checkout will charge, so the UI can show the
+	// real total *before* an invoice is issued (no price surprise on checkout).
+	tax *TaxCalculator
 }
 
 // PlanEntitlementSource reads a plan's features and limits.
@@ -22,9 +39,15 @@ type PlanEntitlementSource interface {
 	GetLimits(ctx context.Context, planID uuid.UUID) (map[string]int64, error)
 }
 
-// NewCatalogService builds the catalog service.
-func NewCatalogService(plans billing.PlanRepository, entSource PlanEntitlementSource) *CatalogService {
-	return &CatalogService{plans: plans, entSource: entSource}
+// NewCatalogService builds the catalog service. limitMeta may be nil (the
+// response then omits limit_meta and the UI falls back to raw keys). tax may be
+// nil (the response then reports a 0% rate and total == subtotal).
+func NewCatalogService(plans billing.PlanRepository, entSource PlanEntitlementSource, limitMeta []LimitMeta, tax *TaxCalculator) *CatalogService {
+	m := make(map[string]LimitMeta, len(limitMeta))
+	for _, lm := range limitMeta {
+		m[lm.Key] = lm
+	}
+	return &CatalogService{plans: plans, entSource: entSource, limitMeta: m, tax: tax}
 }
 
 // PublicPlan is a plan plus its features/limits, shaped for the pricing UI.
@@ -40,6 +63,21 @@ type PublicPlan struct {
 	FallbackGateway   string           `json:"fallback_gateway"`
 	Features          map[string]bool  `json:"features"`
 	Limits            map[string]int64 `json:"limits"`
+	// LimitMeta annotates each limit key with label/unit/enforced so the UI can
+	// present only the limits the backend actually enforces.
+	LimitMeta map[string]LimitMeta `json:"limit_meta,omitempty"`
+	// TaxEnabled is true when the operator has switched PPN on. The UI hides the
+	// tax line entirely when false, rather than showing "+ 0%".
+	TaxEnabled bool `json:"tax_enabled"`
+	// TaxLabel is the display name for the tax (e.g. "PPN").
+	TaxLabel string `json:"tax_label,omitempty"`
+	// TaxRatePercent is the PPN rate applied at checkout. Exposed so the pricing
+	// UI can show the same total the invoice will carry.
+	TaxRatePercent int64 `json:"tax_rate_percent"`
+	// TaxIDR / TotalIDR are the tax and grand total for one billing period at
+	// the current rate (subtotal = PriceMonthlyIDR).
+	TaxIDR   int64 `json:"tax_idr"`
+	TotalIDR int64 `json:"total_idr"`
 }
 
 // ListPublicPlans returns active, public plans ordered for display, each with
@@ -66,6 +104,7 @@ func (s *CatalogService) ListPublicPlans(ctx context.Context) ([]*PublicPlan, er
 			FallbackGateway:   p.FallbackGateway,
 			Features:          map[string]bool{},
 			Limits:            map[string]int64{},
+			LimitMeta:         map[string]LimitMeta{},
 		}
 		if s.entSource != nil {
 			if feats, ferr := s.entSource.GetEntitlements(ctx, p.ID); ferr == nil && feats != nil {
@@ -74,6 +113,25 @@ func (s *CatalogService) ListPublicPlans(ctx context.Context) ([]*PublicPlan, er
 			if lims, lerr := s.entSource.GetLimits(ctx, p.ID); lerr == nil && lims != nil {
 				pp.Limits = lims
 			}
+		}
+		// Attach metadata only for limits this plan actually defines.
+		for key := range pp.Limits {
+			if lm, ok := s.limitMeta[key]; ok {
+				pp.LimitMeta[key] = lm
+			}
+		}
+		// Show the tax-inclusive total the checkout will charge, so the price on
+		// the card matches the invoice exactly. When tax is disabled the rate is
+		// 0 and the total equals the subtotal, so the UI hides the tax line.
+		if s.tax != nil {
+			pp.TaxEnabled = s.tax.Enabled(ctx)
+			pp.TaxLabel = s.tax.Label(ctx)
+			pp.TaxRatePercent = s.tax.RatePercent(ctx)
+			tax, total := s.tax.Total(ctx, pp.PriceMonthlyIDR)
+			pp.TaxIDR = tax
+			pp.TotalIDR = total
+		} else {
+			pp.TotalIDR = pp.PriceMonthlyIDR
 		}
 		out = append(out, pp)
 	}

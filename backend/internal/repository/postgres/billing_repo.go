@@ -296,8 +296,14 @@ func (r *BillingRepo) CountAIRequestsInPeriod(ctx context.Context, userID uuid.U
 	return count, nil
 }
 
-// CountVisionScansInPeriod counts vision-modality ledger entries for the user's
-// current period. Used as the usage value for the `ocr_scans_per_cycle` limit.
+// CountVisionScansInPeriod counts OCR scans for the user's current period. Used
+// as the usage value for the `ocr_scans_per_cycle` limit.
+//
+// It counts RESERVE entries only (one per scan attempt), mirroring
+// CountAIRequestsInPeriod. Counting every vision-modality row would count each
+// scan twice — once for the reserve and again for the commit — so a user with 8
+// scans would appear to have used 16.
+//
 // A user with no current period has made no scans, so it returns 0.
 func (r *BillingRepo) CountVisionScansInPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (int64, error) {
 	now := time.Unix(nowUnix, 0).UTC()
@@ -305,9 +311,9 @@ func (r *BillingRepo) CountVisionScansInPeriod(ctx context.Context, userID uuid.
 	err := q(ctx, r.pool).QueryRow(ctx, `
 		SELECT COUNT(*) FROM token_ledger l
 		JOIN token_periods p ON p.id = l.period_id
-		WHERE l.user_id = $1 AND l.modality = $2
-		  AND p.period_start <= $3 AND p.period_end >= $3`,
-		userID, string(billing.ModalityVision), now).Scan(&count)
+		WHERE l.user_id = $1 AND l.modality = $2 AND l.entry_type = $3
+		  AND p.period_start <= $4 AND p.period_end >= $4`,
+		userID, string(billing.ModalityVision), string(billing.EntryReserve), now).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -405,9 +411,13 @@ func (r *BillingRepo) ListExpiredReservations(ctx context.Context, cutoff time.T
 func (r *BillingRepo) GetActiveRule(ctx context.Context) (*billing.PricingRule, error) {
 	pr := &billing.PricingRule{}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`SELECT id, rule_name, base_per_1k_idr, markup_multiplier::float8, markup_percent, modality_multipliers, is_active, created_at, updated_at
+		`SELECT id, rule_name, base_per_1k_idr, price_unit, provider_cost_per_1k_idr,
+                markup_multiplier::float8, markup_percent, modality_multipliers,
+                is_active, created_at, updated_at
          FROM pricing_rules WHERE is_active = true ORDER BY created_at ASC LIMIT 1`).
-		Scan(&pr.ID, &pr.RuleName, &pr.BasePer1kIDR, &pr.MarkupMultiplier, &pr.MarkupPercent, &pr.ModalityMultipliers, &pr.IsActive, &pr.CreatedAt, &pr.UpdatedAt)
+		Scan(&pr.ID, &pr.RuleName, &pr.BasePer1kIDR, &pr.PriceUnit, &pr.ProviderCostPer1kIDR,
+			&pr.MarkupMultiplier, &pr.MarkupPercent, &pr.ModalityMultipliers,
+			&pr.IsActive, &pr.CreatedAt, &pr.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, billing.ErrNoPricingRule
 	}

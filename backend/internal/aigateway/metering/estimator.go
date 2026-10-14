@@ -3,7 +3,11 @@
 // resulting domain.TokenUsage feeds the billing ledger (P04).
 package metering
 
-import "github.com/fintrack/backend/internal/domain"
+import (
+	"sync"
+
+	"github.com/fintrack/backend/internal/domain"
+)
 
 // Source labels recorded on TokenUsage.
 const (
@@ -11,15 +15,100 @@ const (
 	SourceHeuristic = "heuristic_estimated"
 )
 
-// CharsPerToken is the heuristic ratio for latin/Indonesian text.
-const CharsPerToken = 4
+// Default heuristic constants.
+const (
+	DefaultCharsPerToken   = 4
+	DefaultSafetyBufferPct = 10
+	DefaultImageTokens     = 85
+	DefaultTokensPerSecond = 25
 
-// SafetyBufferPct adds headroom to heuristic estimates (10%).
-const SafetyBufferPct = 10
+	// Deprecated aliases kept for backwards compatibility.
+	CharsPerToken   = DefaultCharsPerToken
+	SafetyBufferPct = DefaultSafetyBufferPct
+)
+
+// Config tunes the local heuristic token estimation.
+type Config struct {
+	CharsPerToken   int `json:"chars_per_token"`
+	SafetyBufferPct int `json:"safety_buffer_pct"`
+	ImageTokens     int `json:"image_tokens"`
+	TokensPerSecond int `json:"tokens_per_second"`
+}
+
+// DefaultConfig returns the standard heuristic parameters.
+func DefaultConfig() Config {
+	return Config{
+		CharsPerToken:   DefaultCharsPerToken,
+		SafetyBufferPct: DefaultSafetyBufferPct,
+		ImageTokens:     DefaultImageTokens,
+		TokensPerSecond: DefaultTokensPerSecond,
+	}
+}
+
+// Estimator computes token usage heuristics using configurable parameters.
+type Estimator struct {
+	mu  sync.RWMutex
+	cfg Config
+}
+
+// New creates an Estimator with the given configuration.
+func New(cfg Config) *Estimator {
+	if cfg.CharsPerToken <= 0 {
+		cfg.CharsPerToken = DefaultCharsPerToken
+	}
+	if cfg.SafetyBufferPct < 0 {
+		cfg.SafetyBufferPct = DefaultSafetyBufferPct
+	}
+	if cfg.ImageTokens <= 0 {
+		cfg.ImageTokens = DefaultImageTokens
+	}
+	if cfg.TokensPerSecond <= 0 {
+		cfg.TokensPerSecond = DefaultTokensPerSecond
+	}
+	return &Estimator{cfg: cfg}
+}
+
+// SetConfig updates tuning parameters at runtime without dropping state.
+func (e *Estimator) SetConfig(cfg Config) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if cfg.CharsPerToken > 0 {
+		e.cfg.CharsPerToken = cfg.CharsPerToken
+	}
+	if cfg.SafetyBufferPct >= 0 {
+		e.cfg.SafetyBufferPct = cfg.SafetyBufferPct
+	}
+	if cfg.ImageTokens > 0 {
+		e.cfg.ImageTokens = cfg.ImageTokens
+	}
+	if cfg.TokensPerSecond > 0 {
+		e.cfg.TokensPerSecond = cfg.TokensPerSecond
+	}
+}
+
+// Config returns a snapshot of the current tuning parameters.
+func (e *Estimator) Config() Config {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.cfg
+}
+
+// defaultEstimator is the process-wide estimator used by package-level helpers.
+var defaultEstimator = New(DefaultConfig())
+
+// SetConfig updates the package-level default estimator parameters at runtime.
+func SetConfig(cfg Config) {
+	defaultEstimator.SetConfig(cfg)
+}
+
+// CurrentConfig returns the package-level default estimator parameters.
+func CurrentConfig() Config {
+	return defaultEstimator.Config()
+}
 
 // FromProvider builds a TokenUsage from provider-reported values. When all
 // values are zero it falls back to the heuristic estimate over the given texts.
-func FromProvider(prompt, completion, total int, modality domain.UseCase, promptText, responseText string) domain.TokenUsage {
+func (e *Estimator) FromProvider(prompt, completion, total int, modality domain.UseCase, promptText, responseText string) domain.TokenUsage {
 	if total == 0 {
 		total = prompt + completion
 	}
@@ -32,17 +121,15 @@ func FromProvider(prompt, completion, total int, modality domain.UseCase, prompt
 			Modality:         string(modality),
 		}
 	}
-	return Estimate(promptText, responseText, modality)
+	return e.Estimate(promptText, responseText, modality)
 }
 
-// Estimate computes a heuristic token usage from raw text lengths. It applies a
-// 10% safety buffer and never returns a zero total for non-empty input.
-func Estimate(promptText, responseText string, modality domain.UseCase) domain.TokenUsage {
-	prompt := estimateText(promptText)
-	completion := estimateText(responseText)
+// Estimate computes a heuristic token usage from raw text lengths.
+func (e *Estimator) Estimate(promptText, responseText string, modality domain.UseCase) domain.TokenUsage {
+	prompt := e.estimateText(promptText)
+	completion := e.estimateText(responseText)
 	total := prompt + completion
 
-	// Multimodal/audio adjustments are applied by callers via Estimate* helpers.
 	return domain.TokenUsage{
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
@@ -54,20 +141,19 @@ func Estimate(promptText, responseText string, modality domain.UseCase) domain.T
 
 // EstimateVision estimates usage for a vision request: text tokens plus a flat
 // per-image cost.
-func EstimateVision(promptText, responseText string) domain.TokenUsage {
-	u := Estimate(promptText, responseText, domain.UseCaseVision)
-	// Flat estimate per image (low-res patch approximation).
-	const imageTokens = 85
-	u.PromptTokens += imageTokens
-	u.TotalTokens += imageTokens
+func (e *Estimator) EstimateVision(promptText, responseText string) domain.TokenUsage {
+	u := e.Estimate(promptText, responseText, domain.UseCaseVision)
+	cfg := e.Config()
+	u.PromptTokens += cfg.ImageTokens
+	u.TotalTokens += cfg.ImageTokens
 	return u
 }
 
-// EstimateAudio estimates usage for audio: 1 second ≈ 25 tokens.
-func EstimateAudio(seconds float64, responseText string) domain.TokenUsage {
-	const tokensPerSecond = 25
-	prompt := int(float64(tokensPerSecond) * seconds)
-	completion := estimateText(responseText)
+// EstimateAudio estimates usage for audio: duration * tokensPerSecond.
+func (e *Estimator) EstimateAudio(seconds float64, responseText string) domain.TokenUsage {
+	cfg := e.Config()
+	prompt := int(float64(cfg.TokensPerSecond) * seconds)
+	completion := e.estimateText(responseText)
 	return domain.TokenUsage{
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
@@ -77,17 +163,43 @@ func EstimateAudio(seconds float64, responseText string) domain.TokenUsage {
 	}
 }
 
-// estimateText applies ceil(len/CharsPerToken) with a safety buffer.
-func estimateText(s string) int {
+// estimateText applies ceil(len/charsPerToken) with a safety buffer.
+func (e *Estimator) estimateText(s string) int {
 	if s == "" {
 		return 0
 	}
-	// Count runes to be fair to multi-byte input; fall back to bytes for latin.
+	cfg := e.Config()
+	cpt := cfg.CharsPerToken
+	if cpt <= 0 {
+		cpt = DefaultCharsPerToken
+	}
 	n := len([]rune(s))
-	base := (n + CharsPerToken - 1) / CharsPerToken // ceil division
-	buffered := base + (base*SafetyBufferPct+99)/100
+	base := (n + cpt - 1) / cpt // ceil division
+	buffered := base + (base*cfg.SafetyBufferPct+99)/100
 	if buffered < 1 {
 		buffered = 1
 	}
 	return buffered
+}
+
+// Package-level helpers delegating to defaultEstimator:
+
+// FromProvider builds a TokenUsage from provider-reported values or falls back to heuristic estimate.
+func FromProvider(prompt, completion, total int, modality domain.UseCase, promptText, responseText string) domain.TokenUsage {
+	return defaultEstimator.FromProvider(prompt, completion, total, modality, promptText, responseText)
+}
+
+// Estimate computes a heuristic token usage from raw text lengths.
+func Estimate(promptText, responseText string, modality domain.UseCase) domain.TokenUsage {
+	return defaultEstimator.Estimate(promptText, responseText, modality)
+}
+
+// EstimateVision estimates usage for a vision request: text tokens plus a flat per-image cost.
+func EstimateVision(promptText, responseText string) domain.TokenUsage {
+	return defaultEstimator.EstimateVision(promptText, responseText)
+}
+
+// EstimateAudio estimates usage for audio: duration * tokensPerSecond.
+func EstimateAudio(seconds float64, responseText string) domain.TokenUsage {
+	return defaultEstimator.EstimateAudio(seconds, responseText)
 }

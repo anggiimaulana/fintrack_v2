@@ -95,8 +95,10 @@ func TestBillingRepo_TokenPeriodAndLedger(t *testing.T) {
 		t.Fatal("period creation must be idempotent")
 	}
 
-	// Insert a reserve entry.
-	key := "itest-" + period.ID.String()
+	// Insert a reserve entry. The idempotency key must be unique per run: the
+	// user id and period are deterministic (seeded), so a key derived from them
+	// alone would collide on a second run against the same database.
+	key := "itest-" + uuid.NewString()
 	entry := &billing.TokenLedgerEntry{
 		PeriodID: period.ID, UserID: userID, EntryType: billing.EntryReserve,
 		Amount: 100, Modality: "chat", IdempotencyKey: key,

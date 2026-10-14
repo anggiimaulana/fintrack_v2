@@ -47,17 +47,34 @@ func (r *Registry) Names() []string {
 // PlanGatewayResolver returns the per-plan gateway override ("" = none).
 type PlanGatewayResolver func(ctx context.Context, planCode string) (string, error)
 
+// Availability lets a gateway report whether it is usable right now (e.g.
+// Midtrans with no server key). Checked before a gateway is selected so a
+// disabled provider never breaks checkout.
+type Availability interface {
+	Enabled(ctx context.Context) bool
+}
+
+// available reports whether a gateway is usable. Gateways without an
+// Availability implementation are always considered available.
+func available(ctx context.Context, g Gateway) bool {
+	if a, ok := g.(Availability); ok {
+		return a.Enabled(ctx)
+	}
+	return true
+}
+
 // ResolveGateway selects a gateway: per-plan override > global default setting >
 // emergency fallback ("manual").
 //
 // The chosen gateway name is locked onto the payment row at checkout, so
 // in-flight payments keep using their original gateway even if the global
-// setting changes later.
+// setting changes later. A gateway that reports itself unavailable (e.g.
+// Midtrans disabled) is skipped in favour of the manual fallback.
 func (r *Registry) ResolveGateway(ctx context.Context, settings SettingsRepository, planCode string, planResolver PlanGatewayResolver) (Gateway, error) {
 	// 1) Per-plan override.
 	if planResolver != nil && planCode != "" {
 		if override, err := planResolver(ctx, planCode); err == nil && override != "" {
-			if g, ok := r.Get(override); ok {
+			if g, ok := r.Get(override); ok && available(ctx, g) {
 				return g, nil
 			}
 		}
@@ -65,7 +82,7 @@ func (r *Registry) ResolveGateway(ctx context.Context, settings SettingsReposito
 	// 2) Global default setting.
 	if settings != nil {
 		if name, err := settings.GetString(ctx, "payment_gateway_default"); err == nil && name != "" {
-			if g, ok := r.Get(name); ok {
+			if g, ok := r.Get(name); ok && available(ctx, g) {
 				return g, nil
 			}
 		}

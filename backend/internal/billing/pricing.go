@@ -54,8 +54,8 @@ func (e *PricingEngine) CostIDR(tokens int64, modality Modality) int64 {
 	}
 
 	mult := modalityMultiplier(rule, modality)
-	// base per 1000 tokens × (tokens/1000)
-	base := float64(rule.BasePer1kIDR) * (float64(tokens) / 1000.0)
+	// Sell price normalised to per-1,000 tokens × (tokens/1000)
+	base := float64(rule.SellPricePer1kIDR()) * (float64(tokens) / 1000.0)
 	withMarkup := base * rule.MarkupMultiplier
 	if rule.MarkupPercent != 0 {
 		withMarkup *= 1.0 + float64(rule.MarkupPercent)/100.0
@@ -79,4 +79,27 @@ func modalityMultiplier(rule *PricingRule, modality Modality) float64 {
 		return v
 	}
 	return 1.0
+}
+
+// ProviderCostIDR is what WE pay the upstream provider for `tokens` of the given
+// modality, using the rule's cost basis. Returns 0 when no cost is configured.
+func (e *PricingEngine) ProviderCostIDR(tokens int64, modality Modality) int64 {
+	e.mu.RLock()
+	rule := e.rule
+	e.mu.RUnlock()
+	if rule == nil || tokens <= 0 || rule.ProviderCostPer1kIDR <= 0 {
+		return 0
+	}
+	mult := modalityMultiplier(rule, modality)
+	total := float64(rule.ProviderCostPer1kIDR) * (float64(tokens) / 1000.0) * mult
+	if total <= 0 {
+		return 0
+	}
+	return int64(math.Floor(total))
+}
+
+// MarginIDR is the gross margin (sell − buy) in integer Rupiah for `tokens` of
+// the given modality. Can be negative if the sell price is below cost.
+func (e *PricingEngine) MarginIDR(tokens int64, modality Modality) int64 {
+	return e.CostIDR(tokens, modality) - e.ProviderCostIDR(tokens, modality)
 }

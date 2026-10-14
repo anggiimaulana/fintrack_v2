@@ -106,9 +106,16 @@ func TestIntegration_TransparentFailover(t *testing.T) {
 	}
 }
 
-// TestIntegration_BreakerRejectsSixth verifies the 6th request is fast-failed
-// without hitting the primary endpoint (5 consecutive failures trip it).
-func TestIntegration_BreakerRejectsSixth(t *testing.T) {
+// TestIntegration_DeadModelQuarantinedAndFailsOver verifies that a model which
+// keeps returning 503 (dead model) stops being hit and traffic fails over.
+//
+// NOTE (smart failover): an HTTP 503 is a MODEL-level failure, not an
+// endpoint-level one — the gateway is clearly up and answering, it just cannot
+// serve this model. So the ROUTE breaker quarantines the (endpoint, model) pair
+// after routeBreakerFailureThreshold (2) failures, while the ENDPOINT breaker
+// stays closed so healthy sibling models on the same endpoint keep serving.
+// This replaces the older behaviour where 5 failures tripped the endpoint.
+func TestIntegration_DeadModelQuarantinedAndFailsOver(t *testing.T) {
 	var primaryHits int32
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&primaryHits, 1)
@@ -128,8 +135,9 @@ func TestIntegration_BreakerRejectsSixth(t *testing.T) {
 		Breaker:        breaker.Config{FailureThreshold: 5, Cooldown: time.Hour, HalfOpenMaxProbes: 1},
 	})
 
-	// 5 calls: primary fails each time, secondary succeeds.
-	for i := range 5 {
+	// Each call: primary fails, secondary succeeds. After the route threshold the
+	// primary route is quarantined and no longer hit.
+	for i := range 4 {
 		ch, err := svc.ChatStream(context.Background(), &domain.AIChatRequest{})
 		if err != nil {
 			t.Fatalf("call %d: %v", i+1, err)
@@ -137,22 +145,30 @@ func TestIntegration_BreakerRejectsSixth(t *testing.T) {
 		for range ch {
 		}
 	}
-	if got := atomic.LoadInt32(&primaryHits); got != 5 {
-		t.Fatalf("expected 5 primary hits, got %d", got)
+	// The dead model was attempted exactly routeBreakerFailureThreshold times.
+	if got := atomic.LoadInt32(&primaryHits); got != int32(routeBreakerFailureThreshold) {
+		t.Fatalf("expected %d primary hits before quarantine, got %d", routeBreakerFailureThreshold, got)
 	}
 
-	// 6th call: breaker open -> primary skipped.
+	// Further calls must not touch the dead model again.
 	ch, err := svc.ChatStream(context.Background(), &domain.AIChatRequest{})
 	if err != nil {
-		t.Fatalf("6th call: %v", err)
+		t.Fatalf("call after quarantine: %v", err)
 	}
 	for range ch {
 	}
-	if got := atomic.LoadInt32(&primaryHits); got != 5 {
-		t.Fatalf("6th call must not hit primary; hits=%d", got)
+	if got := atomic.LoadInt32(&primaryHits); got != int32(routeBreakerFailureThreshold) {
+		t.Fatalf("quarantined route must not be hit; hits=%d", got)
 	}
-	if svc.Breaker().State(ep1.ID.String()) != string(breaker.StateOpen) {
-		t.Fatalf("expected breaker open, got %s", svc.Breaker().State(ep1.ID.String()))
+
+	// The endpoint must NOT be quarantined: the endpoint is up, only the model is bad.
+	if svc.Breaker().State(ep1.ID.String()) != string(breaker.StateClosed) {
+		t.Fatalf("endpoint breaker must stay closed for a model-level 503, got %s",
+			svc.Breaker().State(ep1.ID.String()))
+	}
+	// The route itself is quarantined.
+	if svc.RouteState("chat", ep1.ID.String(), "m", "") != "open" {
+		t.Fatal("the dead model's route must be quarantined")
 	}
 }
 

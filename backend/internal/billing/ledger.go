@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/fintrack/backend/pkg/logger"
 )
 
 // QuotaResolver returns the current quota cycle for a user: the period bounds
@@ -155,7 +158,24 @@ func (s *LedgerService) Commit(ctx context.Context, userID, reservationID uuid.U
 		if period == nil {
 			return ErrSubscriptionNotFound
 		}
-		// Release the whole reservation, then charge the actual amount.
+		// The reservation is an ESTIMATE; the provider may report more tokens
+		// than were held. Charge at most what the period can still absorb so
+		// `used_tokens` never exceeds `quota_tokens` (the balance must never go
+		// negative). Overruns are logged, not silently lost, so the reserve
+		// estimate can be tuned.
+		if maxCharge := period.QuotaTokens - period.UsedTokens; actualTokens > maxCharge {
+			logger.Warn("token commit exceeds remaining quota; clamping",
+				zap.String("user_id", userID.String()),
+				zap.Int64("requested", actualTokens),
+				zap.Int64("charged", maxCharge),
+				zap.Int64("reserved", reserve.Amount),
+				zap.String("modality", reserve.Modality))
+			if maxCharge < 0 {
+				maxCharge = 0
+			}
+			actualTokens = maxCharge
+		}
+		// Release the whole reservation, then charge the (clamped) actual amount.
 		if err := s.tokens.AdjustPeriod(txCtx, period.ID, actualTokens, -reserve.Amount); err != nil {
 			return err
 		}
@@ -214,6 +234,54 @@ func (s *LedgerService) Release(ctx context.Context, userID, reservationID uuid.
 			EntryType:      EntryRelease,
 			Amount:         -reserve.Amount,
 			Modality:       reserve.Modality,
+			IdempotencyKey: idempotencyKey,
+		}
+		return s.tokens.InsertLedger(txCtx, entry)
+	})
+}
+
+// Refund returns tokens that were already charged (used_tokens) back to the
+// user's available balance. Use this when a feature fails AFTER a commit — e.g.
+// an OCR scan whose provider call returned no usable result. Without it the user
+// is billed for work that never completed (quota consumed, feature did nothing).
+//
+// Idempotent on idempotencyKey. The refund amount is clamped to what is actually
+// charged (used_tokens) so a refund can never make the balance negative.
+func (s *LedgerService) Refund(ctx context.Context, userID uuid.UUID, tokens int64, modality Modality, idempotencyKey string) error {
+	if tokens <= 0 {
+		return nil
+	}
+	if existing, err := s.tokens.GetLedgerByIdempotencyKey(ctx, idempotencyKey); err != nil {
+		return err
+	} else if existing != nil {
+		return nil // already refunded
+	}
+
+	return s.tx.RunInTx(ctx, func(txCtx context.Context) error {
+		period, err := s.tokens.GetPeriodForUpdate(txCtx, userID, s.now().Unix())
+		if err != nil {
+			return err
+		}
+		if period == nil {
+			return ErrSubscriptionNotFound
+		}
+		// Never refund more than was actually charged.
+		if tokens > period.UsedTokens {
+			tokens = period.UsedTokens
+		}
+		if tokens <= 0 {
+			return nil
+		}
+		if err := s.tokens.AdjustPeriod(txCtx, period.ID, -tokens, 0); err != nil {
+			return err
+		}
+		entry := &TokenLedgerEntry{
+			ID:             uuid.New(),
+			PeriodID:       period.ID,
+			UserID:         userID,
+			EntryType:      EntryRefund,
+			Amount:         -tokens, // negative: reduces used_tokens
+			Modality:       string(modality),
 			IdempotencyKey: idempotencyKey,
 		}
 		return s.tokens.InsertLedger(txCtx, entry)

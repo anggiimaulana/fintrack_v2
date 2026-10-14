@@ -12,7 +12,7 @@ import (
 type memSettings struct{ m map[string]any }
 
 func newMemSettings() *memSettings {
-	return &memSettings{m: map[string]any{"tax_rate_percent": int64(11), "invoice_due_hours": int64(24), "payment_gateway_default": "manual"}}
+	return &memSettings{m: map[string]any{"tax_enabled": "true", "tax_rate_percent": int64(11), "invoice_due_hours": int64(24), "payment_gateway_default": "manual"}}
 }
 func (s *memSettings) GetString(_ context.Context, key string) (string, error) {
 	if v, ok := s.m[key].(string); ok {
@@ -47,6 +47,7 @@ func TestTaxCalculator(t *testing.T) {
 	ctx := context.Background()
 
 	s := newMemSettings()
+	s.m["tax_enabled"] = "true"
 	s.m["tax_rate_percent"] = int64(11)
 	tc := NewTaxCalculator(s)
 	if got := tc.TaxIDR(ctx, 100000); got != 11000 {
@@ -57,6 +58,7 @@ func TestTaxCalculator(t *testing.T) {
 		t.Fatalf("11%% of 999 should floor to 109, got %d", got)
 	}
 
+	s.m["tax_enabled"] = "false"
 	s.m["tax_rate_percent"] = int64(0)
 	if got := tc.TaxIDR(ctx, 100000); got != 0 {
 		t.Fatalf("0%% tax must be 0, got %d", got)
@@ -64,6 +66,70 @@ func TestTaxCalculator(t *testing.T) {
 
 	if got := tc.TaxIDR(ctx, 0); got != 0 {
 		t.Fatalf("zero subtotal must be 0 tax, got %d", got)
+	}
+}
+
+// TestTaxCalculator_Toggle verifies PPN is opt-in: a configured rate does
+// nothing until tax_enabled is explicitly true.
+func TestTaxCalculator_Toggle(t *testing.T) {
+	ctx := context.Background()
+	// A bare settings store: no tax_enabled key at all, which must mean "off".
+	s := &memSettings{m: map[string]any{"tax_rate_percent": int64(11)}}
+	tc := NewTaxCalculator(s)
+
+	if tc.Enabled(ctx) {
+		t.Fatal("tax must default to disabled")
+	}
+	if got := tc.TaxIDR(ctx, 100000); got != 0 {
+		t.Fatalf("disabled tax must charge 0, got %d", got)
+	}
+	if got := tc.RatePercent(ctx); got != 0 {
+		t.Fatalf("disabled tax must report 0%% rate, got %d", got)
+	}
+
+	// Flip it on: the same rate now applies.
+	s.m["tax_enabled"] = "true"
+	if !tc.Enabled(ctx) {
+		t.Fatal("tax should be enabled")
+	}
+	if got := tc.TaxIDR(ctx, 100000); got != 11000 {
+		t.Fatalf("enabled 11%% of 100000 = 11000, got %d", got)
+	}
+	if got := tc.RatePercent(ctx); got != 11 {
+		t.Fatalf("rate = %d, want 11", got)
+	}
+}
+
+// TestTaxCalculator_DynamicRate verifies the rate is read per call, so an
+// operator change (e.g. 11% -> 12%) applies without a restart.
+func TestTaxCalculator_DynamicRate(t *testing.T) {
+	ctx := context.Background()
+	s := newMemSettings()
+	s.m["tax_enabled"] = "true"
+	s.m["tax_rate_percent"] = int64(11)
+	tc := NewTaxCalculator(s)
+
+	if got := tc.TaxIDR(ctx, 100000); got != 11000 {
+		t.Fatalf("11%% = 11000, got %d", got)
+	}
+	s.m["tax_rate_percent"] = int64(12)
+	if got := tc.TaxIDR(ctx, 100000); got != 12000 {
+		t.Fatalf("rate change to 12%% should apply immediately, got %d", got)
+	}
+}
+
+// TestTaxCalculator_Label verifies the display label defaults to PPN and is
+// overridable.
+func TestTaxCalculator_Label(t *testing.T) {
+	ctx := context.Background()
+	s := newMemSettings()
+	tc := NewTaxCalculator(s)
+	if got := tc.Label(ctx); got != "PPN" {
+		t.Fatalf("default label = %q, want PPN", got)
+	}
+	s.m["tax_label"] = "PB1"
+	if got := tc.Label(ctx); got != "PB1" {
+		t.Fatalf("custom label = %q, want PB1", got)
 	}
 }
 

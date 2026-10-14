@@ -57,10 +57,20 @@ const (
 	EntryRelease LedgerEntryType = "release"
 	EntryGrant   LedgerEntryType = "grant"
 	EntryAdjust  LedgerEntryType = "adjust"
+	// EntryRefund returns tokens that were already charged (used_tokens) back to
+	// the user — used when a feature fails AFTER a commit, so the user is not
+	// billed for work that did not complete.
+	EntryRefund LedgerEntryType = "refund"
 )
 
 // Modality is the AI use case that produced token consumption.
 type Modality string
+
+// Price units for a pricing rule's base price.
+const (
+	PriceUnitPer1k  = "per_1k"
+	PriceUnitPer10k = "per_10k"
+)
 
 const (
 	ModalityChat      Modality = "chat"
@@ -166,15 +176,36 @@ type TokenLedgerEntry struct {
 
 // PricingRule converts tokens to integer Rupiah.
 type PricingRule struct {
-	ID                  uuid.UUID          `json:"id"`
-	RuleName            string             `json:"rule_name"`
-	BasePer1kIDR        int64              `json:"base_per_1k_idr"`
-	MarkupMultiplier    float64            `json:"markup_multiplier"`
-	MarkupPercent       int                `json:"markup_percent"`
-	ModalityMultipliers map[string]float64 `json:"modality_multipliers"`
-	IsActive            bool               `json:"is_active"`
-	CreatedAt           time.Time          `json:"created_at"`
-	UpdatedAt           time.Time          `json:"updated_at"`
+	ID        uuid.UUID `json:"id"`
+	RuleName  string    `json:"rule_name"`
+	// BasePer1kIDR is the SELL price. Its unit depends on PriceUnit:
+	//   per_1k  -> the value is per 1,000 tokens
+	//   per_10k -> the value is per 10,000 tokens (e.g. 3000 = Rp3.000/10k)
+	BasePer1kIDR int64   `json:"base_per_1k_idr"`
+	// PriceUnit is how BasePer1kIDR should be read: "per_1k" | "per_10k".
+	PriceUnit string `json:"price_unit"`
+	// ProviderCostPer1kIDR is what WE pay the upstream provider per 1,000 tokens
+	// (cost basis). Used to compute the margin (sell − buy).
+	ProviderCostPer1kIDR int64              `json:"provider_cost_per_1k_idr"`
+	MarkupMultiplier     float64            `json:"markup_multiplier"`
+	MarkupPercent        int                `json:"markup_percent"`
+	ModalityMultipliers  map[string]float64 `json:"modality_multipliers"`
+	IsActive             bool               `json:"is_active"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+// SellPricePer1kIDR normalises the configured sell price to a per-1,000-token
+// figure. A "per_10k" rule is divided by 10 (integer floor) so the rest of the
+// engine can work in a single unit.
+func (r *PricingRule) SellPricePer1kIDR() int64 {
+	if r == nil {
+		return 0
+	}
+	if r.PriceUnit == PriceUnitPer10k {
+		return r.BasePer1kIDR / 10
+	}
+	return r.BasePer1kIDR
 }
 
 // ─── Errors ───────────────────────────────────────────────────

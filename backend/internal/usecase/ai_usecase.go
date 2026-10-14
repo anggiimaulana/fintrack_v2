@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
 	"github.com/fintrack/backend/pkg/logger"
 )
@@ -35,7 +36,8 @@ type AIUsecase struct {
 	rateLimitMu     sync.Mutex
 	embedder        embedding.Embedder
 	embedRepo       domain.EmbeddingRepository
-	ragWarned       bool
+	ragWarned   bool
+	entResolver *entitlement.Resolver
 
 	// gateway routes ALL AI traffic (chat, vision, voice) through the
 	// centralized endpoint pool (P03). The legacy per-user BYOK path was removed
@@ -47,6 +49,26 @@ type AIUsecase struct {
 	// "voice"). Wired to the admin store so the operator stop applies to the
 	// centralized gateway.
 	killSwitch func(useCase string) bool
+
+	// reasoningEffort, when set, supplies the `reasoning_effort` value at request
+	// time (DB setting over env default). Nil falls back to the environment, so
+	// the behaviour is unchanged when runtime config is not wired.
+	reasoningEffort func() string
+}
+
+// WithReasoningEffort installs a runtime resolver for `reasoning_effort` so the
+// Super Admin can change it without a redeploy.
+func (u *AIUsecase) WithReasoningEffort(fn func() string) *AIUsecase {
+	u.reasoningEffort = fn
+	return u
+}
+
+// reasoningEffortValue returns the effective `reasoning_effort` ("" when unset).
+func (u *AIUsecase) reasoningEffortValue() string {
+	if u.reasoningEffort != nil {
+		return strings.TrimSpace(u.reasoningEffort())
+	}
+	return reasoningEffortForMode(domain.LLMReasoning)
 }
 
 // WithGateway attaches the centralized AI gateway. All AI traffic (chat,
@@ -71,6 +93,13 @@ func (u *AIUsecase) stopped(useCase string) bool {
 
 // UseGateway reports whether the centralized gateway is active.
 func (u *AIUsecase) UseGateway() bool { return u.gateway != nil }
+
+// WithEntitlements attaches the entitlement resolver so feature gating (such as
+// rag_search) can be enforced per user plan.
+func (u *AIUsecase) WithEntitlements(res *entitlement.Resolver) *AIUsecase {
+	u.entResolver = res
+	return u
+}
 
 // errGatewayEmpty signals that the gateway returned without producing any
 // content — treated as a failure.
@@ -291,6 +320,12 @@ func sanitizeRAGText(s string) string {
 // transaction embeddings and formats the results for prompt injection.
 // Best-effort: returns "" if RAG is disabled or search fails.
 func (u *AIUsecase) retrieveRelevantTransactions(ctx context.Context, userID uuid.UUID, message string) string {
+	if u.entResolver != nil {
+		res, err := u.entResolver.Resolve(ctx, userID)
+		if err == nil && !res.Feature("rag_search") {
+			return ""
+		}
+	}
 	if u.embedder == nil || u.embedRepo == nil {
 		return ""
 	}
@@ -431,7 +466,7 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 	// enforced here rather than in the gateway so it covers both transports.
 	if u.stopped("chat") {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Fitur AI sedang dinonaktifkan sementara oleh administrator."}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 
@@ -449,14 +484,14 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 			msgChan <- domain.ChatStreamEvent{Type: "session_created", Content: session.ID.String()}
 		}
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: templateResp}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 
 	allowed, rejection := u.isContentAllowed(req.Message)
 	if !allowed {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: rejection}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 
@@ -492,7 +527,7 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 	if time.Now().Before(rl.cooldownUntil) {
 		waitSecs := int(time.Until(rl.cooldownUntil).Seconds())
 		msgChan <- domain.ChatStreamEvent{Type: "cooldown", Content: fmt.Sprintf("%d", waitSecs)}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 
@@ -515,7 +550,7 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 	// friendly, sanitized error instead.
 	if u.gateway == nil {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: "Layanan AI sedang tidak tersedia. Silakan coba beberapa saat lagi."}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 
@@ -531,7 +566,7 @@ func (u *AIUsecase) Chat(ctx context.Context, userID uuid.UUID, req domain.ChatR
 		} else {
 			logger.Warn("gateway chat failed", zap.Error(gerr))
 			msgChan <- domain.ChatStreamEvent{Type: "content", Content: gatewayFriendlyError(gerr)}
-			msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+			msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		}
 	}
 

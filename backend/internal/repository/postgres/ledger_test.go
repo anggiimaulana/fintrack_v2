@@ -105,6 +105,94 @@ func TestLedger_ReserveCommitRelease(t *testing.T) {
 	}
 }
 
+// TestLedger_RefundReturnsChargedTokens verifies a refund reduces used_tokens
+// (returning tokens for work that failed after commit) and is idempotent, and
+// that it can never push used_tokens below zero.
+func TestLedger_RefundReturnsChargedTokens(t *testing.T) {
+	pool := newTestPool(t)
+	repo := NewBillingRepo(pool)
+	tx := NewTxManager(pool)
+	ctx := context.Background()
+
+	userID := uuid.New()
+	_, err := pool.Exec(ctx, `INSERT INTO users (id, email, full_name, role) VALUES ($1,$2,$3,'user')`,
+		userID, userID.String()+"@itest.local", "ITest")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID) })
+
+	ledger := billing.NewLedgerService(repo, tx, fixedQuota{quota: 1000, days: 30}, nil)
+
+	// Charge 400 tokens: reserve 500, commit 400.
+	res, err := ledger.Reserve(ctx, userID, 500, billing.ModalityVision, "itest-refund-res-"+userID.String())
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := ledger.Commit(ctx, userID, res.ID, 400, "itest-refund-com-"+userID.String()); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	period, _ := repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	if period.UsedTokens != 400 {
+		t.Fatalf("expected used=400 after commit, got %d", period.UsedTokens)
+	}
+
+	// Refund 400 -> used back to 0.
+	refundKey := "itest-refund-" + userID.String()
+	if err := ledger.Refund(ctx, userID, 400, billing.ModalityVision, refundKey); err != nil {
+		t.Fatalf("refund: %v", err)
+	}
+	period, _ = repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	if period.UsedTokens != 0 {
+		t.Fatalf("expected used=0 after refund, got %d", period.UsedTokens)
+	}
+
+	// Idempotent: a repeat with the same key must not double-refund.
+	if err := ledger.Refund(ctx, userID, 400, billing.ModalityVision, refundKey); err != nil {
+		t.Fatalf("idempotent refund: %v", err)
+	}
+	period, _ = repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	if period.UsedTokens != 0 {
+		t.Fatalf("idempotent refund changed used to %d", period.UsedTokens)
+	}
+}
+
+// TestLedger_RefundClampedToUsed verifies a refund larger than what was charged
+// only returns the charged amount, so the balance never goes negative.
+func TestLedger_RefundClampedToUsed(t *testing.T) {
+	pool := newTestPool(t)
+	repo := NewBillingRepo(pool)
+	tx := NewTxManager(pool)
+	ctx := context.Background()
+
+	userID := uuid.New()
+	_, err := pool.Exec(ctx, `INSERT INTO users (id, email, full_name, role) VALUES ($1,$2,$3,'user')`,
+		userID, userID.String()+"@itest.local", "ITest")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID) })
+
+	ledger := billing.NewLedgerService(repo, tx, fixedQuota{quota: 1000, days: 30}, nil)
+
+	res, err := ledger.Reserve(ctx, userID, 300, billing.ModalityChat, "itest-clamp-res-"+userID.String())
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := ledger.Commit(ctx, userID, res.ID, 100, "itest-clamp-com-"+userID.String()); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	// Ask to refund 500 though only 100 was charged -> clamp to 100.
+	if err := ledger.Refund(ctx, userID, 500, billing.ModalityChat, "itest-clamp-refund-"+userID.String()); err != nil {
+		t.Fatalf("refund: %v", err)
+	}
+	period, _ := repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	if period.UsedTokens != 0 {
+		t.Fatalf("expected used clamped to 0, got %d", period.UsedTokens)
+	}
+}
+
 // TestLedger_InsufficientQuota verifies reserve is rejected when quota is low.
 func TestLedger_InsufficientQuota(t *testing.T) {
 	pool := newTestPool(t)
@@ -144,18 +232,40 @@ func TestLedger_CleanerReleasesStale(t *testing.T) {
 
 	ledger := billing.NewLedgerService(repo, tx, fixedQuota{quota: 1000, days: 30}, nil)
 
-	// Reserve and backdate the ledger entry so it looks stale.
-	res, err := ledger.Reserve(ctx, userID, 250, billing.ModalityChat, "itest-clean-"+userID.String())
+	// token_ledger is append-only (UPDATE/DELETE blocked), but INSERT with an
+	// explicit created_at is allowed. Insert a reserve dated well in the past so
+	// it is unambiguously stale, then reserve a fresh one to prove the cleaner
+	// only touches the old entry.
+	period, err := repo.GetOrCreatePeriod(ctx, userID, time.Now().Add(-48*time.Hour).Unix(), time.Now().Add(30*24*time.Hour).Unix(), 1000)
 	if err != nil {
-		t.Fatalf("reserve: %v", err)
+		t.Fatalf("create period: %v", err)
 	}
-	// token_ledger is append-only; we cannot UPDATE created_at. Instead, use a
-	// zero maxAge so everything is immediately "expired".
-	worker := billing.NewCleanerWorker(repo, ledger, billing.CleanerConfig{Interval: time.Hour, MaxAge: time.Nanosecond})
+	oldReserveID := uuid.New()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, modality, idempotency_key, created_at)
+		VALUES ($1,$2,$3,$1,'reserve',250,'chat',$4, now() - interval '2 hours')`,
+		oldReserveID, period.ID, userID, "itest-clean-old-"+userID.String())
+	if err != nil {
+		t.Fatalf("insert old reserve: %v", err)
+	}
+	// Account for the reservation in the period so we can assert it is released.
+	if err := repo.AdjustPeriod(ctx, period.ID, 0, 250); err != nil {
+		t.Fatalf("adjust period: %v", err)
+	}
+
+	// A fresh reserve (younger than MaxAge) must survive the sweep.
+	fresh, err := ledger.Reserve(ctx, userID, 100, billing.ModalityChat, "itest-clean-fresh-"+userID.String())
+	if err != nil {
+		t.Fatalf("fresh reserve: %v", err)
+	}
+
+	worker := billing.NewCleanerWorker(repo, ledger, billing.CleanerConfig{Interval: time.Hour, MaxAge: 30 * time.Minute})
 	worker.SweepOnce(ctx)
 
-	period, _ := repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
-	if period.ReservedTokens != 0 {
-		t.Fatalf("cleaner should have released the reservation; reserved=%d (res=%s)", period.ReservedTokens, res.ID)
+	period, _ = repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	// Old reserve released (250), fresh reserve still held (100) → reserved = 100.
+	if period.ReservedTokens != 100 {
+		t.Fatalf("cleaner should have released only the stale reservation; reserved=%d (want 100; old=%s fresh=%s)",
+			period.ReservedTokens, oldReserveID, fresh.ID)
 	}
 }

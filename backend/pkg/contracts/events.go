@@ -13,8 +13,14 @@ const (
 	EventPaymentReceived      = "payment_received"
 	EventPlanUpdated          = "plan_updated"
 	EventAIEndpointDown       = "ai_endpoint_down"
+	EventAIRouteQuarantined   = "ai_route_quarantined"
 	EventManualApprovalNeeded = "manual_approval_needed"
 	EventQuotaReset           = "quota_reset"
+	// Notification-inbox lifecycle events. Emitted per-user so the notifications
+	// page can patch a single row instead of refetching the whole list.
+	EventNotificationCreated = "notification_created"
+	EventNotificationRead    = "notification_read"
+	EventNotificationDeleted = "notification_deleted"
 )
 
 // Event is the envelope every domain event shares. Field order and names are
@@ -62,6 +68,23 @@ type AIEndpointDownPayload struct {
 	FallbackTarget string `json:"fallback_target,omitempty"`
 }
 
+// AIRouteQuarantinedPayload accompanies EventAIRouteQuarantined.
+//
+// It is emitted by the smart-failover route breaker when a single (endpoint,
+// model) route is quarantined after repeated failures, and again (with
+// Recovered=true) when the route starts working again after its cooldown.
+type AIRouteQuarantinedPayload struct {
+	UseCase    string `json:"use_case"`
+	Model      string `json:"model"`
+	Endpoint   string `json:"endpoint,omitempty"`
+	EndpointID string `json:"endpoint_id,omitempty"`
+	Combo      string `json:"combo,omitempty"`
+	// Reason is the last upstream error, when known.
+	Reason string `json:"reason,omitempty"`
+	// Recovered is true when the route left quarantine (started working again).
+	Recovered bool `json:"recovered,omitempty"`
+}
+
 // ManualApprovalNeededPayload accompanies EventManualApprovalNeeded.
 type ManualApprovalNeededPayload struct {
 	PaymentID  string `json:"payment_id"`
@@ -76,6 +99,36 @@ type QuotaResetPayload struct {
 	PeriodStart     int64  `json:"new_cycle_start"`
 	PeriodEnd       int64  `json:"new_cycle_end"`
 	AllocatedTokens int64  `json:"allocated_tokens"`
+}
+
+// NotificationChangedPayload accompanies the notification-inbox lifecycle events
+// (created / read / deleted). It carries the affected rows so the client can
+// patch its cache in place:
+//   - created: Item holds the full new notification.
+//   - read:    IDs lists the rows marked read (one or many).
+//   - deleted: IDs lists the rows removed (one or many).
+//
+// A client that cannot patch (e.g. it does not have the row cached) falls back to
+// a targeted refetch, which is why IDs is always present.
+type NotificationChangedPayload struct {
+	IDs  []string      `json:"ids"`
+	Item *Notification `json:"item,omitempty"`
+	// Unread is the user's unread count after the change, so the bell badge can
+	// update without a separate request.
+	Unread int `json:"unread"`
+}
+
+// Notification mirrors domain.Notification on the wire for realtime payloads.
+// Declared here (not imported from internal/domain) to keep contracts a leaf
+// package.
+type Notification struct {
+	ID        string  `json:"id"`
+	Event     string  `json:"event"`
+	Title     string  `json:"title"`
+	Body      string  `json:"body"`
+	Href      string  `json:"href"`
+	ReadAt    *string `json:"read_at,omitempty"`
+	CreatedAt string  `json:"created_at"`
 }
 
 // NewEvent builds an envelope for the given name, marshalling the payload.

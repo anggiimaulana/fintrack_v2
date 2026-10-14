@@ -22,9 +22,14 @@ type Notifier interface {
 }
 
 // DunningWorker scans for subscriptions approaching expiry and emits reminders
-// at H-3 and H-1, then issues a renewal invoice at H-0.
+// at configurable H-N offsets, then a renewal reminder at H-0.
+//
+// The reminder offsets are read from `settings` (dunning_hours_due/urgent/soon)
+// so an operator can retune the cadence from the Super Admin portal without a
+// redeploy. When a setting is absent the built-in defaults (0/24/72h) apply.
 type DunningWorker struct {
 	repo     Repository
+	settings SettingsRepository
 	notifier Notifier
 	interval time.Duration
 	stop     chan struct{}
@@ -34,12 +39,46 @@ type DunningWorker struct {
 	reminded map[string]bool
 }
 
-// NewDunningWorker builds the worker (hourly scan by default).
-func NewDunningWorker(repo Repository, notifier Notifier, interval time.Duration) *DunningWorker {
+// Dunning defaults (hours before due) when the corresponding setting is absent.
+const (
+	defaultDunningUrgentHours = 24
+	defaultDunningSoonHours   = 72
+)
+
+// NewDunningWorker builds the worker (hourly scan by default). settings may be
+// nil, in which case the built-in default offsets are used.
+func NewDunningWorker(repo Repository, settings SettingsRepository, notifier Notifier, interval time.Duration) *DunningWorker {
 	if interval <= 0 {
 		interval = time.Hour
 	}
-	return &DunningWorker{repo: repo, notifier: notifier, interval: interval, stop: make(chan struct{}), done: make(chan struct{}), reminded: map[string]bool{}}
+	return &DunningWorker{repo: repo, settings: settings, notifier: notifier, interval: interval, stop: make(chan struct{}), done: make(chan struct{}), reminded: map[string]bool{}}
+}
+
+// dunningWindow returns the look-ahead horizon (the largest configured offset)
+// so the scan only loads invoices that could match any bucket.
+func (w *DunningWorker) dunningWindow(ctx context.Context) time.Duration {
+	_, _, soon := w.dunningThresholds(ctx)
+	return time.Duration(soon) * time.Hour
+}
+
+// dunningThresholds returns the configured (urgent, soon) hour offsets. Each
+// falls back to its default when the setting is absent, zero, or out of order,
+// and the pair is kept monotonic (urgent <= soon) so buckets never overlap.
+func (w *DunningWorker) dunningThresholds(ctx context.Context) (due, urgent, soon int) {
+	urgent = defaultDunningUrgentHours
+	soon = defaultDunningSoonHours
+	if w.settings != nil {
+		if v, err := w.settings.GetInt(ctx, "dunning_hours_urgent"); err == nil && v > 0 {
+			urgent = int(v)
+		}
+		if v, err := w.settings.GetInt(ctx, "dunning_hours_soon"); err == nil && v > 0 {
+			soon = int(v)
+		}
+	}
+	if urgent > soon {
+		urgent = soon
+	}
+	return 0, urgent, soon
 }
 
 // Start launches the scan loop.
@@ -75,7 +114,8 @@ func (w *DunningWorker) Stop() {
 // renewal invoice (H-0). Deduplicates per user+bucket.
 func (w *DunningWorker) RunOnce(ctx context.Context) {
 	now := time.Now().UTC()
-	dueSoon, err := w.repo.ListInvoicesDueBefore(ctx, now.Add(72*time.Hour).Unix())
+	due, urgent, soon := w.dunningThresholds(ctx)
+	dueSoon, err := w.repo.ListInvoicesDueBefore(ctx, now.Add(w.dunningWindow(ctx)).Unix())
 	if err != nil {
 		logger.Warn("dunning: list failed", zap.Error(err))
 		return
@@ -85,7 +125,7 @@ func (w *DunningWorker) RunOnce(ctx context.Context) {
 			continue
 		}
 		hoursLeft := int(inv.DueAt.Sub(now).Hours())
-		bucket := dunningBucket(hoursLeft)
+		bucket := dunningBucket(hoursLeft, due, urgent, soon)
 		if bucket == "" {
 			continue
 		}
@@ -104,14 +144,15 @@ func (w *DunningWorker) RunOnce(ctx context.Context) {
 	}
 }
 
-// dunningBucket maps hours-left to a reminder bucket label.
-func dunningBucket(hoursLeft int) string {
+// dunningBucket maps hours-left to a reminder bucket label using the configured
+// thresholds: due (<=0), urgent (<=urgent), soon (<=soon), else none.
+func dunningBucket(hoursLeft, due, urgent, soon int) string {
 	switch {
-	case hoursLeft <= 0:
+	case hoursLeft <= due:
 		return "SUBSCRIPTION_EXPIRING_DUE"
-	case hoursLeft <= 24:
+	case hoursLeft <= urgent:
 		return "SUBSCRIPTION_EXPIRING_URGENT"
-	case hoursLeft <= 72:
+	case hoursLeft <= soon:
 		return "SUBSCRIPTION_EXPIRING_SOON"
 	default:
 		return ""

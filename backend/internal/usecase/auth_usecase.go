@@ -35,7 +35,7 @@ type TokenPair struct {
 }
 
 const (
-	accessTTL  = 15 * time.Minute
+	accessTTL  = 1 * time.Hour
 	refreshTTL = 30 * 24 * time.Hour
 )
 
@@ -123,6 +123,50 @@ func (u *AuthUsecase) Login(ctx context.Context, email, password, userAgent stri
 	}
 	if !auth.CheckPassword(hash, password) {
 		return nil, ErrInvalidCredentials
+	}
+	return u.issuePair(ctx, p, userAgent)
+}
+
+// ChangePassword verifies the current password, rejects reusing the same one,
+// enforces the same minimum length as registration, stores a fresh bcrypt hash,
+// and revokes every other refresh token so a stolen session cannot outlive the
+// change. The caller's own session is re-issued so they stay signed in.
+var (
+	ErrWrongPassword  = errors.New("current password is incorrect")
+	ErrPasswordSame   = errors.New("new password must differ from the current one")
+)
+
+func (u *AuthUsecase) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword, userAgent string) (*TokenPair, error) {
+	if len(newPassword) < 8 {
+		return nil, ErrWeakPassword
+	}
+
+	p, hash, err := u.userRepo.GetByIDWithHash(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if hash == "" || !auth.CheckPassword(hash, currentPassword) {
+		return nil, ErrWrongPassword
+	}
+	// Reject reuse: a no-op "change" would leave a compromised password valid.
+	if auth.CheckPassword(hash, newPassword) {
+		return nil, ErrPasswordSame
+	}
+
+	newHash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.userRepo.UpdatePasswordHash(ctx, userID, newHash); err != nil {
+		return nil, err
+	}
+	// Revoke every existing refresh token, then issue a fresh pair for this
+	// device so other sessions are logged out but the current one survives.
+	if err := u.refreshRepo.RevokeAllForUser(ctx, userID); err != nil {
+		return nil, err
 	}
 	return u.issuePair(ctx, p, userAgent)
 }

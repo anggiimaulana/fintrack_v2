@@ -82,6 +82,23 @@ func (b *Breaker) WithClock(now func() time.Time) *Breaker {
 	return b
 }
 
+// SetConfig replaces the tuning parameters at runtime (e.g. after a Super Admin
+// settings change) without dropping the accumulated per-endpoint state. Only
+// positive fields are applied, so a partial/zero update keeps the current value.
+func (b *Breaker) SetConfig(cfg Config) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if cfg.FailureThreshold > 0 {
+		b.cfg.FailureThreshold = cfg.FailureThreshold
+	}
+	if cfg.Cooldown > 0 {
+		b.cfg.Cooldown = cfg.Cooldown
+	}
+	if cfg.HalfOpenMaxProbes > 0 {
+		b.cfg.HalfOpenMaxProbes = cfg.HalfOpenMaxProbes
+	}
+}
+
 func (b *Breaker) get(id string) *endpointState {
 	st, ok := b.states[id]
 	if !ok {
@@ -206,4 +223,8 @@ func (b *Breaker) Failures(id string) int {
 }
 
 // Config exposes the effective configuration.
-func (b *Breaker) Config() Config { return b.cfg }
+func (b *Breaker) Config() Config {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.cfg
+}

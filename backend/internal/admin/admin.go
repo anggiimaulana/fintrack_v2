@@ -19,6 +19,7 @@ import (
 	"github.com/fintrack/backend/internal/featureflag"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/runtimeconfig"
 	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/pkg/contracts"
 )
@@ -46,9 +47,24 @@ type Service struct {
 	storage         StorageStatus
 	storageSwitcher StorageSwitcher
 
+	// runtimeConfig invalidates the DB-over-env resolver cache so a settings
+	// change applies immediately (nil-safe).
+	runtimeConfig RuntimeInvalidator
+	// runtime is the shared DB-over-env resolver used by the config status
+	// endpoint to report effective values and secret presence.
+	runtime *runtimeconfig.Resolver
+
 	// pricingChanged, when set, reloads the active pricing rule in the running
 	// engine so a Super Admin change applies to the next commit (F5).
 	pricingChanged func(ctx context.Context)
+
+	// breakerReload, when set, re-applies AI gateway breaker tuning after a
+	// settings change so the new thresholds take effect without a restart.
+	breakerReload func(ctx context.Context)
+
+	// meteringReload, when set, re-applies AI token estimation heuristics
+	// after a settings change so the new parameters take effect immediately.
+	meteringReload func(ctx context.Context)
 
 	now func() time.Time
 }
@@ -96,10 +112,34 @@ func WithStorage(p StorageStatus, switcher StorageSwitcher) Option {
 	return func(s *Service) { s.storage = p; s.storageSwitcher = switcher }
 }
 
+// RuntimeInvalidator clears caches that resolve config with DB-over-env
+// precedence (the runtime resolver + the R2 store), so a settings change applies
+// immediately instead of waiting for the cache TTL.
+type RuntimeInvalidator interface {
+	Invalidate()
+}
+
+// WithRuntimeConfig installs the runtime config invalidator.
+func WithRuntimeConfig(r RuntimeInvalidator) Option {
+	return func(s *Service) { s.runtimeConfig = r }
+}
+
 // WithPricingReload installs a callback invoked after a pricing-rule mutation so
 // the running PricingEngine reloads the active rule immediately (F5).
 func WithPricingReload(fn func(ctx context.Context)) Option {
 	return func(s *Service) { s.pricingChanged = fn }
+}
+
+// WithBreakerReload installs a callback invoked after a settings update so the
+// running AI gateway re-reads its breaker tuning immediately.
+func WithBreakerReload(fn func(ctx context.Context)) Option {
+	return func(s *Service) { s.breakerReload = fn }
+}
+
+// WithMeteringReload installs a callback invoked after a settings update so
+// token metering heuristics are retuned immediately.
+func WithMeteringReload(fn func(ctx context.Context)) Option {
+	return func(s *Service) { s.meteringReload = fn }
 }
 
 // EntitlementInvalidator invalidates cached entitlements. *entitlement.Broadcaster

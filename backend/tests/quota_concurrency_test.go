@@ -21,11 +21,48 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
+	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/infrastructure/auth"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/usecase"
 )
+
+// oneTokenSettings forces every AI reserve estimate to 1 token, so a 5-token
+// quota admits exactly 5 concurrent reservations. Without this the realistic
+// default estimate (2000) would reject every request up front — correct
+// behaviour, but it would not exercise the reservation race this test targets.
+type oneTokenSettings struct{}
+
+func (oneTokenSettings) GetInt(_ context.Context, _ string) (int64, error) { return 1, nil }
+
+// quotaTestGateway is a minimal AIGatewayService that always answers with a
+// single content chunk plus provider-reported usage, so each admitted turn
+// settles with a real commit.
+type quotaTestGateway struct{}
+
+func (quotaTestGateway) ChatStream(_ context.Context, _ *domain.AIChatRequest) (<-chan domain.AIChatStreamChunk, error) {
+	ch := make(chan domain.AIChatStreamChunk, 2)
+	go func() {
+		defer close(ch)
+		ch <- domain.AIChatStreamChunk{Content: "ok"}
+		ch <- domain.AIChatStreamChunk{Done: true, Usage: domain.TokenUsage{TotalTokens: 5, Source: "provider_reported"}}
+	}()
+	return ch, nil
+}
+
+func (quotaTestGateway) ChatSync(context.Context, *domain.AIChatRequest) (string, domain.TokenUsage, error) {
+	return "ok", domain.TokenUsage{TotalTokens: 5}, nil
+}
+func (quotaTestGateway) CreateEmbedding(context.Context, *domain.AIEmbeddingRequest) ([]float32, domain.TokenUsage, error) {
+	return nil, domain.TokenUsage{}, nil
+}
+func (quotaTestGateway) TranscribeAudio(context.Context, *domain.AIAudioTranscriptionRequest) (string, domain.TokenUsage, error) {
+	return "", domain.TokenUsage{}, nil
+}
+func (quotaTestGateway) AnalyzeVision(context.Context, *domain.AIVisionRequest) (string, domain.TokenUsage, error) {
+	return "", domain.TokenUsage{}, nil
+}
 
 // TestP08_001_TokenQuotaConcurrency simulates 20 concurrent requests hitting
 // /api/v1/ai/chat with a remaining balance of exactly 5 tokens.
@@ -88,7 +125,7 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 		postgres.NewSavingsCategoryRepo(pool),
 		postgres.NewUserRepo(pool),
 		nil, nil,
-	)
+	).WithGateway(quotaTestGateway{})
 
 	engine := deliveryHTTP.SetupRouter(
 		deliveryHTTP.RouterConfig{
@@ -96,9 +133,10 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 			Entitlement: entMw,
 			Usage:       usage,
 			Ledger:      ledgerService,
+			Estimates:   billing.NewEstimateStore(oneTokenSettings{}),
 		},
 		usecase.NewTransactionUsecase(txRepo, nil, nil, nil, nil),
-		nil, nil, nil, nil, aiUC, nil,
+		nil, nil, nil, nil, nil, nil, nil, aiUC, nil,
 		usecase.NewReportUsecase(txRepo),
 		nil, nil, nil, nil, nil, nil,
 	)
@@ -155,8 +193,10 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-startBarrier
 
+			// A non-template message so the turn reaches the gateway and settles
+			// with a real commit (greetings/identity prompts are served free).
 			reqBody, _ := json.Marshal(map[string]string{
-				"message": "Halo FinTrack, ringkasan pengeluaran saya",
+				"message": "berapa total pengeluaran saya bulan ini",
 			})
 			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/api/v1/ai/chat", bytes.NewReader(reqBody))
 			if err != nil {

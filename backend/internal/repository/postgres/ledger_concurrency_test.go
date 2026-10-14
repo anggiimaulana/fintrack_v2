@@ -147,3 +147,55 @@ func TestLedger_ConcurrentCommitNoNegative(t *testing.T) {
 		t.Fatalf("expected reserved=0 after all commits, got %d", period.ReservedTokens)
 	}
 }
+
+// TestLedger_CommitClampsToQuotaNoNegative is the regression guard for the
+// OCR/vision over-charge bug: the reserve is an ESTIMATE (1 token), but the
+// provider may report far more actual tokens. Committing the raw actual amount
+// pushed used_tokens past quota_tokens, leaving a NEGATIVE balance (observed
+// live: used=154474 with quota=150000). The commit must clamp to what the
+// period can still absorb so the balance never goes negative.
+func TestLedger_CommitClampsToQuotaNoNegative(t *testing.T) {
+	pool := newTestPool(t)
+	repo := NewBillingRepo(pool)
+	tx := NewTxManager(pool)
+	ctx := context.Background()
+
+	userID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO users (id, email, full_name, role) VALUES ($1,$2,$3,'user')`,
+		userID, userID.String()+"@itest.local", "Clamp"); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID) })
+
+	// Small quota so the overrun is easy to trigger: 100 tokens.
+	ledger := billing.NewLedgerService(repo, tx, fixedQuota{quota: 100, days: 30}, nil)
+
+	// Reserve the cheap estimate (1 token), then commit a huge actual usage —
+	// exactly the OCR/vision shape.
+	res, err := ledger.Reserve(ctx, userID, 1, billing.ModalityVision, "clamp-res-"+userID.String())
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := ledger.Commit(ctx, userID, res.ID, 5000, "clamp-commit-"+userID.String()); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	period, err := repo.GetPeriodForUpdate(ctx, userID, time.Now().UTC().Unix())
+	if err != nil || period == nil {
+		t.Fatalf("period lookup: %v", err)
+	}
+	if period.UsedTokens < 0 {
+		t.Fatalf("used_tokens must never be negative, got %d", period.UsedTokens)
+	}
+	if period.UsedTokens > period.QuotaTokens {
+		t.Fatalf("used (%d) must not exceed quota (%d)", period.UsedTokens, period.QuotaTokens)
+	}
+	// The over-charge is clamped to the full quota.
+	if period.UsedTokens != period.QuotaTokens {
+		t.Fatalf("expected used to clamp to quota %d, got %d", period.QuotaTokens, period.UsedTokens)
+	}
+	if period.ReservedTokens != 0 {
+		t.Fatalf("expected reserved=0 after commit, got %d", period.ReservedTokens)
+	}
+}

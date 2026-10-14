@@ -97,6 +97,11 @@ type ChatStreamEvent struct {
 	// Usage carries the upstream token usage on the terminal "done" event so the
 	// billing ledger can charge the real amount instead of a flat estimate.
 	Usage *TokenUsage `json:"usage,omitempty"`
+	// NoCharge marks a terminal event for a turn that consumed NO billable AI
+	// work (kill switch, content filter, cooldown, gateway unavailable/error, or
+	// a canned template answer). The billing layer releases the reserved quota
+	// in that case: the user must not pay for a turn the AI never served.
+	NoCharge bool `json:"no_charge,omitempty"`
 }
 
 type ChatSessionRepository interface {

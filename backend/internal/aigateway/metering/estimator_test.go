@@ -91,3 +91,75 @@ func TestEstimateAudio_UsesDuration(t *testing.T) {
 		t.Fatalf("expected voice modality, got %s", u.Modality)
 	}
 }
+
+// TestEstimator_DynamicConfig asserts an Estimator reacts to runtime parameter changes.
+func TestEstimator_DynamicConfig(t *testing.T) {
+	est := New(DefaultConfig())
+
+	// Base case with default CharsPerToken = 4, buffer = 10%
+	text := "12345678" // 8 chars -> ceil(8/4) = 2 base -> +10% (ceil(0.2) = 1) -> 3
+	u1 := est.Estimate(text, "", domain.UseCaseChat)
+	if u1.PromptTokens != 3 {
+		t.Fatalf("expected 3 prompt tokens with charsPerToken=4, got %d", u1.PromptTokens)
+	}
+
+	// Retune CharsPerToken to 2 while keeping buffer at 10%
+	cfg := est.Config()
+	cfg.CharsPerToken = 2
+	est.SetConfig(cfg)
+	if got := est.Config().CharsPerToken; got != 2 {
+		t.Fatalf("expected CharsPerToken=2, got %d", got)
+	}
+	// 8 chars -> ceil(8/2) = 4 base -> +10% (ceil(0.4) = 1) -> 5
+	u2 := est.Estimate(text, "", domain.UseCaseChat)
+	if u2.PromptTokens != 5 {
+		t.Fatalf("expected 5 prompt tokens with charsPerToken=2, got %d", u2.PromptTokens)
+	}
+
+	// Retune SafetyBufferPct to 0% -> 4 base + 0% = 4
+	cfg.SafetyBufferPct = 0
+	est.SetConfig(cfg)
+	u3 := est.Estimate(text, "", domain.UseCaseChat)
+	if u3.PromptTokens != 4 {
+		t.Fatalf("expected 4 prompt tokens with buffer=0%%, got %d", u3.PromptTokens)
+	}
+
+	// Retune ImageTokens from 85 to 200
+	cfg.ImageTokens = 200
+	est.SetConfig(cfg)
+	vis := est.EstimateVision("hello", "world")
+	baseVis := est.Estimate("hello", "world", domain.UseCaseVision)
+	if vis.PromptTokens != baseVis.PromptTokens+200 {
+		t.Fatalf("expected vision image tokens to add 200, got diff=%d", vis.PromptTokens-baseVis.PromptTokens)
+	}
+
+	// Retune TokensPerSecond from 25 to 50
+	cfg.TokensPerSecond = 50
+	est.SetConfig(cfg)
+	aud := est.EstimateAudio(2.0, "")
+	if aud.PromptTokens != 100 {
+		t.Fatalf("expected 2s * 50 = 100 prompt tokens, got %d", aud.PromptTokens)
+	}
+}
+
+// TestPackage_SetConfig asserts process-wide package functions reflect SetConfig.
+func TestPackage_SetConfig(t *testing.T) {
+	orig := CurrentConfig()
+	defer SetConfig(orig)
+
+	SetConfig(Config{
+		CharsPerToken:   2,
+		ImageTokens:     150,
+		TokensPerSecond: 10,
+	})
+
+	cur := CurrentConfig()
+	if cur.CharsPerToken != 2 || cur.ImageTokens != 150 || cur.TokensPerSecond != 10 {
+		t.Fatalf("package config not updated: %+v", cur)
+	}
+
+	vis := EstimateVision("", "")
+	if vis.PromptTokens != 150 {
+		t.Fatalf("expected EstimateVision prompt tokens = 150, got %d", vis.PromptTokens)
+	}
+}

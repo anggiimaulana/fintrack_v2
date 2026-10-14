@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
@@ -19,11 +20,12 @@ import (
 	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/user"
+	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 )
 
 const (
-	accessCookieMaxAge  = 900     // 15 minutes
+	accessCookieMaxAge  = 3600    // 1 hour
 	refreshCookieMaxAge = 2592000 // 30 days
 
 	// MaxAvatarBytes caps avatar uploads at 2 MB.
@@ -206,6 +208,44 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	response.OK(c, "Profil berhasil diperbarui", profile)
 }
 
+// ChangePassword handles PUT /auth/password for an authenticated user. It
+// verifies the current password, rejects reuse of the same password, and
+// revokes other sessions; the caller gets a fresh token pair so they stay
+// signed in on this device.
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Password saat ini dan password baru wajib diisi", "validation")
+		return
+	}
+
+	pair, err := h.authUsecase.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword, c.Request.UserAgent())
+	switch {
+	case errors.Is(err, usecase.ErrWeakPassword):
+		response.BadRequest(c, "Password baru minimal 8 karakter", "weak_password")
+		return
+	case errors.Is(err, usecase.ErrPasswordSame):
+		response.BadRequest(c, "Password baru tidak boleh sama dengan password saat ini", "password_same")
+		return
+	case errors.Is(err, usecase.ErrWrongPassword):
+		response.Error(c, http.StatusUnauthorized, "Password saat ini salah", "wrong_password")
+		return
+	case err != nil:
+		response.InternalError(c, "Gagal mengubah password")
+		return
+	}
+
+	// Re-issue cookies so the current session keeps working after the global
+	// refresh-token revocation.
+	h.setCookies(c, pair)
+	response.OK(c, "Password berhasil diubah", nil)
+}
+
 // DeleteAccount handles permanent deletion and anonymization (UU PDP Pasal 43).
 func (h *AuthHandler) DeleteAccount(c *gin.Context) {
 	if h.anonymizeSvc == nil {
@@ -231,6 +271,7 @@ func (h *AuthHandler) DeleteAccount(c *gin.Context) {
 
 	res, err := h.anonymizeSvc.AnonymizeUserData(c.Request.Context(), userID, &userID, req.Reason)
 	if err != nil {
+		logger.Error("anonymize user data failed", zap.Error(err))
 		response.InternalError(c, "Gagal memproses penghapusan akun. Silakan coba beberapa saat lagi.")
 		return
 	}

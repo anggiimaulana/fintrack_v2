@@ -111,7 +111,7 @@ func newEntHarness(t *testing.T) *entHarness {
 			Entitlement: entMw,
 			Usage:       usage,
 		},
-		txUC, nil, nil, nil, nil, aiUC, nil, reportUC, nil, nil, nil, nil, nil, nil,
+		txUC, nil, nil, nil, nil, nil, nil, nil, aiUC, nil, reportUC, nil, nil, nil, nil, nil, nil,
 	)
 	// The router is built in ReleaseMode; these tests assert on response bodies.
 	gin.SetMode(gin.TestMode)

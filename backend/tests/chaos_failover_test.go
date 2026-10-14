@@ -91,16 +91,13 @@ func TestP08_004_ChaosFailoverUnderLoad(t *testing.T) {
 		},
 	}
 
-	stateChanges := make(chan string, 10)
+	// The endpoint breaker is configured but must NOT trip for a model-level
+	// failure; the route breaker (threshold 2, in gateway internals) handles the
+	// dead model. We assert the endpoint stays closed at the end of the test.
 	bc := breaker.Config{
-		FailureThreshold:  3, // Trip quickly for test verification
+		FailureThreshold:  3,
 		Cooldown:          200 * time.Millisecond,
 		HalfOpenMaxProbes: 1,
-		OnStateChange: func(endpointID string, from, to breaker.State) {
-			if endpointID == primaryEP.ID.String() {
-				stateChanges <- fmt.Sprintf("%s->%s", from, to)
-			}
-		},
 	}
 
 	gw := gateway.New(repo, gateway.Config{
@@ -161,20 +158,16 @@ func TestP08_004_ChaosFailoverUnderLoad(t *testing.T) {
 		t.Errorf("expected secondary node to receive failover traffic, got 0 calls")
 	}
 
-	// Verify breaker tripped to OPEN
-	select {
-	case change := <-stateChanges:
-		t.Logf("Breaker state changed: %s", change)
-		if change != "closed->open" {
-			t.Errorf("expected closed->open transition, got %s", change)
-		}
-	case <-time.After(500 * time.Millisecond):
-		t.Errorf("expected breaker to trip to open, but no transition event received")
+	// Verify the dead ROUTE was quarantined. The primary answers with an HTTP 502
+	// ("connection reset by peer"), which is a MODEL-level failure: the endpoint is
+	// reachable and answering, so the ENDPOINT breaker stays closed while the
+	// (endpoint, model) route is quarantined and skipped on subsequent requests.
+	if got := gw.RouteState("chat", primaryEP.ID.String(), "model-primary", "default"); got != "open" {
+		t.Errorf("expected primary route state to be OPEN, got %q", got)
 	}
-
-	// Verify primary state is indeed OPEN
-	if gw.Breaker().State(primaryEP.ID.String()) != string(breaker.StateOpen) {
-		t.Errorf("expected primary breaker state to be OPEN, got %s",
-			gw.Breaker().State(primaryEP.ID.String()))
+	// The endpoint itself must NOT be quarantined for a model-level HTTP failure,
+	// or healthy sibling models on the same endpoint would be taken down too.
+	if got := gw.Breaker().State(primaryEP.ID.String()); got != string(breaker.StateClosed) {
+		t.Errorf("expected endpoint breaker to stay CLOSED for a model-level failure, got %s", got)
 	}
 }

@@ -642,3 +642,325 @@ func hasFlagKey(rows []struct {
 	}
 	return false
 }
+
+// TestAdminE2E_PricingRuleCostBasis verifies the pricing-rule CRUD round-trips the
+// new cost-basis fields (price_unit + provider_cost_per_1k_idr) and that the
+// active rule exposes them, so the Super Admin UI can enter "Rp3.000 / 10.000
+// token" and see the margin.
+func TestAdminE2E_PricingRuleCostBasis(t *testing.T) {
+	h := newHarness(t)
+	_, tok := h.superAdmin()
+
+	ruleName := fmt.Sprintf("e2e-basis-%s", uuid.NewString()[:8])
+	status, env := h.do(http.MethodPost, "/admin/pricing-rules", tok, map[string]any{
+		"rule_name":                ruleName,
+		"base_per_1k_idr":          3000,
+		"price_unit":               "per_10k",
+		"provider_cost_per_1k_idr": 200,
+		"markup_multiplier":        1.0,
+		"markup_percent":           0,
+		"modality_multipliers":     map[string]float64{"chat": 1.0},
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create pricing rule: got %d (%s)", status, env.Message)
+	}
+	created := decode[struct {
+		ID string `json:"id"`
+	}](t, env)
+	t.Cleanup(func() {
+		_, _ = h.pool.Exec(context.Background(), `DELETE FROM pricing_rules WHERE rule_name = $1`, ruleName)
+	})
+
+	// The listing must carry the new fields back.
+	status, env = h.do(http.MethodGet, "/admin/pricing-rules", tok, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list pricing rules: got %d", status)
+	}
+	rules := decode[[]struct {
+		ID                   string `json:"id"`
+		RuleName             string `json:"rule_name"`
+		PriceUnit            string `json:"price_unit"`
+		ProviderCostPer1kIDR int64  `json:"provider_cost_per_1k_idr"`
+	}](t, env)
+	var found *struct {
+		ID                   string `json:"id"`
+		RuleName             string `json:"rule_name"`
+		PriceUnit            string `json:"price_unit"`
+		ProviderCostPer1kIDR int64  `json:"provider_cost_per_1k_idr"`
+	}
+	for i := range rules {
+		if rules[i].ID == created.ID {
+			found = &rules[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("created rule %s not in listing", created.ID)
+	}
+	if found.PriceUnit != "per_10k" {
+		t.Fatalf("price_unit = %q, want per_10k", found.PriceUnit)
+	}
+	if found.ProviderCostPer1kIDR != 200 {
+		t.Fatalf("provider_cost_per_1k_idr = %d, want 200", found.ProviderCostPer1kIDR)
+	}
+
+	// Update must persist a new unit + cost.
+	status, env = h.do(http.MethodPut, "/admin/pricing-rules/"+created.ID, tok, map[string]any{
+		"price_unit":               "per_1k",
+		"provider_cost_per_1k_idr": 250,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("update pricing rule: got %d (%s)", status, env.Message)
+	}
+	var unit string
+	var cost int64
+	if err := h.pool.QueryRow(t.Context(),
+		`SELECT price_unit, provider_cost_per_1k_idr FROM pricing_rules WHERE id = $1`, created.ID).
+		Scan(&unit, &cost); err != nil {
+		t.Fatalf("read pricing rule: %v", err)
+	}
+	if unit != "per_1k" || cost != 250 {
+		t.Fatalf("after update: unit=%q cost=%d, want per_1k/250", unit, cost)
+	}
+
+	// An invalid unit must be rejected.
+	if status, _ = h.do(http.MethodPut, "/admin/pricing-rules/"+created.ID, tok, map[string]any{
+		"price_unit": "per_100",
+	}); status != http.StatusBadRequest {
+		t.Fatalf("invalid price_unit: got %d, want 400", status)
+	}
+}
+
+// TestAdminE2E_EstimateSettingsWritable verifies the AI reserve estimates (P3)
+// are exposed in the settings listing and can be updated from the Super Admin
+// portal, so an operator can tune the token hold without SQL.
+func TestAdminE2E_EstimateSettingsWritable(t *testing.T) {
+	h := newHarness(t)
+	adminID, tok := h.superAdmin()
+
+	// The setting may or may not be seeded; capture whatever exists so the test
+	// restores it, and upsert a known row otherwise (the PUT below upserts too).
+	var original []byte
+	haveOriginal := true
+	if err := h.pool.QueryRow(t.Context(), `SELECT value FROM settings WHERE key = 'ai_estimate_chat'`).Scan(&original); err != nil {
+		haveOriginal = false
+	}
+	t.Cleanup(func() {
+		if haveOriginal {
+			_, _ = h.pool.Exec(context.Background(),
+				`UPDATE settings SET value = $2 WHERE key = $1`, "ai_estimate_chat", original)
+		} else {
+			_, _ = h.pool.Exec(context.Background(),
+				`DELETE FROM settings WHERE key = $1`, "ai_estimate_chat")
+		}
+	})
+
+	// The PUT upserts the row; then the listing must surface it, proving the
+	// Super Admin UI can both write and read back the estimate.
+	status, env := h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{"ai_estimate_chat": 1234},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("update ai_estimate_chat: got %d (%s)", status, env.Message)
+	}
+
+	status, env = h.do(http.MethodGet, "/admin/settings", tok, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list settings: got %d", status)
+	}
+	if !hasSettingKey(decode[[]struct {
+		Key string `json:"key"`
+	}](t, env), "ai_estimate_chat") {
+		t.Fatal("ai_estimate_chat missing from settings listing")
+	}
+	var updatedBy *string
+	var newValue int
+	if err := h.pool.QueryRow(t.Context(),
+		`SELECT updated_by, (value #>> '{}')::int FROM settings WHERE key = 'ai_estimate_chat'`).
+		Scan(&updatedBy, &newValue); err != nil {
+		t.Fatalf("read updated setting: %v", err)
+	}
+	if newValue != 1234 {
+		t.Fatalf("ai_estimate_chat = %d, want 1234", newValue)
+	}
+	if updatedBy == nil || *updatedBy != adminID.String() {
+		t.Fatalf("updated_by = %v, want %s", updatedBy, adminID)
+	}
+
+	// Out-of-range values are rejected by the writable-spec (min 1).
+	if status, _ = h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{"ai_estimate_chat": 0},
+	}); status != http.StatusBadRequest {
+		t.Fatalf("ai_estimate_chat=0: got %d, want 400", status)
+	}
+}
+
+// TestAdminE2E_BreakerAndDunningSettingsWritable verifies the AI gateway breaker
+// tuning and dunning reminder offsets are exposed in the settings listing and can
+// be updated from the Super Admin portal (no redeploy needed).
+func TestAdminE2E_BreakerAndDunningSettingsWritable(t *testing.T) {
+	h := newHarness(t)
+	_, tok := h.superAdmin()
+
+	// Capture + restore any pre-existing values.
+	keys := []string{
+		"dunning_hours_urgent", "dunning_hours_soon",
+		"breaker_failure_threshold", "breaker_cooldown_seconds", "breaker_half_open_probes",
+		"route_breaker_threshold", "route_breaker_cooldown_secs",
+	}
+	type saved struct {
+		raw    []byte
+		exists bool
+	}
+	orig := map[string]saved{}
+	for _, k := range keys {
+		var raw []byte
+		err := h.pool.QueryRow(t.Context(), `SELECT value FROM settings WHERE key = $1`, k).Scan(&raw)
+		orig[k] = saved{raw: raw, exists: err == nil}
+	}
+	t.Cleanup(func() {
+		for _, k := range keys {
+			if orig[k].exists {
+				_, _ = h.pool.Exec(context.Background(),
+					`UPDATE settings SET value = $2 WHERE key = $1`, k, orig[k].raw)
+			} else {
+				_, _ = h.pool.Exec(context.Background(), `DELETE FROM settings WHERE key = $1`, k)
+			}
+		}
+	})
+
+	// Upsert via the admin API.
+	status, env := h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{
+			"dunning_hours_urgent":        12,
+			"dunning_hours_soon":          48,
+			"breaker_failure_threshold":   7,
+			"breaker_cooldown_seconds":    45,
+			"breaker_half_open_probes":    2,
+			"route_breaker_threshold":     3,
+			"route_breaker_cooldown_secs": 90,
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("update settings: got %d (%s)", status, env.Message)
+	}
+
+	// They must appear in the listing.
+	status, env = h.do(http.MethodGet, "/admin/settings", tok, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list settings: got %d", status)
+	}
+	rows := decode[[]struct {
+		Key   string `json:"key"`
+		Value any    `json:"value"`
+	}](t, env)
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.Key] = true
+	}
+	for _, k := range keys {
+		if !got[k] {
+			t.Errorf("setting %s missing from listing", k)
+		}
+	}
+
+	// Values must round-trip as integers.
+	var v int
+	if err := h.pool.QueryRow(t.Context(),
+		`SELECT (value #>> '{}')::int FROM settings WHERE key = 'breaker_failure_threshold'`).Scan(&v); err != nil {
+		t.Fatalf("read breaker_failure_threshold: %v", err)
+	}
+	if v != 7 {
+		t.Fatalf("breaker_failure_threshold = %d, want 7", v)
+	}
+
+	// Out-of-range values are rejected (min 1).
+	if status, _ = h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{"breaker_failure_threshold": 0},
+	}); status != http.StatusBadRequest {
+		t.Fatalf("breaker_failure_threshold=0: got %d, want 400", status)
+	}
+}
+
+// TestAdminE2E_MeteringSettingsWritable verifies the AI token metering heuristics
+// (local token estimation when provider omits usage) are exposed in the settings
+// listing and can be retuned by a Super Admin at runtime without a redeploy.
+func TestAdminE2E_MeteringSettingsWritable(t *testing.T) {
+	h := newHarness(t)
+	_, tok := h.superAdmin()
+
+	keys := []string{
+		"metering_chars_per_token",
+		"metering_safety_buffer_pct",
+		"metering_image_tokens",
+		"metering_audio_tokens_per_sec",
+	}
+	type saved struct {
+		raw    []byte
+		exists bool
+	}
+	orig := map[string]saved{}
+	for _, k := range keys {
+		var raw []byte
+		err := h.pool.QueryRow(t.Context(), `SELECT value FROM settings WHERE key = $1`, k).Scan(&raw)
+		orig[k] = saved{raw: raw, exists: err == nil}
+	}
+	t.Cleanup(func() {
+		for _, k := range keys {
+			if orig[k].exists {
+				_, _ = h.pool.Exec(context.Background(),
+					`UPDATE settings SET value = $2 WHERE key = $1`, k, orig[k].raw)
+			} else {
+				_, _ = h.pool.Exec(context.Background(), `DELETE FROM settings WHERE key = $1`, k)
+			}
+		}
+	})
+
+	// Update via admin API
+	status, env := h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{
+			"metering_chars_per_token":      6,
+			"metering_safety_buffer_pct":    20,
+			"metering_image_tokens":         120,
+			"metering_audio_tokens_per_sec": 35,
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("update settings: got %d (%s)", status, env.Message)
+	}
+
+	// Must appear in GET /admin/settings
+	status, env = h.do(http.MethodGet, "/admin/settings", tok, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list settings: got %d", status)
+	}
+	rows := decode[[]struct {
+		Key string `json:"key"`
+	}](t, env)
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.Key] = true
+	}
+	for _, k := range keys {
+		if !got[k] {
+			t.Errorf("setting %s missing from listing", k)
+		}
+	}
+
+	// Verify value stored in database
+	var cpt int
+	if err := h.pool.QueryRow(t.Context(),
+		`SELECT (value #>> '{}')::int FROM settings WHERE key = 'metering_chars_per_token'`).Scan(&cpt); err != nil {
+		t.Fatalf("read metering_chars_per_token: %v", err)
+	}
+	if cpt != 6 {
+		t.Fatalf("metering_chars_per_token = %d, want 6", cpt)
+	}
+
+	// Out-of-range value rejected (min 1)
+	if status, _ = h.do(http.MethodPut, "/admin/settings", tok, map[string]any{
+		"settings": map[string]any{"metering_chars_per_token": 0},
+	}); status != http.StatusBadRequest {
+		t.Fatalf("metering_chars_per_token=0: got %d, want 400", status)
+	}
+}

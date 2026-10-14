@@ -26,7 +26,17 @@ const (
 	InvoicePaid    InvoiceStatus = "paid"
 	InvoicePastDue InvoiceStatus = "past_due"
 	InvoiceVoided  InvoiceStatus = "voided"
+	// InvoiceExpired is set by the expiry worker when an unpaid invoice passes
+	// its due date (or by a gateway "expire" webhook).
+	InvoiceExpired InvoiceStatus = "expired"
 )
+
+// IsOpen reports whether an invoice is unpaid and not yet closed. The database
+// enforces "at most one open invoice per user" via a partial unique index, so
+// this must match that index's predicate exactly.
+func (s InvoiceStatus) IsOpen() bool {
+	return s == InvoiceIssued || s == InvoicePastDue
+}
 
 // PaymentStatus is the lifecycle state of a payment attempt.
 type PaymentStatus string
@@ -66,8 +76,12 @@ type Invoice struct {
 	DueAt          *time.Time    `json:"due_at,omitempty"`
 	PaidAt         *time.Time    `json:"paid_at,omitempty"`
 	VoidedAt       *time.Time    `json:"voided_at,omitempty"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	// ClosedReason explains why a non-paid invoice closed: "cancelled_by_user",
+	// "expired", "superseded", or a gateway reason.
+	ClosedReason *string    `json:"closed_reason,omitempty"`
+	ExpiredAt    *time.Time `json:"expired_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // Payment is a payment attempt against an invoice.
@@ -158,4 +172,10 @@ var (
 	ErrDuplicatePayment     = errors.New("duplicate payment (idempotency key)")
 	ErrInvalidProof         = errors.New("invalid proof file")
 	ErrProofTooLarge        = errors.New("proof file too large")
+	// ErrOpenInvoiceExists means the user already has an unpaid invoice; they
+	// must pay or cancel it before creating another.
+	ErrOpenInvoiceExists = errors.New("an unpaid invoice already exists")
+	// ErrInvoiceNotCancellable means the invoice is not in a state a user may
+	// cancel (already paid, expired, or previously cancelled).
+	ErrInvoiceNotCancellable = errors.New("invoice cannot be cancelled")
 )

@@ -49,21 +49,43 @@ func (s *InvoiceService) Create(ctx context.Context, in CreateInvoiceDTO) (*Invo
 	if subtotal < 0 {
 		subtotal = 0
 	}
-	taxIDR := int64(0)
-	if s.tax != nil {
-		taxIDR = s.tax.TaxIDR(ctx, subtotal)
-	}
 
 	dueHours := in.DueHours
 	if dueHours <= 0 {
+		// Default window, then overridden by settings. Expressed as hours +
+		// minutes so an operator can set e.g. 1h 30m; resolved to minutes here.
 		dueHours = 24
 		if s.settings != nil {
+			hours := int64(0)
+			if v, err := s.settings.GetInt(ctx, "invoice_expiry_hours"); err == nil && v >= 0 {
+				hours = v
+			}
+			minutes := int64(0)
+			if v, err := s.settings.GetInt(ctx, "invoice_expiry_minutes"); err == nil && v >= 0 {
+				minutes = v
+			}
+			// A window of zero (0h 0m) is not a usable invoice: fall back to the
+			// legacy invoice_due_hours, then to 24h.
+			if hours > 0 || minutes > 0 {
+				dueAt := now.Add(time.Duration(hours)*time.Hour + time.Duration(minutes)*time.Minute)
+				return s.persistInvoice(ctx, in, number, subtotal, now, dueAt)
+			}
 			if v, err := s.settings.GetInt(ctx, "invoice_due_hours"); err == nil && v > 0 {
 				dueHours = int(v)
 			}
 		}
 	}
 	dueAt := now.Add(time.Duration(dueHours) * time.Hour)
+	return s.persistInvoice(ctx, in, number, subtotal, now, dueAt)
+}
+
+// persistInvoice writes the invoice row with a pre-computed due date. Split out
+// so the hours+minutes and legacy-hours paths share one insert.
+func (s *InvoiceService) persistInvoice(ctx context.Context, in CreateInvoiceDTO, number string, subtotal int64, now, dueAt time.Time) (*Invoice, error) {
+	taxIDR := int64(0)
+	if s.tax != nil {
+		taxIDR = s.tax.TaxIDR(ctx, subtotal)
+	}
 
 	inv := &Invoice{
 		UserID:         in.UserID,

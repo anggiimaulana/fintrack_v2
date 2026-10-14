@@ -207,7 +207,7 @@ func TestIntegrationSPKRace(t *testing.T) {
 	_ = catRepo.Create(ctx, cat)
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM income_categories WHERE id = $1`, cat.ID) })
 
-	spkUC := usecase.NewSPKUsecase(txRepo, spkRepo, txManager)
+	spkUC := usecase.NewSPKUsecase(txRepo, spkRepo, NewSPKMetricRepo(pool), txManager)
 	embedRepo := NewEmbeddingRepo(pool)
 	txUC := usecase.NewTransactionUsecase(txRepo, usecase.NewSPKQueue(4, func(c context.Context, uid uuid.UUID) {
 		_, _ = spkUC.Calculate(c, uid)

@@ -253,6 +253,9 @@ type routeDTO struct {
 	TimeoutMS  int    `json:"timeout_ms"`
 	MaxRetries int    `json:"max_retries"`
 	IsActive   bool   `json:"is_active"`
+	// RouteState is the live route-breaker state ("open" while a dead model is
+	// quarantined for failover, otherwise "closed"). Read-only diagnostic.
+	RouteState string `json:"route_state,omitempty"`
 }
 
 // ListRoutes handles GET /admin/ai-gateway/routes.
@@ -274,6 +277,9 @@ func (h *Handler) ListRoutes(c *gin.Context) {
 			&r.TimeoutMS, &r.MaxRetries, &r.IsActive); err != nil {
 			response.InternalError(c, "Gagal memuat rute AI")
 			return
+		}
+		if h.svc.aigw != nil {
+			r.RouteState = h.svc.aigw.RouteState(r.UseCase, r.EndpointID, r.Model, r.Combo)
 		}
 		out = append(out, r)
 	}
@@ -409,9 +415,19 @@ func uniqueIDs(ids []uuid.UUID) []uuid.UUID {
 
 type resetBreakerRequest struct {
 	EndpointID string `json:"endpoint_id"`
+	// Optional route identity: when set, the per-route (model-level) breaker is
+	// cleared too, bringing a previously-dead model back immediately.
+	UseCase string `json:"use_case"`
+	Model   string `json:"model"`
+	Combo   string `json:"combo"`
 }
 
 // ResetCircuitBreaker handles POST /admin/ai-gateway/circuit-breaker/reset.
+//
+// It clears BOTH breaker levels: the endpoint breaker (whole upstream) and, when
+// a route identity is supplied, the route breaker (one model). Clearing the route
+// breaker is what lets an operator bring a previously-dead model back into
+// rotation immediately instead of waiting for the cooldown.
 func (h *Handler) ResetCircuitBreaker(c *gin.Context) {
 	if h.svc.aigw == nil {
 		response.Error(c, 503, "AI gateway tidak aktif", "GATEWAY_UNAVAILABLE")
@@ -427,8 +443,44 @@ func (h *Handler) ResetCircuitBreaker(c *gin.Context) {
 		return
 	}
 	h.svc.aigw.Breaker().Reset(req.EndpointID)
-	h.audit(c, "reset", "ai_route", req.EndpointID, nil, map[string]any{"circuit_breaker": "closed"})
+	// Optional route-level reset: an operator can target one (use_case, model).
+	if req.UseCase != "" && req.Model != "" {
+		h.svc.aigw.ResetRoute(req.UseCase, req.EndpointID, req.Model, req.Combo)
+	}
+	h.audit(c, "reset", "ai_route", req.EndpointID, nil, map[string]any{
+		"circuit_breaker": "closed",
+		"use_case":        req.UseCase,
+		"model":           req.Model,
+	})
 	response.OK(c, "Circuit breaker direset", gin.H{"endpoint_id": req.EndpointID, "state": "closed"})
+}
+
+// VerifyRoutes handles GET /admin/ai-gateway/verify-routes.
+//
+// It probes the ACTUAL model configured on every active route and reports which
+// ones are broken. This catches the failure mode that reachability probing
+// cannot: an endpoint that answers (so it looks "healthy") while the model its
+// route points at is dead (e.g. the gateway returns 503 for an unknown model).
+//
+// Read-only: it never changes routes, health, or the breaker.
+func (h *Handler) VerifyRoutes(c *gin.Context) {
+	if h.svc.aigw == nil {
+		response.Error(c, 503, "AI gateway tidak aktif", "GATEWAY_UNAVAILABLE")
+		return
+	}
+	results := h.svc.aigw.VerifyRoutes(c.Request.Context())
+
+	var broken []string
+	for _, r := range results {
+		if !r.OK && !r.Skipped {
+			broken = append(broken, r.UseCase+"/"+r.Model)
+		}
+	}
+	response.OK(c, "Verifikasi rute selesai", gin.H{
+		"results":      results,
+		"broken_count": len(broken),
+		"broken":       broken,
+	})
 }
 
 // ─── kill switch wiring ───────────────────────────────────────

@@ -23,6 +23,9 @@ type AIHandler struct {
 	aiUC          *usecase.AIUsecase
 	transactionUC *usecase.TransactionUsecase
 	ledger        *billing.LedgerService
+	// estimates supplies per-modality reserve amounts (P3), editable by a Super
+	// Admin. Nil falls back to a built-in default.
+	estimates *billing.EstimateStore
 }
 
 func NewAIHandler(aiUC *usecase.AIUsecase, transactionUC *usecase.TransactionUsecase) *AIHandler {
@@ -32,6 +35,36 @@ func NewAIHandler(aiUC *usecase.AIUsecase, transactionUC *usecase.TransactionUse
 func (h *AIHandler) WithLedger(l *billing.LedgerService) *AIHandler {
 	h.ledger = l
 	return h
+}
+
+// WithEstimates installs the per-modality reserve estimator (P3).
+func (h *AIHandler) WithEstimates(e *billing.EstimateStore) *AIHandler {
+	h.estimates = e
+	return h
+}
+
+// estimateFor returns the reserve amount for a modality. It prefers the
+// configured estimate and never returns less than 1 (a reserve must hold
+// something so the quota gate is meaningful).
+func (h *AIHandler) estimateFor(ctx context.Context, modality billing.Modality) int64 {
+	if h.estimates != nil {
+		if v := h.estimates.For(ctx, modality); v > 0 {
+			return v
+		}
+	}
+	def := billing.DefaultQuotaEstimate()
+	switch modality {
+	case billing.ModalityVision:
+		return def.Vision
+	case billing.ModalityVoice:
+		return def.Voice
+	case billing.ModalityEmbedding:
+		return def.Embedding
+	case billing.ModalityReasoning:
+		return def.Reasoning
+	default:
+		return def.Chat
+	}
 }
 
 // resultSucceeded reports whether a vision/voice result map represents success.
@@ -74,7 +107,7 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		if req.Mode == domain.LLMReasoning {
 			modality = billing.ModalityReasoning
 		}
-		res, err := h.ledger.Reserve(c.Request.Context(), userID, 1, modality, idempotencyKey)
+		res, err := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), modality), modality, idempotencyKey)
 		if err != nil {
 			if errors.Is(err, billing.ErrInsufficientQuota) {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -119,6 +152,10 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 
 	var gotContent bool
+	// noCharge is set when the turn consumed no billable AI work (kill switch,
+	// content filter, cooldown, gateway error, canned template). The reservation
+	// is released so the user is not billed for an unserved turn.
+	var noCharge bool
 	// actualTokens accumulates the real token usage reported on the terminal
 	// event. It defaults to the reserved estimate so the ledger always settles
 	// with a sane value even if the provider omits usage.
@@ -127,12 +164,19 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		actualTokens = reservation.Amount
 	}
 	defer func() {
-		if reservation != nil {
-			if gotContent {
-				_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actualTokens, "commit:"+reservation.ID.String())
-			} else {
-				_ = h.ledger.Release(context.Background(), userID, reservation.ID, "release:"+reservation.ID.String())
-			}
+		if reservation == nil {
+			return
+		}
+		ctx := context.Background()
+		switch {
+		case noCharge:
+			// Nothing billable happened: return the held quota untouched.
+			_ = h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String())
+		case gotContent:
+			_ = h.ledger.Commit(ctx, userID, reservation.ID, actualTokens, "commit:"+reservation.ID.String())
+		default:
+			// No content and not explicitly flagged: treat as unserved.
+			_ = h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String())
 		}
 	}()
 
@@ -144,8 +188,13 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		if event.Type == "content" && event.Content != "" {
 			gotContent = true
 		}
-		if event.Type == "done" && event.Usage != nil && event.Usage.TotalTokens > 0 {
-			actualTokens = int64(event.Usage.TotalTokens)
+		if event.Type == "done" {
+			if event.NoCharge {
+				noCharge = true
+			}
+			if event.Usage != nil && event.Usage.TotalTokens > 0 {
+				actualTokens = int64(event.Usage.TotalTokens)
+			}
 		}
 
 		data, _ := json.Marshal(event)
@@ -306,7 +355,7 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		if reqID == "" {
 			reqID = uuid.New().String()
 		}
-		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityVision, "vision-reserve:"+reqID)
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVision), billing.ModalityVision, "vision-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -324,17 +373,10 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 
 	result, usage, err := h.aiUC.AnalyzeReceipt(c.Request.Context(), userID, imageData, contentType)
 
-	// Settle the reservation: commit the real usage on success, release on failure.
+	// Settle the reservation. The user is only charged when the scan actually
+	// produced a usable result; any other outcome returns the held quota.
 	if reservation != nil {
-		if err == nil && resultSucceeded(result) {
-			actual := int64(usage.TotalTokens)
-			if actual <= 0 {
-				actual = 1
-			}
-			_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actual, "vision-commit:"+reservation.ID.String())
-		} else {
-			_ = h.ledger.Release(context.Background(), userID, reservation.ID, "vision-release:"+reservation.ID.String())
-		}
+		settleVision(h.ledger, userID, reservation, result, usage, err)
 	}
 
 	if err != nil {
@@ -344,6 +386,32 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 	}
 
 	response.OK(c, "Receipt analyzed", result)
+}
+
+// settleVision commits the real vision token usage on success and releases the
+// reservation otherwise, so a failed scan never costs the user quota.
+func settleVision(
+	ledger *billing.LedgerService,
+	userID uuid.UUID,
+	reservation *billing.Reservation,
+	result map[string]interface{},
+	usage domain.TokenUsage,
+	callErr error,
+) {
+	ctx := context.Background()
+	if callErr == nil && resultSucceeded(result) {
+		actual := int64(usage.TotalTokens)
+		if actual <= 0 {
+			actual = reservation.Amount
+		}
+		if actual <= 0 {
+			actual = 1
+		}
+		_ = ledger.Commit(ctx, userID, reservation.ID, actual, "vision-commit:"+reservation.ID.String())
+		return
+	}
+	// Unusable result or error: return the reserved quota untouched.
+	_ = ledger.Release(ctx, userID, reservation.ID, "vision-release:"+reservation.ID.String())
 }
 
 func (h *AIHandler) CreateTransactionFromReceipt(c *gin.Context) {
@@ -404,7 +472,7 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		if reqID == "" {
 			reqID = uuid.New().String()
 		}
-		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, 1, billing.ModalityVoice, "voice-reserve:"+reqID)
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVoice), billing.ModalityVoice, "voice-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -422,16 +490,9 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 
 	result, usage, err := h.aiUC.ProcessVoice(c.Request.Context(), userID, req.Audio)
 
+	// Settle: charge only a usable transcription; otherwise return the quota.
 	if reservation != nil {
-		if err == nil && resultSucceeded(result) {
-			actual := int64(usage.TotalTokens)
-			if actual <= 0 {
-				actual = 1
-			}
-			_ = h.ledger.Commit(context.Background(), userID, reservation.ID, actual, "voice-commit:"+reservation.ID.String())
-		} else {
-			_ = h.ledger.Release(context.Background(), userID, reservation.ID, "voice-release:"+reservation.ID.String())
-		}
+		settleVoice(h.ledger, userID, reservation, result, usage, err)
 	}
 
 	if err != nil {
@@ -440,4 +501,29 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 	}
 
 	response.OK(c, "Voice processed", result)
+}
+
+// settleVoice commits the real audio token usage on success and releases the
+// reservation otherwise, so a failed transcription never costs the user quota.
+func settleVoice(
+	ledger *billing.LedgerService,
+	userID uuid.UUID,
+	reservation *billing.Reservation,
+	result map[string]interface{},
+	usage domain.TokenUsage,
+	callErr error,
+) {
+	ctx := context.Background()
+	if callErr == nil && resultSucceeded(result) {
+		actual := int64(usage.TotalTokens)
+		if actual <= 0 {
+			actual = reservation.Amount
+		}
+		if actual <= 0 {
+			actual = 1
+		}
+		_ = ledger.Commit(ctx, userID, reservation.ID, actual, "voice-commit:"+reservation.ID.String())
+		return
+	}
+	_ = ledger.Release(ctx, userID, reservation.ID, "voice-release:"+reservation.ID.String())
 }

@@ -23,15 +23,15 @@ func NewAnonymizeService(pool *pgxpool.Pool) *AnonymizeService {
 }
 
 type AnonymizeResult struct {
-	UserID              uuid.UUID `json:"user_id"`
-	AnonymizedEmail     string    `json:"anonymized_email"`
-	ChatMessagesDeleted int64     `json:"chat_messages_deleted"`
-	ChatSessionsDeleted int64     `json:"chat_sessions_deleted"`
-	EmbeddingsDeleted   int64     `json:"embeddings_deleted"`
-	RefreshTokensRevoked int64    `json:"refresh_tokens_revoked"`
-	InvoicesRetained    int64     `json:"invoices_retained"`
-	PaymentsRetained    int64     `json:"payments_retained"`
-	AnonymizedAt        time.Time `json:"anonymized_at"`
+	UserID               uuid.UUID `json:"user_id"`
+	AnonymizedEmail      string    `json:"anonymized_email"`
+	ChatMessagesDeleted  int64     `json:"chat_messages_deleted"`
+	ChatSessionsDeleted  int64     `json:"chat_sessions_deleted"`
+	EmbeddingsDeleted    int64     `json:"embeddings_deleted"`
+	RefreshTokensRevoked int64     `json:"refresh_tokens_revoked"`
+	InvoicesRetained     int64     `json:"invoices_retained"`
+	PaymentsRetained     int64     `json:"payments_retained"`
+	AnonymizedAt         time.Time `json:"anonymized_at"`
 }
 
 // AnonymizeUserData executes atomic data erasure and pseudonimization:
@@ -80,7 +80,27 @@ func (s *AnonymizeService) AnonymizeUserData(ctx context.Context, userID uuid.UU
 	}
 	res.RefreshTokensRevoked = cmd.RowsAffected()
 
+	// 4b. Delete notification inbox and preferences (personal data: titles and
+	// bodies may contain amounts/invoice numbers).
+	_, err = tx.Exec(ctx, `DELETE FROM notifications WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("delete notifications: %w", err)
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM notification_preferences WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("delete notification_preferences: %w", err)
+	}
 
+	// 5. Cancel any active subscription so the anonymized user is no longer
+	// counted in MRR or granted paid entitlements. The row is retained (not
+	// deleted) so billing history and audit trails stay intact.
+	_, err = tx.Exec(ctx, `
+		UPDATE subscriptions
+		SET status = 'canceled', canceled_at = NOW(), cancel_at_period_end = false, updated_at = NOW()
+		WHERE user_id = $1 AND status NOT IN ('canceled', 'expired')`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("cancel subscription: %w", err)
+	}
 
 	// 6. Pseudonymize users table
 	anonymizedEmail := fmt.Sprintf("anonymized-%s@deleted.fintrack.internal", userID.String())

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -85,6 +86,30 @@ func (r *UserRepo) Update(ctx context.Context, p *domain.Profile) error {
 func (r *UserRepo) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
 	_, err := q(ctx, r.pool).Exec(ctx, `UPDATE users SET is_active = $2 WHERE id = $1`, id, active)
 	return err
+}
+
+// UpdatePasswordHash replaces the user's bcrypt hash.
+func (r *UserRepo) UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	_, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, id, passwordHash)
+	return err
+}
+
+// GetByIDWithHash returns the profile plus its bcrypt hash. Mirrors GetByEmail
+// but keyed by id, so a password change does not need the email.
+func (r *UserRepo) GetByIDWithHash(ctx context.Context, id uuid.UUID) (*domain.Profile, string, error) {
+	query := `SELECT ` + userCols + `, COALESCE(password_hash, '') FROM users WHERE id = $1`
+	var p domain.Profile
+	var hash string
+	err := q(ctx, r.pool).QueryRow(ctx, query, id).
+		Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt, &hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get user by id: %w", err)
+	}
+	return &p, hash, nil
 }
 
 func (r *UserRepo) List(ctx context.Context) ([]domain.Profile, error) {

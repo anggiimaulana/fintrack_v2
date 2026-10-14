@@ -196,7 +196,10 @@ func TestCatalog_ListPublicPlansDynamic(t *testing.T) {
 	repo := &fakePlanRepo{plans: []*billing.Plan{free, pro, hidden}}
 	ent := &fakeEntSource{features: map[string]bool{"ai_chat": true}, limits: map[string]int64{"max_transactions": 100}}
 
-	svc := NewCatalogService(repo, ent)
+	svc := NewCatalogService(repo, ent, []LimitMeta{
+		{Key: "max_transactions", Label: "Transaksi", Unit: "transaksi", Enforced: true},
+		{Key: "max_categories", Label: "Kategori", Unit: "kategori", Enforced: false},
+	}, nil)
 	plans, err := svc.ListPublicPlans(context.Background())
 	if err != nil {
 		t.Fatalf("ListPublicPlans: %v", err)
@@ -212,6 +215,108 @@ func TestCatalog_ListPublicPlansDynamic(t *testing.T) {
 	}
 	if plans[0].Limits["max_transactions"] != 100 {
 		t.Fatal("expected limits attached")
+	}
+	// F4: the catalog carries the enforced flag so the UI can hide limits the
+	// backend does not enforce.
+	if !plans[0].LimitMeta["max_transactions"].Enforced {
+		t.Fatal("max_transactions should be marked enforced")
+	}
+}
+
+// TestCatalog_UnenforcedLimitsCarryFlag verifies the public catalog exposes the
+// `enforced` flag so the pricing UI never advertises a limit that is not applied
+// (F4: max_categories/max_wallets).
+func TestCatalog_UnenforcedLimitsCarryFlag(t *testing.T) {
+	pro := &billing.Plan{ID: uuid.New(), Code: "pro", Name: "Pro", IsActive: true, IsPublic: true, SortOrder: 2}
+	repo := &fakePlanRepo{plans: []*billing.Plan{pro}}
+	ent := &fakeEntSource{
+		features: map[string]bool{},
+		limits:   map[string]int64{"max_transactions": 5000, "max_categories": 30, "max_wallets": 5},
+	}
+	svc := NewCatalogService(repo, ent, []LimitMeta{
+		{Key: "max_transactions", Label: "Transaksi", Unit: "transaksi", Enforced: true},
+		{Key: "max_categories", Label: "Kategori", Unit: "kategori", Enforced: false},
+		{Key: "max_wallets", Label: "Dompet", Unit: "dompet", Enforced: false},
+	}, nil)
+
+	plans, err := svc.ListPublicPlans(context.Background())
+	if err != nil {
+		t.Fatalf("ListPublicPlans: %v", err)
+	}
+	meta := plans[0].LimitMeta
+	if meta["max_categories"].Enforced || meta["max_wallets"].Enforced {
+		t.Fatalf("categories/wallets must be marked unenforced: %+v", meta)
+	}
+	if meta["max_categories"].Label != "Kategori" || meta["max_wallets"].Label != "Dompet" {
+		t.Fatalf("labels not carried: %+v", meta)
+	}
+	if !meta["max_transactions"].Enforced {
+		t.Fatal("max_transactions should stay enforced")
+	}
+}
+
+// TestCatalog_ExposesTaxInclusiveTotal verifies the catalog reports the same
+// tax-inclusive total the checkout will charge, so the pricing card can show the
+// real price before an invoice is issued.
+func TestCatalog_ExposesTaxInclusiveTotal(t *testing.T) {
+	pro := &billing.Plan{ID: uuid.New(), Code: "pro", Name: "Pro", PriceMonthlyIDR: 39000, IsActive: true, IsPublic: true, SortOrder: 2}
+	repo := &fakePlanRepo{plans: []*billing.Plan{pro}}
+	ent := &fakeEntSource{features: map[string]bool{}, limits: map[string]int64{}}
+
+	settings := newMemSettings()
+	settings.m["tax_enabled"] = "true"
+	settings.m["tax_rate_percent"] = int64(11)
+	svc := NewCatalogService(repo, ent, nil, NewTaxCalculator(settings))
+
+	plans, err := svc.ListPublicPlans(context.Background())
+	if err != nil {
+		t.Fatalf("ListPublicPlans: %v", err)
+	}
+	if plans[0].TaxRatePercent != 11 {
+		t.Fatalf("tax rate = %d, want 11", plans[0].TaxRatePercent)
+	}
+	if plans[0].TaxIDR != 4290 {
+		t.Fatalf("tax = %d, want 4290", plans[0].TaxIDR)
+	}
+	if plans[0].TotalIDR != 43290 {
+		t.Fatalf("total = %d, want 43290", plans[0].TotalIDR)
+	}
+}
+
+// TestCatalog_NoTaxCalculatorFallsBackToSubtotal verifies a nil tax calculator
+// yields total == subtotal rather than a zero total.
+func TestCatalog_NoTaxCalculatorFallsBackToSubtotal(t *testing.T) {
+	pro := &billing.Plan{ID: uuid.New(), Code: "pro", Name: "Pro", PriceMonthlyIDR: 39000, IsActive: true, IsPublic: true, SortOrder: 2}
+	repo := &fakePlanRepo{plans: []*billing.Plan{pro}}
+	ent := &fakeEntSource{features: map[string]bool{}, limits: map[string]int64{}}
+	svc := NewCatalogService(repo, ent, nil, nil)
+
+	plans, err := svc.ListPublicPlans(context.Background())
+	if err != nil {
+		t.Fatalf("ListPublicPlans: %v", err)
+	}
+	if plans[0].TotalIDR != 39000 || plans[0].TaxIDR != 0 {
+		t.Fatalf("expected total 39000 / tax 0, got %d / %d", plans[0].TotalIDR, plans[0].TaxIDR)
+	}
+}
+
+// TestCatalog_NoLimitMetaWhenNotConfigured verifies the response degrades
+// gracefully when no catalog is supplied (older deployments).
+func TestCatalog_NoLimitMetaWhenNotConfigured(t *testing.T) {
+	pro := &billing.Plan{ID: uuid.New(), Code: "pro", Name: "Pro", IsActive: true, IsPublic: true, SortOrder: 2}
+	repo := &fakePlanRepo{plans: []*billing.Plan{pro}}
+	ent := &fakeEntSource{features: map[string]bool{}, limits: map[string]int64{"max_transactions": 100}}
+	svc := NewCatalogService(repo, ent, nil, nil)
+
+	plans, err := svc.ListPublicPlans(context.Background())
+	if err != nil {
+		t.Fatalf("ListPublicPlans: %v", err)
+	}
+	if len(plans[0].LimitMeta) != 0 {
+		t.Fatalf("expected empty limit_meta, got %+v", plans[0].LimitMeta)
+	}
+	if plans[0].Limits["max_transactions"] != 100 {
+		t.Fatal("limits must still be returned")
 	}
 }
 

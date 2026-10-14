@@ -60,6 +60,10 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 		ai.GET("/routes", h.ListRoutes)
 		ai.PUT("/routes", h.PutRoutes)
 
+		// Probe the actual model on every active route (catches a "reachable but
+		// dead model" config that reachability probing misses).
+		ai.GET("/verify-routes", h.VerifyRoutes)
+
 		ai.POST("/circuit-breaker/reset", h.ResetCircuitBreaker)
 
 		ai.GET("/kill-switch", h.GetKillSwitch)
@@ -89,6 +93,11 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	// Global settings & feature flags
 	rg.GET("/settings", h.ListSettings)
 	rg.PUT("/settings", h.UpdateSettings)
+	// Effective runtime config + secret presence (no secret values).
+	rg.GET("/settings/config", h.ConfigStatus)
+	// Transactional email: read effective status + send a test message.
+	rg.GET("/settings/mail", h.MailStatus)
+	rg.POST("/settings/mail/test", h.SendTestEmail)
 	rg.GET("/settings/storage", h.StorageStatus)
 	rg.GET("/feature-flags", h.ListFeatureFlags)
 	rg.PUT("/feature-flags", h.UpdateFeatureFlag)

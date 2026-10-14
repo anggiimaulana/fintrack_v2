@@ -65,9 +65,9 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		Provider:     provider,
 		Modalities:   []string{"chat", "vision", "voice", "embedding", "reasoning"},
 		Models: map[domain.UseCase]string{
-			domain.UseCaseChat:      envOr(getenv, "AI_GATEWAY_MODEL_CHAT", "gemini-2.5-flash"),
+			domain.UseCaseChat:      envOr(getenv, "AI_GATEWAY_MODEL_CHAT", "gemini/gemini-3.5-flash-lite"),
 			domain.UseCaseReasoning: envOr(getenv, "AI_GATEWAY_MODEL_REASONING", "deepseek-r1"),
-			domain.UseCaseVision:    envOr(getenv, "AI_GATEWAY_MODEL_VISION", "gemini-2.5-flash"),
+			domain.UseCaseVision:    envOr(getenv, "AI_GATEWAY_MODEL_VISION", "gemini/gemini-3.5-flash"),
 			domain.UseCaseVoice:     envOr(getenv, "AI_GATEWAY_MODEL_VOICE", "whisper-1"),
 			domain.UseCaseEmbedding: envOr(getenv, "AI_GATEWAY_MODEL_EMBEDDING", "gemini/gemini-embedding-001"),
 		},

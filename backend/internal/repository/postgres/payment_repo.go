@@ -28,13 +28,13 @@ func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
 // ─── Invoices ─────────────────────────────────────────────────
 
 const invoiceSelect = `SELECT id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr,
-    status, notes, issued_at, due_at, paid_at, voided_at, created_at, updated_at FROM invoices`
+    status, notes, issued_at, due_at, paid_at, voided_at, closed_reason, expired_at, created_at, updated_at FROM invoices`
 
 func (r *PaymentRepo) scanInvoice(row rowScanner) (*payment.Invoice, error) {
 	inv := &payment.Invoice{}
 	err := row.Scan(&inv.ID, &inv.InvoiceNumber, &inv.UserID, &inv.SubscriptionID, &inv.SubtotalIDR,
 		&inv.TaxIDR, &inv.TotalIDR, &inv.Status, &inv.Notes, &inv.IssuedAt, &inv.DueAt, &inv.PaidAt,
-		&inv.VoidedAt, &inv.CreatedAt, &inv.UpdatedAt)
+		&inv.VoidedAt, &inv.ClosedReason, &inv.ExpiredAt, &inv.CreatedAt, &inv.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, payment.ErrInvoiceNotFound
 	}
@@ -63,6 +63,60 @@ func (r *PaymentRepo) GetInvoiceByID(ctx context.Context, id uuid.UUID) (*paymen
 
 func (r *PaymentRepo) GetInvoiceByNumber(ctx context.Context, number string) (*payment.Invoice, error) {
 	return r.scanInvoice(q(ctx, r.pool).QueryRow(ctx, invoiceSelect+` WHERE invoice_number = $1`, number))
+}
+
+// GetOpenInvoiceForUser returns the user's single open (unpaid, unclosed)
+// invoice, or (nil, nil) when they have none. Used to block a second checkout.
+func (r *PaymentRepo) GetOpenInvoiceForUser(ctx context.Context, userID uuid.UUID) (*payment.Invoice, error) {
+	inv, err := r.scanInvoice(q(ctx, r.pool).QueryRow(ctx,
+		invoiceSelect+` WHERE user_id = $1 AND status IN ('issued','past_due') LIMIT 1`, userID))
+	if errors.Is(err, payment.ErrInvoiceNotFound) {
+		return nil, nil
+	}
+	return inv, err
+}
+
+// GetOpenInvoiceForUserForUpdate is the locking variant used inside a checkout
+// transaction: it serialises concurrent checkouts for the same user so exactly
+// one invoice is ever open (the partial unique index is the final backstop).
+func (r *PaymentRepo) GetOpenInvoiceForUserForUpdate(ctx context.Context, userID uuid.UUID) (*payment.Invoice, error) {
+	inv, err := r.scanInvoice(q(ctx, r.pool).QueryRow(ctx,
+		invoiceSelect+` WHERE user_id = $1 AND status IN ('issued','past_due') FOR UPDATE LIMIT 1`, userID))
+	if errors.Is(err, payment.ErrInvoiceNotFound) {
+		return nil, nil
+	}
+	return inv, err
+}
+
+// CloseInvoice transitions an open invoice to a closed state (voided/expired)
+// with a reason, and expires its non-final payments in the same statement pair.
+// Returns true when a row actually changed, so callers can detect a lost race.
+//
+// $2 is cast explicitly: it is used both as the new status (varchar) and inside
+// a CASE comparison, and Postgres cannot otherwise deduce a single type for it.
+func (r *PaymentRepo) CloseInvoice(ctx context.Context, id uuid.UUID, status payment.InvoiceStatus, reason string) (bool, error) {
+	tag, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE invoices
+		 SET status = $2::text,
+		     closed_reason = $3,
+		     voided_at = CASE WHEN $2::text = 'voided' THEN now() ELSE voided_at END,
+		     expired_at = CASE WHEN $2::text = 'expired' THEN now() ELSE expired_at END,
+		     updated_at = now()
+		 WHERE id = $1 AND status IN ('issued','past_due')`, id, string(status), reason)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ExpirePaymentsForInvoice marks a closed invoice's still-open payments as
+// expired, so the user's history is consistent (no payment lingers "pending"
+// against an invoice that can never be paid).
+func (r *PaymentRepo) ExpirePaymentsForInvoice(ctx context.Context, invoiceID uuid.UUID) error {
+	_, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE payments SET status = 'expired', updated_at = now()
+		 WHERE invoice_id = $1 AND status IN ('pending','pending_review')`, invoiceID)
+	return err
 }
 
 func (r *PaymentRepo) UpdateInvoiceStatus(ctx context.Context, id uuid.UUID, status payment.InvoiceStatus, paidAt, voidedAt *string) error {

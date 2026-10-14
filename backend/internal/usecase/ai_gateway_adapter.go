@@ -64,7 +64,7 @@ func (u *AIUsecase) chatViaGateway(
 	// route pool; "fast" (default) by the standard chat pool. This is the single
 	// point where the user's CEPAT/PENALARAN choice takes effect.
 	useCase := gatewayUseCaseForMode(req.Mode)
-	reasoningEffort := reasoningEffortForMode(req.Mode)
+	reasoningEffort := u.reasoningEffortValue()
 
 	// Streaming filter: strip <TOOL_CALL>/<TOOL_RESULT> blocks so raw tool JSON
 	// is never exposed to the client. Identical to the legacy path.
@@ -132,7 +132,10 @@ func (u *AIUsecase) chatViaGateway(
 	flushStreamBuf()
 	if callErr != nil {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: gatewayFriendlyError(callErr)}
-		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true}
+		// The gateway could not serve the turn: the "content" above is a
+		// sanitized error message, not an AI answer. Flag it so billing releases
+		// the reservation instead of charging the user for unserved work.
+		msgChan <- domain.ChatStreamEvent{Type: "done", Done: true, NoCharge: true}
 		return nil
 	}
 

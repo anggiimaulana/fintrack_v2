@@ -5,7 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/entitlement"
 )
 
 // fakeGateway implements domain.AIGatewayService for adapter tests.
@@ -434,5 +438,80 @@ func TestGatewayStream_ReasoningFallsBackToChatPool(t *testing.T) {
 	}
 	if gw.lastChatReq.ReasoningEffort != "" {
 		t.Fatalf("fallback must drop reasoning_effort, got %q", gw.lastChatReq.ReasoningEffort)
+	}
+}
+type fakeEntSource struct {
+	features map[string]bool
+}
+
+func (f *fakeEntSource) GetActivePlanForUser(ctx context.Context, userID uuid.UUID) (*billing.Plan, billing.SubscriptionStatus, error) {
+	return &billing.Plan{ID: uuid.New(), Code: "test", Name: "Test Plan"}, billing.StatusActive, nil
+}
+
+func (f *fakeEntSource) GetEntitlements(ctx context.Context, planID uuid.UUID) (map[string]bool, error) {
+	return f.features, nil
+}
+
+func (f *fakeEntSource) GetLimits(ctx context.Context, planID uuid.UUID) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+type fakeRAGEmbedder struct{}
+
+func (f *fakeRAGEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	return []float32{0.1, 0.2}, nil
+}
+func (f *fakeRAGEmbedder) Enabled() bool { return true }
+
+type fakeRAGRepo struct {
+	searched bool
+}
+
+func (f *fakeRAGRepo) Upsert(context.Context, uuid.UUID, uuid.UUID, string, []float32, map[string]interface{}) error {
+	return nil
+}
+
+func (f *fakeRAGRepo) Search(context.Context, uuid.UUID, []float32, int) ([]domain.SearchResult, error) {
+	f.searched = true
+	return []domain.SearchResult{{Content: "Kopi Rp 20.000", Similarity: 0.95}}, nil
+}
+
+func (f *fakeRAGRepo) DeleteByTransactionID(context.Context, uuid.UUID) error { return nil }
+func (f *fakeRAGRepo) ListMissingTransactions(context.Context, int) ([]domain.Transaction, error) {
+	return nil, nil
+}
+
+func TestRetrieveRelevantTransactions_GatedByFeature(t *testing.T) {
+	userID := uuid.New()
+	embedder := &fakeRAGEmbedder{}
+
+	// 1. Feature disabled (Free plan): RAG must be skipped (no vector search).
+	repoOff := &fakeRAGRepo{}
+	srcOff := &fakeEntSource{features: map[string]bool{"rag_search": false}}
+	resOff := entitlement.NewResolver(srcOff, nil)
+	uOff := &AIUsecase{embedder: embedder, embedRepo: repoOff}
+	uOff.WithEntitlements(resOff)
+
+	gotOff := uOff.retrieveRelevantTransactions(context.Background(), userID, "berapa pengeluaran kopi kemarin?")
+	if gotOff != "" {
+		t.Fatalf("expected empty RAG text when feature is disabled, got %q", gotOff)
+	}
+	if repoOff.searched {
+		t.Fatal("expected vector search NOT to be called when feature is disabled")
+	}
+
+	// 2. Feature enabled (Pro/Business): RAG vector search runs and injects context.
+	repoOn := &fakeRAGRepo{}
+	srcOn := &fakeEntSource{features: map[string]bool{"rag_search": true}}
+	resOn := entitlement.NewResolver(srcOn, nil)
+	uOn := &AIUsecase{embedder: embedder, embedRepo: repoOn}
+	uOn.WithEntitlements(resOn)
+
+	gotOn := uOn.retrieveRelevantTransactions(context.Background(), userID, "berapa pengeluaran kopi kemarin?")
+	if !strings.Contains(gotOn, "Kopi Rp 20.000") {
+		t.Fatalf("expected RAG context with transaction, got %q", gotOn)
+	}
+	if !repoOn.searched {
+		t.Fatal("expected vector search to be called when feature is enabled")
 	}
 }

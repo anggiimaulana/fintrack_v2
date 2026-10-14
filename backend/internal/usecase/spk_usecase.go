@@ -12,27 +12,49 @@ import (
 	"github.com/fintrack/backend/pkg/logger"
 )
 
+// SPKUsecase computes the financial health score (SPK) from a user's
+// transactions.
+//
+// The scoring model is data-driven: indicators (name, weight, target, category
+// set) and the score→status thresholds come from the resolved metric model —
+// the user's personal override when present, otherwise the super-admin default,
+// otherwise the compiled fallback. See domain.SPKMetricModel.
 type SPKUsecase struct {
 	txRepo  domain.TransactionRepository
 	spkRepo domain.SPKRepository
+	metrics domain.SPKMetricRepository
 	tx      domain.TxRunner
 }
 
-func NewSPKUsecase(txRepo domain.TransactionRepository, spkRepo domain.SPKRepository, tx domain.TxRunner) *SPKUsecase {
+func NewSPKUsecase(txRepo domain.TransactionRepository, spkRepo domain.SPKRepository, metrics domain.SPKMetricRepository, tx domain.TxRunner) *SPKUsecase {
 	return &SPKUsecase{
 		txRepo:  txRepo,
 		spkRepo: spkRepo,
+		metrics: metrics,
 		tx:      tx,
 	}
 }
 
-var needsCategories = map[string]bool{
-	"Makanan & Minuman":  true,
-	"Kesehatan":          true,
-	"Utilitas & Tagihan": true,
-	"Transportasi":       true,
-	"Pendidikan":         true,
-	"Tempat Tinggal":     true,
+// ResolveMetricModel returns the model that applies to a user, in precedence
+// order: personal override → super-admin default → compiled fallback. A repo
+// error is logged and treated as "no row" so scoring degrades gracefully rather
+// than failing the request.
+func (u *SPKUsecase) ResolveMetricModel(ctx context.Context, userID uuid.UUID) domain.SPKMetricModel {
+	if u.metrics != nil {
+		if override, err := u.metrics.GetUserOverride(ctx, userID.String()); err == nil && override != nil && len(override.Indicators) > 0 {
+			override.Source = "user"
+			return *override
+		} else if err != nil {
+			logger.Warn("spk: resolve user override failed", zap.Error(err))
+		}
+		if def, err := u.metrics.GetActiveDefault(ctx); err == nil && def != nil && len(def.Indicators) > 0 {
+			def.Source = "default"
+			return *def
+		} else if err != nil {
+			logger.Warn("spk: resolve default model failed", zap.Error(err))
+		}
+	}
+	return domain.DefaultSPKMetricModel()
 }
 
 // Calculate computes and persists an SPK result. The whole read+insert runs in
@@ -40,6 +62,11 @@ var needsCategories = map[string]bool{
 // mutations cannot interleave or duplicate rows.
 func (u *SPKUsecase) Calculate(ctx context.Context, userID uuid.UUID) (*domain.SPKResult, error) {
 	var result *domain.SPKResult
+
+	// The metric model is read once, outside the scoring transaction: it is
+	// configuration, not user data, so it does not need the row lock and reading
+	// it here keeps the locked section short.
+	model := u.ResolveMetricModel(ctx, userID)
 
 	err := u.tx.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := u.tx.AdvisoryXactLock(txCtx, "spk:"+userID.String()); err != nil {
@@ -66,21 +93,25 @@ func (u *SPKUsecase) Calculate(ctx context.Context, userID uuid.UUID) (*domain.S
 			return nil
 		}
 
-		indicators := u.calculateIndicators(txCtx, userID, periodStart, periodEnd, prevPeriodStart)
-		totalScore := u.calculateTotalScore(indicators)
+		rawValues := u.rawIndicatorValues(txCtx, userID, model, periodStart, periodEnd, prevPeriodStart)
 
-		breakdown := map[string]float64{
-			"saving_ratio":    math.Round(indicators.SavingRatio*100) / 100,
-			"needs_vs_wants":  math.Round(indicators.NeedsVsWantsRatio*100) / 100,
-			"consistency":     math.Round(indicators.Consistency*100) / 100,
-			"expense_trend":   math.Round(indicators.ExpenseTrend*100) / 100,
-			"diversification": math.Round(indicators.Diversification*100) / 100,
+		// Score each indicator against its target and weight it. The breakdown
+		// keeps the *weighted contribution* per indicator key (rounded to 2dp),
+		// matching the shape the UI already renders.
+		breakdown := map[string]float64{}
+		totalScore := 0.0
+		for _, ind := range model.Indicators {
+			raw := rawValues[ind.Type]
+			score := scoreIndicator(ind, raw)
+			totalScore += score * ind.Weight
+			breakdown[ind.Key] = math.Round(score*100) / 100
 		}
+		totalScore = math.Max(0, math.Min(100, totalScore))
 
 		result = &domain.SPKResult{
 			UserID:      userID,
 			Score:       math.Round(totalScore*100) / 100,
-			Status:      u.determineStatus(totalScore),
+			Status:      determineStatus(model.Thresholds, totalScore),
 			Breakdown:   breakdown,
 			PeriodStart: &periodStart,
 			PeriodEnd:   &periodEnd,
@@ -98,35 +129,37 @@ func (u *SPKUsecase) Calculate(ctx context.Context, userID uuid.UUID) (*domain.S
 	return result, nil
 }
 
-func (u *SPKUsecase) calculateIndicators(ctx context.Context, userID uuid.UUID, periodStart, periodEnd, prevPeriodStart time.Time) domain.SPKIndicator {
-	var indicators domain.SPKIndicator
+// rawIndicatorValues derives every indicator type's raw value in one pass over
+// the period's data. Raw values are un-clamped; scoreIndicator applies the
+// target and direction. Only the types present in the model are guaranteed to be
+// populated, but computing all of them is cheap and keeps the code simple.
+func (u *SPKUsecase) rawIndicatorValues(ctx context.Context, userID uuid.UUID, model domain.SPKMetricModel, periodStart, periodEnd, prevPeriodStart time.Time) map[domain.SPKMetricType]float64 {
+	out := map[domain.SPKMetricType]float64{
+		domain.MetricSavingRatio:     0,
+		domain.MetricNeedsRatio:      0,
+		domain.MetricConsistency:     0,
+		domain.MetricExpenseTrend:    0,
+		domain.MetricDiversification: 0,
+	}
 
 	stats, err := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{StartDate: periodStart, EndDate: periodEnd})
 	if err != nil {
-		logger.Error("failed to get stats for SPK", zap.Error(err))
-		return indicators
-	}
-
-	prevStats, err := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{
-		StartDate: prevPeriodStart,
-		EndDate:   periodStart.AddDate(0, 0, -1),
-	})
-	if err != nil {
-		logger.Error("failed to get prev stats for SPK", zap.Error(err))
+		logger.Error("failed to get stats for SPK indicators", zap.Error(err))
+		return out
 	}
 
 	income := stats.TotalIncome
 	expense := stats.TotalExpense
 
 	if income > 0 {
-		savingRatio := (income - expense) / income
-		indicators.SavingRatio = math.Min(savingRatio*100/0.2, 100)
+		out[domain.MetricSavingRatio] = (income - expense) / income
 	}
 
+	// "Needs" categories come from the model so a user can re-classify them.
+	needsCategories := u.needsSet(model)
 	categorySummaries, _ := u.txRepo.GetCategoryExpensesByPeriod(ctx, userID, periodStart, periodEnd)
 	totalNeeds := 0.0
 	maxCategoryShare := 0.0
-
 	for _, s := range categorySummaries {
 		if needsCategories[s.CategoryName] {
 			totalNeeds += s.Total
@@ -137,10 +170,9 @@ func (u *SPKUsecase) calculateIndicators(ctx context.Context, userID uuid.UUID, 
 			}
 		}
 	}
-
 	if expense > 0 {
-		needsRatio := totalNeeds / expense
-		indicators.NeedsVsWantsRatio = math.Min(needsRatio*100/0.7, 100)
+		out[domain.MetricNeedsRatio] = totalNeeds / expense
+		out[domain.MetricDiversification] = 1 - maxCategoryShare
 	}
 
 	activeDays, _ := u.txRepo.GetDailyTransactionCount(ctx, userID, periodStart, periodEnd)
@@ -148,46 +180,106 @@ func (u *SPKUsecase) calculateIndicators(ctx context.Context, userID uuid.UUID, 
 	if daysInPeriod <= 0 {
 		daysInPeriod = 30
 	}
-	indicators.Consistency = float64(activeDays) / float64(daysInPeriod) * 100
+	out[domain.MetricConsistency] = float64(activeDays) / float64(daysInPeriod)
 
+	prevStats, err := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{
+		StartDate: prevPeriodStart,
+		EndDate:   periodStart.AddDate(0, 0, -1),
+	})
+	if err != nil {
+		logger.Error("failed to get prev stats for SPK", zap.Error(err))
+	}
 	prevExpense := prevStats.TotalExpense
-	if prevExpense > 0 {
-		trend := (expense - prevExpense) / prevExpense
-		indicators.ExpenseTrend = math.Max(0, math.Min(100, (1-trend)*100))
-	} else if expense > 0 {
-		indicators.ExpenseTrend = 50
-	} else {
-		indicators.ExpenseTrend = 100
-	}
-
-	indicators.Diversification = (1 - maxCategoryShare) * 100
-
-	return indicators
-}
-
-func (u *SPKUsecase) calculateTotalScore(ind domain.SPKIndicator) float64 {
-	total := 0.0
-	total += ind.SavingRatio * domain.WeightSavingRatio
-	total += ind.NeedsVsWantsRatio * domain.WeightNeedsVsWants
-	total += ind.Consistency * domain.WeightConsistency
-	total += ind.ExpenseTrend * domain.WeightExpenseTrend
-	total += ind.Diversification * domain.WeightDiversification
-	return math.Max(0, math.Min(100, total))
-}
-
-func (u *SPKUsecase) determineStatus(score float64) domain.SPKStatus {
 	switch {
-	case score >= 80:
-		return domain.SPKVeryGood
-	case score >= 60:
-		return domain.SPKGood
-	case score >= 40:
-		return domain.SPKFair
-	case score >= 20:
-		return domain.SPKWasteful
+	case prevExpense > 0:
+		trend := (expense - prevExpense) / prevExpense
+		// "Improvement" = how much expense fell; stored as a ratio where 1.0 is
+		// "no change or better" and 0 is "doubled".
+		out[domain.MetricExpenseTrend] = math.Max(0, 1-trend)
+	case expense > 0:
+		// No prior period to compare: neutral.
+		out[domain.MetricExpenseTrend] = 0.5
 	default:
-		return domain.SPKCritical
+		out[domain.MetricExpenseTrend] = 1
 	}
+
+	return out
+}
+
+// needsSet builds the set of category names treated as "needs" for the model,
+// falling back to the compiled default list when the model omits it.
+func (u *SPKUsecase) needsSet(model domain.SPKMetricModel) map[string]bool {
+	set := map[string]bool{}
+	for _, ind := range model.Indicators {
+		if ind.Type != domain.MetricNeedsRatio {
+			continue
+		}
+		for _, c := range ind.Categories {
+			set[c] = true
+		}
+	}
+	if len(set) == 0 {
+		for _, ind := range domain.DefaultSPKMetricModel().Indicators {
+			if ind.Type == domain.MetricNeedsRatio {
+				for _, c := range ind.Categories {
+					set[c] = true
+				}
+			}
+		}
+	}
+	return set
+}
+
+// scoreIndicator converts a raw value into a 0..100 sub-score against the
+// indicator's target and direction.
+//
+//	higher_better: score = 100 * raw / target   (raw ≥ target ⇒ 100)
+//	lower_better:  score = 100 * target / raw   (raw ≤ target ⇒ 100)
+//
+// A raw value of 0 for lower_better scores 100 (nothing to penalise); for
+// higher_better it scores 0.
+func scoreIndicator(ind domain.SPKMetricIndicator, raw float64) float64 {
+	if ind.Target <= 0 {
+		return 0
+	}
+	if ind.DirectionOrDefault() == "lower_better" {
+		// Lower raw is better; at or below target the score is full marks.
+		if raw <= 0 || raw <= ind.Target {
+			return 100
+		}
+		return math.Min(100, ind.Target/raw*100)
+	}
+	if raw <= 0 {
+		return 0
+	}
+	return math.Min(100, raw/ind.Target*100)
+}
+
+// determineStatus maps a score to a label using the model's thresholds: the
+// label with the highest Min that the score still reaches. When the score is
+// below every threshold, the lowest threshold's label applies. An empty list
+// falls back to the compiled defaults so a mis-configured model still yields a
+// label.
+func determineStatus(thresholds []domain.SPKStatusThreshold, score float64) domain.SPKStatus {
+	if len(thresholds) == 0 {
+		thresholds = domain.DefaultSPKMetricModel().Thresholds
+	}
+	best := thresholds[0]
+	matched := false
+	lowest := thresholds[0]
+	for _, th := range thresholds {
+		if th.Min < lowest.Min {
+			lowest = th
+		}
+		if score >= th.Min && (!matched || th.Min > best.Min) {
+			best = th
+			matched = true
+		}
+	}
+	if !matched {
+		best = lowest
+	}
+	return domain.SPKStatus(best.Label)
 }
 
 // GetLatest returns the newest SPK result, self-healing by calculating once if
@@ -214,4 +306,10 @@ func (u *SPKUsecase) GetLatest(ctx context.Context, userID uuid.UUID) (*domain.S
 
 func (u *SPKUsecase) GetHistory(ctx context.Context, userID uuid.UUID, limit int) ([]domain.SPKResult, error) {
 	return u.spkRepo.ListByUser(ctx, userID, limit)
+}
+
+// MetricModel exposes the resolved model for a user (used by the UI to render
+// the breakdown labels and explain the precedence).
+func (u *SPKUsecase) MetricModel(ctx context.Context, userID uuid.UUID) domain.SPKMetricModel {
+	return u.ResolveMetricModel(ctx, userID)
 }

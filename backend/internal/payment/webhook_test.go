@@ -34,6 +34,57 @@ func (m *memRepo) GetInvoiceByID(_ context.Context, id uuid.UUID) (*Invoice, err
 	return m.invoices[id], nil
 }
 func (m *memRepo) GetInvoiceByNumber(context.Context, string) (*Invoice, error) { return nil, nil }
+
+// GetOpenInvoiceForUser returns the first open invoice for the user.
+func (m *memRepo) GetOpenInvoiceForUser(_ context.Context, userID uuid.UUID) (*Invoice, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, inv := range m.invoices {
+		if inv.UserID == userID && inv.Status.IsOpen() {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+// GetOpenInvoiceForUserForUpdate behaves like the read variant for the in-memory
+// fake (there is no real locking to do in a single-threaded test).
+func (m *memRepo) GetOpenInvoiceForUserForUpdate(ctx context.Context, userID uuid.UUID) (*Invoice, error) {
+	return m.GetOpenInvoiceForUser(ctx, userID)
+}
+
+// CloseInvoice transitions an open invoice, reporting whether it changed.
+func (m *memRepo) CloseInvoice(_ context.Context, id uuid.UUID, status InvoiceStatus, reason string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inv := m.invoices[id]
+	if inv == nil || !inv.Status.IsOpen() {
+		return false, nil
+	}
+	now := time.Now()
+	inv.Status = status
+	inv.ClosedReason = &reason
+	switch status {
+	case InvoiceVoided:
+		inv.VoidedAt = &now
+	case InvoiceExpired:
+		inv.ExpiredAt = &now
+	}
+	return true, nil
+}
+
+// ExpirePaymentsForInvoice expires still-open payments for the invoice.
+func (m *memRepo) ExpirePaymentsForInvoice(_ context.Context, invoiceID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.payments {
+		if p.InvoiceID == invoiceID && (p.Status == PaymentPending || p.Status == PaymentPendingReview) {
+			p.Status = PaymentExpired
+		}
+	}
+	return nil
+}
+
 func (m *memRepo) UpdateInvoiceStatus(context.Context, uuid.UUID, InvoiceStatus, *string, *string) error {
 	return nil
 }

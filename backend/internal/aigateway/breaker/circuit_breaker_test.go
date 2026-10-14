@@ -249,3 +249,35 @@ func TestBreaker_OnStateChangePanicIsContained(t *testing.T) {
 		t.Fatal("breaker state must still be updated")
 	}
 }
+
+// TestBreaker_SetConfigAppliesAtRuntime verifies tuning can change without a
+// restart and without dropping accumulated failure state.
+func TestBreaker_SetConfigAppliesAtRuntime(t *testing.T) {
+	b := New(Config{FailureThreshold: 5, Cooldown: 30 * time.Second, HalfOpenMaxProbes: 1})
+
+	// Two failures must NOT trip the default threshold of 5.
+	b.RecordFailure("ep")
+	b.RecordFailure("ep")
+	if b.State("ep") != string(StateClosed) {
+		t.Fatalf("expected closed before retune, got %s", b.State("ep"))
+	}
+
+	// Retune to threshold 2: the next failure must now trip it.
+	b.SetConfig(Config{FailureThreshold: 2})
+	if got := b.Config().FailureThreshold; got != 2 {
+		t.Fatalf("threshold = %d, want 2", got)
+	}
+	b.RecordFailure("ep")
+	if b.State("ep") != string(StateOpen) {
+		t.Fatalf("expected open after retune to threshold 2, got %s", b.State("ep"))
+	}
+
+	// A zero field must not clobber the current value.
+	b.SetConfig(Config{Cooldown: 0, FailureThreshold: 0})
+	if got := b.Config().FailureThreshold; got != 2 {
+		t.Fatalf("zero update clobbered threshold: %d", got)
+	}
+	if got := b.Config().Cooldown; got != 30*time.Second {
+		t.Fatalf("zero update clobbered cooldown: %v", got)
+	}
+}

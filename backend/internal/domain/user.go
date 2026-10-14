@@ -41,6 +41,11 @@ type ProfileRepository interface {
 	Create(ctx context.Context, p *Profile, passwordHash string) (*Profile, error)
 	Update(ctx context.Context, p *Profile) error
 	SetActive(ctx context.Context, id uuid.UUID, active bool) error
+	// UpdatePasswordHash replaces the bcrypt hash for a user.
+	UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error
+	// GetByIDWithHash returns the profile plus its bcrypt hash (for password
+	// change verification); hash is empty when the user is absent.
+	GetByIDWithHash(ctx context.Context, id uuid.UUID) (*Profile, string, error)
 	List(ctx context.Context) ([]Profile, error)
 	ListWithStats(ctx context.Context) ([]UserStats, *AdminStats, error)
 }

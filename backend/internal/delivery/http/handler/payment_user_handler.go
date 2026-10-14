@@ -156,6 +156,34 @@ func (h *PaymentHandler) ListMyInvoices(c *gin.Context) {
 	response.OK(c, "Daftar tagihan berhasil dimuat", list)
 }
 
+// CancelMyInvoice handles POST /api/v1/invoices/:id/cancel. It lets a user
+// cancel their own unpaid invoice so they can start a new checkout.
+func (h *PaymentHandler) CancelMyInvoice(c *gin.Context) {
+	if h.userSvc == nil {
+		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "ID tagihan tidak valid", "invalid_id")
+		return
+	}
+	inv, err := h.userSvc.CancelInvoice(c.Request.Context(), userID, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, payment.ErrInvoiceNotFound):
+			response.NotFound(c, "Tagihan tidak ditemukan")
+		case errors.Is(err, payment.ErrInvoiceNotCancellable):
+			response.Conflict(c, "Tagihan tidak dapat dibatalkan (sudah dibayar atau sudah ditutup)")
+		default:
+			response.InternalError(c, "Gagal membatalkan tagihan")
+		}
+		return
+	}
+	response.OK(c, "Tagihan berhasil dibatalkan", inv)
+}
+
 // ─── Manual proof upload + serving ────────────────────────────
 
 // UploadMyProof handles POST /api/v1/payments/:id/proof (multipart or raw body).

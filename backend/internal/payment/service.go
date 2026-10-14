@@ -12,6 +12,16 @@ type Repository interface {
 	CreateInvoice(ctx context.Context, inv *Invoice) error
 	GetInvoiceByID(ctx context.Context, id uuid.UUID) (*Invoice, error)
 	GetInvoiceByNumber(ctx context.Context, number string) (*Invoice, error)
+	// GetOpenInvoiceForUser returns the user's single open (unpaid) invoice, or
+	// (nil, nil) when none. GetOpenInvoiceForUserForUpdate is the locking variant
+	// used inside a checkout transaction to serialise concurrent checkouts.
+	GetOpenInvoiceForUser(ctx context.Context, userID uuid.UUID) (*Invoice, error)
+	GetOpenInvoiceForUserForUpdate(ctx context.Context, userID uuid.UUID) (*Invoice, error)
+	// CloseInvoice transitions an open invoice to voided/expired with a reason,
+	// reporting whether a row actually changed (false = lost a race).
+	CloseInvoice(ctx context.Context, id uuid.UUID, status InvoiceStatus, reason string) (bool, error)
+	// ExpirePaymentsForInvoice expires an invoice's still-open payments.
+	ExpirePaymentsForInvoice(ctx context.Context, invoiceID uuid.UUID) error
 	UpdateInvoiceStatus(ctx context.Context, id uuid.UUID, status InvoiceStatus, paidAt, voidedAt *string) error
 	MarkInvoicePaid(ctx context.Context, id uuid.UUID) error
 	NextInvoiceNumber(ctx context.Context, day string) (string, error)

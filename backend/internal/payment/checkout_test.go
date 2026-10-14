@@ -12,6 +12,7 @@ import (
 func TestCheckoutService_ManualFlow(t *testing.T) {
 	repo := newMemRepo()
 	s := newMemSettings()
+	s.m["tax_enabled"] = "false"
 	s.m["tax_rate_percent"] = int64(0)
 	reg := NewRegistry()
 	reg.Register(NewManualGateway("BCA", "1234567890", "PT FinTrack"))
@@ -52,6 +53,7 @@ func TestCheckoutService_ManualFlow(t *testing.T) {
 func TestCheckoutService_TaxApplied(t *testing.T) {
 	repo := newMemRepo()
 	s := newMemSettings()
+	s.m["tax_enabled"] = "true"
 	s.m["tax_rate_percent"] = int64(11)
 	reg := NewRegistry()
 	reg.Register(NewManualGateway("BCA", "1", "X"))

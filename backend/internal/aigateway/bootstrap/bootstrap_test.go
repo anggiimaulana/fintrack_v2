@@ -26,8 +26,8 @@ func TestConfigFromEnv_Defaults(t *testing.T) {
 	if cfg.EnableFlag {
 		t.Error("flag should default OFF")
 	}
-	if got := cfg.Models[domain.UseCaseChat]; got != "gemini-2.5-flash" {
-		t.Errorf("chat model = %q, want gemini-2.5-flash", got)
+	if got := cfg.Models[domain.UseCaseChat]; got != "gemini/gemini-3.5-flash-lite" {
+		t.Errorf("chat model = %q, want gemini/gemini-3.5-flash-lite", got)
 	}
 	if got := cfg.Models[domain.UseCaseEmbedding]; got != "gemini/gemini-embedding-001" {
 		t.Errorf("embedding model = %q", got)

@@ -16,11 +16,21 @@ type CheckoutService struct {
 	registry *Registry
 	invoices *InvoiceService
 	planGW   PlanGatewayResolver
+	// tx, when set, runs the open-invoice guard + invoice creation in one
+	// transaction so two concurrent checkouts cannot both succeed. The partial
+	// unique index on invoices is the final backstop.
+	tx TxRunner
 }
 
 // NewCheckoutService builds the checkout service.
 func NewCheckoutService(repo Repository, settings SettingsRepository, registry *Registry, invoices *InvoiceService, planGW PlanGatewayResolver) *CheckoutService {
 	return &CheckoutService{repo: repo, settings: settings, registry: registry, invoices: invoices, planGW: planGW}
+}
+
+// WithTx installs the transaction runner used to make checkout race-safe.
+func (s *CheckoutService) WithTx(tx TxRunner) *CheckoutService {
+	s.tx = tx
+	return s
 }
 
 // CheckoutRequest starts a payment for a plan.
@@ -47,20 +57,52 @@ type CheckoutResult struct {
 
 // Checkout creates the invoice and payment and initiates the gateway
 // transaction.
+//
+// A user may have at most one open (unpaid) invoice at a time: if one exists,
+// ErrOpenInvoiceExists is returned and the caller is expected to surface it so
+// the user can pay or cancel the existing invoice instead. The guard runs in a
+// transaction with a per-user advisory lock, and the DB's partial unique index
+// is the final backstop, so concurrent clicks can never create two invoices.
 func (s *CheckoutService) Checkout(ctx context.Context, req CheckoutRequest) (*CheckoutResult, error) {
 	gw, err := s.registry.ResolveGateway(ctx, s.settings, req.PlanCode, s.planGW)
 	if err != nil {
 		return nil, err
 	}
 
-	// Invoice (records the plan code in notes for later activation).
-	inv, err := s.invoices.Create(ctx, CreateInvoiceDTO{
-		UserID:      req.UserID,
-		SubtotalIDR: req.AmountIDR,
-		Notes:       req.PlanCode,
-	})
-	if err != nil {
-		return nil, err
+	// Create the invoice under the guard.
+	var inv *Invoice
+	create := func(txCtx context.Context) error {
+		// Serialise per user, then check for an existing open invoice.
+		if err := s.lockUser(txCtx, req.UserID.String()); err != nil {
+			return err
+		}
+		existing, err := s.repo.GetOpenInvoiceForUserForUpdate(txCtx, req.UserID)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			return fmt.Errorf("%w: %s", ErrOpenInvoiceExists, existing.InvoiceNumber)
+		}
+		created, err := s.invoices.Create(txCtx, CreateInvoiceDTO{
+			UserID:      req.UserID,
+			SubtotalIDR: req.AmountIDR,
+			Notes:       req.PlanCode,
+		})
+		if err != nil {
+			return err
+		}
+		inv = created
+		return nil
+	}
+
+	if s.tx != nil {
+		if err := s.tx.RunInTx(ctx, create); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := create(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	idemKey := req.IdempotencyKey
@@ -107,6 +149,18 @@ func (s *CheckoutService) Checkout(ctx context.Context, req CheckoutRequest) (*C
 		RedirectURL:  txRes.RedirectURL,
 		Instructions: rawInstructions(txRes.Raw),
 	}, nil
+}
+
+// lockUser takes a per-user advisory lock inside the checkout transaction, so
+// two concurrent checkouts for the same user serialise instead of both reading
+// "no open invoice" and both inserting.
+func (s *CheckoutService) lockUser(ctx context.Context, userID string) error {
+	if locker, ok := s.tx.(interface {
+		AdvisoryXactLock(ctx context.Context, key string) error
+	}); ok {
+		return locker.AdvisoryXactLock(ctx, "checkout:"+userID)
+	}
+	return nil
 }
 
 func rawInstructions(raw map[string]any) map[string]any {

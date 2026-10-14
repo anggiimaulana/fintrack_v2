@@ -25,12 +25,12 @@ func (r *recNotifier) Notify(_ context.Context, n Notification) error {
 }
 func (r *recNotifier) count() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.sent) }
 
-// TestDunningWorker_RemindersAndDedup verifies H-3/H-1 reminders are emitted
-// once per bucket and never duplicated.
+// TestDunningWorker_RemindersAndDedup verifies reminders are emitted once per
+// bucket and never duplicated (default thresholds 0/24/72h).
 func TestDunningWorker_RemindersAndDedup(t *testing.T) {
 	repo := newMemRepo()
 	notifier := &recNotifier{}
-	w := NewDunningWorker(repo, notifier, time.Hour)
+	w := NewDunningWorker(repo, nil, notifier, time.Hour)
 
 	// Seed an invoice due in 48h (=> H-3 "soon" bucket).
 	due := time.Now().UTC().Add(48 * time.Hour)
@@ -60,9 +60,52 @@ func TestDunningBucket(t *testing.T) {
 		-10: "SUBSCRIPTION_EXPIRING_DUE",
 	}
 	for h, want := range cases {
-		if got := dunningBucket(h); got != want {
+		if got := dunningBucket(h, 0, 24, 72); got != want {
 			t.Errorf("dunningBucket(%d)=%s want %s", h, got, want)
 		}
+	}
+}
+
+// TestDunningWorker_ConfigurableThresholds verifies the reminder offsets come
+// from settings, so an operator can retune the cadence without a redeploy.
+func TestDunningWorker_ConfigurableThresholds(t *testing.T) {
+	repo := newMemRepo()
+	notifier := &recNotifier{}
+	settings := newMemSettings()
+	settings.m["dunning_hours_urgent"] = int64(12)
+	settings.m["dunning_hours_soon"] = int64(36)
+	w := NewDunningWorker(repo, settings, notifier, time.Hour)
+
+	// An invoice due in 30h is now "soon" (<=36) but was outside the old 24h
+	// urgent / inside 72h soon window either way; the point is the boundary
+	// moved: 30h > 12h urgent, <=36h soon.
+	due := time.Now().UTC().Add(30 * time.Hour)
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: uuid.New(), UserID: uuid.New(), Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
+	w.RunOnce(context.Background())
+	if notifier.count() != 1 || notifier.sent[0].Type != "SUBSCRIPTION_EXPIRING_SOON" {
+		t.Fatalf("expected SOON reminder under custom thresholds, got %+v", notifier.sent)
+	}
+
+	// With a 20h horizon the 30h invoice must NOT be picked up at all.
+	notifier2 := &recNotifier{}
+	settings.m["dunning_hours_soon"] = int64(20)
+	w2 := NewDunningWorker(repo, settings, notifier2, time.Hour)
+	w2.RunOnce(context.Background())
+	if notifier2.count() != 0 {
+		t.Fatalf("expected no reminder with 20h horizon, got %d", notifier2.count())
+	}
+}
+
+// TestDunningThresholds_Monotonic verifies urgent is clamped to soon so the
+// buckets can never invert (which would strand invoices in an unreachable band).
+func TestDunningThresholds_Monotonic(t *testing.T) {
+	settings := newMemSettings()
+	settings.m["dunning_hours_urgent"] = int64(90)
+	settings.m["dunning_hours_soon"] = int64(24)
+	w := NewDunningWorker(newMemRepo(), settings, nil, time.Hour)
+	_, urgent, soon := w.dunningThresholds(context.Background())
+	if urgent != soon {
+		t.Fatalf("expected urgent clamped to soon (%d), got urgent=%d soon=%d", soon, urgent, soon)
 	}
 }
 

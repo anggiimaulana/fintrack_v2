@@ -14,14 +14,25 @@ type SettingsReader interface {
 	GetString(ctx context.Context, key string) (string, error)
 }
 
+// R2Resolver supplies the current R2 store, rebuilt when credentials change.
+// Returning (nil, nil) means "R2 not configured" — never an error, so the
+// provider can silently stay on local.
+type R2Resolver interface {
+	R2(ctx context.Context) (*R2Store, error)
+}
+
 // Config wires the provider.
 type Config struct {
 	// DefaultDriver is used when no setting is present ("local" | "r2").
 	DefaultDriver string
 	// Local is the always-available local driver.
 	Local *LocalStore
-	// R2 is the object-storage driver; nil when not configured.
+	// R2 is a static object-storage driver; nil when not configured. Ignored
+	// when R2Resolver is set.
 	R2 *R2Store
+	// R2Resolver, when set, resolves the R2 store at runtime so credentials can
+	// be changed from the Super Admin UI without a restart.
+	R2Resolver R2Resolver
 	// Settings optionally overrides the driver at runtime.
 	Settings SettingsReader
 	// CacheTTL bounds how long a driver selection is cached (default 5s).
@@ -32,11 +43,12 @@ type Config struct {
 // cross-driver fallback, so flipping local <-> r2 takes effect immediately for
 // new uploads while previously stored objects remain readable.
 type Provider struct {
-	local    *LocalStore
-	r2       *R2Store
-	settings SettingsReader
-	def      string
-	ttl      time.Duration
+	local      *LocalStore
+	r2         *R2Store
+	r2Resolver R2Resolver
+	settings   SettingsReader
+	def        string
+	ttl        time.Duration
 
 	mu      sync.RWMutex
 	active  string
@@ -53,13 +65,29 @@ func NewProvider(cfg Config) *Provider {
 	if def != DriverR2 {
 		def = DriverLocal
 	}
-	return &Provider{
-		local:    cfg.Local,
-		r2:       cfg.R2,
-		settings: cfg.Settings,
-		def:      def,
-		ttl:      ttl,
+	p := &Provider{
+		local:      cfg.Local,
+		r2:         cfg.R2,
+		r2Resolver: cfg.R2Resolver,
+		settings:   cfg.Settings,
+		def:        def,
+		ttl:        ttl,
 	}
+	return p
+}
+
+// r2Store returns the current R2 store: the runtime-resolved one when a resolver
+// is configured, else the static one. Resolution errors degrade to nil (local
+// only) so a bad credential never takes storage down entirely.
+func (p *Provider) r2Store(ctx context.Context) *R2Store {
+	if p.r2Resolver != nil {
+		s, err := p.r2Resolver.R2(ctx)
+		if err != nil {
+			return nil
+		}
+		return s
+	}
+	return p.r2
 }
 
 // Active returns the store for new writes. It honours the `storage_driver`
@@ -67,8 +95,10 @@ func NewProvider(cfg Config) *Provider {
 // requested driver is unavailable.
 func (p *Provider) Active(ctx context.Context) (Store, error) {
 	name := p.activeName(ctx)
-	if name == DriverR2 && p.r2 != nil {
-		return p.r2, nil
+	if name == DriverR2 {
+		if r2 := p.r2Store(ctx); r2 != nil {
+			return r2, nil
+		}
 	}
 	if p.local == nil {
 		return nil, ErrDisabled
@@ -98,7 +128,7 @@ func (p *Provider) activeName(ctx context.Context) string {
 		}
 	}
 	// A request for r2 with no r2 configured stays on local (never hard-fails).
-	if name == DriverR2 && p.r2 == nil {
+	if name == DriverR2 && p.r2Store(ctx) == nil {
 		name = DriverLocal
 	}
 
@@ -122,9 +152,10 @@ func (p *Provider) Invalidate() {
 // other driver. This keeps objects written before a switch readable afterwards.
 func (p *Provider) Open(ctx context.Context, key string) (*Object, error) {
 	primary, _ := p.Active(ctx)
+	r2 := p.r2Store(ctx)
 	order := []Store{primary}
-	if p.r2 != nil && primary != nil && primary.Name() != DriverR2 {
-		order = append(order, p.r2)
+	if r2 != nil && primary != nil && primary.Name() != DriverR2 {
+		order = append(order, r2)
 	}
 	if p.local != nil && (primary == nil || primary.Name() != DriverLocal) {
 		order = append(order, p.local)
@@ -156,7 +187,7 @@ func (p *Provider) Open(ctx context.Context, key string) (*Object, error) {
 // switch never leaves a stale copy behind.
 func (p *Provider) Delete(ctx context.Context, key string) error {
 	var firstErr error
-	for _, s := range []Store{p.local, p.r2} {
+	for _, s := range []Store{p.local, p.r2Store(ctx)} {
 		if s == nil {
 			continue
 		}
@@ -191,12 +222,12 @@ func (p *Provider) Status(ctx context.Context) Status {
 		st.LocalReady = p.local.Healthy(ctx) == nil
 		st.LocalRoot = p.local.Root()
 	}
-	if p.r2 != nil {
+	if r2 := p.r2Store(ctx); r2 != nil {
 		st.R2Configured = true
-		st.R2Healthy = p.r2.Healthy(ctx) == nil
-		st.R2Bucket = p.r2.Bucket()
-		st.R2Endpoint = p.r2.Endpoint()
-		st.R2PublicURL = p.r2.PublicBaseURL()
+		st.R2Healthy = r2.Healthy(ctx) == nil
+		st.R2Bucket = r2.Bucket()
+		st.R2Endpoint = r2.Endpoint()
+		st.R2PublicURL = r2.PublicBaseURL()
 	}
 	return st
 }
@@ -204,7 +235,7 @@ func (p *Provider) Status(ctx context.Context) Status {
 // DriverNames lists the drivers this provider can serve.
 func (p *Provider) DriverNames() []string {
 	out := []string{DriverLocal}
-	if p.r2 != nil {
+	if p.r2Store(context.Background()) != nil {
 		out = append(out, DriverR2)
 	}
 	return out

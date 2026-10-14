@@ -18,6 +18,7 @@ import (
 	"github.com/fintrack/backend/internal/aigateway/bootstrap"
 	"github.com/fintrack/backend/internal/aigateway/breaker"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
+	"github.com/fintrack/backend/internal/aigateway/metering"
 	"github.com/fintrack/backend/internal/audit"
 	"github.com/fintrack/backend/internal/billing"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
@@ -30,9 +31,12 @@ import (
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
+	"github.com/fintrack/backend/internal/mail"
+	"github.com/fintrack/backend/internal/notification"
 	"github.com/fintrack/backend/internal/payment"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/repository/postgres"
+	"github.com/fintrack/backend/internal/runtimeconfig"
 	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/contracts"
@@ -168,7 +172,6 @@ func main() {
 	savingsCatRepo := postgres.NewSavingsCategoryRepo(pool)
 	subcatRepo := postgres.NewExpenseSubcategoryRepo(pool)
 	userRepo := postgres.NewUserRepo(pool)
-	spkRepo := postgres.NewSPKRepo(pool)
 	chatSessionRepo := postgres.NewChatSessionRepo(pool)
 	chatMessageRepo := postgres.NewChatMessageRepo(pool)
 	providerRepo := postgres.NewProviderRepo(pool)
@@ -217,6 +220,22 @@ func main() {
 						Status:       string(to),
 					}))
 			},
+		},
+		// Smart failover: alert admins in realtime when a single route (model) is
+		// quarantined, and again when it recovers. This is model-level, distinct
+		// from the endpoint-level EventAIEndpointDown above.
+		OnRouteStateChange: func(ev gateway.RouteStateChange) {
+			realtimePublisher.PublishAdmins(bgCtx, contracts.NewEvent(
+				contracts.EventAIRouteQuarantined, time.Now().Unix(),
+				contracts.AIRouteQuarantinedPayload{
+					UseCase:    ev.UseCase,
+					Model:      ev.Model,
+					Endpoint:   ev.Endpoint,
+					EndpointID: ev.EndpointID,
+					Combo:      ev.Combo,
+					Reason:     ev.Reason,
+					Recovered:  !ev.Opened,
+				}))
 		},
 	})
 
@@ -284,9 +303,56 @@ func main() {
 	}
 	if gatewayEnabled {
 		logger.Info("AI gateway centralized: ENABLED")
+
+		// Verify the ACTUAL model on every active route answers — not just that
+		// the endpoint is reachable. An endpoint can be "healthy" (it responds)
+		// while the model its route points at is dead (e.g. the gateway answers
+		// 503 for an unknown model). Reachability probing cannot catch that; only
+		// a real call can. This runs in the background so a slow or dead model
+		// never blocks startup, and it is read-only: it never changes routes,
+		// health, or the breaker, so a false negative cannot take AI down.
+		go func() {
+			results := aiGateway.VerifyRoutes(bgCtx)
+			var broken []string
+			for _, r := range results {
+				switch {
+				case r.Skipped:
+					logger.Info("AI route verify: skipped (no synthetic fixture)",
+						zap.String("use_case", r.UseCase), zap.String("model", r.Model))
+				case r.OK:
+					logger.Info("AI route verify: OK",
+						zap.String("use_case", r.UseCase), zap.String("model", r.Model),
+						zap.Int64("latency_ms", r.LatencyMS))
+				default:
+					broken = append(broken, r.UseCase+"/"+r.Model)
+					logger.Warn("AI route verify: MODEL NOT RESPONDING — this route will fail for users",
+						zap.String("use_case", r.UseCase),
+						zap.String("model", r.Model),
+						zap.String("endpoint", r.Endpoint),
+						zap.String("error", r.Error))
+				}
+			}
+			if len(broken) > 0 {
+				// Smart failover: quarantine the dead routes so the very next
+				// request fails over to a healthy sibling instead of paying the
+				// dead-model round-trip. Recovery is automatic (breaker cooldown),
+				// so a model that comes back is used again without a restart.
+				quarantined := aiGateway.QuarantineBrokenRoutes(results)
+				logger.Error("AI route verify: broken routes detected; quarantined for fast failover",
+					zap.Strings("routes", broken),
+					zap.Int("quarantined", quarantined))
+			}
+		}()
 	} else {
 		logger.Info("AI gateway centralized: disabled")
 	}
+
+	// Central runtime configuration: DB setting wins, env supplies the default.
+	// Used by payment credentials, R2, mail and AI knobs so a Super Admin change
+	// applies without a redeploy. Declared early because the embedder, gateways
+	// and storage provider all resolve through it.
+	settingsRepo := postgres.NewSettingsRepo(pool)
+	runtimeResolver := runtimeconfig.New(settingsRepo, encryptionKey)
 
 	// Embedder (RAG). Prefer the gateway embedder when the gateway is enabled,
 	// otherwise fall back to the direct Gemini embedder (graceful degradation).
@@ -294,7 +360,8 @@ func main() {
 	if gatewayEnabled {
 		embedder = embedding.NewGatewayEmbedder(aiGateway)
 	} else {
-		direct := embedding.NewGeminiEmbedder(os.Getenv("GEMINI_EMBEDDING_API_KEY"))
+		direct := embedding.NewGeminiEmbedder(
+			runtimeResolver.Secret(bgCtx, "gemini_embedding_api_key", "GEMINI_EMBEDDING_API_KEY"))
 		if !direct.Enabled() {
 			logger.Warn("GEMINI_EMBEDDING_API_KEY not set — RAG embeddings disabled")
 		}
@@ -327,7 +394,14 @@ func main() {
 	}
 
 	// Usecases
-	spkUC := usecase.NewSPKUsecase(txRepo, spkRepo, txManager)
+	spkRepo := postgres.NewSPKRepo(pool)
+	spkMetricRepo := postgres.NewSPKMetricRepo(pool)
+	spkMetricUC := usecase.NewSPKMetricUsecase(spkMetricRepo)
+	budgetRepo := postgres.NewBudgetRepo(pool)
+	budgetUC := usecase.NewBudgetUsecase(budgetRepo, txRepo)
+	paymentAccountRepo := postgres.NewPaymentAccountRepo(pool)
+	paymentAccountUC := usecase.NewPaymentAccountUsecase(paymentAccountRepo)
+	spkUC := usecase.NewSPKUsecase(txRepo, spkRepo, spkMetricRepo, txManager)
 	spkQueue := usecase.NewSPKQueue(4, func(ctx context.Context, userID uuid.UUID) {
 		if _, err := spkUC.Calculate(ctx, userID); err != nil {
 			logger.Warn("SPK calculation failed", zap.Error(err))
@@ -337,6 +411,7 @@ func main() {
 	categoryUC := usecase.NewCategoryUsecase(incomeCatRepo, expenseCatRepo, savingsCatRepo, subcatRepo)
 	userUC := usecase.NewUserUsecase(userRepo)
 	dashboardUC := usecase.NewDashboardUsecase(txRepo, spkUC)
+
 	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, embedder, embedRepo)
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
@@ -352,10 +427,16 @@ func main() {
 	// The emergency stop applies regardless of which transport serves a model
 	// call, so it is wired outside the gateway feature flag.
 	aiUC.WithKillSwitch(killSwitch.Enabled)
+	// `reasoning_effort` is resolved at request time (DB setting over env) so the
+	// Super Admin can tune it without a redeploy.
+	aiUC.WithReasoningEffort(func() string {
+		return runtimeResolver.String(bgCtx, "ai_reasoning_effort", "AI_REASONING_EFFORT", "")
+	})
 	// Subscription & entitlement engine (P04).
 	billingRepo := postgres.NewBillingRepo(pool)
 	entSource := postgres.NewEntitlementSource(billingRepo)
 	entResolver := entitlement.NewResolver(entSource, cacheEngine)
+	aiUC.WithEntitlements(entResolver)
 	entHandler := handler.NewEntitlementHandler(entResolver)
 	entBroadcaster := entitlement.NewBroadcaster(infraRedis.NewPubSub(redisClient), entResolver)
 	stopEntSubscriber := entBroadcaster.StartSubscriber(bgCtx)
@@ -363,15 +444,37 @@ func main() {
 
 	// Payments & billing (P05).
 	paymentRepo := postgres.NewPaymentRepo(pool)
-	settingsRepo := postgres.NewSettingsRepo(pool)
+
+	// Apply any Super-Admin-tuned breaker thresholds to the running gateway
+	// (created earlier with built-in defaults). A no-op when unset.
+	applyBreakerSettings(bgCtx, aiGateway, settingsRepo)
+
+	// Apply any Super-Admin-tuned token metering heuristics (local estimator).
+	applyMeteringSettings(bgCtx, settingsRepo)
+
+	// Notifications: durable in-app inbox + email that honours per-user
+	// preferences. Mail config resolves DB setting -> env default, so an operator
+	// can change SMTP without a redeploy while env still works out of the box.
+	notificationRepo := postgres.NewNotificationRepo(pool)
+	mailProvider := mail.NewProvider(settingsRepo, encryptionKey)
+	notifService := notification.NewService(notificationRepo, mailProvider,
+		func(ctx context.Context, uid uuid.UUID) (string, error) {
+			p, err := userRepo.GetByID(ctx, uid)
+			if err != nil || p == nil {
+				return "", err
+			}
+			return p.Email, nil
+		}).WithEmitter(realtimePublisher)
+	notifHandler := handler.NewNotificationHandler(notificationRepo, notifService)
+	// Wrap the realtime publisher so every user-facing event is also written to
+	// the durable inbox (and emailed when permitted). Payment/billing keep
+	// emitting to the same interface, unaware of persistence.
+	notifEmitter := notification.NewEmitter(realtimePublisher, notifService)
 	payRegistry := payment.NewRegistry()
-	payRegistry.Register(payment.NewMidtransGateway(payment.MidtransConfig{
-		ServerKey:    os.Getenv("MIDTRANS_SERVER_KEY"),
-		ClientKey:    os.Getenv("MIDTRANS_CLIENT_KEY"),
-		IsProduction: os.Getenv("MIDTRANS_IS_PRODUCTION") == "true",
-	}))
-	payRegistry.Register(payment.NewManualGateway(
-		os.Getenv("MANUAL_BANK_NAME"), os.Getenv("MANUAL_ACCOUNT_NUMBER"), os.Getenv("MANUAL_ACCOUNT_HOLDER")))
+	// Gateways resolve their credentials at call time (DB setting over env), so
+	// Midtrans keys and bank details can change without a redeploy.
+	payRegistry.Register(payment.NewDynamicMidtransGateway(runtimeResolver))
+	payRegistry.Register(payment.NewDynamicManualGateway(runtimeResolver))
 	payTax := payment.NewTaxCalculator(settingsRepo)
 	payInvoice := payment.NewInvoiceService(paymentRepo, settingsRepo, payTax)
 	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver)
@@ -379,49 +482,45 @@ func main() {
 
 	// Proof object storage (P0). Local by default; R2 when configured. The
 	// active driver is read from the `storage_driver` setting at runtime, so an
-	// admin can switch local <-> r2 without a restart.
+	// admin can switch local <-> r2 without a restart. R2 credentials resolve at
+	// runtime too, so a Super Admin change applies without a redeploy.
 	localStore, err := storage.NewLocalStore(os.Getenv("STORAGE_LOCAL_DIR"))
 	if err != nil {
 		logger.Fatal("Failed to initialise local storage", zap.Error(err))
 	}
-	var r2Store *storage.R2Store
-	r2cfg := storage.R2Config{
-		AccountID:       os.Getenv("R2_ACCOUNT_ID"),
-		Endpoint:        os.Getenv("R2_ENDPOINT"),
-		Region:          os.Getenv("R2_REGION"),
-		AccessKeyID:     os.Getenv("R2_ACCESS_KEY_ID"),
-		SecretAccessKey: os.Getenv("R2_SECRET_ACCESS_KEY"),
-		Bucket:          os.Getenv("R2_BUCKET"),
-		Prefix:          os.Getenv("R2_PREFIX"),
-		PublicBaseURL:   os.Getenv("R2_PUBLIC_BASE_URL"),
-	}
-	if r2cfg.Enabled() {
-		if s, serr := storage.NewR2Store(bgCtx, r2cfg); serr != nil {
-			logger.Warn("R2 storage not initialised; falling back to local", zap.Error(serr))
-		} else {
-			r2Store = s
-			logger.Info("R2 storage configured", zap.String("bucket", r2cfg.Bucket))
-		}
+	r2Resolver := storage.NewDynamicR2Resolver(runtimeResolver)
+	if store, rerr := r2Resolver.R2(bgCtx); rerr == nil && store != nil {
+		logger.Info("R2 storage configured", zap.String("bucket", store.Bucket()))
 	} else {
 		logger.Info("R2 storage not configured (using local storage)")
 	}
-	defaultDriver := os.Getenv("STORAGE_DRIVER")
+	defaultDriver := runtimeResolver.String(bgCtx, "storage_driver", "STORAGE_DRIVER", storage.DriverLocal)
 	if defaultDriver == "" {
 		defaultDriver = storage.DriverLocal
 	}
 	storageProvider := storage.NewProvider(storage.Config{
 		DefaultDriver: defaultDriver,
 		Local:         localStore,
-		R2:            r2Store,
+		R2Resolver:    r2Resolver,
 		Settings:      settingsRepo,
 	})
 	proofStore := storage.NewProofStore(storageProvider)
 
 	payManual := payment.NewManualService(paymentRepo, subActivator, txManager, proofStore)
 	payAdmin := payment.NewAdminService(payManual)
-	payCheckout := payment.NewCheckoutService(paymentRepo, settingsRepo, payRegistry, payInvoice, nil)
-	payUserSvc := payment.NewUserService(paymentRepo, settingsRepo, payRegistry, payManual)
-	payCatalog := payment.NewCatalogService(billingRepo, billingRepo)
+	payCheckout := payment.NewCheckoutService(paymentRepo, settingsRepo, payRegistry, payInvoice, nil).WithTx(txManager)
+	payUserSvc := payment.NewUserService(paymentRepo, settingsRepo, payRegistry, payManual).
+		WithPaymentAccounts(payment.NewPaymentAccountAdapter(paymentAccountRepo))
+	// The public plan catalog annotates each limit with its label/unit and —
+	// importantly — whether the backend enforces it, so the user-facing pricing
+	// UI never advertises a limit that is not actually enforced (F4).
+	catalogLimitMeta := make([]payment.LimitMeta, 0, len(entitlement.LimitCatalog))
+	for _, lk := range entitlement.LimitCatalog {
+		catalogLimitMeta = append(catalogLimitMeta, payment.LimitMeta{
+			Key: lk.Key, Label: lk.Label, Unit: lk.Unit, Enforced: lk.Enforced,
+		})
+	}
+	payCatalog := payment.NewCatalogService(billingRepo, billingRepo, catalogLimitMeta, payTax)
 	paySubSvc := payment.NewSubscriptionService(billingRepo, billingRepo, nil, func(ctx context.Context, uid uuid.UUID) {
 		entBroadcaster.PublishInvalidate(ctx, uid)
 	})
@@ -435,8 +534,8 @@ func main() {
 		WithStorage(proofStore)
 
 	// Realtime producers (P07 slice B).
-	payWebhook.SetEmitter(realtimePublisher)
-	payManual.SetEmitter(realtimePublisher)
+	payWebhook.SetEmitter(notifEmitter)
+	payManual.SetEmitter(notifEmitter)
 
 	// Dunning & grace workers. The grace worker needs a status setter so an
 	// overdue subscription actually transitions to `grace`/`past_due`; without it
@@ -448,12 +547,17 @@ func main() {
 		}
 		return billingRepo.SetSubscriptionStatus(ctx, uid, billing.SubscriptionStatus(status))
 	}
-	dunningWorker := payment.NewDunningWorker(paymentRepo, nil, time.Hour)
+	dunningWorker := payment.NewDunningWorker(paymentRepo, settingsRepo, nil, time.Hour)
 	graceWorker := payment.NewGraceWorker(paymentRepo, settingsRepo, setSubStatus, 30*time.Minute)
+	// Auto-expire unpaid invoices past their due date (dynamic window set by the
+	// operator as hours + minutes). A 5-minute scan keeps the lag small.
+	expiryWorker := payment.NewExpiryWorker(paymentRepo, 5*time.Minute)
 	dunningWorker.Start(bgCtx)
 	graceWorker.Start(bgCtx)
+	expiryWorker.Start(bgCtx)
 	defer dunningWorker.Stop()
 	defer graceWorker.Stop()
+	defer expiryWorker.Stop()
 
 	providerUC := usecase.NewProviderUsecase(providerRepo)
 	reportUC := usecase.NewReportUsecase(txRepo)
@@ -478,10 +582,14 @@ func main() {
 	// middleware's resolvers so the UI shows exactly what the gate enforces.
 	entHandler.WithUsage(&handler.UsageProvidersFn{
 		Counters: map[string]func(ctx context.Context, userID uuid.UUID) (int64, error){
-			"ai_tokens_per_cycle":   middleware.TokenPeriodUsage(billingRepo),
-			"max_transactions":      txRepo.CountActiveByUser,
-			"ocr_scans_per_cycle":   func(ctx context.Context, userID uuid.UUID) (int64, error) { return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix()) },
-			"ai_requests_per_cycle": func(ctx context.Context, userID uuid.UUID) (int64, error) { return billingRepo.CountAIRequestsInPeriod(ctx, userID, time.Now().UTC().Unix()) },
+			"ai_tokens_per_cycle": middleware.TokenPeriodUsage(billingRepo),
+			"max_transactions":    txRepo.CountActiveByUser,
+			"ocr_scans_per_cycle": func(ctx context.Context, userID uuid.UUID) (int64, error) {
+				return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix())
+			},
+			"ai_requests_per_cycle": func(ctx context.Context, userID uuid.UUID) (int64, error) {
+				return billingRepo.CountAIRequestsInPeriod(ctx, userID, time.Now().UTC().Unix())
+			},
 		},
 		Period: func(ctx context.Context, userID uuid.UUID) (*entitlement.Period, error) {
 			p, err := billingRepo.GetCurrentPeriod(ctx, userID, time.Now().UTC().Unix())
@@ -547,17 +655,23 @@ func main() {
 	downgradeWorker.Start(bgCtx)
 	defer downgradeWorker.Stop()
 
+	// Wrap the realtime publisher so every user-facing event is also written to
+	// the durable inbox (and emailed when permitted). Payment/billing keep
+	// emitting to the same interface, unaware of persistence.
 	routerConfig := deliveryHTTP.RouterConfig{
-		JWTSecret:    jwtSecret,
-		CORSOrigin:   corsOrigin,
-		CookieSecure: cookieSecure,
-		Metrics:      metricsRegistry,
-		Entitlement:  entMiddleware,
-		Usage:        entUsage,
-		Pool:         pool,
-		Redis:        redisClient,
+		JWTSecret:     jwtSecret,
+		CORSOrigin:    corsOrigin,
+		CookieSecure:  cookieSecure,
+		Metrics:       metricsRegistry,
+		Entitlement:   entMiddleware,
+		Usage:         entUsage,
+		Pool:          pool,
+		Redis:         redisClient,
 		Storage:      storageProvider,
 		Ledger:       ledgerService,
+		Audit:        auditSvc,
+		Estimates:     billing.NewEstimateStore(settingsRepo),
+		Notifications: notifHandler,
 	}
 
 	// Super Admin portal (P06): one service + handler shared by every route.
@@ -571,12 +685,23 @@ func main() {
 		admin.WithEntitlementInvalidator(entBroadcaster),
 		admin.WithRealtimeEmitter(realtimePublisher),
 		admin.WithStorage(storageProvider, storageProvider),
+		admin.WithRuntimeResolver(runtimeResolver),
+		admin.WithRuntimeConfig(runtimeInvalidator{
+			resolver: runtimeResolver,
+			r2:       r2Resolver,
+		}),
 		admin.WithPricingReload(func(ctx context.Context) {
 			if rule, err := billingRepo.GetActiveRule(ctx); err == nil {
 				pricingEngine.SetRule(rule)
 			} else {
 				logger.Warn("pricing reload after admin change failed", zap.Error(err))
 			}
+		}),
+		admin.WithBreakerReload(func(ctx context.Context) {
+			applyBreakerSettings(ctx, aiGateway, settingsRepo)
+		}),
+		admin.WithMeteringReload(func(ctx context.Context) {
+			applyMeteringSettings(ctx, settingsRepo)
 		}),
 	)
 	superAdminH := admin.NewHandler(adminSvc)
@@ -589,6 +714,9 @@ func main() {
 		userUC,
 		dashboardUC,
 		spkUC,
+		spkMetricUC,
+		budgetUC,
+		paymentAccountUC,
 		aiUC,
 		providerUC,
 		reportUC,
@@ -644,4 +772,105 @@ func main() {
 	}
 
 	logger.Info("Server exited gracefully")
+}
+
+// applyBreakerSettings reads the breaker tuning keys from settings and applies
+// them to the running AI gateway. Called once at boot and again whenever the
+// Super Admin changes them, so tuning takes effect without a restart. Missing
+// keys keep the built-in defaults (the gateway already seeded them).
+func applyBreakerSettings(ctx context.Context, gw *gateway.Service, settingsRepo *postgres.SettingsRepo) {
+	if gw == nil || settingsRepo == nil {
+		return
+	}
+	read := func(key string) (int64, bool) {
+		v, err := settingsRepo.GetInt(ctx, key)
+		if err != nil || v <= 0 {
+			return 0, false
+		}
+		return v, true
+	}
+
+	if v, ok := read("breaker_failure_threshold"); ok {
+		cfg := gw.BreakerConfig()
+		cfg.FailureThreshold = int(v)
+		gw.SetBreakerConfig(cfg)
+	}
+	if v, ok := read("breaker_cooldown_seconds"); ok {
+		cfg := gw.BreakerConfig()
+		cfg.Cooldown = time.Duration(v) * time.Second
+		gw.SetBreakerConfig(cfg)
+	}
+	if v, ok := read("breaker_half_open_probes"); ok {
+		cfg := gw.BreakerConfig()
+		cfg.HalfOpenMaxProbes = int(v)
+		gw.SetBreakerConfig(cfg)
+	}
+
+	routeThreshold, routeCooldown := gw.RouteBreakerConfig()
+	changed := false
+	if v, ok := read("route_breaker_threshold"); ok {
+		routeThreshold = int(v)
+		changed = true
+	}
+	if v, ok := read("route_breaker_cooldown_secs"); ok {
+		routeCooldown = time.Duration(v) * time.Second
+		changed = true
+	}
+	if changed {
+		gw.SetRouteBreakerConfig(routeThreshold, routeCooldown)
+	}
+}
+
+// applyMeteringSettings reads token metering heuristic parameters from settings
+// and updates the process-wide estimator.
+func applyMeteringSettings(ctx context.Context, settingsRepo *postgres.SettingsRepo) {
+	if settingsRepo == nil {
+		return
+	}
+	read := func(key string) (int, bool) {
+		v, err := settingsRepo.GetInt(ctx, key)
+		if err != nil || v <= 0 {
+			return 0, false
+		}
+		return int(v), true
+	}
+
+	cfg := metering.CurrentConfig()
+	changed := false
+	if v, ok := read("metering_chars_per_token"); ok {
+		cfg.CharsPerToken = v
+		changed = true
+	}
+	if v, err := settingsRepo.GetInt(ctx, "metering_safety_buffer_pct"); err == nil && v >= 0 {
+		cfg.SafetyBufferPct = int(v)
+		changed = true
+	}
+	if v, ok := read("metering_image_tokens"); ok {
+		cfg.ImageTokens = v
+		changed = true
+	}
+	if v, ok := read("metering_audio_tokens_per_sec"); ok {
+		cfg.TokensPerSecond = v
+		changed = true
+	}
+	if changed {
+		metering.SetConfig(cfg)
+	}
+}
+
+// runtimeInvalidator clears both the config resolver cache and the R2 store
+// cache after a Super Admin settings change, so the new values apply immediately
+// rather than after the cache TTL.
+type runtimeInvalidator struct {
+	resolver *runtimeconfig.Resolver
+	r2       *storage.DynamicR2Resolver
+}
+
+func (r runtimeInvalidator) Invalidate() {
+	if r.resolver != nil {
+		r.resolver.Invalidate()
+	}
+	if r.r2 != nil {
+		r.r2.Invalidate()
+	}
 }

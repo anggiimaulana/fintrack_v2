@@ -73,13 +73,25 @@ func TestBillingRepo_CountAIRequestsAndVisionScans(t *testing.T) {
 		t.Fatalf("ai requests = %d, want 3", reqs)
 	}
 
-	// ocr_scans_per_cycle counts vision-modality entries.
+	// ocr_scans_per_cycle counts vision RESERVES only (one per scan). Counting
+	// every vision row would double-count (reserve + commit) — regression guard.
 	scans, err := repo.CountVisionScansInPeriod(ctx, userID, now.Unix())
 	if err != nil {
 		t.Fatalf("count vision scans: %v", err)
 	}
+	if scans != 1 {
+		t.Fatalf("vision scans = %d, want 1 (reserve only, not reserve+commit)", scans)
+	}
+
+	// A second completed scan (reserve + commit) must still count once.
+	insert(string(billing.ModalityVision), billing.EntryReserve, key("v2"))
+	insert(string(billing.ModalityVision), billing.EntryCommit, key("v2c"))
+	scans, err = repo.CountVisionScansInPeriod(ctx, userID, now.Unix())
+	if err != nil {
+		t.Fatalf("count vision scans (2): %v", err)
+	}
 	if scans != 2 {
-		t.Fatalf("vision scans = %d, want 2", scans)
+		t.Fatalf("vision scans = %d, want 2 after two completed scans", scans)
 	}
 
 	// A user with no period has zero usage (not an error).

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -117,6 +118,12 @@ func (h *PaymentHandler) Checkout(c *gin.Context) {
 		CustomerEmail: userProfile.Email,
 	})
 	if err != nil {
+		// A user may hold at most one unpaid invoice; surface that as a conflict
+		// with the existing invoice number so the UI can point them at it.
+		if errors.Is(err, payment.ErrOpenInvoiceExists) {
+			response.Conflict(c, "Anda masih memiliki tagihan yang belum dibayar. Bayar atau batalkan tagihan tersebut terlebih dahulu.")
+			return
+		}
 		response.InternalError(c, "Gagal membuat sesi pembayaran. Silakan coba beberapa saat lagi.")
 		return
 	}

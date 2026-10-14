@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +38,23 @@ type Config struct {
 	// KillSwitch, when non-nil, reports whether a use case is administratively
 	// disabled by the Super Admin emergency stop. Nil means all enabled.
 	KillSwitch func(uc domain.UseCase) bool
+	// OnRouteStateChange, when set, is called when a route is quarantined
+	// (opened=true) or recovers (opened=false). Nil-safe: when unset, route
+	// quarantine is silent (only logged). Used to emit admin realtime alerts.
+	OnRouteStateChange func(ev RouteStateChange)
+}
+
+// RouteStateChange describes a route entering or leaving quarantine.
+type RouteStateChange struct {
+	UseCase    string
+	Model      string
+	Endpoint   string
+	EndpointID string
+	Combo      string
+	// Opened is true when the route was quarantined, false when it recovered.
+	Opened bool
+	// Reason is the last failure that tripped the route, when known.
+	Reason string
 }
 
 // ErrKillSwitch is returned when the emergency kill switch disables a use case.
@@ -47,6 +65,11 @@ type Service struct {
 	repo    domain.AIEndpointRepository
 	breaker *breaker.Breaker
 	cfg     Config
+
+	// routeHealth quarantines individual ROUTES (endpoint+model), not whole
+	// endpoints. This is the "smart" part of failover: a dead model is skipped
+	// while its healthy siblings on the same endpoint keep serving.
+	routeHealth *routeHealth
 
 	rrMu    sync.Mutex
 	rrState map[domain.UseCase]map[string]int64 // use_case -> combo -> currentWeight
@@ -63,12 +86,14 @@ func New(repo domain.AIEndpointRepository, cfg Config) *Service {
 		bc = breaker.DefaultConfig()
 	}
 	s := &Service{
-		repo:    repo,
-		breaker: breaker.New(bc),
-		cfg:     cfg,
-		rrState: make(map[domain.UseCase]map[string]int64),
+		repo:        repo,
+		breaker:     breaker.New(bc),
+		routeHealth: newRouteHealth(routeBreakerFailureThreshold, routeBreakerCooldown),
+		cfg:         cfg,
+		rrState:     make(map[domain.UseCase]map[string]int64),
 	}
 	s.seedWRR()
+	s.withRouteCallbacks(cfg)
 	return s
 }
 
@@ -89,6 +114,21 @@ func (s *Service) seedWRR() {
 
 // Breaker exposes the breaker (for health checks / diagnostics).
 func (s *Service) Breaker() *breaker.Breaker { return s.breaker }
+
+// SetBreakerConfig retunes the endpoint breaker at runtime (Super Admin settings
+// change) without losing accumulated state.
+func (s *Service) SetBreakerConfig(cfg breaker.Config) { s.breaker.SetConfig(cfg) }
+
+// SetRouteBreakerConfig retunes the per-route breaker at runtime.
+func (s *Service) SetRouteBreakerConfig(threshold int, cooldown time.Duration) {
+	s.routeHealth.setThresholds(threshold, cooldown)
+}
+
+// BreakerConfig returns the endpoint breaker's current tuning.
+func (s *Service) BreakerConfig() breaker.Config { return s.breaker.Config() }
+
+// RouteBreakerConfig returns the route breaker's current tuning.
+func (s *Service) RouteBreakerConfig() (int, time.Duration) { return s.routeHealth.thresholds() }
 
 // killed reports whether the emergency kill switch disables a use case.
 func (s *Service) killed(uc domain.UseCase) bool {
@@ -124,7 +164,13 @@ func routeTimeout(rt *domain.AIRoute, def time.Duration) time.Duration {
 }
 
 // eligibleRoutes returns routes whose endpoint is administratively active and
-// whose breaker allows traffic.
+// whose breakers (endpoint AND route) allow traffic.
+//
+// Two levels of protection:
+//   - endpoint breaker: the whole upstream is down (connection refused, 5xx for
+//     everything) -> skip every route on it.
+//   - route breaker: only this (endpoint, model) pair is dead -> skip just this
+//     route; healthy siblings on the same endpoint keep serving.
 func (s *Service) eligibleRoutes(routes []*domain.AIRoute) []*domain.AIRoute {
 	var out []*domain.AIRoute
 	for _, rt := range routes {
@@ -132,6 +178,9 @@ func (s *Service) eligibleRoutes(routes []*domain.AIRoute) []*domain.AIRoute {
 			continue
 		}
 		if !s.breaker.Allow(rt.Endpoint.ID.String()) {
+			continue
+		}
+		if !s.routeAllowed(rt) {
 			continue
 		}
 		out = append(out, rt)
@@ -273,7 +322,7 @@ func (s *Service) ChatStream(ctx context.Context, req *domain.AIChatRequest) (<-
 			lastErr = serr
 			continue
 		}
-		s.breaker.RecordSuccess(rt.Endpoint.ID.String())
+		s.recordSuccess(rt)
 		return ch, nil
 	}
 	if lastErr == nil {
@@ -315,7 +364,7 @@ func (s *Service) ChatSync(ctx context.Context, req *domain.AIChatRequest) (stri
 			lastErr = serr
 			continue
 		}
-		s.breaker.RecordSuccess(rt.Endpoint.ID.String())
+		s.recordSuccess(rt)
 		usage = s.finalizeUsage(usage, useCase, buildPromptText(req), content)
 		return content, usage, nil
 	}
@@ -360,7 +409,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRe
 			lastErr = fmt.Errorf("%w: got %d", domain.ErrInvalidEmbeddingDimension, len(vec))
 			continue
 		}
-		s.breaker.RecordSuccess(rt.Endpoint.ID.String())
+		s.recordSuccess(rt)
 		usage = s.finalizeUsage(usage, domain.UseCaseEmbedding, req.Text, "")
 		return vec, usage, nil
 	}
@@ -399,7 +448,7 @@ func (s *Service) TranscribeAudio(ctx context.Context, req *domain.AIAudioTransc
 			lastErr = terr
 			continue
 		}
-		s.breaker.RecordSuccess(rt.Endpoint.ID.String())
+		s.recordSuccess(rt)
 		usage := metering.EstimateAudio(estimateAudioSeconds(len(req.Audio)), text)
 		return text, usage, nil
 	}
@@ -430,15 +479,77 @@ func (s *Service) AnalyzeVision(ctx context.Context, req *domain.AIVisionRequest
 
 // ─── internals ────────────────────────────────────────────────
 
+// recordSuccess clears both breaker windows for a route that just succeeded:
+// the endpoint breaker (endpoint is demonstrably up) and the route breaker
+// (this model demonstrably works).
+func (s *Service) recordSuccess(rt *domain.AIRoute) {
+	if rt.Endpoint == nil {
+		return
+	}
+	s.breaker.RecordSuccess(rt.Endpoint.ID.String())
+	s.recordRouteSuccess(rt)
+}
+
 func (s *Service) recordFailure(rt *domain.AIRoute, err error) {
 	if rt.Endpoint == nil {
 		return
 	}
-	s.breaker.RecordFailure(rt.Endpoint.ID.String())
+	// Always quarantine the specific route: whatever went wrong, this
+	// (endpoint, model) pair just failed, so fail over past it.
+	s.recordRouteFailure(rt, err.Error())
+
+	// Only trip the ENDPOINT breaker when the whole endpoint looks down. A
+	// model-level failure (4xx/5xx for one model, e.g. 503 "no such model")
+	// must NOT quarantine the endpoint, or it would take down healthy sibling
+	// models sharing that endpoint — the exact bug this file documents.
+	if isEndpointLevelFailure(err) {
+		s.breaker.RecordFailure(rt.Endpoint.ID.String())
+	}
+
 	logger.Warn("AI gateway route failed, attempting failover",
 		zap.String("endpoint", rt.Endpoint.Name),
 		zap.String("use_case", string(rt.UseCase)),
+		zap.String("model", rt.Model),
+		zap.Bool("endpoint_level", isEndpointLevelFailure(err)),
 		zap.Error(err))
+}
+
+// isEndpointLevelFailure reports whether an error indicates the whole endpoint
+// is unhealthy, as opposed to one model being unavailable.
+//
+// Evidence-based rule (measured against the local 9router):
+//   - An HTTP response of ANY status means the endpoint is up and answering, so
+//     it is NOT endpoint-level. This matters because 9router returns HTTP 503
+//     for a dead model ("gemini-2.5-flash" -> 503 with a 404 body), so treating
+//     5xx as "endpoint down" would quarantine healthy sibling models sharing the
+//     endpoint — the exact bug this feature fixes.
+//   - A timeout means one model was slow (e.g. a reasoning model), not that the
+//     endpoint is down, so it is NOT endpoint-level either.
+//   - Only a transport-level failure (connection refused, DNS, dial error) makes
+//     the endpoint itself suspect.
+func isEndpointLevelFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	// An HTTP response proves the endpoint is reachable.
+	var ue *client.UpstreamError
+	if errors.As(err, &ue) {
+		return false
+	}
+	// A timeout is a slow model, not a dead endpoint.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "timeout") ||
+		strings.Contains(strings.ToLower(err.Error()), "deadline exceeded") {
+		return false
+	}
+	// Anything else (dial/refused/DNS/decrypt) makes the endpoint suspect.
+	return true
 }
 
 // finalizeUsage fills in heuristic values when the provider omitted usage.
