@@ -6,6 +6,8 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type RowSelectionState,
+  type OnChangeFn,
 } from "@tanstack/react-table";
 import {
   Table,
@@ -39,6 +41,15 @@ export interface DataTableProps<TData> {
   onRowClick?: (row: TData) => void;
   /** Column count used for the skeleton (defaults to columns.length). */
   skeletonColumns?: number;
+  /**
+   * Optional row selection. Off by default so existing tables are unaffected.
+   * When enabled, define a checkbox column that calls `row.toggleSelected()`.
+   */
+  enableRowSelection?: boolean;
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
+  /** Stable row id (required for reliable selection across pages). */
+  getRowId?: (row: TData) => string;
 }
 
 /**
@@ -60,6 +71,10 @@ export function DataTable<TData>({
   onSort,
   onRowClick,
   skeletonColumns,
+  enableRowSelection = false,
+  rowSelection,
+  onRowSelectionChange,
+  getRowId,
 }: DataTableProps<TData>) {
   const table = useReactTable({
     data,
@@ -68,6 +83,10 @@ export function DataTable<TData>({
     manualSorting: true,
     manualPagination: true,
     manualFiltering: true,
+    enableRowSelection,
+    ...(getRowId ? { getRowId } : {}),
+    ...(rowSelection !== undefined ? { state: { rowSelection } } : {}),
+    ...(onRowSelectionChange ? { onRowSelectionChange } : {}),
   });
 
   if (isLoading) {

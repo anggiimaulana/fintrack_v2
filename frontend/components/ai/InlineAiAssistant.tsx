@@ -63,10 +63,12 @@ export function InlineAiAssistant() {
 
   useEffect(() => {
     if (sessionMessages && !isStreaming) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
+      if (sessionMessages.length >= messages.length && sessionMessages.length > 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string }) => ({ role: m.role, content: m.content })));
+      }
     }
-  }, [sessionMessages, isStreaming]);
+  }, [sessionMessages, isStreaming, messages.length]);
 
   // Track last assistant index for chart persistence
   const lastAssistantIndex = messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i >= 0).pop() ?? -1;

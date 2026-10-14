@@ -35,9 +35,28 @@ export const queryKeys = {
   reports: {
     all: ["reports"] as const,
     byPeriod: (period: string) => ["reports", period] as const,
+    analytics: (params: string) => ["reports", "analytics", params] as const,
+  },
+  spkMetrics: {
+    all: ["spk-metrics"] as const,
+    mine: ["spk-metrics", "mine"] as const,
+    default: ["spk-metrics", "default"] as const,
+  },
+  budgets: {
+    all: ["budgets"] as const,
+  },
+  paymentAccounts: {
+    all: ["payment-accounts"] as const,
+    active: ["payment-accounts", "active"] as const,
   },
   profile: {
     me: ["profile", "me"] as const,
+  },
+  notifications: {
+    all: ["notifications"] as const,
+    list: (params?: string) => ["notifications", "list", params] as const,
+    stats: ["notifications", "stats"] as const,
+    detail: (id: string) => ["notifications", "detail", id] as const,
   },
   entitlements: {
     me: ["entitlements", "me"] as const,
@@ -61,9 +80,11 @@ export const queryKeys = {
     paymentsReview: (params?: unknown) => ["super-admin", "payments-review", params] as const,
     tokensUsers: (params?: unknown) => ["super-admin", "tokens-users", params] as const,
     tokensLedger: (params?: unknown) => ["super-admin", "tokens-ledger", params] as const,
-    gatewayEndpoints: ["super-admin", "gateway-endpoints"] as const,
-    gatewayRoutes: ["super-admin", "gateway-routes"] as const,
-    killSwitch: ["super-admin", "kill-switch"] as const,
+    // Must match gatewayKeys in hooks/useSuperAdminGateway.ts exactly, otherwise
+    // a realtime invalidation targets a key no query uses (silent no-op).
+    gatewayEndpoints: ["super-admin", "ai-gateway", "endpoints"] as const,
+    gatewayRoutes: ["super-admin", "ai-gateway", "routes"] as const,
+    killSwitch: ["super-admin", "ai-gateway", "kill-switch"] as const,
     auditLogs: (params?: unknown) => ["super-admin", "audit-logs", params] as const,
     settings: ["super-admin", "settings"] as const,
     featureFlags: ["super-admin", "feature-flags"] as const,

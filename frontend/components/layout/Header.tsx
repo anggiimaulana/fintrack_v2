@@ -2,10 +2,9 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Search, Menu, Moon, Sun } from "lucide-react";
+import { Search, Menu, Moon, Sun, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
 import { Wallet, LogOut } from "lucide-react";
@@ -17,11 +16,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/lib/auth-client";
-import { useSession } from "@/lib/session-context";
+import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
+import { SearchCommand } from "@/components/layout/SearchCommand";
+import { NotificationBell } from "@/components/layout/NotificationBell";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 
 const navItems = USER_NAV_ITEMS;
 
@@ -51,8 +52,21 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user } = useSession();
+  const { collapsed, toggle } = useSidebarCollapsed();
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
+
+  // Ctrl/Cmd-K opens the search palette from anywhere in the dashboard.
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -69,15 +83,10 @@ export function Header() {
     if (pathname.startsWith("/user/transactions")) return "Transaksi";
     if (pathname.startsWith("/user/reports")) return "Laporan";
     if (pathname.startsWith("/user/ai")) return "AI Chat";
-    if (pathname.startsWith("/user/profile")) return "Profil";
+    if (pathname.startsWith("/user/profile")) return "Profil & Pengaturan";
     if (pathname.startsWith("/user/settings/subscription")) return "Langganan";
-    if (pathname.startsWith("/user/settings")) return "Pengaturan";
     return "Dashboard";
   };
-
-  const initials = user?.full_name
-    ? user.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()
-    : "US";
 
   return (
     <header className="h-14 border-b-2 border-foreground bg-card sticky top-0 z-40 flex items-center justify-between px-4 lg:px-6">
@@ -119,56 +128,82 @@ export function Header() {
               </nav>
 
               <div className="p-4 border-t-2 border-sidebar-border">
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogTrigger asChild>
-                    <button className="flex items-center gap-3 px-3 py-2.5 w-full text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all cursor-pointer">
-                      <LogOut className="w-5 h-5" />
-                      Logout
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Konfirmasi Logout</DialogTitle>
-                      <DialogDescription>Apakah Anda yakin ingin logout?</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                        Batal
-                      </Button>
-                      <Button variant="destructive" onClick={handleSignOut}>
-                        Logout
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                {/* Opens the shared logout confirmation rendered by the header. */}
+                <button
+                  type="button"
+                  onClick={() => setDialogOpen(true)}
+                  className="flex items-center gap-3 px-3 py-2.5 w-full text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all cursor-pointer"
+                >
+                  <LogOut className="w-5 h-5" />
+                  Logout
+                </button>
               </div>
             </div>
           </SheetContent>
         </Sheet>
 
+        {/* Desktop sidebar toggle: lives here, beside the page title, so it is
+            never mistaken for a menu item inside the collapsed rail. */}
+        <button
+          type="button"
+          aria-label={collapsed ? "Buka sidebar" : "Tutup sidebar"}
+          aria-expanded={!collapsed}
+          onClick={toggle}
+          className="hidden md:inline-flex p-2 -ml-2 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+        </button>
+
         <h1 className="text-base font-black uppercase tracking-wide text-foreground">{getPageTitle()}</h1>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
-        <div className="hidden sm:flex items-center relative">
-          <Search className="w-4 h-4 absolute left-3 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Cari..."
-            aria-label="Cari"
-            className="pl-9 pr-4 py-1.5 text-sm border-2 border-foreground bg-background focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none w-48 lg:w-64 placeholder:text-muted-foreground/70"
-          />
-        </div>
-        <ThemeToggle />
-        <button aria-label="Notifikasi" className="p-2 text-muted-foreground hover:text-foreground relative cursor-pointer">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 border-2 border-card" />
+        {/* Search opens the command palette: it finds modules/features and
+            navigates on click. A read-only input would look interactive but do
+            nothing, which is exactly what users reported. */}
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Cari modul atau fitur"
+          className="hidden sm:flex items-center gap-2 w-48 lg:w-64 pl-3 pr-2 py-1.5 text-sm border-2 border-foreground bg-background hover:shadow-[2px_2px_0px_0px] hover:shadow-foreground transition-shadow cursor-pointer text-muted-foreground"
+        >
+          <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span className="flex-1 text-left truncate">Cari modul atau fitur…</span>
+          <kbd className="hidden lg:inline-flex text-[10px] font-bold border-2 border-foreground/30 px-1">⌘K</kbd>
         </button>
-        <Avatar className="w-8 h-8 border-2 border-foreground cursor-pointer">
-          <AvatarImage src={user?.avatar_url ?? ""} alt={user?.full_name ?? "Avatar pengguna"} />
-          <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
-        </Avatar>
+        {/* Compact icon-only search on small screens. */}
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Cari modul atau fitur"
+          className="sm:hidden p-2 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <Search className="w-5 h-5" />
+        </button>
+        <ThemeToggle />
+        <NotificationBell />
+        <ProfileMenu onLogout={() => setDialogOpen(true)} />
       </div>
+
+      {/* Logout confirmation: shared by the profile menu and the mobile sheet. */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Logout</DialogTitle>
+            <DialogDescription>Apakah Anda yakin ingin logout?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleSignOut}>
+              Logout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   );
 }

@@ -15,6 +15,13 @@ const nextConfig: NextConfig = {
         destination: "/user/settings/subscription",
         permanent: true,
       },
+      {
+        // Profile and settings merged into one page (accordion groups); the old
+        // settings route keeps working for bookmarks, notifications, and search.
+        source: "/user/settings",
+        destination: "/user/profile",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

@@ -4,6 +4,7 @@
  */
 
 import type { Role } from "@/lib/roles";
+import { refreshSession } from "@/lib/api";
 
 export type AuthUser = {
   id: string;
@@ -20,7 +21,10 @@ type ApiEnvelope<T> = { success: boolean; message: string; data?: T; error?: str
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
@@ -43,8 +47,17 @@ export function register(email: string, password: string, fullName: string): Pro
   });
 }
 
-export function refresh(): Promise<AuthUser> {
-  return post<AuthUser>("/api/v1/auth/refresh");
+export async function refresh(): Promise<AuthUser> {
+  await refreshSession();
+  const res = await fetch("/api/v1/me", {
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to retrieve user after session refresh");
+  }
+  const json = (await res.json().catch(() => ({}))) as ApiEnvelope<AuthUser>;
+  return json.data as AuthUser;
 }
 
 export function logout(): Promise<void> {
@@ -52,8 +65,22 @@ export function logout(): Promise<void> {
 }
 
 export async function me(): Promise<AuthUser | null> {
-  const res = await fetch("/api/v1/me", { credentials: "same-origin" });
+  let res = await fetch("/api/v1/me", {
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
+  if (res.status === 401) {
+    try {
+      await refreshSession();
+      res = await fetch("/api/v1/me", {
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+    } catch {
+      return null;
+    }
+  }
   if (!res.ok) return null;
-  const json = (await res.json()) as ApiEnvelope<AuthUser>;
+  const json = (await res.json().catch(() => ({}))) as ApiEnvelope<AuthUser>;
   return json.data ?? null;
 }

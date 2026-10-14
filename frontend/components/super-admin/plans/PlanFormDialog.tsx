@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { PlanDTO, PlanPayload } from '@/hooks/useSuperAdminPlans'
+import { useEntitlementCatalog } from '@/hooks/useEntitlementCatalog'
 
 interface EntitlementEntry {
   id: string
@@ -49,6 +50,14 @@ export function PlanFormDialog({
   onClearCodeConflict,
 }: PlanFormDialogProps) {
   const isEdit = Boolean(plan)
+
+  // Authoritative limit catalog: used to warn when an operator configures a
+  // limit the backend does not enforce (so it will not appear to users).
+  const { catalog } = useEntitlementCatalog()
+  const enforcedByKey: Record<string, boolean> = {}
+  for (const l of catalog.limits) {
+    enforcedByKey[l.key] = l.enforced
+  }
 
   // Basic fields state
   const [code, setCode] = useState(plan?.code ?? '')
@@ -491,39 +500,45 @@ export function PlanFormDialog({
             ) : (
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {limits.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 p-2 rounded border border-border bg-card"
-                  >
-                    <Input
-                      value={item.key}
-                      onChange={(e) => handleUpdateLimitKey(item.id, e.target.value)}
-                      placeholder="kunci batas (contoh: ai_chat_monthly)"
-                      className="flex-1 font-mono text-xs"
-                      disabled={isSubmitting}
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      value={item.value}
-                      onChange={(e) =>
-                        handleUpdateLimitValue(item.id, parseInt(e.target.value, 10) || 0)
-                      }
-                      placeholder="0"
-                      className="w-28 font-mono text-xs"
-                      disabled={isSubmitting}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveLimit(item.id)}
-                      disabled={isSubmitting}
-                      className="text-destructive hover:text-destructive"
-                      aria-label={`Hapus limit ${item.key || 'baru'}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                  <div key={item.id} className="space-y-1">
+                    <div className="flex items-center gap-3 p-2 rounded border border-border bg-card">
+                      <Input
+                        value={item.key}
+                        onChange={(e) => handleUpdateLimitKey(item.id, e.target.value)}
+                        placeholder="kunci batas (contoh: ai_chat_monthly)"
+                        className="flex-1 font-mono text-xs"
+                        disabled={isSubmitting}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={item.value}
+                        onChange={(e) =>
+                          handleUpdateLimitValue(item.id, parseInt(e.target.value, 10) || 0)
+                        }
+                        placeholder="0"
+                        className="w-28 font-mono text-xs"
+                        disabled={isSubmitting}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveLimit(item.id)}
+                        disabled={isSubmitting}
+                        className="text-destructive hover:text-destructive"
+                        aria-label={`Hapus limit ${item.key || 'baru'}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {/* Warn when the key is known but not enforced by the backend:
+                        such a limit will not be shown to users as a benefit. */}
+                    {item.key && enforcedByKey[item.key] === false && (
+                      <p className="pl-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                        Limit “{item.key}” belum ditegakkan backend — tidak akan tampil ke pengguna.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

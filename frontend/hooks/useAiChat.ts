@@ -132,7 +132,10 @@ export function useAiChat(source?: string) {
 
         let response = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
           body: JSON.stringify({ message, mode }),
           credentials: "same-origin",
           signal: abortRef.current.signal,
@@ -143,7 +146,10 @@ export function useAiChat(source?: string) {
             await refreshSession();
             response = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+              },
               body: JSON.stringify({ message, mode }),
               credentials: "same-origin",
               signal: abortRef.current.signal,

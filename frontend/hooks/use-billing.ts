@@ -15,6 +15,14 @@ import { queryKeys } from "@/lib/cache-keys";
 
 // ─── Types ────────────────────────────────────────────────────
 
+/** Display metadata for a plan limit, including whether it is enforced. */
+export interface PlanLimitMeta {
+  key: string;
+  label: string;
+  unit: string;
+  enforced: boolean;
+}
+
 export interface PublicPlan {
   code: string;
   name: string;
@@ -27,6 +35,14 @@ export interface PublicPlan {
   fallback_gateway: string;
   features: Record<string, boolean>;
   limits: Record<string, number>;
+  /** Per-limit label/unit/enforced, from the backend entitlement catalog. */
+  limit_meta?: Record<string, PlanLimitMeta>;
+  /** PPN rate applied at checkout (0 when tax is off). */
+  tax_rate_percent?: number;
+  /** Tax amount for one billing period at the current rate. */
+  tax_idr?: number;
+  /** Grand total (subtotal + tax) for one billing period. */
+  total_idr?: number;
 }
 
 export interface UserPayment {
@@ -53,7 +69,7 @@ export interface UserPayment {
 export interface Invoice {
   id: string;
   invoice_number: string;
-  status: "draft" | "issued" | "paid" | "past_due" | "voided";
+  status: "draft" | "issued" | "paid" | "past_due" | "voided" | "expired";
   subtotal_idr: number;
   tax_idr: number;
   total_idr: number;
@@ -61,6 +77,9 @@ export interface Invoice {
   due_at?: string;
   paid_at?: string;
   voided_at?: string;
+  /** Why a non-paid invoice closed: cancelled_by_user | expired | superseded. */
+  closed_reason?: string;
+  expired_at?: string;
   notes?: string;
 }
 
@@ -95,6 +114,23 @@ export interface PaymentInstructions {
   amount_idr?: number;
   order_id?: string;
   qris_url?: string;
+  /** All active destinations (bank/e-wallet/QRIS). Preferred over the legacy
+   *  single bank_* fields, which remain as a fallback. */
+  accounts?: PaymentAccount[];
+}
+
+export type PaymentAccountKind = "bank" | "ewallet" | "qris";
+
+/** One manual payment destination shown to the user. */
+export interface PaymentAccount {
+  id?: string;
+  kind: PaymentAccountKind;
+  name: string;
+  account_number?: string;
+  account_holder?: string;
+  qris_url?: string;
+  sort_order?: number;
+  is_active?: boolean;
 }
 
 // ─── Error helper ─────────────────────────────────────────────
@@ -131,25 +167,29 @@ export function usePublicPlans() {
   return { plans: query.data ?? [], isLoading: query.isLoading, isError: query.isError };
 }
 
-export function useMyPayments() {
+export function useMyPayments(options?: { enabled?: boolean }) {
   const query = useQuery({
     queryKey: queryKeys.billing.payments,
     queryFn: async (): Promise<UserPayment[]> => {
       const res = await api.get("/payments");
       return (res.data?.data ?? []) as UserPayment[];
     },
+    // Only fetch when the caller's view needs it (e.g. the payments tab is
+    // open). This avoids paying for a request the user never sees.
+    enabled: options?.enabled ?? true,
     staleTime: 1000 * 30,
   });
   return { payments: query.data ?? [], isLoading: query.isLoading, isError: query.isError, refetch: query.refetch };
 }
 
-export function useMyInvoices() {
+export function useMyInvoices(options?: { enabled?: boolean }) {
   const query = useQuery({
     queryKey: queryKeys.billing.invoices,
     queryFn: async (): Promise<Invoice[]> => {
       const res = await api.get("/invoices");
       return (res.data?.data ?? []) as Invoice[];
     },
+    enabled: options?.enabled ?? true,
     staleTime: 1000 * 30,
   });
   return { invoices: query.data ?? [], isLoading: query.isLoading, isError: query.isError };
@@ -178,12 +218,27 @@ export function useMySubscription() {
 
 // ─── Mutations ────────────────────────────────────────────────
 
-/** Refreshes everything a plan change touches. */
+/**
+ * Refreshes everything a *plan change* touches (upgrade/downgrade/cancel).
+ * Entitlements change only when a plan actually changes, so they belong here
+ * and not on every payment mutation.
+ */
 function invalidateBilling(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: queryKeys.billing.payments });
   qc.invalidateQueries({ queryKey: queryKeys.billing.invoices });
   qc.invalidateQueries({ queryKey: queryKeys.billing.subscription });
   qc.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+}
+
+/**
+ * Refreshes only the payment history. Checkout and proof upload create/change a
+ * payment and its invoice but leave the subscription and entitlements untouched
+ * (a manual payment does not activate a plan until an admin verifies it), so
+ * invalidating those here would refetch data that cannot have changed.
+ */
+function invalidatePaymentHistory(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: queryKeys.billing.payments });
+  qc.invalidateQueries({ queryKey: queryKeys.billing.invoices });
 }
 
 export function useCheckout() {
@@ -194,7 +249,7 @@ export function useCheckout() {
       return (res.data?.data ?? {}) as CheckoutResult;
     },
     onSuccess: () => {
-      invalidateBilling(qc);
+      invalidatePaymentHistory(qc);
     },
     onError: (err: unknown) => {
       toast.error(billingErrorMessage(err, "Gagal membuat sesi pembayaran"));
@@ -215,7 +270,7 @@ export function useUploadProof() {
     },
     onSuccess: () => {
       toast.success("Bukti terkirim. Menunggu verifikasi admin.");
-      invalidateBilling(qc);
+      invalidatePaymentHistory(qc);
     },
     onError: (err: unknown) => {
       toast.error(billingErrorMessage(err, "Gagal mengunggah bukti"));
@@ -234,6 +289,23 @@ export function usePaymentInstructions(paymentId: string | null) {
     staleTime: 1000 * 60 * 5,
   });
   return { instructions: query.data ?? null, isLoading: query.isLoading };
+}
+
+export function useCancelInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const res = await api.post(`/invoices/${invoiceId}/cancel`);
+      return res.data?.data as Invoice;
+    },
+    onSuccess: () => {
+      toast.success("Tagihan dibatalkan. Anda dapat membuat tagihan baru.");
+      invalidatePaymentHistory(qc);
+    },
+    onError: (err: unknown) => {
+      toast.error(billingErrorMessage(err, "Gagal membatalkan tagihan"));
+    },
+  });
 }
 
 export function useScheduleDowngrade() {

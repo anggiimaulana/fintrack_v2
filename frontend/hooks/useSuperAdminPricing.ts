@@ -8,6 +8,10 @@ export interface PricingRuleDTO {
   id: string
   rule_name: string
   base_per_1k_idr: number
+  /** How base_per_1k_idr reads: 'per_1k' (default) or 'per_10k'. */
+  price_unit: 'per_1k' | 'per_10k'
+  /** What we pay the upstream provider per 1,000 tokens (cost basis). */
+  provider_cost_per_1k_idr: number
   markup_multiplier: number
   markup_percent: number
   modality_multipliers: Record<string, number>
@@ -19,6 +23,8 @@ export interface PricingRuleDTO {
 export interface PricingRulePayload {
   rule_name?: string
   base_per_1k_idr?: number
+  price_unit?: 'per_1k' | 'per_10k'
+  provider_cost_per_1k_idr?: number
   markup_multiplier?: number
   markup_percent?: number
   modality_multipliers?: Record<string, number>

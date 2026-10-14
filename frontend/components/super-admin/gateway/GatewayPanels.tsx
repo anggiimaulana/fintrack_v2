@@ -12,6 +12,10 @@ import {
   Undo2,
   Server,
   Network,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,6 +60,7 @@ import {
   EndpointModality,
   EndpointStatus,
   KillSwitchTarget,
+  RouteVerification,
 } from '@/hooks/useSuperAdminGateway'
 
 const ALL_MODALITIES: EndpointModality[] = ['chat', 'vision', 'voice', 'embedding', 'reasoning']
@@ -735,11 +740,18 @@ export function EndpointsPanel() {
 }
 
 export function RoutingMatrixPanel() {
-  const { endpoints, routes, isLoadingRoutes, saveRoutes, isSavingRoutes } = useSuperAdminGateway()
+  const { endpoints, routes, isLoadingRoutes, saveRoutes, isSavingRoutes, verifyRoutes, isVerifyingRoutes } = useSuperAdminGateway()
 
   // Local state for full matrix editing
   const [localRoutes, setLocalRoutes] = useState<GatewayRoute[]>([])
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+  // Result of the last on-demand verification (probes the actual model).
+  const [verifyResults, setVerifyResults] = useState<RouteVerification[] | null>(null)
+
+  const handleVerify = async () => {
+    const data = await verifyRoutes()
+    setVerifyResults(data?.results ?? [])
+  }
 
   // Adopt fetched routes without a setState-in-effect: only a real change in
   // the server payload replaces the locally edited matrix.
@@ -808,6 +820,18 @@ export function RoutingMatrixPanel() {
               type="button"
               variant="outline"
               size="sm"
+              onClick={handleVerify}
+              disabled={isVerifyingRoutes}
+              className="gap-1.5"
+              title="Uji apakah model di setiap rute benar-benar merespons"
+            >
+              {isVerifyingRoutes ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+              {isVerifyingRoutes ? 'Menguji...' : 'Uji Rute'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleReset}
               disabled={!isDirty || isSavingRoutes}
               className="gap-1.5"
@@ -828,6 +852,71 @@ export function RoutingMatrixPanel() {
           </div>
         </CardHeader>
         <CardContent>
+          {verifyResults && verifyResults.length > 0 && (
+            <div className="mb-6 border rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted border-b">
+                <Activity className="h-4 w-4 text-primary" />
+                <span className="text-sm font-bold">Hasil Uji Rute</span>
+                <span className="text-xs text-muted-foreground">
+                  ({verifyResults.filter((r) => r.ok).length} OK
+                  {verifyResults.filter((r) => !r.ok && !r.skipped).length > 0 &&
+                    `, ${verifyResults.filter((r) => !r.ok && !r.skipped).length} bermasalah`}
+                  {verifyResults.filter((r) => r.skipped).length > 0 &&
+                    `, ${verifyResults.filter((r) => r.skipped).length} dilewati`})
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 text-xs"
+                  onClick={() => setVerifyResults(null)}
+                >
+                  Tutup
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Modalitas</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Latensi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {verifyResults.map((r, i) => (
+                    <TableRow key={`${r.use_case}-${r.model}-${i}`}>
+                      <TableCell className="font-mono text-xs uppercase">{r.use_case}</TableCell>
+                      <TableCell className="font-mono text-xs">{r.model}</TableCell>
+                      <TableCell>
+                        {r.skipped ? (
+                          <Badge variant="secondary" className="gap-1">
+                            Dilewati
+                          </Badge>
+                        ) : r.ok ? (
+                          <Badge variant="outline" className="gap-1 text-green-600 border-green-600/40">
+                            <CheckCircle2 className="h-3 w-3" /> OK
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="gap-1" title={r.error}>
+                            <XCircle className="h-3 w-3" /> Bermasalah
+                          </Badge>
+                        )}
+                        {!r.ok && !r.skipped && r.error && (
+                          <p className="text-[10px] text-destructive mt-1 max-w-xs truncate" title={r.error}>
+                            {r.error}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {r.skipped ? '—' : `${r.latency_ms} ms`}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           {isLoadingRoutes ? (
             <div className="space-y-4">
               <Skeleton className="h-20 w-full" />
@@ -915,6 +1004,15 @@ export function RoutingMatrixPanel() {
                                     className="h-8 text-xs font-mono"
                                     placeholder="misal: gpt-4o-mini"
                                   />
+                                  {route.route_state === 'open' && (
+                                    <Badge
+                                      variant="destructive"
+                                      className="mt-1 gap-1 text-[10px]"
+                                      title="Model ini gagal berturut-turut dan untuk sementara dilewati (failover otomatis). Pulih sendiri setelah cooldown."
+                                    >
+                                      <ShieldAlert className="h-3 w-3" /> Dikarantina
+                                    </Badge>
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   <Input

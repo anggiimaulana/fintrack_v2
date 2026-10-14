@@ -37,12 +37,43 @@ function TransactionsContent() {
   const page = table.page;
   const search = table.q;
   const filterType = table.filters.type || "all";
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(() => searchParams.get("new") === "1");
   const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
+  // The header search can deep-link straight into the scanner/create dialog.
+  const [scannerOpen, setScannerOpen] = useState(() => searchParams.get("scan") === "1");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [detailTx, setDetailTx] = useState<TransactionItem | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const q = new URLSearchParams({ format: "csv" });
+      if (dateFilter.startDate) q.set("start_date", dateFilter.startDate);
+      if (dateFilter.endDate) q.set("end_date", dateFilter.endDate);
+      if (filterType !== "all") q.set("type", filterType);
+
+      const res = await api.get(`/reports/export?${q.toString()}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `laporan-transaksi-${dateFilter.startDate || "semua"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Laporan CSV berhasil diunduh.");
+    } catch {
+      toast.error("Gagal mengunduh laporan CSV.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Date filter from URL
   const initialPreset = searchParams.get("preset") || "this_month";
@@ -202,12 +233,12 @@ function TransactionsContent() {
           <Button
             variant="outline"
             className="text-muted-foreground cursor-pointer disabled:cursor-not-allowed"
-            disabled={!hasFeature("reports_export")}
+            disabled={!hasFeature("reports_export") || isExporting}
             title={hasFeature("reports_export") ? undefined : "Ekspor laporan membutuhkan paket Pro atau lebih tinggi."}
-            onClick={() => toast.info("Ekspor laporan belum tersedia pada paket Anda.")}
+            onClick={handleExportCSV}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export CSV
+            {isExporting ? "Mengunduh..." : "Export CSV"}
           </Button>
           <Button
             variant="outline"

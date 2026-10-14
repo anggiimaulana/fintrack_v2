@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   LogOut,
   Tag,
+  Activity,
+  SlidersHorizontal,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -81,6 +83,12 @@ const superAdminMenuItems = [
     exact: false,
   },
   {
+    title: 'Pemantauan Kuota',
+    href: '/super-admin/quota-monitor',
+    icon: Activity,
+    exact: false,
+  },
+  {
     title: 'Harga & Biaya AI',
     href: '/super-admin/pricing',
     icon: Tag,
@@ -90,6 +98,12 @@ const superAdminMenuItems = [
     title: 'AI Gateway',
     href: '/super-admin/ai-gateway',
     icon: Cpu,
+    exact: false,
+  },
+  {
+    title: 'Metrik SPK',
+    href: '/super-admin/spk-metrics',
+    icon: SlidersHorizontal,
     exact: false,
   },
   {

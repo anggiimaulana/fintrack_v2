@@ -2,11 +2,14 @@
 
 import * as React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Flag } from 'lucide-react'
+import { Settings, Flag, Mail, CreditCard, HardDrive } from 'lucide-react'
 import { useSuperAdminSettings } from '@/hooks/useSuperAdminSettings'
 import { useSuperAdminStorage } from '@/hooks/useSuperAdminStorage'
 import { GlobalSettingsTab } from '@/components/super-admin/settings/GlobalSettingsTab'
 import { FeatureFlagsTab } from '@/components/super-admin/settings/FeatureFlagsTab'
+import { MailSettingsTab } from '@/components/super-admin/settings/MailSettingsTab'
+import { PaymentSettingsTab } from '@/components/super-admin/settings/PaymentSettingsTab'
+import { StorageSettingsTab } from '@/components/super-admin/settings/StorageSettingsTab'
 
 export default function SuperAdminSettingsPage() {
   const {
@@ -41,10 +44,22 @@ export default function SuperAdminSettingsPage() {
       </div>
 
       <Tabs defaultValue="settings" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 max-w-xs">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 max-w-3xl">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="size-4" />
-            <span>Pengaturan Global</span>
+            <span>Global</span>
+          </TabsTrigger>
+          <TabsTrigger value="payment" className="flex items-center gap-2">
+            <CreditCard className="size-4" />
+            <span>Pembayaran</span>
+          </TabsTrigger>
+          <TabsTrigger value="storage" className="flex items-center gap-2">
+            <HardDrive className="size-4" />
+            <span>Penyimpanan</span>
+          </TabsTrigger>
+          <TabsTrigger value="mail" className="flex items-center gap-2">
+            <Mail className="size-4" />
+            <span>Email</span>
           </TabsTrigger>
           <TabsTrigger value="flags" className="flex items-center gap-2">
             <Flag className="size-4" />
@@ -61,6 +76,31 @@ export default function SuperAdminSettingsPage() {
             isSaving={isSavingSettings}
             onRefresh={refetchSettings}
             storageStatus={storageStatus}
+          />
+        </TabsContent>
+
+        <TabsContent value="payment" className="space-y-4 focus-visible:outline-none">
+          <PaymentSettingsTab
+            isLoading={isLoadingSettings}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
+          />
+        </TabsContent>
+
+        <TabsContent value="storage" className="space-y-4 focus-visible:outline-none">
+          <StorageSettingsTab
+            isLoading={isLoadingSettings}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
+          />
+        </TabsContent>
+
+        <TabsContent value="mail" className="space-y-4 focus-visible:outline-none">
+          <MailSettingsTab
+            settings={settings}
+            isLoading={isLoadingSettings}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
           />
         </TabsContent>
 

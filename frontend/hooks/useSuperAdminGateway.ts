@@ -57,9 +57,29 @@ export interface GatewayRoute {
   timeout_ms: number
   max_retries: number
   is_active: boolean
+  /** Live route-breaker state: "open" while a dead model is quarantined. */
+  route_state?: 'open' | 'closed'
 }
 
 export type KillSwitchState = Record<KillSwitchTarget, boolean>
+
+/** Outcome of probing one configured route's model. */
+export interface RouteVerification {
+  use_case: EndpointModality
+  model: string
+  combo?: string
+  endpoint: string
+  ok: boolean
+  skipped?: boolean
+  latency_ms: number
+  error?: string
+}
+
+export interface VerifyRoutesResult {
+  results: RouteVerification[]
+  broken_count: number
+  broken: string[]
+}
 
 export const gatewayKeys = {
   all: ['super-admin', 'ai-gateway'] as const,
@@ -273,6 +293,25 @@ export function useSuperAdminGateway() {
     },
   })
 
+  // Verify routes (probe the actual model on every active route)
+  const verifyRoutesMutation = useMutation({
+    mutationFn: async (): Promise<VerifyRoutesResult> => {
+      const res = await api.get('/admin/ai-gateway/verify-routes')
+      return res.data?.data
+    },
+    onSuccess: (data) => {
+      if (!data) return
+      if (data.broken_count > 0) {
+        toast.error(`${data.broken_count} rute bermasalah: ${data.broken.join(', ')}`)
+      } else {
+        toast.success('Semua rute merespons dengan baik')
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error(getErrorMessage(err, 'Gagal memverifikasi rute AI'))
+    },
+  })
+
   return {
     // Queries
     endpoints: endpointsQuery.data || [],
@@ -314,5 +353,8 @@ export function useSuperAdminGateway() {
 
     setKillSwitch: setKillSwitchMutation.mutateAsync,
     isSettingKillSwitch: setKillSwitchMutation.isPending,
+
+    verifyRoutes: verifyRoutesMutation.mutateAsync,
+    isVerifyingRoutes: verifyRoutesMutation.isPending,
   }
 }

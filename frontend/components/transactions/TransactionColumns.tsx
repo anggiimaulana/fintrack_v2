@@ -56,12 +56,13 @@ function amountClass(tx: TransactionItem): string {
 
 export interface TransactionColumnsOptions {
   /** 1-based page number, used for absolute row numbering. */
-  page: number;
-  perPage: number;
+  page?: number;
+  perPage?: number;
   categoryMap?: Map<string, { name: string; color?: string; icon?: string }>;
   onDetail?: (tx: TransactionItem) => void;
-  onEdit: (tx: TransactionItem) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (tx: TransactionItem) => void;
+  onDelete?: (id: string) => void;
+  hideActions?: boolean;
 }
 /**
  * Column definitions for the transactions table.
@@ -70,14 +71,15 @@ export interface TransactionColumnsOptions {
  * field names so `sort` in the URL maps straight through.
  */
 export function transactionColumns({
-  page,
-  perPage,
+  page = 1,
+  perPage = 10,
   categoryMap,
   onDetail,
   onEdit,
   onDelete,
+  hideActions = false,
 }: TransactionColumnsOptions): ColumnDef<TransactionItem, unknown>[] {
-  return [
+  const cols: ColumnDef<TransactionItem, unknown>[] = [
     {
       id: "index",
       header: "#",
@@ -198,7 +200,10 @@ export function transactionColumns({
       ),
       meta: { align: "right" },
     },
-    {
+  ];
+
+  if (!hideActions && (onEdit || onDelete || onDetail)) {
+    cols.push({
       id: "actions",
       header: () => <span className="block text-center">Aksi</span>,
       enableSorting: false,
@@ -215,26 +220,32 @@ export function transactionColumns({
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => onEdit(row.original)}
-            aria-label="Ubah transaksi"
-            title="Ubah transaksi"
-            className="cursor-pointer border-2 border-blue-600 bg-blue-50 p-1.5 text-blue-600 transition-all hover:bg-blue-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(row.original.id)}
-            aria-label="Hapus transaksi"
-            title="Hapus transaksi"
-            className="cursor-pointer border-2 border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(row.original)}
+              aria-label="Ubah transaksi"
+              title="Ubah transaksi"
+              className="cursor-pointer border-2 border-blue-600 bg-blue-50 p-1.5 text-blue-600 transition-all hover:bg-blue-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(row.original.id)}
+              aria-label="Hapus transaksi"
+              title="Hapus transaksi"
+              className="cursor-pointer border-2 border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
         </div>
       ),
-    },
-  ];
+    });
+  }
+
+  return cols;
 }

@@ -12,13 +12,11 @@ import { useRealtimeStream } from "@/hooks/use-realtime-stream";
  * never triggers a 401 loop).
  */
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useSession();
+  const { isAuthenticated, isLoading } = useSession();
 
-  // The hook's return value (status) is intentionally unused here: this provider
-  // exists to own the connection lifecycle. Components that need the status can
-  // call useRealtimeStream themselves, but the connection is driven from here so
-  // there is exactly one stream per tab.
-  useRealtimeStream({ enabled: isAuthenticated });
+  // Wait until session finishes loading (and auto-refreshing if expired) before
+  // opening the SSE connection, so the initial connect has a fresh cookie.
+  useRealtimeStream({ enabled: isAuthenticated && !isLoading });
 
   return <>{children}</>;
 }

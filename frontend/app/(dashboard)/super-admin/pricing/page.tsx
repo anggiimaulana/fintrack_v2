@@ -34,9 +34,18 @@ const DEFAULT_MULTIPLIERS: Record<string, number> = {
   embedding: 0.5,
 }
 
-/** costIDR mirrors the backend formula: floor(base × tokens/1000 × markup × (1+pct) × modality). */
-function costIDR(base: number, markup: number, percent: number, modalityMult: number, tokens = 1000): number {
-  const baseCost = base * (tokens / 1000)
+/**
+ * sellPer1k normalises the configured base price to a per-1,000-token figure.
+ * A "per_10k" rule (e.g. Rp3.000 / 10.000 token) is divided by 10, matching the
+ * backend's SellPricePer1kIDR.
+ */
+function sellPer1k(base: number, unit: 'per_1k' | 'per_10k'): number {
+  return unit === 'per_10k' ? Math.floor(base / 10) : base
+}
+
+/** costIDR mirrors the backend formula: floor(sell/1k × tokens/1000 × markup × (1+pct) × modality). */
+function costIDR(base: number, unit: 'per_1k' | 'per_10k', markup: number, percent: number, modalityMult: number, tokens = 1000): number {
+  const baseCost = sellPer1k(base, unit) * (tokens / 1000)
   const withMarkup = baseCost * markup * (1 + percent / 100)
   const total = withMarkup * modalityMult
   return total > 0 ? Math.floor(total) : 0
@@ -60,6 +69,8 @@ function formatIDR(v: number): string {
 interface FormState {
   rule_name: string
   base_per_1k_idr: string
+  price_unit: 'per_1k' | 'per_10k'
+  provider_cost_per_1k_idr: string
   markup_multiplier: string
   markup_percent: string
   multipliers: Record<string, string>
@@ -68,6 +79,8 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   rule_name: '',
   base_per_1k_idr: '300',
+  price_unit: 'per_1k',
+  provider_cost_per_1k_idr: '200',
   markup_multiplier: '1.25',
   markup_percent: '0',
   multipliers: Object.fromEntries(PRICING_MODALITIES.map((m) => [m, String(DEFAULT_MULTIPLIERS[m] ?? 1)])),
@@ -77,6 +90,8 @@ function toForm(rule: PricingRuleDTO): FormState {
   return {
     rule_name: rule.rule_name,
     base_per_1k_idr: String(rule.base_per_1k_idr),
+    price_unit: rule.price_unit ?? 'per_1k',
+    provider_cost_per_1k_idr: String(rule.provider_cost_per_1k_idr ?? 0),
     markup_multiplier: String(rule.markup_multiplier),
     markup_percent: String(rule.markup_percent),
     multipliers: Object.fromEntries(
@@ -107,6 +122,7 @@ export default function PricingPage() {
 
   const numeric = {
     base: Number(form.base_per_1k_idr) || 0,
+    providerCost: Number(form.provider_cost_per_1k_idr) || 0,
     markup: Number(form.markup_multiplier) || 0,
     percent: Number(form.markup_percent) || 0,
   }
@@ -122,6 +138,8 @@ export default function PricingPage() {
     const payload: PricingRulePayload = {
       rule_name: form.rule_name.trim(),
       base_per_1k_idr: numeric.base,
+      price_unit: form.price_unit,
+      provider_cost_per_1k_idr: numeric.providerCost,
       markup_multiplier: numeric.markup,
       markup_percent: numeric.percent,
       modality_multipliers: multipliers,
@@ -213,7 +231,8 @@ export default function PricingPage() {
                       )}
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      Base {formatIDR(rule.base_per_1k_idr)} / 1.000 token · markup ×{rule.markup_multiplier}
+                      Jual {formatIDR(rule.base_per_1k_idr)} / {rule.price_unit === 'per_10k' ? '10.000' : '1.000'} token ·
+                      {' '}modal {formatIDR(rule.provider_cost_per_1k_idr)}/1k · markup ×{rule.markup_multiplier}
                       {rule.markup_percent ? ` + ${rule.markup_percent}%` : ''}
                     </CardDescription>
                   </div>
@@ -242,12 +261,16 @@ export default function PricingPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   {PRICING_MODALITIES.map((m) => {
                     const mult = rule.modality_multipliers?.[m] ?? 1
-                    const cost = costIDR(rule.base_per_1k_idr, rule.markup_multiplier, rule.markup_percent, mult)
+                    const cost = costIDR(rule.base_per_1k_idr, rule.price_unit ?? 'per_1k', rule.markup_multiplier, rule.markup_percent, mult)
+                    const margin = cost - rule.provider_cost_per_1k_idr
                     return (
                       <div key={m} className="border-2 border-foreground/20 p-3">
                         <p className="text-xs font-black uppercase text-muted-foreground">{m}</p>
                         <p className="text-sm font-bold">×{mult}</p>
                         <p className="text-xs font-bold text-primary mt-1">1.000 = {formatIDR(cost)}</p>
+                        <p className={`text-xs font-bold mt-0.5 ${margin >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>
+                          margin {formatIDR(margin)}
+                        </p>
                       </div>
                     )
                   })}
@@ -278,9 +301,34 @@ export default function PricingPage() {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rule-unit">Satuan Harga Jual</Label>
+                <select
+                  id="rule-unit"
+                  className="h-10 w-full border-2 border-foreground bg-background px-3 text-sm font-bold"
+                  value={form.price_unit}
+                  onChange={(e) => setForm((s) => ({ ...s, price_unit: e.target.value as 'per_1k' | 'per_10k' }))}
+                >
+                  <option value="per_1k">per 1.000 token</option>
+                  <option value="per_10k">per 10.000 token</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rule-provider-cost">Harga Modal / 1k (Rp)</Label>
+                <Input
+                  id="rule-provider-cost"
+                  type="number"
+                  min={0}
+                  value={form.provider_cost_per_1k_idr}
+                  onChange={(e) => setForm((s) => ({ ...s, provider_cost_per_1k_idr: e.target.value }))}
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="rule-base">Base / 1k (Rp)</Label>
+                <Label htmlFor="rule-base">Harga Jual (Rp)</Label>
                 <Input
                   id="rule-base"
                   type="number"
@@ -337,7 +385,11 @@ export default function PricingPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm font-bold">
                 {PRICING_MODALITIES.map((m) => (
                   <span key={m}>
-                    {m}: {formatIDR(costIDR(numeric.base, numeric.markup, numeric.percent, Number(form.multipliers[m]) || 0))}
+                    {m}: {formatIDR(costIDR(numeric.base, form.price_unit, numeric.markup, numeric.percent, Number(form.multipliers[m]) || 0))}
+                    {' '}
+                    <span className={numeric.base >= 0 && costIDR(numeric.base, form.price_unit, numeric.markup, numeric.percent, Number(form.multipliers[m]) || 0) - numeric.providerCost >= 0 ? 'text-emerald-600' : 'text-destructive'}>
+                      (margin {formatIDR(costIDR(numeric.base, form.price_unit, numeric.markup, numeric.percent, Number(form.multipliers[m]) || 0) - numeric.providerCost)})
+                    </span>
                   </span>
                 ))}
               </div>

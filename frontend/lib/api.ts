@@ -23,7 +23,10 @@ let inFlightRefresh: Promise<void> | null = null;
 export function refreshSession(): Promise<void> {
   if (!inFlightRefresh) {
     inFlightRefresh = axios
-      .post("/api/v1/auth/refresh", undefined, { withCredentials: true })
+      .post("/api/v1/auth/refresh", undefined, {
+        withCredentials: true,
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      })
       .then(() => undefined)
       .finally(() => {
         inFlightRefresh = null;

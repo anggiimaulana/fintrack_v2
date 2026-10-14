@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Wallet, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LogOut, Wallet } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -27,7 +27,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useSession();
-  const { collapsed, toggle } = useSidebarCollapsed();
+  const { collapsed } = useSidebarCollapsed();
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
@@ -55,8 +55,10 @@ export function Sidebar() {
         collapsed ? "w-[76px]" : "w-[240px]"
       )}
     >
-      {/* Brand + collapse toggle */}
-      <div className={cn("border-b-2 border-sidebar-border flex items-center", collapsed ? "p-3 justify-center" : "p-4 justify-between gap-2")}>
+      {/* Brand. The collapse toggle lives in the Header, beside the page title,
+          so it never sits in the nav column (which made it look like a menu
+          item when collapsed). */}
+      <div className={cn("border-b-2 border-sidebar-border flex items-center", collapsed ? "p-3 justify-center" : "p-4")}>
         <Link href="/user" className="flex items-center gap-2 text-xl font-black tracking-tight overflow-hidden">
           <Wallet className="w-6 h-6 text-primary shrink-0" />
           <span
@@ -68,32 +70,7 @@ export function Sidebar() {
             Fin<span className="text-primary">Track</span>
           </span>
         </Link>
-        {!collapsed && (
-          <button
-            type="button"
-            aria-label="Tutup sidebar"
-            aria-expanded={!collapsed}
-            onClick={toggle}
-            className="p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent cursor-pointer transition-colors"
-          >
-            <PanelLeftClose className="w-5 h-5" />
-          </button>
-        )}
       </div>
-
-      {collapsed && (
-        <div className="pt-2 flex justify-center">
-          <button
-            type="button"
-            aria-label="Buka sidebar"
-            aria-expanded={!collapsed}
-            onClick={toggle}
-            className="p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent cursor-pointer transition-colors"
-          >
-            <PanelLeftOpen className="w-5 h-5" />
-          </button>
-        </div>
-      )}
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
         {navItems.map((item) => {

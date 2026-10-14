@@ -9,9 +9,11 @@ import { ChartContainer } from "@/components/charts/ChartContainer";
 import { SpkWidgetSkeleton } from "@/components/dashboard/SpkWidget";
 import { SpkWidget } from "@/components/dashboard/SpkWidget";
 import { TransactionTable } from "@/components/transactions/TransactionTable";
-import { useDashboardOverview, useDashboardCharts } from "@/hooks/useDashboard";
+import { useDashboardOverview } from "@/hooks/useDashboard";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useSpkLatest } from "@/hooks/useSpk";
+import { useAdminCategories } from "@/hooks/useAdminCategories";
+import { type TransactionItem } from "@/components/transactions/TransactionColumns";
 import { DateRangeFilter, type DateRangeValue, type PresetKey, computePresetDates } from "@/components/shared/DateRangeFilter";
 import { mapOverview } from "@/hooks/useDashboard";
 
@@ -50,7 +52,6 @@ function UserDashboardContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const now = useMemo(() => new Date(), []);
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   const [dateFilter, setDateFilterState] = useState<DateRangeValue>(() => parseFilterFromParams(searchParams, now));
 
@@ -73,8 +74,20 @@ function UserDashboardContent() {
 
   const { data: overview, isLoading: overviewLoading } = useDashboardOverview(overviewParams);
   const [txFilterType, setTxFilterType] = useState<"income" | "expense" | "savings" | "all">("all");
-  const { data: txData, isLoading: txLoading } = useTransactions({ perPage: 5, type: txFilterType });
+  const { data: txData, isLoading: txLoading } = useTransactions({ perPage: 10, type: txFilterType });
   const { data: spk, isLoading: spkLoading } = useSpkLatest();
+
+  const { categories: incomeCategories } = useAdminCategories("income");
+  const { categories: expenseCategories } = useAdminCategories("expense");
+  const { categories: savingsCategories } = useAdminCategories("savings");
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, { name: string; color?: string; icon?: string }>();
+    incomeCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    expenseCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    savingsCategories?.forEach((c) => map.set(c.id, { name: c.name, color: c.color, icon: c.icon }));
+    return map;
+  }, [incomeCategories, expenseCategories, savingsCategories]);
 
   const chartDateRange = dateFilter.startDate && dateFilter.endDate
     ? { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
@@ -181,7 +194,11 @@ function UserDashboardContent() {
             </button>
           ))}
         </div>
-        <TransactionTable transactions={txData?.data || []} isLoading={txLoading} />
+        <TransactionTable
+          transactions={(txData?.data || []) as unknown as TransactionItem[]}
+          isLoading={txLoading}
+          categoryMap={categoryMap}
+        />
       </div>
     </div>
   );

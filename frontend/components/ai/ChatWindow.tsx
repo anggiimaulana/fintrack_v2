@@ -46,7 +46,11 @@ export default function ChatWindow() {
   const queryClient = useQueryClient();
 
   const [messages, setMessages] = useState<Array<{ role: string; content: string; mode?: "fast" | "reasoning" | null; modelUsed?: string | null }>>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("session");
+  });
+  const lastLoadedSessionIdRef = useRef<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   // Focus the rename field when it appears. Programmatic focus rather than the
   // `autoFocus` prop: same UX, and it does not steal focus on first render.
@@ -60,7 +64,16 @@ export default function ChatWindow() {
   const { categories: expenseCategories } = useAdminCategories("expense");
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(null);
+  const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("q");
+      window.history.replaceState({}, "", url.toString());
+    }
+    return q;
+  });
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
   // Store chart data per assistant message index so they persist across new messages
   const [chartDataMap, setChartDataMap] = useState<Record<number, { tool: string; status: string; result?: unknown; error?: string }[]>>({});
@@ -78,35 +91,48 @@ export default function ChatWindow() {
     enabled: !!currentSessionId,
   });
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const session = params.get("session");
-    if (session) setCurrentSessionId(session);
-    const q = params.get("q");
-    if (q) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("q");
-      window.history.replaceState({}, "", url.toString());
-      setPendingAutoSend(q);
-    }
-  }, []);
 
   useEffect(() => {
-    if (sessionMessages && !isStreaming) {
-      setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string, mode?: "fast" | "reasoning" | null, model_used?: string | null }) => ({
-        role: m.role,
-        content: m.content,
-        mode: m.mode ?? null,
-        modelUsed: m.model_used ?? null,
-      })));
+    if (!currentSessionId) {
+      lastLoadedSessionIdRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMessages([]);
+      return;
     }
-  }, [sessionMessages, isStreaming, currentSessionId]);
+
+    if (currentSessionId !== lastLoadedSessionIdRef.current) {
+      lastLoadedSessionIdRef.current = currentSessionId;
+      if (sessionMessages && sessionMessages.length > 0) {
+        setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string, mode?: "fast" | "reasoning" | null, model_used?: string | null }) => ({
+          role: m.role,
+          content: m.content,
+          mode: m.mode ?? null,
+          modelUsed: m.model_used ?? null,
+        })));
+      } else {
+        setMessages([]);
+      }
+      return;
+    }
+
+    if (sessionMessages && !isStreaming) {
+      if (sessionMessages.length >= messages.length && sessionMessages.length > 0) {
+        setMessages(sessionMessages.map((m: { role: "user" | "assistant", content: string, mode?: "fast" | "reasoning" | null, model_used?: string | null }) => ({
+          role: m.role,
+          content: m.content,
+          mode: m.mode ?? null,
+          modelUsed: m.model_used ?? null,
+        })));
+      }
+    }
+  }, [sessionMessages, isStreaming, currentSessionId, messages.length]);
 
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const session = params.get("session");
       if (session !== currentSessionId) {
+        lastLoadedSessionIdRef.current = session;
         setCurrentSessionId(session);
         setMessages([]);
       }
@@ -120,6 +146,7 @@ export default function ChatWindow() {
   // Persist tool steps (chart data) per assistant message index when streaming ends
   useEffect(() => {
     if (!isStreaming && lastToolSteps.length > 0 && lastAssistantIndex >= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChartDataMap((prev) => ({ ...prev, [lastAssistantIndex]: lastToolSteps }));
     }
   }, [isStreaming, lastToolSteps, lastAssistantIndex]);
@@ -154,6 +181,7 @@ export default function ChatWindow() {
       const newSession = await createSession.mutateAsync(message.substring(0, 50));
       if (newSession) {
         sessionId = newSession.id;
+        lastLoadedSessionIdRef.current = newSession.id;
         setCurrentSessionId(sessionId);
         updateUrlSession(sessionId);
       }
@@ -234,9 +262,11 @@ export default function ChatWindow() {
   useEffect(() => {
     if (!pendingAutoSend || isStreaming) return;
     const msg = pendingAutoSend;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPendingAutoSend(null);
     createSession.mutateAsync(msg.substring(0, 50)).then((newSession) => {
       if (newSession) {
+        lastLoadedSessionIdRef.current = newSession.id;
         setCurrentSessionId(newSession.id);
         updateUrlSession(newSession.id);
         setTimeout(() => handleSend(msg, newSession.id), 300);
@@ -248,6 +278,7 @@ export default function ChatWindow() {
 
   const switchSession = async (id: string) => {
     if (isStreaming) cancelStream();
+    lastLoadedSessionIdRef.current = id;
     setMessages([]);
     setCurrentSessionId(id);
     updateUrlSession(id);
@@ -336,6 +367,7 @@ export default function ChatWindow() {
     if (isStreaming) cancelStream();
     const newSession = await createSession.mutateAsync("Percakapan baru");
     if (newSession) {
+      lastLoadedSessionIdRef.current = newSession.id;
       setMessages([]);
       setCurrentSessionId(newSession.id);
       updateUrlSession(newSession.id);

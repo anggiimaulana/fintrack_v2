@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { dispatchDomainEvent, type DomainEvent } from "@/lib/realtime-dispatcher";
+import { publishDomainEvent } from "@/lib/realtime-bus";
+import { refreshSession } from "@/lib/api";
 
 /** Reconnect delays in ms: 1s, 2s, 4s, 8s, then capped at 16s. */
 export const BACKOFF_STEPS_MS = [1000, 2000, 4000, 8000, 16000] as const;
@@ -67,7 +69,12 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
         return; // ignore malformed frames rather than breaking the stream
       }
       if (parsed?.id) lastEventIdRef.current = parsed.id;
-      if (parsed?.event) dispatchDomainEvent(queryClient, parsed);
+      if (parsed?.event) {
+        // Cache invalidation (data freshness) and the notification bus (UI
+        // side-effects) both consume the same event — one stream, two sinks.
+        dispatchDomainEvent(queryClient, parsed);
+        publishDomainEvent(parsed);
+      }
     },
     [queryClient]
   );
@@ -107,7 +114,13 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
         "plan_updated",
         "quota_reset",
         "ai_endpoint_down",
+        "ai_route_quarantined",
         "manual_approval_needed",
+        // Notification-inbox lifecycle: the notifications page patches its
+        // cache in place from these (no full refetch).
+        "notification_created",
+        "notification_read",
+        "notification_deleted",
       ]) {
         es.addEventListener(name, handleEvent as EventListener);
       }
@@ -121,7 +134,16 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
         const delay = backoffDelay(attemptRef.current);
         attemptRef.current += 1;
         setStreamStatus("reconnecting");
-        timerRef.current = window.setTimeout(connect, delay);
+        timerRef.current = window.setTimeout(async () => {
+          if (stoppedRef.current) return;
+          try {
+            // Refresh token before reconnecting in case the drop was due to an expired access token.
+            await refreshSession();
+          } catch {
+            // Squelch refresh error: if user is logged out, the next connect will fail/stop cleanly.
+          }
+          connect();
+        }, delay);
       };
     };
 

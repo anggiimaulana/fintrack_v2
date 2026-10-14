@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Money } from '@/components/shared/Money'
 import type { PublicPlan } from '@/hooks/use-billing'
+import { enforcedLimitEntries, limitLabel } from '@/lib/plan-limits'
 
 /** Human labels for seeded feature keys; unknown keys fall back to the raw key. */
 const FEATURE_LABELS: Record<string, string> = {
@@ -20,7 +21,7 @@ const FEATURE_LABELS: Record<string, string> = {
   bank_sync: 'Sinkronisasi bank',
 }
 
-/** Human labels for seeded limit keys. */
+/** Fallback labels for limit keys when the backend sends no limit_meta. */
 const LIMIT_LABELS: Record<string, string> = {
   ai_tokens_per_cycle: 'Token AI / siklus',
   ai_requests_per_cycle: 'Permintaan AI / siklus',
@@ -68,7 +69,7 @@ export function PlanCard({
   const isFree = plan.price_monthly_idr === 0
 
   const featureEntries = Object.entries(plan.features).sort(([a], [b]) => a.localeCompare(b))
-  const limitEntries = Object.entries(plan.limits).sort(([a], [b]) => a.localeCompare(b))
+  const limitEntries = enforcedLimitEntries(plan)
 
   return (
     <Card
@@ -96,6 +97,13 @@ export function PlanCard({
             {' '}
             / {plan.billing_period_days} hari
           </span>
+          {/* Show the tax-inclusive total up front so the price on the card
+              matches the invoice exactly — no surprise at checkout. */}
+          {typeof plan.tax_idr === 'number' && plan.tax_idr > 0 && (
+            <p className="mt-1 text-xs font-bold text-muted-foreground">
+              + PPN {plan.tax_rate_percent ?? 0}% = <Money value={plan.total_idr ?? 0} className="font-black text-foreground" />
+            </p>
+          )}
         </div>
       </CardHeader>
 
@@ -120,7 +128,7 @@ export function PlanCard({
             <ul className="space-y-1">
               {limitEntries.map(([key, value]) => (
                 <li key={key} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">{LIMIT_LABELS[key] ?? key}</span>
+                  <span className="text-muted-foreground">{limitLabel(plan, key, LIMIT_LABELS)}</span>
                   <span className="flex items-center gap-1 font-mono font-bold">
                     {value < 0 && <InfinityIcon className="h-3 w-3" aria-hidden="true" />}
                     {formatLimit(value)}

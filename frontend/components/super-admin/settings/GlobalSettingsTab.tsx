@@ -30,7 +30,52 @@ interface FormState {
   tax_rate_percent: string
   invoice_due_hours: string
   storage_driver: string
+  ai_estimate_chat: string
+  ai_estimate_reasoning: string
+  ai_estimate_vision: string
+  ai_estimate_voice: string
+  ai_estimate_embedding: string
+  dunning_hours_urgent: string
+  dunning_hours_soon: string
+  breaker_failure_threshold: string
+  breaker_cooldown_seconds: string
+  breaker_half_open_probes: string
+  route_breaker_threshold: string
+  route_breaker_cooldown_secs: string
+  metering_chars_per_token: string
+  metering_safety_buffer_pct: string
+  metering_image_tokens: string
+  metering_audio_tokens_per_sec: string
 }
+
+/** The AI reserve-estimate keys, edited as a group (P3). */
+const ESTIMATE_KEYS = [
+  'ai_estimate_chat',
+  'ai_estimate_reasoning',
+  'ai_estimate_vision',
+  'ai_estimate_voice',
+  'ai_estimate_embedding',
+] as const
+
+/** Dunning reminder offsets (hours before due). */
+const DUNNING_KEYS = ['dunning_hours_urgent', 'dunning_hours_soon'] as const
+
+/** AI gateway breaker tuning keys. */
+const BREAKER_KEYS = [
+  'breaker_failure_threshold',
+  'breaker_cooldown_seconds',
+  'breaker_half_open_probes',
+  'route_breaker_threshold',
+  'route_breaker_cooldown_secs',
+] as const
+
+/** Token metering heuristics estimation keys. */
+const METERING_KEYS = [
+  'metering_chars_per_token',
+  'metering_safety_buffer_pct',
+  'metering_image_tokens',
+  'metering_audio_tokens_per_sec',
+] as const
 
 interface ValidationErrors {
   payment_gateway_default?: string
@@ -38,6 +83,22 @@ interface ValidationErrors {
   tax_rate_percent?: string
   invoice_due_hours?: string
   storage_driver?: string
+  ai_estimate_chat?: string
+  ai_estimate_reasoning?: string
+  ai_estimate_vision?: string
+  ai_estimate_voice?: string
+  ai_estimate_embedding?: string
+  dunning_hours_urgent?: string
+  dunning_hours_soon?: string
+  breaker_failure_threshold?: string
+  breaker_cooldown_seconds?: string
+  breaker_half_open_probes?: string
+  route_breaker_threshold?: string
+  route_breaker_cooldown_secs?: string
+  metering_chars_per_token?: string
+  metering_safety_buffer_pct?: string
+  metering_image_tokens?: string
+  metering_audio_tokens_per_sec?: string
 }
 
 const SETTING_LABELS: Record<string, string> = {
@@ -46,6 +107,22 @@ const SETTING_LABELS: Record<string, string> = {
   tax_rate_percent: 'Tarif Pajak PPN (%)',
   invoice_due_hours: 'Jatuh Tempo Invoice (Jam)',
   storage_driver: 'Penyimpanan Bukti Transfer',
+  ai_estimate_chat: 'Estimasi Token: Chat',
+  ai_estimate_reasoning: 'Estimasi Token: Reasoning',
+  ai_estimate_vision: 'Estimasi Token: Vision (OCR)',
+  ai_estimate_voice: 'Estimasi Token: Suara',
+  ai_estimate_embedding: 'Estimasi Token: Embedding',
+  dunning_hours_urgent: 'Dunning: Urgent (Jam)',
+  dunning_hours_soon: 'Dunning: Segera (Jam)',
+  breaker_failure_threshold: 'Breaker: Ambang Kegagalan',
+  breaker_cooldown_seconds: 'Breaker: Cooldown (Detik)',
+  breaker_half_open_probes: 'Breaker: Probe Half-Open',
+  route_breaker_threshold: 'Breaker Rute: Ambang Kegagalan',
+  route_breaker_cooldown_secs: 'Breaker Rute: Cooldown (Detik)',
+  metering_chars_per_token: 'Heuristik: Karakter per Token',
+  metering_safety_buffer_pct: 'Heuristik: Buffer Pengaman (%)',
+  metering_image_tokens: 'Heuristik: Token per Gambar (OCR)',
+  metering_audio_tokens_per_sec: 'Heuristik: Token per Detik Suara',
 }
 
 const KNOWN_KEYS: Record<string, true> = {
@@ -54,6 +131,68 @@ const KNOWN_KEYS: Record<string, true> = {
   tax_rate_percent: true,
   invoice_due_hours: true,
   storage_driver: true,
+  ai_estimate_chat: true,
+  ai_estimate_reasoning: true,
+  ai_estimate_vision: true,
+  ai_estimate_voice: true,
+  ai_estimate_embedding: true,
+  dunning_hours_urgent: true,
+  dunning_hours_soon: true,
+  breaker_failure_threshold: true,
+  breaker_cooldown_seconds: true,
+  breaker_half_open_probes: true,
+  route_breaker_threshold: true,
+  route_breaker_cooldown_secs: true,
+  metering_chars_per_token: true,
+  metering_safety_buffer_pct: true,
+  metering_image_tokens: true,
+  metering_audio_tokens_per_sec: true,
+}
+
+/** Default reserve estimates, mirroring backend DefaultQuotaEstimate. */
+const DEFAULT_ESTIMATES: Pick<
+  FormState,
+  'ai_estimate_chat' | 'ai_estimate_reasoning' | 'ai_estimate_vision' | 'ai_estimate_voice' | 'ai_estimate_embedding'
+> = {
+  ai_estimate_chat: '2000',
+  ai_estimate_reasoning: '4000',
+  ai_estimate_vision: '5000',
+  ai_estimate_voice: '2000',
+  ai_estimate_embedding: '1000',
+}
+
+/** Defaults for dunning + breaker, mirroring the backend seed values. */
+const DEFAULT_DUNNING_BREAKER: Pick<
+  FormState,
+  | 'dunning_hours_urgent'
+  | 'dunning_hours_soon'
+  | 'breaker_failure_threshold'
+  | 'breaker_cooldown_seconds'
+  | 'breaker_half_open_probes'
+  | 'route_breaker_threshold'
+  | 'route_breaker_cooldown_secs'
+> = {
+  dunning_hours_urgent: '24',
+  dunning_hours_soon: '72',
+  breaker_failure_threshold: '5',
+  breaker_cooldown_seconds: '30',
+  breaker_half_open_probes: '1',
+  route_breaker_threshold: '2',
+  route_breaker_cooldown_secs: '60',
+}
+
+/** Defaults for token metering heuristics estimation. */
+const DEFAULT_METERING: Pick<
+  FormState,
+  | 'metering_chars_per_token'
+  | 'metering_safety_buffer_pct'
+  | 'metering_image_tokens'
+  | 'metering_audio_tokens_per_sec'
+> = {
+  metering_chars_per_token: '4',
+  metering_safety_buffer_pct: '10',
+  metering_image_tokens: '85',
+  metering_audio_tokens_per_sec: '25',
 }
 
 export function GlobalSettingsTab({
@@ -71,6 +210,9 @@ export function GlobalSettingsTab({
     tax_rate_percent: '11',
     invoice_due_hours: '24',
     storage_driver: 'local',
+    ...DEFAULT_ESTIMATES,
+    ...DEFAULT_DUNNING_BREAKER,
+    ...DEFAULT_METERING,
   })
 
   const [form, setForm] = React.useState<FormState>(initialForm)
@@ -97,6 +239,22 @@ export function GlobalSettingsTab({
         settingsMap.tax_rate_percent?.value ?? null,
         settingsMap.invoice_due_hours?.value ?? null,
         settingsMap.storage_driver?.value ?? null,
+        settingsMap.ai_estimate_chat?.value ?? null,
+        settingsMap.ai_estimate_reasoning?.value ?? null,
+        settingsMap.ai_estimate_vision?.value ?? null,
+        settingsMap.ai_estimate_voice?.value ?? null,
+        settingsMap.ai_estimate_embedding?.value ?? null,
+        settingsMap.dunning_hours_urgent?.value ?? null,
+        settingsMap.dunning_hours_soon?.value ?? null,
+        settingsMap.breaker_failure_threshold?.value ?? null,
+        settingsMap.breaker_cooldown_seconds?.value ?? null,
+        settingsMap.breaker_half_open_probes?.value ?? null,
+        settingsMap.route_breaker_threshold?.value ?? null,
+        settingsMap.route_breaker_cooldown_secs?.value ?? null,
+        settingsMap.metering_chars_per_token?.value ?? null,
+        settingsMap.metering_safety_buffer_pct?.value ?? null,
+        settingsMap.metering_image_tokens?.value ?? null,
+        settingsMap.metering_audio_tokens_per_sec?.value ?? null,
       ]),
     [settingsMap],
   )
@@ -116,6 +274,22 @@ export function GlobalSettingsTab({
       tax_rate_percent: taxRow?.value != null ? String(taxRow.value) : '11',
       invoice_due_hours: invRow?.value != null ? String(invRow.value) : '24',
       storage_driver: typeof storageRow?.value === 'string' ? storageRow.value : 'local',
+      ai_estimate_chat: settingsMap.ai_estimate_chat?.value != null ? String(settingsMap.ai_estimate_chat.value) : DEFAULT_ESTIMATES.ai_estimate_chat,
+      ai_estimate_reasoning: settingsMap.ai_estimate_reasoning?.value != null ? String(settingsMap.ai_estimate_reasoning.value) : DEFAULT_ESTIMATES.ai_estimate_reasoning,
+      ai_estimate_vision: settingsMap.ai_estimate_vision?.value != null ? String(settingsMap.ai_estimate_vision.value) : DEFAULT_ESTIMATES.ai_estimate_vision,
+      ai_estimate_voice: settingsMap.ai_estimate_voice?.value != null ? String(settingsMap.ai_estimate_voice.value) : DEFAULT_ESTIMATES.ai_estimate_voice,
+      ai_estimate_embedding: settingsMap.ai_estimate_embedding?.value != null ? String(settingsMap.ai_estimate_embedding.value) : DEFAULT_ESTIMATES.ai_estimate_embedding,
+      dunning_hours_urgent: settingsMap.dunning_hours_urgent?.value != null ? String(settingsMap.dunning_hours_urgent.value) : DEFAULT_DUNNING_BREAKER.dunning_hours_urgent,
+      dunning_hours_soon: settingsMap.dunning_hours_soon?.value != null ? String(settingsMap.dunning_hours_soon.value) : DEFAULT_DUNNING_BREAKER.dunning_hours_soon,
+      breaker_failure_threshold: settingsMap.breaker_failure_threshold?.value != null ? String(settingsMap.breaker_failure_threshold.value) : DEFAULT_DUNNING_BREAKER.breaker_failure_threshold,
+      breaker_cooldown_seconds: settingsMap.breaker_cooldown_seconds?.value != null ? String(settingsMap.breaker_cooldown_seconds.value) : DEFAULT_DUNNING_BREAKER.breaker_cooldown_seconds,
+      breaker_half_open_probes: settingsMap.breaker_half_open_probes?.value != null ? String(settingsMap.breaker_half_open_probes.value) : DEFAULT_DUNNING_BREAKER.breaker_half_open_probes,
+      route_breaker_threshold: settingsMap.route_breaker_threshold?.value != null ? String(settingsMap.route_breaker_threshold.value) : DEFAULT_DUNNING_BREAKER.route_breaker_threshold,
+      route_breaker_cooldown_secs: settingsMap.route_breaker_cooldown_secs?.value != null ? String(settingsMap.route_breaker_cooldown_secs.value) : DEFAULT_DUNNING_BREAKER.route_breaker_cooldown_secs,
+      metering_chars_per_token: settingsMap.metering_chars_per_token?.value != null ? String(settingsMap.metering_chars_per_token.value) : DEFAULT_METERING.metering_chars_per_token,
+      metering_safety_buffer_pct: settingsMap.metering_safety_buffer_pct?.value != null ? String(settingsMap.metering_safety_buffer_pct.value) : DEFAULT_METERING.metering_safety_buffer_pct,
+      metering_image_tokens: settingsMap.metering_image_tokens?.value != null ? String(settingsMap.metering_image_tokens.value) : DEFAULT_METERING.metering_image_tokens,
+      metering_audio_tokens_per_sec: settingsMap.metering_audio_tokens_per_sec?.value != null ? String(settingsMap.metering_audio_tokens_per_sec.value) : DEFAULT_METERING.metering_audio_tokens_per_sec,
     }
     setInitialForm(nextInit)
     setForm(nextInit)
@@ -177,6 +351,28 @@ export function GlobalSettingsTab({
       })
     }
 
+    for (const key of ESTIMATE_KEYS) {
+      if (form[key] !== initialForm[key]) {
+        res.push({
+          key,
+          label: SETTING_LABELS[key],
+          before: initialForm[key],
+          after: form[key],
+        })
+      }
+    }
+
+    for (const key of [...DUNNING_KEYS, ...BREAKER_KEYS, ...METERING_KEYS]) {
+      if (form[key] !== initialForm[key]) {
+        res.push({
+          key,
+          label: SETTING_LABELS[key],
+          before: initialForm[key],
+          after: form[key],
+        })
+      }
+    }
+
     return res
   }, [form, initialForm])
 
@@ -217,6 +413,41 @@ export function GlobalSettingsTab({
       errs.storage_driver = 'Harus memilih local atau r2'
     }
 
+    // Reserve estimates: positive integers, 1..1.000.000 (mirrors backend spec)
+    for (const key of ESTIMATE_KEYS) {
+      const v = Number(form[key])
+      if (form[key].trim() === '' || Number.isNaN(v) || !Number.isInteger(v)) {
+        errs[key] = 'Harus berupa bilangan bulat'
+      } else if (v < 1 || v > 1_000_000) {
+        errs[key] = 'Rentang yang diizinkan: 1 sampai 1.000.000'
+      }
+    }
+
+    // Dunning offsets + breaker tuning: positive integers within the backend
+    // validator bounds (hours 1..720, threshold/probes 1..100, seconds 1..3600).
+    const bounds: Record<string, [number, number]> = {
+      dunning_hours_urgent: [1, 720],
+      dunning_hours_soon: [1, 720],
+      breaker_failure_threshold: [1, 100],
+      breaker_cooldown_seconds: [1, 3600],
+      breaker_half_open_probes: [1, 100],
+      route_breaker_threshold: [1, 100],
+      route_breaker_cooldown_secs: [1, 3600],
+      metering_chars_per_token: [1, 100],
+      metering_safety_buffer_pct: [0, 100],
+      metering_image_tokens: [1, 10000],
+      metering_audio_tokens_per_sec: [1, 1000],
+    }
+    for (const key of [...DUNNING_KEYS, ...BREAKER_KEYS, ...METERING_KEYS]) {
+      const v = Number(form[key])
+      const [lo, hi] = bounds[key]
+      if (form[key].trim() === '' || Number.isNaN(v) || !Number.isInteger(v)) {
+        errs[key] = 'Harus berupa bilangan bulat'
+      } else if (v < lo || v > hi) {
+        errs[key] = `Rentang yang diizinkan: ${lo} sampai ${hi}`
+      }
+    }
+
     setClientErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -243,6 +474,10 @@ export function GlobalSettingsTab({
         dirtyPayload[d.key] = parseInt(form.invoice_due_hours, 10)
       } else if (d.key === 'storage_driver') {
         dirtyPayload[d.key] = form.storage_driver
+      } else if (
+        ([...ESTIMATE_KEYS, ...DUNNING_KEYS, ...BREAKER_KEYS, ...METERING_KEYS] as readonly string[]).includes(d.key)
+      ) {
+        dirtyPayload[d.key] = parseInt(form[d.key as keyof FormState], 10)
       }
     }
 
@@ -569,6 +804,161 @@ export function GlobalSettingsTab({
                   {backendErrors.storage_driver}
                 </p>
               )}
+            </div>
+
+            {/* Field 6: AI reserve estimates (P3) */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label className="font-medium">Estimasi Reserve Token AI</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Jumlah token yang ditahan (bukan ditagih) sebelum setiap panggilan AI. Biaya
+                  sebenarnya diselesaikan saat commit. Nilai terlalu kecil dapat memicu pemotongan
+                  saat pemakaian melebihi estimasi.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {ESTIMATE_KEYS.map((key) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key} className="text-xs">{SETTING_LABELS[key]}</Label>
+                    <Input
+                      id={key}
+                      type="number"
+                      min={1}
+                      max={1_000_000}
+                      value={form[key]}
+                      onChange={(e) => {
+                        setForm((prev) => ({ ...prev, [key]: e.target.value }))
+                        setClientErrors((prev) => ({ ...prev, [key]: undefined }))
+                        setBackendErrors((prev) => ({ ...prev, [key]: undefined }))
+                      }}
+                    />
+                    {clientErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{clientErrors[key]}</p>
+                    )}
+                    {backendErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{backendErrors[key]}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Field 7: dunning reminder offsets */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label className="font-medium">Pengingat Dunning (Jam Sebelum Jatuh Tempo)</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Kapan email/pesan pengingat dikirim sebelum invoice jatuh tempo. Pengingat
+                  mendesak dikirim saat sisa waktu ≤ nilai pertama; pengingat segera saat ≤ nilai
+                  kedua. Nilai mendesak otomatis dibatasi agar tidak melebihi nilai segera.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {DUNNING_KEYS.map((key) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key} className="text-xs">{SETTING_LABELS[key]}</Label>
+                    <Input
+                      id={key}
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={form[key]}
+                      onChange={(e) => {
+                        setForm((prev) => ({ ...prev, [key]: e.target.value }))
+                        setClientErrors((prev) => ({ ...prev, [key]: undefined }))
+                        setBackendErrors((prev) => ({ ...prev, [key]: undefined }))
+                      }}
+                    />
+                    {clientErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{clientErrors[key]}</p>
+                    )}
+                    {backendErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{backendErrors[key]}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Field 8: AI gateway circuit breaker tuning */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label className="font-medium">Tuning Circuit Breaker AI Gateway</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Breaker <strong>endpoint</strong> melindungi seluruh upstream (kegagalan transport);
+                  breaker <strong>rute</strong> mengarantina satu pasangan (endpoint, model) yang mati
+                  agar model sehat lain di endpoint yang sama tetap melayani. Perubahan berlaku
+                  seketika tanpa restart.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {BREAKER_KEYS.map((key) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key} className="text-xs">{SETTING_LABELS[key]}</Label>
+                    <Input
+                      id={key}
+                      type="number"
+                      min={1}
+                      max={key.endsWith('seconds') || key.endsWith('secs') ? 3600 : 100}
+                      value={form[key]}
+                      onChange={(e) => {
+                        setForm((prev) => ({ ...prev, [key]: e.target.value }))
+                        setClientErrors((prev) => ({ ...prev, [key]: undefined }))
+                        setBackendErrors((prev) => ({ ...prev, [key]: undefined }))
+                      }}
+                    />
+                    {clientErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{clientErrors[key]}</p>
+                    )}
+                    {backendErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{backendErrors[key]}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Field 9: AI token metering heuristics estimation */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label className="font-medium">Heuristik Estimasi Token AI (Fallback)</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Digunakan untuk mengestimasi pemakaian token lokal saat provider upstream tidak
+                  melaporkan metrik kuota token. Perubahan langsung aktif seketika pada kalkulasi
+                  turn berikutnya.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {METERING_KEYS.map((key) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key} className="text-xs">{SETTING_LABELS[key]}</Label>
+                    <Input
+                      id={key}
+                      type="number"
+                      min={key === 'metering_safety_buffer_pct' ? 0 : 1}
+                      max={
+                        key === 'metering_image_tokens'
+                          ? 10000
+                          : key === 'metering_audio_tokens_per_sec'
+                          ? 1000
+                          : 100
+                      }
+                      value={form[key]}
+                      onChange={(e) => {
+                        setForm((prev) => ({ ...prev, [key]: e.target.value }))
+                        setClientErrors((prev) => ({ ...prev, [key]: undefined }))
+                        setBackendErrors((prev) => ({ ...prev, [key]: undefined }))
+                      }}
+                    />
+                    {clientErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{clientErrors[key]}</p>
+                    )}
+                    {backendErrors[key] && (
+                      <p className="text-xs text-destructive font-medium">{backendErrors[key]}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Action buttons */}

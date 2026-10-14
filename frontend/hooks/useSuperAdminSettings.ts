@@ -85,6 +85,9 @@ export function useSuperAdminSettings() {
       queryClient.invalidateQueries({ queryKey: settingsQueryKeys.settings })
       // A storage_driver change alters the active driver, so refresh its status.
       queryClient.invalidateQueries({ queryKey: ['admin', 'storage-status'] })
+      // Runtime-resolved config (payment, R2, mail, AI) changed: refresh status.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'config-status'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'mail-status'] })
     },
     onError: (err: unknown) => {
       let msg = 'Gagal menyimpan pengaturan'

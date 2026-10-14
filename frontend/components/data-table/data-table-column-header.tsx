@@ -20,6 +20,60 @@ interface DataTableColumnHeaderProps {
 }
 
 /**
+ * The sort state TanStack injects into a column's `header` render context (see
+ * DataTable, which spreads `sort`/`order`/`onSort` into `flexRender`). Declared
+ * as a named type and narrowed at runtime so header renderers never need an
+ * unchecked inline cast to read it.
+ */
+export interface SortContext {
+  sort?: string;
+  order?: SortOrder;
+  onSort?: (columnId: string, order: SortOrder) => void;
+}
+
+/** Narrow an arbitrary header-render context to the sort fields it may carry. */
+export function asSortContext(ctx: unknown): SortContext {
+  if (typeof ctx !== "object" || ctx === null) return {};
+  const out: SortContext = {};
+  if ("sort" in ctx && typeof ctx.sort === "string") out.sort = ctx.sort;
+  if ("order" in ctx && (ctx.order === "asc" || ctx.order === "desc")) out.order = ctx.order;
+  if ("onSort" in ctx && typeof ctx.onSort === "function") {
+    out.onSort = ctx.onSort as SortContext["onSort"];
+  }
+  return out;
+}
+
+/**
+ * Convenience: a fully-wired column header driven by the render context.
+ * Header renderers pass their raw `ctx`; this narrows it once so callers never
+ * repeat the cast dance.
+ */
+export function SortableHeader({
+  title,
+  columnId,
+  ctx,
+  className,
+}: {
+  title: string;
+  columnId: string;
+  ctx: unknown;
+  className?: string;
+}) {
+  const { sort, order, onSort } = asSortContext(ctx);
+  return (
+    <DataTableColumnHeader
+      title={title}
+      columnId={columnId}
+      sortable
+      currentSort={sort}
+      currentOrder={order}
+      onSort={onSort}
+      className={className}
+    />
+  );
+}
+
+/**
  * Sortable table header. Sorting is server-side: clicking cycles
  * asc → desc → (and back), delegating to `onSort` which updates the URL.
  */

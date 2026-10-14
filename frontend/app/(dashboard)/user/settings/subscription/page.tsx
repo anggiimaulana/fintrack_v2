@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from 'react'
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ShieldCheck, Sparkles, Receipt, FileText, CalendarClock, Undo2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,7 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
-import { Money } from '@/components/shared/Money'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { useEntitlements } from '@/hooks/use-entitlements'
 import {
@@ -21,12 +22,14 @@ import {
   useScheduleDowngrade,
   useCancelDowngrade,
   type CheckoutResult,
-  type Invoice,
+  type PublicPlan,
 } from '@/hooks/use-billing'
 import { PlanCard } from '@/components/billing/PlanCard'
 import { QuotaUsageCard } from '@/components/billing/QuotaUsageCard'
 import { PaymentRow } from '@/components/billing/PaymentRow'
 import { CheckoutDialog } from '@/components/billing/CheckoutDialog'
+import { CheckoutConfirmDialog } from '@/components/billing/CheckoutConfirmDialog'
+import { InvoiceRow } from '@/components/billing/InvoiceRow'
 import { formatTanggal } from '@/lib/format'
 
 const SUB_STATUS_LABELS: Record<string, string> = {
@@ -38,19 +41,28 @@ const SUB_STATUS_LABELS: Record<string, string> = {
   expired: 'Kedaluwarsa',
 }
 
-const INVOICE_STATUS_LABELS: Record<Invoice['status'], string> = {
-  draft: 'Draf',
-  issued: 'Terbit',
-  paid: 'Lunas',
-  past_due: 'Jatuh tempo',
-  voided: 'Dibatalkan',
-}
 
 export default function SubscriptionPage() {
+  // useSearchParams requires a Suspense boundary during prerender; keep the
+  // data-fetching page inside it (mirrors the transactions page).
+  return (
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+      <SubscriptionContent />
+    </Suspense>
+  )
+}
+
+function SubscriptionContent() {
+  const searchParams = useSearchParams()
+  // Deep-linkable tabs (e.g. the header search jumps straight to payments).
+  const tabParam = searchParams.get('tab')
+  const tab = tabParam === 'payments' || tabParam === 'invoices' ? tabParam : 'plans'
   const { planCode, planName, status, isLoading: entLoading, isError: entError, usage, period } = useEntitlements()
   const { plans, isLoading: plansLoading, isError: plansError } = usePublicPlans()
-  const { payments, isLoading: paymentsLoading, isError: paymentsError, refetch: refetchPayments } = useMyPayments()
-  const { invoices, isLoading: invoicesLoading } = useMyInvoices()
+  // Only fetch the history the open tab actually renders. Previously both lists
+  // were fetched on every visit even when the user never left the "Paket" tab.
+  const { payments, isLoading: paymentsLoading, isError: paymentsError, refetch: refetchPayments } = useMyPayments({ enabled: tab === 'payments' })
+  const { invoices, isLoading: invoicesLoading } = useMyInvoices({ enabled: tab === 'invoices' })
   const { subscription, scheduledPlanCode, refetch: refetchSub } = useMySubscription()
 
   const checkout = useCheckout()
@@ -60,19 +72,40 @@ export default function SubscriptionPage() {
   const [checkoutResult, setCheckoutResult] = React.useState<CheckoutResult | null>(null)
   const [checkoutOpen, setCheckoutOpen] = React.useState(false)
   const [downgradeTarget, setDowngradeTarget] = React.useState<string | null>(null)
+  // The plan awaiting confirmation. Checkout is a side effect that issues an
+  // invoice, so it runs only after the user confirms — never on a bare click.
+  const [confirmPlan, setConfirmPlan] = React.useState<PublicPlan | null>(null)
 
   const currentSortOrder = React.useMemo(() => {
     const cur = plans.find((p) => p.code === planCode)
     return cur?.sort_order ?? 0
   }, [plans, planCode])
 
-  const handleUpgrade = async (targetPlanCode: string) => {
-    const res = await checkout.mutateAsync(targetPlanCode)
-    setCheckoutResult(res)
-    setCheckoutOpen(true)
-    if (res.redirect_url) window.open(res.redirect_url, '_blank', 'noopener,noreferrer')
-    refetchPayments()
-    refetchSub()
+  // Clicking "Upgrade" only opens the confirmation; no request is sent yet.
+  const handleUpgrade = (targetPlanCode: string) => {
+    const target = plans.find((p) => p.code === targetPlanCode)
+    if (target) setConfirmPlan(target)
+  }
+
+  const confirmUpgrade = async () => {
+    if (!confirmPlan) return
+    try {
+      const res = await checkout.mutateAsync(confirmPlan.code)
+      setConfirmPlan(null)
+      setCheckoutResult(res)
+      setCheckoutOpen(true)
+      if (res.redirect_url) window.open(res.redirect_url, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      // A 409 means an unpaid invoice already exists: close the confirm dialog
+      // and send the user to the invoices tab so they can pay or cancel it.
+      const status = (e as { response?: { status?: number } })?.response?.status
+      if (status === 409) {
+        setConfirmPlan(null)
+        refetchPayments()
+        refetchSub()
+      }
+      // Non-409 errors are already surfaced by useCheckout's onError toast.
+    }
   }
 
   const handleDowngrade = (targetPlanCode: string) => setDowngradeTarget(targetPlanCode)
@@ -146,7 +179,7 @@ export default function SubscriptionPage() {
       {/* Real-time quota consumption (F6) */}
       <QuotaUsageCard usage={usage} period={period} />
 
-      <Tabs defaultValue="plans" className="space-y-4">
+      <Tabs defaultValue={tab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="plans">
             <Sparkles className="mr-1.5 h-4 w-4" aria-hidden="true" /> Paket
@@ -229,21 +262,12 @@ export default function SubscriptionPage() {
                     <th scope="col" className="p-3 text-left font-black uppercase tracking-wide">Jatuh Tempo</th>
                     <th scope="col" className="p-3 text-right font-black uppercase tracking-wide">Total</th>
                     <th scope="col" className="p-3 text-left font-black uppercase tracking-wide">Status</th>
+                    <th scope="col" className="p-3 text-right font-black uppercase tracking-wide">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {invoices.map((inv) => (
-                    <tr key={inv.id} className="border-b border-foreground/20 last:border-b-0">
-                      <td className="p-3 font-mono font-bold">{inv.invoice_number}</td>
-                      <td className="p-3 text-muted-foreground">{formatTanggal(inv.issued_at)}</td>
-                      <td className="p-3 text-muted-foreground">{inv.due_at ? formatTanggal(inv.due_at) : '—'}</td>
-                      <td className="p-3 text-right"><Money value={inv.total_idr} /></td>
-                      <td className="p-3">
-                        <Badge variant={inv.status === 'paid' ? 'default' : inv.status === 'voided' ? 'destructive' : 'secondary'}>
-                          {INVOICE_STATUS_LABELS[inv.status]}
-                        </Badge>
-                      </td>
-                    </tr>
+                    <InvoiceRow key={inv.id} invoice={inv} />
                   ))}
                 </tbody>
               </table>
@@ -253,6 +277,15 @@ export default function SubscriptionPage() {
       </Tabs>
 
       <CheckoutDialog open={checkoutOpen} onOpenChange={setCheckoutOpen} result={checkoutResult} />
+
+      <CheckoutConfirmDialog
+        open={confirmPlan !== null}
+        onOpenChange={(o) => !o && setConfirmPlan(null)}
+        plan={confirmPlan}
+        currentPlanName={planName}
+        onConfirm={confirmUpgrade}
+        loading={checkout.isPending}
+      />
 
       <ConfirmDialog
         open={downgradeTarget !== null}
