@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -79,6 +80,10 @@ func (h *BudgetHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.usecase.Delete(c.Request.Context(), id, userID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Anggaran tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Gagal menghapus anggaran")
 		return
 	}

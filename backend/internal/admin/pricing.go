@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -119,7 +120,7 @@ func (h *Handler) GetActivePricingRule(c *gin.Context) {
 	row := h.svc.pool.QueryRow(c.Request.Context(),
 		`SELECT `+pricingCols+` FROM pricing_rules WHERE is_active = true ORDER BY created_at ASC LIMIT 1`)
 	d, err := scanPricingRule(row)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		response.NotFound(c, "Belum ada aturan harga aktif")
 		return
 	}
@@ -219,7 +220,7 @@ func (h *Handler) UpdatePricingRule(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	before, err := scanPricingRule(h.svc.pool.QueryRow(ctx, `SELECT `+pricingCols+` FROM pricing_rules WHERE id = $1`, id))
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		response.NotFound(c, "Aturan harga tidak ditemukan")
 		return
 	}
@@ -273,7 +274,7 @@ func (h *Handler) ActivatePricingRule(c *gin.Context) {
 	ctx := c.Request.Context()
 	var exists bool
 	if err := h.svc.pool.QueryRow(ctx, `SELECT true FROM pricing_rules WHERE id = $1`, id).Scan(&exists); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			response.NotFound(c, "Aturan harga tidak ditemukan")
 			return
 		}
@@ -296,7 +297,7 @@ func (h *Handler) DeletePricingRule(c *gin.Context) {
 	ctx := c.Request.Context()
 	var active bool
 	if err := h.svc.pool.QueryRow(ctx, `SELECT is_active FROM pricing_rules WHERE id = $1`, id).Scan(&active); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			response.NotFound(c, "Aturan harga tidak ditemukan")
 			return
 		}

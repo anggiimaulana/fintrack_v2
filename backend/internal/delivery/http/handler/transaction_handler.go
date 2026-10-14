@@ -181,6 +181,10 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	}
 
 	if err := h.usecase.SoftDelete(c.Request.Context(), id, userID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Transaction not found")
+			return
+		}
 		response.InternalError(c, "Failed to delete transaction")
 		return
 	}

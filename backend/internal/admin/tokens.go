@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -223,7 +224,7 @@ func (h *Handler) AdjustTokens(c *gin.Context) {
 		ORDER BY period_start DESC LIMIT 1
 		FOR UPDATE`, userID).Scan(&periodID, &quota, &used, &reserved)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			response.Error(c, 409, "Pengguna tidak memiliki periode token aktif", "NO_ACTIVE_PERIOD")
 			return
 		}
@@ -246,7 +247,7 @@ func (h *Handler) AdjustTokens(c *gin.Context) {
 		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id`,
 		periodID, userID, req.Amount, req.IdempotencyKey, req.Reason).Scan(&ledgerID)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		// Replay: return the stored result, no second mutation.
 		var storedAmount, storedQuota int64
 		if err := tx.QueryRow(ctx, `

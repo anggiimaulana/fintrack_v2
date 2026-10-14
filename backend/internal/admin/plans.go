@@ -228,7 +228,11 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 
 	before, err := h.planSnapshot(ctx, tx, id)
 	if err != nil {
-		response.NotFound(c, "Paket tidak ditemukan")
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.NotFound(c, "Paket tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal memuat paket")
 		return
 	}
 

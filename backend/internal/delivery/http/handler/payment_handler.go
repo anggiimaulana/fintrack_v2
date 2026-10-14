@@ -64,9 +64,11 @@ func (h *PaymentHandler) MidtransWebhook(c *gin.Context) {
 	res, err := h.processor.Process(c.Request.Context(), "midtrans", payload, headers)
 	if err != nil {
 		switch {
-		case err == payment.ErrInvalidSignature:
+		case errors.Is(err, payment.ErrInvalidSignature):
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "invalid_signature"})
-		case err == payment.ErrPaymentNotFound:
+		case errors.Is(err, payment.ErrPaymentNotFound):
+			// A verified webhook for an unknown order is acknowledged (200) so the
+			// gateway stops retrying; nothing is credited.
 			c.JSON(http.StatusOK, gin.H{"success": true, "message": "ignored"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "processing_failed"})

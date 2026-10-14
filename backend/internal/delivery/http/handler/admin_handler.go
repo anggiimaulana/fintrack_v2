@@ -64,6 +64,9 @@ func (h *AdminHandler) SetUserStatus(c *gin.Context) {
 	case errors.Is(err, usecase.ErrSelfDeactivate):
 		response.BadRequest(c, "Tidak bisa menonaktifkan akun sendiri", "self_deactivate")
 		return
+	case errors.Is(err, domain.ErrNotFound):
+		response.NotFound(c, "Pengguna tidak ditemukan")
+		return
 	case err != nil:
 		response.InternalError(c, "Failed to update user status")
 		return

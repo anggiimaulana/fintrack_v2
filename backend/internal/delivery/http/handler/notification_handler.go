@@ -138,6 +138,10 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		return
 	}
 	if err := h.repo.MarkRead(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, domain.ErrNotificationNotFound) {
+			response.NotFound(c, "Notifikasi tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Gagal menandai notifikasi")
 		return
 	}
@@ -190,6 +194,10 @@ func (h *NotificationHandler) DeleteOne(c *gin.Context) {
 		return
 	}
 	if err := h.repo.Delete(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, domain.ErrNotificationNotFound) {
+			response.NotFound(c, "Notifikasi tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Gagal menghapus notifikasi")
 		return
 	}
@@ -287,7 +295,12 @@ func parseIntDefault(s string, def int) int {
 // SendTestEmail handles POST /me/notifications/test-email: sends a one-off test
 // message to the caller's own address so they can verify delivery end-to-end.
 func (h *NotificationHandler) SendTestEmail(c *gin.Context) {
-	email := c.MustGet("email").(string)
+	rawEmail, ok := c.Get("email")
+	email, _ := rawEmail.(string)
+	if !ok || email == "" {
+		response.Unauthorized(c, "Sesi tidak valid, silakan login ulang")
+		return
+	}
 
 	if h.service == nil {
 		response.InternalError(c, "Layanan notifikasi belum dikonfigurasi")

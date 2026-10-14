@@ -156,3 +156,20 @@ func TooManyRequests(c *gin.Context, msg string) {
 	}
 	Error(c, http.StatusTooManyRequests, msg, "rate_limit_exceeded")
 }
+
+// QuotaExceeded answers 429 when a user's token quota cannot cover a request.
+// It uses the same envelope shape as the plan-gate middleware (feature/limit
+// gates) so the frontend has one code path for "upgrade to continue": a
+// machine-readable error code plus the upgrade hint and URL.
+func QuotaExceeded(c *gin.Context, msg string) {
+	if msg == "" {
+		msg = "Sisa kuota Anda tidak mencukupi untuk permintaan ini."
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"success":      false,
+		"error":        "insufficient_quota",
+		"message":      msg,
+		"upgrade_hint": true,
+		"upgrade_url":  "/user/settings/subscription",
+	})
+}

@@ -50,7 +50,13 @@ func RequireSuperAdmin(resolve RoleResolver) gin.HandlerFunc {
 		}
 
 		if resolve != nil {
-			userID, ok := c.MustGet("user_id").(uuid.UUID)
+			rawID, ok := c.Get("user_id")
+			if !ok {
+				response.Unauthorized(c, "Invalid authentication context")
+				c.Abort()
+				return
+			}
+			userID, ok := rawID.(uuid.UUID)
 			if !ok {
 				response.Unauthorized(c, "Invalid authentication context")
 				c.Abort()

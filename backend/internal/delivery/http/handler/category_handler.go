@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -147,6 +149,10 @@ func (h *CategoryHandler) UpdateIncome(c *gin.Context) {
 	}
 	category, err := h.usecase.UpdateIncome(c.Request.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Income category not found")
+			return
+		}
 		response.InternalError(c, "Failed to update income category")
 		return
 	}
@@ -171,6 +177,10 @@ func (h *CategoryHandler) UpdateExpense(c *gin.Context) {
 	}
 	category, err := h.usecase.UpdateExpense(c.Request.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Expense category not found")
+			return
+		}
 		response.InternalError(c, "Failed to update expense category")
 		return
 	}
@@ -195,6 +205,10 @@ func (h *CategoryHandler) UpdateSubcategory(c *gin.Context) {
 	}
 	subcategory, err := h.usecase.UpdateSubcategory(c.Request.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Subcategory not found")
+			return
+		}
 		response.InternalError(c, "Failed to update subcategory")
 		return
 	}
@@ -213,6 +227,10 @@ func (h *CategoryHandler) DeleteIncome(c *gin.Context) {
 		return
 	}
 	if err := h.usecase.DeleteIncome(c.Request.Context(), id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Income category not found")
+			return
+		}
 		response.InternalError(c, "Failed to delete income category")
 		return
 	}
@@ -227,6 +245,10 @@ func (h *CategoryHandler) DeleteExpense(c *gin.Context) {
 		return
 	}
 	if err := h.usecase.DeleteExpense(c.Request.Context(), id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Expense category not found")
+			return
+		}
 		response.InternalError(c, "Failed to delete expense category")
 		return
 	}
@@ -241,6 +263,10 @@ func (h *CategoryHandler) DeleteSubcategory(c *gin.Context) {
 		return
 	}
 	if err := h.usecase.DeleteSubcategory(c.Request.Context(), id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Subcategory not found")
+			return
+		}
 		response.InternalError(c, "Failed to delete subcategory")
 		return
 	}
@@ -308,6 +334,10 @@ func (h *CategoryHandler) DeleteSavings(c *gin.Context) {
 		return
 	}
 	if err := h.usecase.DeleteSavings(c.Request.Context(), id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Savings category not found")
+			return
+		}
 		response.InternalError(c, "Failed to delete savings category")
 		return
 	}

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -148,7 +149,7 @@ func (h *Handler) ExtendSubscription(c *gin.Context) {
 		WHERE id = $1
 		RETURNING user_id`, id, req.Days).Scan(&userID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			response.NotFound(c, "Langganan tidak ditemukan")
 			return
 		}
@@ -210,7 +211,11 @@ func (h *Handler) ForceDowngrade(c *gin.Context) {
 			`SELECT id, code FROM plans WHERE is_active ORDER BY price_monthly_idr ASC LIMIT 1`).Scan(&targetID, &targetCode)
 	}
 	if err != nil {
-		response.NotFound(c, "Paket tujuan tidak ditemukan")
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.NotFound(c, "Paket tujuan tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal memuat paket tujuan")
 		return
 	}
 
@@ -220,7 +225,11 @@ func (h *Handler) ForceDowngrade(c *gin.Context) {
 		SELECT s.user_id, p.code FROM subscriptions s JOIN plans p ON p.id = s.plan_id
 		WHERE s.id = $1 FOR UPDATE OF s`, id).Scan(&userID, &beforePlan)
 	if err != nil {
-		response.NotFound(c, "Langganan tidak ditemukan")
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.NotFound(c, "Langganan tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal memuat langganan")
 		return
 	}
 
@@ -284,7 +293,7 @@ func (h *Handler) CancelSubscription(c *gin.Context) {
 		WHERE id = $1
 		RETURNING user_id`, id, immediate).Scan(&userID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			response.NotFound(c, "Langganan tidak ditemukan")
 			return
 		}

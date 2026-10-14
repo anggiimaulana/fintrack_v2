@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -36,6 +38,10 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 	}
 	provider, err := h.usecase.Create(c.Request.Context(), adminID, req)
 	if err != nil {
+		if errors.Is(err, domain.ErrAlreadyExists) {
+			response.Conflict(c, "Provider dengan nama tersebut sudah ada")
+			return
+		}
 		response.InternalError(c, "Gagal membuat provider")
 		return
 	}
@@ -56,11 +62,15 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	provider, err := h.usecase.Update(c.Request.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Provider tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Gagal memperbarui provider")
 		return
 	}
 	if provider == nil {
-		response.NotFound(c, "Provider not found")
+		response.NotFound(c, "Provider tidak ditemukan")
 		return
 	}
 	middleware.InvalidateAllCache(c.Request.Context())

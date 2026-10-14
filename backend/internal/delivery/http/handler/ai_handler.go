@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -110,11 +109,7 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		res, err := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), modality), modality, idempotencyKey)
 		if err != nil {
 			if errors.Is(err, billing.ErrInsufficientQuota) {
-				c.JSON(http.StatusTooManyRequests, gin.H{
-					"success": false,
-					"error":   "insufficient_quota",
-					"message": "Sisa kuota token Anda tidak mencukupi untuk melakukan permintaan ini.",
-				})
+				response.QuotaExceeded(c, "Sisa kuota token Anda tidak mencukupi untuk melakukan permintaan ini.")
 				return
 			}
 			response.InternalError(c, "Gagal mengalokasikan kuota token")
@@ -267,6 +262,10 @@ func (h *AIHandler) UpdateSession(c *gin.Context) {
 
 	session, err := h.aiUC.UpdateSession(c.Request.Context(), userID, id, req.Title)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Sesi tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Failed to update session")
 		return
 	}
@@ -283,6 +282,10 @@ func (h *AIHandler) DeleteSession(c *gin.Context) {
 	}
 
 	if err := h.aiUC.DeleteSession(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.NotFound(c, "Sesi tidak ditemukan")
+			return
+		}
 		response.InternalError(c, "Failed to delete session")
 		return
 	}
@@ -358,11 +361,7 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVision), billing.ModalityVision, "vision-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
-				c.JSON(http.StatusTooManyRequests, gin.H{
-					"success": false,
-					"error":   "insufficient_quota",
-					"message": "Sisa kuota Anda tidak mencukupi untuk memindai struk ini.",
-				})
+				response.QuotaExceeded(c, "Sisa kuota Anda tidak mencukupi untuk memindai struk ini.")
 				return
 			}
 			response.InternalError(c, "Gagal mengalokasikan kuota")
@@ -475,11 +474,7 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVoice), billing.ModalityVoice, "voice-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
-				c.JSON(http.StatusTooManyRequests, gin.H{
-					"success": false,
-					"error":   "insufficient_quota",
-					"message": "Sisa kuota Anda tidak mencukupi untuk memproses suara ini.",
-				})
+				response.QuotaExceeded(c, "Sisa kuota Anda tidak mencukupi untuk memproses suara ini.")
 				return
 			}
 			response.InternalError(c, "Gagal mengalokasikan kuota")

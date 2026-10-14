@@ -139,6 +139,10 @@ func (h *Handler) ApprovePayment(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
+	if h.svc.manual == nil {
+		response.Error(c, 503, "Layanan verifikasi pembayaran belum dikonfigurasi", "not_configured")
+		return
+	}
 	pay, err := h.svc.manual.Approve(ctx, id)
 	if err != nil {
 		writePaymentError(c, err)
@@ -167,6 +171,10 @@ func (h *Handler) RejectPayment(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
+	if h.svc.manual == nil {
+		response.Error(c, 503, "Layanan verifikasi pembayaran belum dikonfigurasi", "not_configured")
+		return
+	}
 	pay, err := h.svc.manual.Reject(ctx, id, req.Reason)
 	if err != nil {
 		writePaymentError(c, err)
