@@ -101,7 +101,22 @@ Super admin dapat mengubah pemetaan tanpa deploy.
 - Rotasi tanpa downtime (lihat `RUNBOOK_ROTASI_KUNCI.md`).
 - Audit akses kunci.
 
+## 11. Satu Transport & Bootstrap Dinamis
+
+- **BYOK dihapus total.** Tidak ada lagi kunci AI per-user; `gemini_api_keys`
+  sudah di-drop (migrasi `0014`). Gateway adalah satu-satunya transport AI, jadi
+  bila gateway mati, fitur AI mengembalikan pesan ramah (bukan fallback).
+- **Bootstrap env → DB.** `internal/aigateway/bootstrap` menyemai
+  `ai_endpoints`/`ai_routes`/flag dari environment **hanya saat tabel kosong**.
+  Begitu ada data (Super Admin atau bootstrap sebelumnya), DB otoritatif dan env
+  diabaikan — semua perubahan berikutnya lewat `/api/v1/admin/ai-gateway/*`
+  tanpa redeploy. Health checker menjalankan probe sinkron saat boot agar
+  keputusan ON/OFF tidak membaca `unknown` yang basi.
+- **Embedder mengikuti route** (`ai_routes` use_case `embedding`), bukan
+  hardcode; gateway mengunci `vector(768)`.
+- Prosedur lengkap: `RUNBOOK_AKTIVASI_GATEWAY.md`.
+
 ## Referensi
 
-- `RUNBOOK_GATEWAY_DOWN.md`, `RUNBOOK_ROTASI_KUNCI.md`, `KEBIJAKAN_METERING.md`
+- `RUNBOOK_GATEWAY_DOWN.md`, `RUNBOOK_ROTASI_KUNCI.md`, `RUNBOOK_AKTIVASI_GATEWAY.md`, `KEBIJAKAN_METERING.md`
 - `../../2_Projects/P03_AI-Gateway-Terpusat/teknis/`
