@@ -72,6 +72,7 @@ INSERT INTO plan_limits (plan_id, limit_key, limit_value) VALUES
     ('a0000000-0000-0000-0000-000000000001', 'max_categories',        5),
     ('a0000000-0000-0000-0000-000000000001', 'max_wallets',           1),
     ('a0000000-0000-0000-0000-000000000001', 'ocr_scans_per_cycle',   0),
+    ('a0000000-0000-0000-0000-000000000001', 'voice_requests_per_day', 1),
     -- Pro
     ('a0000000-0000-0000-0000-000000000002', 'ai_tokens_per_cycle',   150000),
     ('a0000000-0000-0000-0000-000000000002', 'ai_requests_per_cycle', 2000),
@@ -79,13 +80,15 @@ INSERT INTO plan_limits (plan_id, limit_key, limit_value) VALUES
     ('a0000000-0000-0000-0000-000000000002', 'max_categories',        30),
     ('a0000000-0000-0000-0000-000000000002', 'max_wallets',           5),
     ('a0000000-0000-0000-0000-000000000002', 'ocr_scans_per_cycle',   100),
+    ('a0000000-0000-0000-0000-000000000002', 'voice_requests_per_day', 50),
     -- Business
     ('a0000000-0000-0000-0000-000000000003', 'ai_tokens_per_cycle',   1000000),
     ('a0000000-0000-0000-0000-000000000003', 'ai_requests_per_cycle', -1),
     ('a0000000-0000-0000-0000-000000000003', 'max_transactions',      -1),
     ('a0000000-0000-0000-0000-000000000003', 'max_categories',        -1),
     ('a0000000-0000-0000-0000-000000000003', 'max_wallets',           -1),
-    ('a0000000-0000-0000-0000-000000000003', 'ocr_scans_per_cycle',   -1)
+    ('a0000000-0000-0000-0000-000000000003', 'ocr_scans_per_cycle',   -1),
+    ('a0000000-0000-0000-0000-000000000003', 'voice_requests_per_day', -1)
 ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = EXCLUDED.limit_value;
 
 -- ------------------------------------------------------------

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Mn4rTXOmnDmo9zroV5gcvLlfHo1g7eTC8cOCzkalzTSYbyMQh3BiCj9H9Wn1ioG
+\restrict 4ufMweI5g0ho3bSoeoGWc7e7Hbbk8AhgaL5tqzFdcngrPVVeoid14p0eXwpDdK4
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg12+2)
 -- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg12+2)
@@ -172,6 +172,23 @@ CREATE TABLE public.audit_logs (
 ALTER TABLE public.audit_logs OWNER TO postgres;
 
 --
+-- Name: budgets; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.budgets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    category_id uuid NOT NULL,
+    amount_idr bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT budgets_amount_idr_check CHECK ((amount_idr >= 0))
+);
+
+
+ALTER TABLE public.budgets OWNER TO postgres;
+
+--
 -- Name: chat_messages; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -248,6 +265,24 @@ CREATE TABLE public.expense_subcategories (
 ALTER TABLE public.expense_subcategories OWNER TO postgres;
 
 --
+-- Name: feature_definitions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.feature_definitions (
+    key character varying(64) NOT NULL,
+    label character varying(128) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    group_key character varying(32) DEFAULT 'fitur'::character varying NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.feature_definitions OWNER TO postgres;
+
+--
 -- Name: feature_flags; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -320,7 +355,9 @@ CREATE TABLE public.invoices (
     voided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT invoices_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'issued'::character varying, 'paid'::character varying, 'past_due'::character varying, 'voided'::character varying])::text[]))),
+    closed_reason text,
+    expired_at timestamp with time zone,
+    CONSTRAINT invoices_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'issued'::character varying, 'paid'::character varying, 'past_due'::character varying, 'voided'::character varying, 'expired'::character varying])::text[]))),
     CONSTRAINT invoices_subtotal_idr_check CHECK ((subtotal_idr >= 0)),
     CONSTRAINT invoices_tax_idr_check CHECK ((tax_idr >= 0)),
     CONSTRAINT invoices_total_idr_check CHECK ((total_idr >= 0))
@@ -328,6 +365,84 @@ CREATE TABLE public.invoices (
 
 
 ALTER TABLE public.invoices OWNER TO postgres;
+
+--
+-- Name: metric_definitions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.metric_definitions (
+    key character varying(64) NOT NULL,
+    label character varying(128) NOT NULL,
+    unit character varying(32) DEFAULT ''::character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    is_enforced boolean DEFAULT false NOT NULL,
+    resolver_key character varying(64),
+    ratio_adjusted boolean DEFAULT false NOT NULL,
+    per_cycle boolean DEFAULT true NOT NULL,
+    group_key character varying(32) DEFAULT 'kuota'::character varying NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT metric_definitions_enforced_needs_resolver CHECK (((NOT is_enforced) OR (resolver_key IS NOT NULL)))
+);
+
+
+ALTER TABLE public.metric_definitions OWNER TO postgres;
+
+--
+-- Name: notification_preferences; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.notification_preferences (
+    user_id uuid NOT NULL,
+    transaction_email boolean DEFAULT true NOT NULL,
+    category_reminder boolean DEFAULT true NOT NULL,
+    weekly_report boolean DEFAULT false NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notification_preferences OWNER TO postgres;
+
+--
+-- Name: notifications; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.notifications (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    event character varying(64) NOT NULL,
+    title text NOT NULL,
+    body text NOT NULL,
+    href text DEFAULT ''::text NOT NULL,
+    read_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notifications OWNER TO postgres;
+
+--
+-- Name: payment_accounts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.payment_accounts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    kind character varying(16) DEFAULT 'bank'::character varying NOT NULL,
+    name character varying(64) NOT NULL,
+    account_number character varying(64) DEFAULT ''::character varying NOT NULL,
+    account_holder character varying(128) DEFAULT ''::character varying NOT NULL,
+    qris_url text DEFAULT ''::text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payment_accounts_kind_check CHECK (((kind)::text = ANY ((ARRAY['bank'::character varying, 'ewallet'::character varying, 'qris'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.payment_accounts OWNER TO postgres;
 
 --
 -- Name: payment_events; Type: TABLE; Schema: public; Owner: postgres
@@ -428,7 +543,9 @@ CREATE TABLE public.plans (
     fallback_gateway character varying(32) DEFAULT 'midtrans'::character varying NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    token_quota_ratio bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT plans_token_quota_ratio_check CHECK ((token_quota_ratio >= 1))
 );
 
 
@@ -447,7 +564,10 @@ CREATE TABLE public.pricing_rules (
     modality_multipliers jsonb DEFAULT '{"chat": 1.0, "voice": 3.0, "vision": 2.5, "embedding": 0.5, "reasoning": 2.0}'::jsonb NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    provider_cost_per_1k_idr bigint DEFAULT 0 NOT NULL,
+    price_unit character varying(8) DEFAULT 'per_1k'::character varying NOT NULL,
+    CONSTRAINT pricing_rules_price_unit_check CHECK (((price_unit)::text = ANY ((ARRAY['per_1k'::character varying, 'per_10k'::character varying])::text[])))
 );
 
 
@@ -493,6 +613,33 @@ CREATE TABLE public.savings_categories (
 ALTER TABLE public.savings_categories OWNER TO postgres;
 
 --
+-- Name: setting_definitions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.setting_definitions (
+    key character varying(64) NOT NULL,
+    kind character varying(16) NOT NULL,
+    min_value bigint,
+    max_value bigint,
+    enum_values jsonb,
+    max_len integer DEFAULT 0 NOT NULL,
+    default_value jsonb,
+    group_key character varying(32) DEFAULT 'umum'::character varying NOT NULL,
+    label character varying(128) DEFAULT ''::character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    is_writable boolean DEFAULT true NOT NULL,
+    is_secret boolean DEFAULT false NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT setting_definitions_kind_check CHECK (((kind)::text = ANY ((ARRAY['string'::character varying, 'int'::character varying, 'bool'::character varying, 'enum'::character varying, 'secret'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.setting_definitions OWNER TO postgres;
+
+--
 -- Name: settings; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -506,6 +653,40 @@ CREATE TABLE public.settings (
 
 
 ALTER TABLE public.settings OWNER TO postgres;
+
+--
+-- Name: spk_metric_defaults; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.spk_metric_defaults (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text DEFAULT 'Model SPK Default'::text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    indicators jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status_thresholds jsonb DEFAULT '[]'::jsonb NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.spk_metric_defaults OWNER TO postgres;
+
+--
+-- Name: spk_metric_overrides; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.spk_metric_overrides (
+    user_id uuid NOT NULL,
+    indicators jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status_thresholds jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.spk_metric_overrides OWNER TO postgres;
 
 --
 -- Name: spk_results; Type: TABLE; Schema: public; Owner: postgres
@@ -587,7 +768,9 @@ CREATE TABLE public.token_ledger (
     reference_id character varying(128),
     notes text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT token_ledger_entry_type_check CHECK (((entry_type)::text = ANY ((ARRAY['reserve'::character varying, 'commit'::character varying, 'release'::character varying, 'grant'::character varying, 'adjust'::character varying])::text[])))
+    raw_tokens bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT token_ledger_entry_type_check CHECK (((entry_type)::text = ANY ((ARRAY['reserve'::character varying, 'commit'::character varying, 'release'::character varying, 'grant'::character varying, 'adjust'::character varying, 'refund'::character varying])::text[]))),
+    CONSTRAINT token_ledger_raw_tokens_check CHECK ((raw_tokens >= 0))
 );
 
 
@@ -607,7 +790,9 @@ CREATE TABLE public.token_periods (
     reserved_tokens bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_token_balance CHECK (((used_tokens >= 0) AND (reserved_tokens >= 0)))
+    quota_ratio bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT chk_token_balance CHECK (((used_tokens >= 0) AND (reserved_tokens >= 0))),
+    CONSTRAINT token_periods_quota_ratio_check CHECK ((quota_ratio >= 1))
 );
 
 
@@ -689,11 +874,44 @@ CREATE TABLE public.users (
 ALTER TABLE public.users OWNER TO postgres;
 
 --
+-- Name: voice_daily_usage; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.voice_daily_usage (
+    user_id uuid NOT NULL,
+    usage_day date NOT NULL,
+    used integer DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.voice_daily_usage OWNER TO postgres;
+
+--
+-- Name: voice_transcriptions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.voice_transcriptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    transcript text NOT NULL,
+    language character varying(16) DEFAULT 'id'::character varying NOT NULL,
+    mode character varying(16) NOT NULL,
+    duration_ms integer DEFAULT 0 NOT NULL,
+    tokens_used bigint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT voice_transcriptions_mode_check CHECK (((mode)::text = ANY ((ARRAY['server'::character varying, 'browser'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.voice_transcriptions OWNER TO postgres;
+
+--
 -- Data for Name: ai_endpoints; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.ai_endpoints (id, name, base_url, api_key_encrypted, provider, priority, status, health, last_check_at, last_error, modalities, weight, created_at, updated_at) FROM stdin;
-d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	66d7e1594fc5ee125fefd5f8f392bcba8ae0e10302f7242860716f06200ca2ef7f16f058a05ceb7f98555cde6db1ebcfc764a6ec1d37be7cdd5947bd61e227	9router	1	active	healthy	2026-10-14 03:06:24.5342+00	\N	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-14 03:06:24.537564+00
+d07ebaae-0344-4fc9-be4c-0446464f9690	9router-primary	http://localhost:20128/v1	66d7e1594fc5ee125fefd5f8f392bcba8ae0e10302f7242860716f06200ca2ef7f16f058a05ceb7f98555cde6db1ebcfc764a6ec1d37be7cdd5947bd61e227	9router	1	active	healthy	2026-10-15 05:40:38.64412+00	\N	{chat,vision,voice,embedding,reasoning}	100	2026-10-11 08:41:28.716316+00	2026-10-15 05:40:38.646392+00
 \.
 
 
@@ -721,14 +939,14 @@ bd49a1ea-e172-4123-bdc0-0d54ca5d72e1	other	Lainnya	t	f	t	2026-06-22 00:53:40.095
 --
 
 COPY public.ai_routes (id, use_case, endpoint_id, model, combo, priority, is_active, timeout_ms, max_retries, created_at, updated_at) FROM stdin;
-7198aa51-ccdb-4331-ac55-85adaaaf46f2	voice	d07ebaae-0344-4fc9-be4c-0446464f9690	whisper-1	default	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-13 14:37:26.181473+00
-e21d8061-81b0-4326-9128-0a8758c07f6f	embedding	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-embedding-001	default	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-13 14:37:26.181473+00
-4f98d42f-f1b3-4c84-b47e-307515728b96	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash-lite	default	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:30.992534+00
-5b4bdb26-7644-4b19-b54a-b742326e2d14	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash-lite	backup	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:30.992534+00
-0646b898-6550-4b15-a4b3-47bc4c6b9d57	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	default	2	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:31.028212+00
-cc2835b9-5278-465a-8199-8f81727b9a3e	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	backup	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:31.028212+00
-739b06ca-f421-45e0-916c-167df30f2b2e	vision	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	default	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:31.036335+00
-d3e14aee-5972-44b4-8322-f36e56650628	reasoning	d07ebaae-0344-4fc9-be4c-0446464f9690	deepseek-r1	default	1	t	120000	2	2026-10-13 14:37:26.181473+00	2026-10-14 03:05:31.04203+00
+5b4bdb26-7644-4b19-b54a-b742326e2d14	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash-lite	backup	1	t	60000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:35:53.697836+00
+cc2835b9-5278-465a-8199-8f81727b9a3e	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	backup	1	t	60000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:35:53.697836+00
+739b06ca-f421-45e0-916c-167df30f2b2e	vision	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	default	1	t	120000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
+e21d8061-81b0-4326-9128-0a8758c07f6f	embedding	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-embedding-001	default	1	t	30000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
+7198aa51-ccdb-4331-ac55-85adaaaf46f2	voice	d07ebaae-0344-4fc9-be4c-0446464f9690	whisper-1	default	1	t	120000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
+d3e14aee-5972-44b4-8322-f36e56650628	reasoning	d07ebaae-0344-4fc9-be4c-0446464f9690	deepseek-r1	default	1	t	120000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
+4f98d42f-f1b3-4c84-b47e-307515728b96	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash-lite	default	1	t	60000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
+0646b898-6550-4b15-a4b3-47bc4c6b9d57	chat	d07ebaae-0344-4fc9-be4c-0446464f9690	gemini/gemini-3.5-flash	default	2	t	60000	2	2026-10-13 14:37:26.181473+00	2026-10-15 05:53:42.242443+00
 \.
 
 
@@ -788,8 +1006,92 @@ e59b17df-c699-4c3c-9ccd-59ac1f7a01df	661ae48b-19ed-476e-8fd3-4968fa105c28	approv
 a56564d7-a2ca-479f-8b15-5b79036e0105	661ae48b-19ed-476e-8fd3-4968fa105c28	create	pricing_rule	0ba05c4b-24e2-412f-a671-323905d87d66	\N	{"is_active": false, "rule_name": "e2e-test", "base_per_1k_idr": 500}	::1	curl/8.21.0	\N	2026-10-13 17:14:15.472233+00
 ea661205-6033-4365-a97a-54b423600203	661ae48b-19ed-476e-8fd3-4968fa105c28	update	pricing_rule	9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-13T18:56:33+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T00:17:03+07:00", "markup_percent": 0, "base_per_1k_idr": 600, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	::1	curl/8.21.0	\N	2026-10-13 17:17:03.555316+00
 c9553c07-ee9b-4b56-944e-b7bc3f5d863f	661ae48b-19ed-476e-8fd3-4968fa105c28	update	pricing_rule	9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T00:17:03+07:00", "markup_percent": 0, "base_per_1k_idr": 600, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T00:17:03+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	::1	curl/8.21.0	\N	2026-10-13 17:17:04.011372+00
+29f3ca2f-e962-4023-9ba4-87377fe8c72d	00000000-0000-0000-0000-000000000002	test	settings	mail	\N	{"ok": false, "to": "test@example.com"}	::1	curl/8.21.0	\N	2026-10-14 04:46:35.622188+00
+2893fac7-aabc-4027-9620-166029430e80	3ef61801-925c-45f9-8e56-6ef92e87a8cd	adjust	token	4c572cf6-11a9-410c-8ceb-37139dbd72ad	\N	{"amount": 250, "reason": "e2e top-up", "user_id": "5f57ff92-4280-4ee1-9bd5-780e982cfdda", "quota_tokens": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:24.988876+00
 fb8412ad-0baa-417d-9656-b662b73ec2ba	661ae48b-19ed-476e-8fd3-4968fa105c28	update	pricing_rule	9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T00:17:03+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T09:40:11+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 2, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	::1	curl/8.21.0	\N	2026-10-14 02:40:12.127119+00
 e66ec9e9-7177-4779-bcfb-a151a4a817a1	661ae48b-19ed-476e-8fd3-4968fa105c28	update	pricing_rule	9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T09:40:11+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 2, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	{"id": "9d2fdddd-455d-46d7-9a86-cd29bd1f6d53", "is_active": true, "rule_name": "default", "created_at": "2026-10-11T16:10:16+07:00", "updated_at": "2026-10-14T09:40:52+07:00", "markup_percent": 0, "base_per_1k_idr": 300, "markup_multiplier": 1.25, "modality_multipliers": {"chat": 1, "voice": 3, "vision": 2.5, "embedding": 0.5, "reasoning": 2}}	::1	curl/8.21.0	\N	2026-10-14 02:40:53.125464+00
+d5cd404d-9870-4147-a0c6-374c58430be3	\N	create	itest	audit-itest-da6aea37-138d-4f60-bd14-61a779e1a522	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-14 04:20:07.136724+00
+297374bc-14ef-4e1e-999a-fc73fcef1cad	\N	create	foundation_itest	p02-e2e-73305a23-730f-4120-8f06-12d175eb164c	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-14 04:20:07.787539+00
+dae4aaa8-2cc0-4276-9b22-dea72beb2c48	53fd4b9f-fe85-4bb4-a840-852517e95bcb	create	plan	d0fced3c-0f61-451b-a8dc-d31e1a0eb203	\N	{"code": "e2e-15529b67", "name": "E2E Pro", "price_monthly_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.299301+00
+f5bf7021-9a98-498c-9d76-d868a6780f67	60d4a5d5-db9c-460c-b57c-1f8f0d41d5fe	approve	payment	db546fa9-872d-4fe0-8300-a8d6c867dee2	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.434281+00
+6001aec3-891f-450d-a69e-6f4558262ede	60d4a5d5-db9c-460c-b57c-1f8f0d41d5fe	approve	payment	13f84c6e-804b-4da6-8d13-4e023c0669ad	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.494077+00
+b7b13860-be56-460d-b664-b7d759373748	60d4a5d5-db9c-460c-b57c-1f8f0d41d5fe	approve	payment	d38004e4-dbe0-43e6-af27-abe666acf9a6	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.524186+00
+e5c0c57e-e661-4ac3-9859-49d9f55511cf	437ab084-723a-41b4-b392-4523fe966c41	adjust	token	5138c4be-71f0-404a-a88b-6ec53c755fb3	\N	{"amount": 250, "reason": "e2e top-up", "user_id": "34834ebb-945d-46da-b447-84dc23602beb", "quota_tokens": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.592591+00
+c3072107-cd03-412f-996b-bf926c4bbf74	99258ca7-0a34-4bf7-b83c-64a3a00734da	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.65696+00
+bab64c8e-ad7b-4587-a3a7-08ddcfa2d9f0	99258ca7-0a34-4bf7-b83c-64a3a00734da	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.680625+00
+75c14400-17a4-4d07-8fac-efc3d3a6b381	262ba01c-416a-486b-8c1b-9a89b9868477	update	settings	bulk	{"storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "grace_period_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "payment_gateway_default": "manual"}	{"tax_rate_percent": 11}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.743716+00
+58517edf-2b9d-4b42-bc0e-bcffd86e3494	262ba01c-416a-486b-8c1b-9a89b9868477	update	feature_flag	e2e-flag-7a17f9f1	\N	{"key": "e2e-flag-7a17f9f1", "name": "E2E Flag", "rules": null, "rollout": 50, "is_enabled": true, "description": ""}	127.0.0.1	Go-http-client/1.1	\N	2026-10-14 04:22:18.748836+00
+617ddcef-f08b-4411-8dcc-dc45a64bbe95	\N	user.pdp_anonymize	users	f47e1505-4c5f-4e53-98e4-ae5d957344f7	\N	{"reason": "Permintaan Pengguna Sesuai UU PDP Pasal 43", "anonymized_email": "anonymized-f47e1505-4c5f-4e53-98e4-ae5d957344f7@deleted.fintrack.internal"}	\N	\N	\N	2026-10-14 04:22:28.315894+00
+f4b48b10-2183-42cf-81a5-f22daf56f7fc	d645db19-2ab5-4c3e-a2a3-f429104aa1f2	user.pdp_anonymize	users	d645db19-2ab5-4c3e-a2a3-f429104aa1f2	\N	{"reason": "r", "anonymized_email": "e"}	\N	\N	\N	2026-10-14 04:25:47.283199+00
+7d5be946-e095-4672-80ad-7e64d4bd2e07	00000000-0000-0000-0000-000000000002	update	settings	bulk	{"storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "grace_period_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "payment_gateway_default": "manual"}	{"mail_from": "no-reply@fintrack.id", "mail_host": "smtp.example.com", "mail_port": 587, "mail_enabled": true, "mail_use_tls": false, "mail_password": "[REDACTED]", "mail_username": "user@example.com", "mail_from_name": "FinTrack"}	::1	curl/8.21.0	\N	2026-10-14 04:29:50.135667+00
+1455d63f-b87d-481f-9667-9a8b24e8576e	00000000-0000-0000-0000-000000000002	test	settings	mail	\N	{"ok": false, "to": "test@example.com"}	::1	curl/8.21.0	\N	2026-10-14 04:29:56.135056+00
+60dd3e6e-062f-473c-b9d5-9df90f2126e6	00000000-0000-0000-0000-000000000002	update	settings	bulk	{"mail_from": "no-reply@fintrack.id", "mail_host": "smtp.example.com", "mail_port": 587, "mail_enabled": true, "mail_use_tls": false, "mail_password": "[REDACTED]", "mail_username": "user@example.com", "mail_from_name": "FinTrack", "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "grace_period_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "payment_gateway_default": "manual"}	{"mail_host": "127.0.0.1", "mail_port": 9}	::1	curl/8.21.0	\N	2026-10-14 04:30:16.635857+00
+1ea2e93b-50d9-422f-b21e-25ee23abe51d	00000000-0000-0000-0000-000000000002	test	settings	mail	\N	{"ok": false, "to": "test@example.com"}	::1	curl/8.21.0	\N	2026-10-14 04:30:17.133129+00
+0e0d0bb5-78b9-4f37-a03c-cd709a628d0b	00000000-0000-0000-0000-000000000002	test	settings	mail	\N	{"ok": false, "to": "test@example.com"}	::1	curl/8.21.0	\N	2026-10-14 04:31:15.117952+00
+14ebe2c7-8123-4c9a-977a-4afff45c47f3	00000000-0000-0000-0000-000000000002	test	settings	mail	\N	{"ok": false, "to": "no-reply@fintrack.id"}	::1	curl/8.21.0	\N	2026-10-14 04:31:39.122654+00
+aee52eb7-4533-4481-9c19-771acd2dc496	00000000-0000-0000-0000-000000000002	update	settings	bulk	{"storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "grace_period_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "payment_gateway_default": "manual"}	{"mail_from": "no-reply@fintrack.id", "mail_host": "127.0.0.1", "mail_port": 9, "mail_enabled": true}	::1	curl/8.21.0	\N	2026-10-14 04:46:35.622188+00
+a01d9360-f117-4475-b3a6-51719bb0a944	00000000-0000-0000-0000-000000000002	update	settings	bulk	{"storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "dunning_hours_soon": 72, "grace_period_hours": 24, "dunning_hours_urgent": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "breaker_failure_threshold": 5, "route_breaker_cooldown_secs": 60}	{"manual_bank_name": "BCA", "midtrans_enabled": true, "ai_reasoning_effort": "high", "midtrans_client_key": "SB-Mid-client-PUBLIC", "midtrans_server_key": "5e36b8872da52e23457704101429707a791f12c6767eef516eddc3b2e9e8b72d9a0bcfa3009026b41ef610a12790eb0d9b2a716659eab043", "manual_account_holder": "PT FinTrack", "manual_account_number": "1234567890", "midtrans_is_production": false}	::1	curl/8.21.0	\N	2026-10-14 05:42:45.781611+00
+eb5927f8-a299-492c-a62f-30fff460edb1	00000000-0000-0000-0000-000000000002	update	settings	bulk	{"storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 11, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "dunning_hours_soon": 72, "grace_period_hours": 24, "midtrans_client_key": "SB-Mid-client-PUBLIC", "midtrans_server_key": "5e36b8872da52e23457704101429707a791f12c6767eef516eddc3b2e9e8b72d9a0bcfa3009026b41ef610a12790eb0d9b2a716659eab043", "dunning_hours_urgent": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "midtrans_is_production": false, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "breaker_failure_threshold": 5, "route_breaker_cooldown_secs": 60}	{"manual_bank_name": "Mandiri", "midtrans_enabled": false, "midtrans_client_key": "SB-Mid-client-PUBLIC", "manual_account_holder": "", "manual_account_number": "9876543210", "midtrans_is_production": false}	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-14 05:51:50.300048+00
+de2e1744-f33d-4fd7-808b-8877018f1272	0eb40d2c-9262-4130-8a99-963cae88e54b	create	payment_account	333f50a4-0fcc-44f0-b5a6-7949658795b2	\N	{"kind": "bank", "name": "BCA", "is_active": true, "account_holder": "PT FinTrack", "account_number": "1234567890"}	::1	curl/8.21.0	\N	2026-10-14 09:53:07.734997+00
+e557e951-28c1-485f-973f-5dfa9111439d	0eb40d2c-9262-4130-8a99-963cae88e54b	create	payment_account	847f6e6e-db27-447a-a58c-508f06b9dfca	\N	{"kind": "ewallet", "name": "DANA", "is_active": true, "account_holder": "FinTrack", "account_number": "081234567890"}	::1	curl/8.21.0	\N	2026-10-14 09:53:07.734997+00
+a75ea24f-6159-41b6-a412-acbf051cca33	0eb40d2c-9262-4130-8a99-963cae88e54b	create	payment_account	6870f7b7-7328-41f1-a176-4ab228de71ef	\N	{"kind": "qris", "name": "QRIS", "is_active": true, "account_holder": "", "account_number": ""}	::1	curl/8.21.0	\N	2026-10-14 09:53:07.734997+00
+0d4516f2-0e76-4713-b1e7-9de660ec3b9c	0eb40d2c-9262-4130-8a99-963cae88e54b	create	payment_account	f050d546-7acd-43d2-b6c6-9c5569866464	\N	{"kind": "bank", "name": "SeaBank", "is_active": true, "account_holder": "PT FinTrack", "account_number": "9012345678"}	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	2026-10-14 10:02:21.735109+00
+c5609ec6-b154-4ef5-8004-ae2696160930	\N	create	foundation_itest	p02-e2e-f8b03dae-0316-4209-9caf-62eafd90a0bf	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-15 05:25:05.162711+00
+c043b3ad-5e35-496a-afa1-59da19b8490e	\N	create	itest	audit-itest-6b13e3f2-1cf3-43f3-a236-e72a3406d683	\N	{"alias": "a", "api_key": "[REDACTED]"}	\N	\N	\N	2026-10-15 05:25:05.26533+00
+c0fc7a55-4506-4a66-9a7d-76c78a930c75	f3d5977b-8b85-44af-8de3-09d3d9406462	create	plan	3bb3932b-140e-4515-b5b5-6e00f230e224	\N	{"code": "e2e-db9391b9", "name": "E2E Pro", "price_monthly_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:10.388434+00
+68fae0fd-3394-4149-ae2e-496997f6214d	2cfe128e-4ef3-4101-ba23-882616044eca	approve	payment	8909c536-8bc6-45e6-88e4-7cbbb19de184	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:10.626504+00
+8585fe0c-6e5b-4620-9622-4455b97329e8	2cfe128e-4ef3-4101-ba23-882616044eca	approve	payment	c76eecbe-4e30-4252-91d2-1d176b60baef	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:10.734896+00
+98b23870-b6d0-4643-afc8-abc57d1ac0da	2cfe128e-4ef3-4101-ba23-882616044eca	approve	payment	f3df7881-07d0-413f-b40e-a57cf9b876db	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:10.80425+00
+fd308fa1-d824-4023-baef-3dbeac1ce67a	409905a4-2d8a-4975-9379-86ae89ce8081	adjust	token	31d97e01-3548-49a7-be65-3426b05c63cf	\N	{"amount": 250, "reason": "e2e top-up", "user_id": "de60d3ee-b019-4a3d-865a-f64835f54d51", "quota_tokens": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:10.958178+00
+7c27c445-3ce3-435e-be1c-d00d9e8a3ecd	2a9ab3df-2977-4758-ac81-5a4f65aad023	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.025969+00
+680b8bfb-75f2-4b12-87d2-9191b551d374	2a9ab3df-2977-4758-ac81-5a4f65aad023	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.074124+00
+e08c88fe-3a7f-412a-a9de-aa9858d89b02	68f366f4-7a89-41b5-a415-1ac53c3266b0	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"tax_rate_percent": 11}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.199271+00
+f7a9b9c4-99b9-418f-b328-22de80185bc1	68f366f4-7a89-41b5-a415-1ac53c3266b0	update	feature_flag	e2e-flag-b9bd63b4	\N	{"key": "e2e-flag-b9bd63b4", "name": "E2E Flag", "rules": null, "rollout": 50, "is_enabled": true, "description": ""}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.208186+00
+744eb7ac-898e-479a-a08a-cf4a378980b7	ad006311-7284-46ff-8a52-e9c33b2e2ffe	create	pricing_rule	ab71df43-b89e-404f-9139-0a1d10e10c5b	\N	{"is_active": false, "rule_name": "e2e-basis-0275048d", "price_unit": "per_10k", "base_per_1k_idr": 3000, "provider_cost_per_1k_idr": 200}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.33161+00
+517ae62a-5b3a-462e-a015-9f6f993cbdbc	07422900-a5fd-4ed4-949c-1b7e5b4cf226	approve	payment	3fe28ff7-ed84-489e-a4b1-bcf896dbccc2	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:24.813868+00
+eed3db21-6c0f-4c25-a48f-71fd4d84b32e	1810aa4d-64c4-4847-a02d-78b3624de906	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.085605+00
+97ed9b30-f3d0-44dc-af5c-9bbaa1c3d82b	ad006311-7284-46ff-8a52-e9c33b2e2ffe	update	pricing_rule	ab71df43-b89e-404f-9139-0a1d10e10c5b	{"id": "ab71df43-b89e-404f-9139-0a1d10e10c5b", "is_active": false, "rule_name": "e2e-basis-0275048d", "created_at": "2026-10-15T12:25:11+07:00", "price_unit": "per_10k", "updated_at": "2026-10-15T12:25:11+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 200}	{"id": "ab71df43-b89e-404f-9139-0a1d10e10c5b", "is_active": false, "rule_name": "e2e-basis-0275048d", "created_at": "2026-10-15T12:25:11+07:00", "price_unit": "per_1k", "updated_at": "2026-10-15T12:25:11+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 250}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.338226+00
+5edb9e1a-75cd-426b-8d00-8db09ccbe8b8	7db2a211-0e47-4b4f-bd71-24c69e52c459	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"ai_estimate_chat": 1234}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.476843+00
+6d128dda-1cdc-4d51-b214-fb58a1949e9d	aa9744bf-783f-4fce-8a0a-85a5d2c4dccf	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"dunning_hours_soon": 48, "dunning_hours_urgent": 12, "route_breaker_threshold": 3, "breaker_cooldown_seconds": 45, "breaker_half_open_probes": 2, "breaker_failure_threshold": 7, "route_breaker_cooldown_secs": 90}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:11.682357+00
+86dbb912-c931-41a5-b024-a586af20713c	0e5a176f-d533-479d-b43a-a923edbe6f69	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"metering_image_tokens": "[REDACTED]", "metering_chars_per_token": "[REDACTED]", "metering_safety_buffer_pct": 20, "metering_audio_tokens_per_sec": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:12.097407+00
+28a11d06-ce46-498f-bcda-25ba92ddd1be	\N	user.pdp_anonymize	users	63740887-90d0-4282-bf66-171583e28f0d	\N	{"reason": "Permintaan Pengguna Sesuai UU PDP Pasal 43", "anonymized_email": "anonymized-63740887-90d0-4282-bf66-171583e28f0d@deleted.fintrack.internal"}	\N	\N	\N	2026-10-15 05:25:27.477605+00
+2b31cc39-96b9-43c9-92f4-b2e2704862fb	\N	create	foundation_itest	p02-e2e-2306d4d5-d9a9-48de-990e-a16dc53ab6a5	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-15 05:25:47.970438+00
+c98d7eb0-2638-4439-af30-b3d7f3a2acbd	6bd8a593-fd4a-4410-99a4-4a21ac01ff44	create	plan	08c3ad7d-4461-4a56-a50a-f032f9b8e482	\N	{"code": "e2e-3d81d53f", "name": "E2E Pro", "price_monthly_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:55.320335+00
+64b0b04c-7b79-4042-a55b-9f7ee1503222	490f8bef-bb38-4246-8b08-1666e734309a	approve	payment	f7477111-fa25-48db-b743-13ac06fa1b60	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:55.704869+00
+329a3e4d-b508-4e73-b6ba-ef1aadc38fdf	490f8bef-bb38-4246-8b08-1666e734309a	approve	payment	a52e4ce2-7124-4dee-9a30-a57e620fe389	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:55.909968+00
+34bdbdca-a4fd-4ce8-9927-884bcff2c3fe	490f8bef-bb38-4246-8b08-1666e734309a	approve	payment	d69e91d9-27db-40f6-9ff2-0a0e089643d5	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.033545+00
+ce23d80c-4263-4422-86e7-64b1508c3d9c	df21ebc1-a3bb-4dc1-b66c-40e73a913e05	adjust	token	1d3dc066-a36c-4b5a-bf97-a2226ffdb713	\N	{"amount": 250, "reason": "e2e top-up", "user_id": "1bf62495-8743-47ff-ba5a-386ed14a2dac", "quota_tokens": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.254015+00
+89eebf83-dcff-4b10-a377-b4de61920bd0	5f4e53c7-29fc-4e03-9c78-64cb24e1a75f	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.536206+00
+bc057f58-461f-4367-be65-7bcf53b6c4a8	5f4e53c7-29fc-4e03-9c78-64cb24e1a75f	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": false}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.562714+00
+a91ebc24-06a6-4e79-81da-b3fde75b00d0	07422900-a5fd-4ed4-949c-1b7e5b4cf226	approve	payment	26c852b4-38c9-4065-932c-ad58681aad06	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:24.864553+00
+c066f624-0805-4c8d-8457-bc73580dcfdd	a2fd5b19-03ee-4f88-ab08-64f98326e4f5	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"tax_rate_percent": 11}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.878216+00
+2d5f6fa2-2772-4ae3-94f0-49b18682091b	a2fd5b19-03ee-4f88-ab08-64f98326e4f5	update	feature_flag	e2e-flag-2ee47c56	\N	{"key": "e2e-flag-2ee47c56", "name": "E2E Flag", "rules": null, "rollout": 50, "is_enabled": true, "description": ""}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:56.911923+00
+27056d36-3b8a-45a1-bf89-87987d1db0d7	bbdfe97c-fe21-4f7a-8424-5bd4046643ef	create	pricing_rule	cd8872a8-f8c7-4f30-a3da-e3e10bb37b99	\N	{"is_active": false, "rule_name": "e2e-basis-7260cdfe", "price_unit": "per_10k", "base_per_1k_idr": 3000, "provider_cost_per_1k_idr": 200}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:57.127747+00
+613ea07d-42bc-4a5f-9704-9d780fbdab64	bbdfe97c-fe21-4f7a-8424-5bd4046643ef	update	pricing_rule	cd8872a8-f8c7-4f30-a3da-e3e10bb37b99	{"id": "cd8872a8-f8c7-4f30-a3da-e3e10bb37b99", "is_active": false, "rule_name": "e2e-basis-7260cdfe", "created_at": "2026-10-15T12:25:57+07:00", "price_unit": "per_10k", "updated_at": "2026-10-15T12:25:57+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 200}	{"id": "cd8872a8-f8c7-4f30-a3da-e3e10bb37b99", "is_active": false, "rule_name": "e2e-basis-7260cdfe", "created_at": "2026-10-15T12:25:57+07:00", "price_unit": "per_1k", "updated_at": "2026-10-15T12:25:57+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 250}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:57.156829+00
+e354dcdf-3967-4699-8118-e318d90a399e	9ac44053-9b0e-45e4-abea-e5fb07a57bcc	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"ai_estimate_chat": 1234}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:57.461359+00
+7fa9ebd4-e781-4b1f-8806-6645844fb53d	5388113e-b7ad-45b5-ac60-32b753bcd90a	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"dunning_hours_soon": 48, "dunning_hours_urgent": 12, "route_breaker_threshold": 3, "breaker_cooldown_seconds": 45, "breaker_half_open_probes": 2, "breaker_failure_threshold": 7, "route_breaker_cooldown_secs": 90}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:57.711627+00
+8ae653b8-ba76-4ca0-be57-b525cf54d0df	db03935b-30fc-40e3-bc47-b747f1baacd9	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"metering_image_tokens": "[REDACTED]", "metering_chars_per_token": "[REDACTED]", "metering_safety_buffer_pct": 20, "metering_audio_tokens_per_sec": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:25:57.852571+00
+c3072ca5-6c8c-4857-a8a0-47b212ba1995	\N	user.pdp_anonymize	users	0997e31d-afb8-4498-ab37-1f90b7e0e850	\N	{"reason": "Permintaan Pengguna Sesuai UU PDP Pasal 43", "anonymized_email": "anonymized-0997e31d-afb8-4498-ab37-1f90b7e0e850@deleted.fintrack.internal"}	\N	\N	\N	2026-10-15 05:26:26.35372+00
+45aedf94-a470-41df-8484-ee035c1556f7	\N	create	foundation_itest	p02-e2e-dace376d-5874-49ce-89bd-f1b487139c84	\N	{"alias": "x", "password": "[REDACTED]"}	\N	\N	\N	2026-10-15 05:27:21.510276+00
+124903fa-3386-4b1f-91fb-647f2ac3a2d3	ee5fbfa7-b6ef-448a-b31a-8dcfdc74937b	create	plan	54efb77a-a451-4e0e-9ca2-9c4ea07ac470	\N	{"code": "e2e-0dacfed8", "name": "E2E Pro", "price_monthly_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:24.565053+00
+05f2c18d-b284-4c31-a364-b02b9fb3931a	07422900-a5fd-4ed4-949c-1b7e5b4cf226	approve	payment	8557ece8-e16e-442e-8a77-a857debd5dde	\N	{"status": "settled", "amount_idr": 49000}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:24.704779+00
+75dfa0da-9228-49da-b158-5361ea32214b	1810aa4d-64c4-4847-a02d-78b3624de906	update	settings	ai_kill_switch	\N	{"target": "chat", "enabled": true}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.080481+00
+30e011e9-a0fc-4193-9b32-58a260c04365	2cbfbbf5-0a16-4040-b51f-f106f7ebdfa1	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"tax_rate_percent": 11}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.199846+00
+b4e4447f-dfa6-482a-b65c-9ec0c8c2d897	2cbfbbf5-0a16-4040-b51f-f106f7ebdfa1	update	feature_flag	e2e-flag-326f4273	\N	{"key": "e2e-flag-326f4273", "name": "E2E Flag", "rules": null, "rollout": 50, "is_enabled": true, "description": ""}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.205338+00
+5d8ef446-a96d-48c8-b871-a9076339ef44	5cfa2269-62fd-4e8c-aadd-c88afb4a1d78	create	pricing_rule	9e32d03d-d743-4f96-909e-bc6e92b6f685	\N	{"is_active": false, "rule_name": "e2e-basis-25019553", "price_unit": "per_10k", "base_per_1k_idr": 3000, "provider_cost_per_1k_idr": 200}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.292765+00
+8fe36f4a-a360-442a-94f5-d1f2282572b0	5cfa2269-62fd-4e8c-aadd-c88afb4a1d78	update	pricing_rule	9e32d03d-d743-4f96-909e-bc6e92b6f685	{"id": "9e32d03d-d743-4f96-909e-bc6e92b6f685", "is_active": false, "rule_name": "e2e-basis-25019553", "created_at": "2026-10-15T12:27:25+07:00", "price_unit": "per_10k", "updated_at": "2026-10-15T12:27:25+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 200}	{"id": "9e32d03d-d743-4f96-909e-bc6e92b6f685", "is_active": false, "rule_name": "e2e-basis-25019553", "created_at": "2026-10-15T12:27:25+07:00", "price_unit": "per_1k", "updated_at": "2026-10-15T12:27:25+07:00", "markup_percent": 0, "base_per_1k_idr": 3000, "markup_multiplier": 1, "modality_multipliers": {"chat": 1}, "provider_cost_per_1k_idr": 250}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.297913+00
+bcf34a8f-d00e-4b8b-8d5c-1ebf7f5ea979	c49e44b4-406e-4dcd-94d0-edae68c6a195	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"ai_estimate_chat": 1234}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.404753+00
+3cf3ec98-56bc-490a-aa7b-bd6d5f1a653b	d0fb1788-223e-4ef3-b721-ff0651e36556	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"dunning_hours_soon": 48, "dunning_hours_urgent": 12, "route_breaker_threshold": 3, "breaker_cooldown_seconds": 45, "breaker_half_open_probes": 2, "breaker_failure_threshold": 7, "route_breaker_cooldown_secs": 90}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.483958+00
+01f5c41b-9f42-4e91-a919-f72c27f335ed	1f4f366e-1813-42b6-80e4-f7b01d047a17	update	settings	bulk	{"tax_label": "PPN", "tax_enabled": false, "storage_driver": "local", "ai_estimate_chat": 2000, "tax_rate_percent": 12, "ai_estimate_voice": 2000, "invoice_due_hours": 72, "ai_estimate_vision": 5000, "ai_timeout_chat_ms": 60000, "dunning_hours_soon": 72, "grace_period_hours": 24, "ai_timeout_voice_ms": 120000, "ai_timeout_vision_ms": 120000, "dunning_hours_urgent": 24, "invoice_expiry_hours": 24, "ai_estimate_embedding": 1000, "ai_estimate_reasoning": 4000, "metering_image_tokens": "[REDACTED]", "invoice_expiry_minutes": 0, "ai_timeout_embedding_ms": 60000, "ai_timeout_reasoning_ms": 120000, "payment_gateway_default": "manual", "route_breaker_threshold": 2, "breaker_cooldown_seconds": 30, "breaker_half_open_probes": 1, "metering_chars_per_token": "[REDACTED]", "breaker_failure_threshold": 5, "metering_safety_buffer_pct": 10, "route_breaker_cooldown_secs": 60, "metering_audio_tokens_per_sec": "[REDACTED]"}	{"metering_image_tokens": "[REDACTED]", "metering_chars_per_token": "[REDACTED]", "metering_safety_buffer_pct": 20, "metering_audio_tokens_per_sec": "[REDACTED]"}	127.0.0.1	Go-http-client/1.1	\N	2026-10-15 05:27:25.654883+00
+4c3925cf-3bbc-4b96-b4f9-3cd21945f72d	\N	user.pdp_anonymize	users	c5794885-d607-4172-836b-303ef37158cb	\N	{"reason": "Permintaan Pengguna Sesuai UU PDP Pasal 43", "anonymized_email": "anonymized-c5794885-d607-4172-836b-303ef37158cb@deleted.fintrack.internal"}	\N	\N	\N	2026-10-15 05:27:35.470396+00
+\.
+
+
+--
+-- Data for Name: budgets; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.budgets (id, user_id, category_id, amount_idr, created_at, updated_at) FROM stdin;
 \.
 
 
@@ -835,6 +1137,7 @@ bb4e9c53-bf1b-42cb-a367-595e77817fbd	404a9ab0-f01c-4416-971f-5bdf8da72a2d	4a7082
 d9b76062-94c7-459a-9b44-374ed96af1b9	404a9ab0-f01c-4416-971f-5bdf8da72a2d	4a70824e-8116-4ac8-be58-2837848a6ea0	user	Tolong hapus pemasukan 5 juta tersebut	\N	\N	2026-07-02 05:20:44.795714+00	\N
 d9ca9f69-a1ff-4944-b8c5-665933b77f2b	404a9ab0-f01c-4416-971f-5bdf8da72a2d	4a70824e-8116-4ac8-be58-2837848a6ea0	assistant	Maaf, terjadi kesalahan saat mencoba menghapus transaksi pemasukan dari gaji sebesar **Rp 5.000.000**. \n\nUntuk menghapus transaksi, kita membutuhkan informasi yang lebih spesifik tentang transaksi tersebut. Coba cari transaksi pemasukan dari gaji pada tanggal **2026-07-02** dan lihat apakah ada informasi lebih lanjut tentang transaksi tersebut.\n\nJika kamu ingin mencoba lagi menghapus transaksi, silakan berikan informasi lebih lanjut tentang transaksi yang ingin dihapus.	\N	\N	2026-07-02 05:20:44.803049+00	\N
 2852181c-301a-49c1-b5e1-84ad1b2f881e	41a0ad6b-1dd2-4e6f-9238-c50fe6b4f506	4a70824e-8116-4ac8-be58-2837848a6ea0	user	catat pemasukan: 29k dari nabung	\N	\N	2026-06-24 10:14:59.765209+00	\N
+89663aa3-c063-4ccb-9fe4-4faf88f133a8	3df6f4e4-32b8-4eee-a33b-f535e9ca6074	00000000-0000-0000-0000-000000000002	user	tambahkan pemasukan dari bonus lembur 300rb	\N	\N	2026-10-14 03:42:06.25017+00	\N
 d2465943-e2aa-4fe4-9047-37fc388cd4fb	41a0ad6b-1dd2-4e6f-9238-c50fe6b4f506	4a70824e-8116-4ac8-be58-2837848a6ea0	assistant	Berhasil! Transaksi pemasukan **Rp29.000** dari kategori Nabung sudah tercatat.Done! **pemasukan nabung** Pengeluaran sebesar Rp 29000 berhasil dicatat.	\N	\N	2026-06-24 10:14:59.772822+00	\N
 7d4c6bf9-2c62-4ad5-a0d2-4e6cdbd016af	f9d681cb-2a8a-480e-b739-82730423eace	4a70824e-8116-4ac8-be58-2837848a6ea0	user	catat pemasukan 100k dari gaji (bonus), dan pengeluaran 98k untuk pulsa	\N	\N	2026-06-24 11:44:39.546704+00	\N
 9dba74f8-76a9-49c0-ac2d-85e21b142f37	f9d681cb-2a8a-480e-b739-82730423eace	4a70824e-8116-4ac8-be58-2837848a6ea0	assistant	Done! Transaksi pemasukan **Rp100.000** dari gaji (bonus) dan pengeluaran **Rp98.000** untuk pulsa sudah tercatat.\n\nBerikut adalah update data keuangan Anda:\n\nBulan Ini - Pemasukan: **Rp13.175.000 + Rp100.000 = Rp13.275.000**\nBulan Ini - Pengeluaran: **Rp280.000 + Rp98.000 = Rp378.000**\nTabungan: Rp290.000 (tidak berubah)\nSaldo Bersih: **Rp12.885.000 + Rp100.000 - Rp98.000 = Rp12.887.000**\n\n5 Transaksi Terbaru:\n1. Topup Game: Rp30.000 (2026-06-24)\n2. sisa gaji: Rp290.000 (2026-06-24)\n3. Bonus hari ini: Rp936.000 (2026-06-24)\n4. pemasukan nabung: Rp29.000 (2026-06-24)\n5. Honor mengajar: Rp2.000.000 (2026-06-24)\n6. Bonus gaji: Rp100.000 (2026-06-24)\n7. Pulsa: Rp98.000 (2026-06-24)Done! **Bonus gaji** Pengeluaran sebesar Rp 100000 berhasil dicatat.Done! **Pulsa** Pengeluaran sebesar Rp 98000 berhasil dicatat.	\N	\N	2026-06-24 11:44:39.554147+00	\N
@@ -914,6 +1217,7 @@ a493d59e-edfd-4630-8237-2a6df8d7c2f9	011b77c7-44d7-4d8c-b62b-98ca6e93746e	4a7082
 3f7f3f4e-d4da-4cfc-9f83-66f03a9a4826	011b77c7-44d7-4d8c-b62b-98ca6e93746e	4a70824e-8116-4ac8-be58-2837848a6ea0	user	📋 Hasil scan foto\n\n**Merchant:** DANA\n**Tanggal:** 2025-09-06\n**Kategori:** Pendidikan (Pengeluaran)\n**Total:** Rp 100.000	\N	\N	2026-06-24 05:43:01.79208+00	\N
 2d21ec24-0229-472b-a5f3-ed04f49b886b	011b77c7-44d7-4d8c-b62b-98ca6e93746e	4a70824e-8116-4ac8-be58-2837848a6ea0	assistant	Transaksi pengeluaran sebesar **Rp100.000** untuk **DANA** pada **6 September 2025** telah berhasil tercatat.\n\nKini, mari kita lihat ringkasan keuangan Anda:\n\n* Pemasukan: **Rp10.200.000**\n* Pengeluaran: \n  1. **Rp100.000** (beli susu)\n  2. **Rp200.000** (joki game)\n  3. **Rp50.000** (Uang kas)\n  4. **Rp100.000** (DANA)\n* Total Pengeluaran: **Rp450.000**\n* Saldo Bersih: **Rp9.750.000**\n\nPerlu diingat bahwa transaksi ini terjadi pada **6 September 2025**, bukan bulan ini. Apakah Anda ingin melakukan transaksi lain atau melihat analisis keuangan?	\N	\N	2026-06-24 05:43:01.80327+00	\N
 eee4d324-c442-4d63-95cf-858b8ddd1f21	baaa206f-2c6b-4595-b808-04dc44243d7e	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	assistant	Oke, nih rekap pengeluaranmu bulan ini (**Oktober 2026**):\n\n*   Total pengeluaran: **Rp0**\n*   Total pemasukan: **Rp0**\n*   Saldo bersih: **Rp0**\n\nKelihatannya belum ada transaksi yang tercatat bulan ini, P2 Verify. Yuk, mulai catat biar kamu bisa lihat ringkasan keuanganmu! 😉	gemini-2.5-flash	\N	2026-10-14 02:40:44.955627+00	fast
+1b5c942e-634b-439a-a1a4-0ac97b9e73fa	3df6f4e4-32b8-4eee-a33b-f535e9ca6074	00000000-0000-0000-0000-000000000002	assistant	Done! **bonus lembur** Pemasukan sebesar Rp 300000 berhasil dicatat.	gemini/gemini-3.5-flash	\N	2026-10-14 03:42:06.259332+00	fast
 5aee9f08-9f58-4b66-882f-07518b55d9a0	404a9ab0-f01c-4416-971f-5bdf8da72a2d	4a70824e-8116-4ac8-be58-2837848a6ea0	assistant	Berdasarkan hasil eksekusi tool, berikut adalah visualisasi pemasukan dan pengeluaran bulan ini:\n\n**Grafik Pemasukan dan Pengeluaran**\n\n| Tanggal       | Pemasukan  | Pengeluaran | Tabungan |\n|---------------|-------------|-------------|----------|\n| 2026-07-01    | **Rp 0**    | **Rp 0**    | **Rp 0** |\n| 2026-07-02    | **Rp 5.050.000** | **Rp 10.000** | **Rp 0** |\n\nDari grafik di atas, dapat dilihat bahwa:\n\n* Pemasukan pada tanggal **2026-07-02** sebesar **Rp 5.050.000**, yang merupakan jumlah yang signifikan.\n* Pengeluaran pada tanggal **2026-07-02** sebesar **Rp 10.000**, yang relatif kecil dibandingkan dengan pemasukan.\n* Tabungan masih kosong, artinya tidak ada transaksi tabungan yang tercatat.\n\nDengan demikian, saldo bersih bulan ini adalah **Rp 5.040.000**. Grafik menunjukkan bahwa pemasukan bulan ini sangat besar dibandingkan dengan pengeluaran. Namun, perlu diingat bahwa data ini masih sangat terbatas dan mungkin tidak mewakili keseluruhan bulan.\n\nJika kamu ingin mengetahui lebih lanjut tentang keuanganmu atau memiliki pertanyaan lain, jangan ragu untuk bertanya!	\N	\N	2026-07-02 05:21:16.737038+00	\N
 01f708c6-2420-4052-b417-9f92d3c4c376	a0eeea68-aa29-455f-9b61-a6176cc436f5	00000000-0000-0000-0000-000000000002	user	Catat pengeluaran kopi Rp 25.000	\N	\N	2026-10-13 12:36:00.5915+00	\N
 eff89f56-94e2-4257-9a32-4ff99b541e07	a0eeea68-aa29-455f-9b61-a6176cc436f5	00000000-0000-0000-0000-000000000002	assistant	Done! **kopi** Pengeluaran sebesar Rp 25000 berhasil dicatat.	\N	\N	2026-10-13 12:36:00.595462+00	\N
@@ -938,6 +1242,50 @@ cfd1de12-4399-4bbf-b8ef-f3fdc6f0f427	bcb18af9-19d5-47a9-8791-0675c99e9e44	0b17b7
 4b1ed528-f1d1-466e-a308-852a3bf5cef2	5022e887-e11a-4815-acd3-c04feded0a94	00000000-0000-0000-0000-000000000002	user	Berapa pengeluaran saya bulan ini?	\N	\N	2026-10-13 17:14:37.510639+00	\N
 c5add10a-2c73-49b9-a691-3a5323ac8d02	5022e887-e11a-4815-acd3-c04feded0a94	00000000-0000-0000-0000-000000000002	assistant	Pengeluaranmu bulan ini sampai tanggal **14 Oktober 2026** sebesar **Rp66.000**.	gemini-2.5-flash	\N	2026-10-13 17:14:37.526474+00	fast
 5c76fcba-f947-4cff-89af-4224a1d202e9	560cc99c-9515-41d1-92d4-689e843d245b	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	user	Berapa total pengeluaran saya bulan ini?	\N	\N	2026-10-14 02:39:39.923291+00	\N
+3a74f1cd-7845-49b8-a5ee-fec76acd9701	0940015a-7717-4f5b-a6fe-108e23a3d9ff	00000000-0000-0000-0000-000000000003	user	Buat grafik pengeluaran per kategori	\N	\N	2026-10-15 02:43:08.339906+00	\N
+930393df-9496-429b-a413-bfef0afe5556	0940015a-7717-4f5b-a6fe-108e23a3d9ff	00000000-0000-0000-0000-000000000003	assistant	```json\n{\n  "chart": {\n    "type": "bar",\n    "labels": ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"],\n    "datasets": [\n      {"label": "Pemasukan", "data": [8000000, 0, 0, 0, 0]},\n      {"label": "Pengeluaran", "data": [4088000, 0, 0, 0, 0]},\n      {"label": "Tabungan", "data": [12589000, 0, 0, 0, 0]}\n    ]\n  }\n}\n```\n→ skipped: advanced chart styling, add when UI framework requires theme integration.	gemini/gemini-3.5-flash-lite	\N	2026-10-15 02:43:08.362521+00	fast
+d8451ea3-d62e-41f2-ac4a-dee010b98a23	eb3416ce-9a17-4c1a-9e12-0b9344b3d099	00000000-0000-0000-0000-000000000003	user	Buat grafik pengeluaran per kategori	\N	\N	2026-10-15 02:43:10.099169+00	\N
+e3a2ff29-8a6e-456c-81e8-cdfbf55fbc53	eb3416ce-9a17-4c1a-9e12-0b9344b3d099	00000000-0000-0000-0000-000000000003	assistant	Data pengeluaran **Rp0** sepanjang **01-15 Oktober 2026**. Grafik kosong. Catat transaksi dulu.	gemini/gemini-3.5-flash-lite	\N	2026-10-15 02:43:10.107897+00	fast
+a97614f6-810c-40c6-8f86-78316fa32734	aa005cb1-771c-480e-bb99-d32779153dc5	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:24:37.322766+00	\N
+d49864bf-8ffd-463a-8702-f7e782ea5b83	e7eeb9ea-eead-45e9-98be-3668672ede9d	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:24:37.322858+00	\N
+592d6f55-62d2-43c7-bdf2-34bd35fba61e	b74f2a45-34bb-4e82-a587-4a3d29862fd2	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:24:37.324639+00	\N
+977c7eb3-c66f-4a2c-9c2f-5f58c5aae4d8	aa005cb1-771c-480e-bb99-d32779153dc5	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	assistant	ok	\N	\N	2026-10-15 05:24:37.327554+00	fast
+10fd924f-3ff9-4ef3-960a-292398d71d1c	91a31c82-116d-4887-b0a1-a6b479b3f6fe	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:24:37.329188+00	\N
+fe711aae-43ab-4c03-9501-787c6d3a7359	e7eeb9ea-eead-45e9-98be-3668672ede9d	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	assistant	ok	\N	\N	2026-10-15 05:24:37.331026+00	fast
+d9c94994-785e-45b6-978b-afe1b277c45a	b74f2a45-34bb-4e82-a587-4a3d29862fd2	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	assistant	ok	\N	\N	2026-10-15 05:24:37.331095+00	fast
+fad22b8d-df21-4164-b960-5a587babf058	4652b966-b02c-4aec-ad25-059f80c0be05	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:24:37.331021+00	\N
+6c9bd62c-17c0-4630-9ba2-c2f14f885b9a	91a31c82-116d-4887-b0a1-a6b479b3f6fe	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	assistant	ok	\N	\N	2026-10-15 05:24:37.338026+00	fast
+ae3c93b3-1cb4-4c43-9a4f-e9094c9c79f0	4652b966-b02c-4aec-ad25-059f80c0be05	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	assistant	ok	\N	\N	2026-10-15 05:24:37.337994+00	fast
+7d09d571-8a94-4cd6-8162-75bfe63fea1f	ab8c7f43-29b8-43a3-ac6e-b7148e71baa5	728d78c0-84ad-4026-a91e-76fc60619a5a	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:25:28.10815+00	\N
+6bb0c11e-aeea-4a85-b845-63c03573dd7b	4d5c1e2a-8ddb-4b09-aa49-5d0a303ad295	728d78c0-84ad-4026-a91e-76fc60619a5a	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:25:28.111837+00	\N
+7aa7ab1f-f4c3-4204-9a88-eee91c8bb8e2	ab8c7f43-29b8-43a3-ac6e-b7148e71baa5	728d78c0-84ad-4026-a91e-76fc60619a5a	assistant	ok	\N	\N	2026-10-15 05:25:28.120673+00	fast
+92d78a77-2a90-46a6-a0ac-ba717a5170d2	42460b2e-1303-4cdf-a424-86d0fa51a10a	728d78c0-84ad-4026-a91e-76fc60619a5a	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:25:28.123202+00	\N
+1581c008-f7a4-4ab0-a393-d545f1fad3e4	4d5c1e2a-8ddb-4b09-aa49-5d0a303ad295	728d78c0-84ad-4026-a91e-76fc60619a5a	assistant	ok	\N	\N	2026-10-15 05:25:28.129058+00	fast
+c516b798-cb49-4b72-85c7-3cf7ad9c00ac	42460b2e-1303-4cdf-a424-86d0fa51a10a	728d78c0-84ad-4026-a91e-76fc60619a5a	assistant	ok	\N	\N	2026-10-15 05:25:28.129264+00	fast
+879b57c0-b1dd-4198-87e2-ffbdf9db0963	65a67fde-18ed-4fa2-96ec-98c5168a5294	728d78c0-84ad-4026-a91e-76fc60619a5a	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:25:28.129197+00	\N
+24e065d6-e989-445c-b2f4-5f31dab2f5b7	65a67fde-18ed-4fa2-96ec-98c5168a5294	728d78c0-84ad-4026-a91e-76fc60619a5a	assistant	ok	\N	\N	2026-10-15 05:25:28.145039+00	fast
+f04ee3cd-beea-4fb2-a69a-1d70b0894167	964113a2-0d9e-49fa-966e-84dd0407728f	728d78c0-84ad-4026-a91e-76fc60619a5a	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:25:28.155518+00	\N
+4dbc0e2f-3eff-4129-a247-fbc5eb83a617	964113a2-0d9e-49fa-966e-84dd0407728f	728d78c0-84ad-4026-a91e-76fc60619a5a	assistant	ok	\N	\N	2026-10-15 05:25:28.16773+00	fast
+01de8ffd-44d4-489b-a8e7-fb0a22c2ce70	48113867-f753-4e11-9bb5-5db690809fd9	29e9fbc8-dd38-4d42-8871-649e2562b1ae	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:26:27.708643+00	\N
+aa92e404-786c-4877-94d4-acd54b435baf	48113867-f753-4e11-9bb5-5db690809fd9	29e9fbc8-dd38-4d42-8871-649e2562b1ae	assistant	ok	\N	\N	2026-10-15 05:26:27.737001+00	fast
+792aafed-1352-43df-8bf9-1a8eff6868a9	cfeffc10-3fb4-46e8-9524-150da105213e	29e9fbc8-dd38-4d42-8871-649e2562b1ae	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:26:27.753378+00	\N
+b307f810-489b-4ba7-a543-0f5958cef2bf	88fde3d5-4203-4999-b45f-8cba0b13f729	29e9fbc8-dd38-4d42-8871-649e2562b1ae	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:26:27.759841+00	\N
+316119ee-3b7a-4613-b1b4-35edf3037e59	cfeffc10-3fb4-46e8-9524-150da105213e	29e9fbc8-dd38-4d42-8871-649e2562b1ae	assistant	ok	\N	\N	2026-10-15 05:26:27.771411+00	fast
+daf4ba6a-fdda-4c0a-a01a-df08776ab7cb	a1c15984-af5e-4935-9de0-5bdc6d9db8b1	29e9fbc8-dd38-4d42-8871-649e2562b1ae	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:26:27.774548+00	\N
+ae114f5c-fd0f-406a-b816-df4fd1f4d211	88fde3d5-4203-4999-b45f-8cba0b13f729	29e9fbc8-dd38-4d42-8871-649e2562b1ae	assistant	ok	\N	\N	2026-10-15 05:26:27.784726+00	fast
+aca925bd-7242-477b-bea1-7683324ca688	2b81be14-09e3-419f-9693-6baeccba3324	29e9fbc8-dd38-4d42-8871-649e2562b1ae	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:26:27.800711+00	\N
+e3a6472c-4573-42e4-80ce-2b504950fecc	a1c15984-af5e-4935-9de0-5bdc6d9db8b1	29e9fbc8-dd38-4d42-8871-649e2562b1ae	assistant	ok	\N	\N	2026-10-15 05:26:27.805838+00	fast
+04b7269c-1d28-4ea4-ab75-c00674747386	2b81be14-09e3-419f-9693-6baeccba3324	29e9fbc8-dd38-4d42-8871-649e2562b1ae	assistant	ok	\N	\N	2026-10-15 05:26:27.811922+00	fast
+51275d4e-707e-4b92-a536-81ec4506c344	afa32979-144e-4372-84bc-f5a23150bb64	016a7dbb-d448-4b16-825d-f871a51ec4b3	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:27:35.862557+00	\N
+47c5aaa8-96c8-4092-bbbf-b4b087e77c01	264c16d1-958f-4d93-ade0-7237fa8b07eb	016a7dbb-d448-4b16-825d-f871a51ec4b3	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:27:35.865056+00	\N
+7ad6c8cf-6ef6-4887-a033-146110dc764d	6ac06b1b-1f62-4f4c-a27e-994db9c4e382	016a7dbb-d448-4b16-825d-f871a51ec4b3	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:27:35.865933+00	\N
+3fea82d8-dbb1-4bf3-9014-d3fd02a0cce1	afa32979-144e-4372-84bc-f5a23150bb64	016a7dbb-d448-4b16-825d-f871a51ec4b3	assistant	ok	\N	\N	2026-10-15 05:27:35.866999+00	fast
+0a1a5a57-afff-46fc-9870-971b9f3455da	264c16d1-958f-4d93-ade0-7237fa8b07eb	016a7dbb-d448-4b16-825d-f871a51ec4b3	assistant	ok	\N	\N	2026-10-15 05:27:35.86878+00	fast
+86e390d6-15e5-4963-a116-e82c65d9a4c1	100f7bd5-1245-4e8f-82a1-f6ae80301fe2	016a7dbb-d448-4b16-825d-f871a51ec4b3	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:27:35.870005+00	\N
+ac6be38c-2e23-4a37-8f22-060463692775	6ac06b1b-1f62-4f4c-a27e-994db9c4e382	016a7dbb-d448-4b16-825d-f871a51ec4b3	assistant	ok	\N	\N	2026-10-15 05:27:35.870163+00	fast
+d98b9b64-50ef-4aba-a6f4-8944948798c2	b437df4c-3809-4534-8d5e-a0f28a42a097	016a7dbb-d448-4b16-825d-f871a51ec4b3	user	berapa total pengeluaran saya bulan ini	\N	\N	2026-10-15 05:27:35.872102+00	\N
+43ce61e7-3f59-4c65-a94b-484c2a2a8296	100f7bd5-1245-4e8f-82a1-f6ae80301fe2	016a7dbb-d448-4b16-825d-f871a51ec4b3	assistant	ok	\N	\N	2026-10-15 05:27:35.873865+00	fast
+43a7eb67-97bd-46d9-bb89-94f7c3b64565	b437df4c-3809-4534-8d5e-a0f28a42a097	016a7dbb-d448-4b16-825d-f871a51ec4b3	assistant	ok	\N	\N	2026-10-15 05:27:35.878647+00	fast
 \.
 
 
@@ -1009,6 +1357,52 @@ afb03072-3e64-436e-927c-043a40f5761f	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	Percak
 edac99fb-9435-4550-a940-377b875b794c	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	Percakapan baru	chatbot	2026-10-14 02:40:40.839637+00	2026-10-14 02:40:40.839637+00
 baaa206f-2c6b-4595-b808-04dc44243d7e	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	Berapa total pengeluaran saya	chatbot	2026-10-14 02:40:40.843588+00	2026-10-14 02:40:44.960222+00
 dd113867-f6c0-4a26-893e-1e47442092a4	00000000-0000-0000-0000-000000000002	Percakapan baru	chatbot	2026-10-14 02:45:55.116229+00	2026-10-14 02:45:55.116229+00
+ae34dee0-c10f-4b2b-9771-0e41c19b9b6d	00000000-0000-0000-0000-000000000002	Percakapan baru	chatbot	2026-10-14 03:12:05.339614+00	2026-10-14 03:12:05.339614+00
+3df6f4e4-32b8-4eee-a33b-f535e9ca6074	00000000-0000-0000-0000-000000000002	Tambahkan pemasukan dari bonus lembur 300rb	transactions	2026-10-14 03:41:30.701263+00	2026-10-14 03:42:06.267941+00
+0940015a-7717-4f5b-a6fe-108e23a3d9ff	00000000-0000-0000-0000-000000000003	Buat grafik pengeluaran per kategori	chatbot	2026-10-15 02:21:10.557735+00	2026-10-15 02:43:08.373322+00
+eb3416ce-9a17-4c1a-9e12-0b9344b3d099	00000000-0000-0000-0000-000000000003	Buat grafik pengeluaran per kategori	chatbot	2026-10-15 02:42:53.912853+00	2026-10-15 02:43:10.117466+00
+ae55b2ed-52be-43d1-a6e5-854429aa364d	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Percakapan baru	chatbot	2026-10-15 05:24:37.209871+00	2026-10-15 05:24:37.209871+00
+02481302-6967-4eda-827f-e02732e3faf2	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Percakapan baru	chatbot	2026-10-15 05:24:37.228444+00	2026-10-15 05:24:37.228444+00
+e8269deb-6fa8-4701-8e96-54d71c9a81be	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Percakapan baru	chatbot	2026-10-15 05:24:37.234556+00	2026-10-15 05:24:37.234556+00
+13d0e56e-67cf-4056-8034-fb47ac7aaf79	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Percakapan baru	chatbot	2026-10-15 05:24:37.239562+00	2026-10-15 05:24:37.239562+00
+629253a7-360a-46b7-9526-7b41dfbc3e91	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Percakapan baru	chatbot	2026-10-15 05:24:37.266433+00	2026-10-15 05:24:37.266433+00
+4652b966-b02c-4aec-ad25-059f80c0be05	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:24:37.268076+00	2026-10-15 05:24:37.347508+00
+91a31c82-116d-4887-b0a1-a6b479b3f6fe	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:24:37.273517+00	2026-10-15 05:24:37.344378+00
+95707757-cd9f-435f-8637-718aa3d7bc79	728d78c0-84ad-4026-a91e-76fc60619a5a	Percakapan baru	chatbot	2026-10-15 05:25:27.941784+00	2026-10-15 05:25:27.941784+00
+97c60fda-9433-494a-a9cf-f5a0b73d55ce	728d78c0-84ad-4026-a91e-76fc60619a5a	Percakapan baru	chatbot	2026-10-15 05:25:28.035905+00	2026-10-15 05:25:28.035905+00
+ab8c7f43-29b8-43a3-ac6e-b7148e71baa5	728d78c0-84ad-4026-a91e-76fc60619a5a	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:25:28.058891+00	2026-10-15 05:25:28.145641+00
+4d5c1e2a-8ddb-4b09-aa49-5d0a303ad295	728d78c0-84ad-4026-a91e-76fc60619a5a	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:25:28.033993+00	2026-10-15 05:25:28.148242+00
+42460b2e-1303-4cdf-a424-86d0fa51a10a	728d78c0-84ad-4026-a91e-76fc60619a5a	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:25:28.076544+00	2026-10-15 05:25:28.14963+00
+0d125799-13fe-460c-b7e6-a186e61f930c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Percakapan baru	chatbot	2026-10-15 05:26:27.517659+00	2026-10-15 05:26:27.517659+00
+58b7c573-17b0-4bb3-b484-f992daa66080	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Percakapan baru	chatbot	2026-10-15 05:26:27.651718+00	2026-10-15 05:26:27.651718+00
+48113867-f753-4e11-9bb5-5db690809fd9	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:26:27.474645+00	2026-10-15 05:26:27.75657+00
+88fde3d5-4203-4999-b45f-8cba0b13f729	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:26:27.692683+00	2026-10-15 05:26:27.810516+00
+a1c15984-af5e-4935-9de0-5bdc6d9db8b1	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:26:27.714474+00	2026-10-15 05:26:27.833242+00
+423e5c02-22c0-4cb0-abee-a4a87208f256	016a7dbb-d448-4b16-825d-f871a51ec4b3	Percakapan baru	chatbot	2026-10-15 05:27:35.827123+00	2026-10-15 05:27:35.827123+00
+41bef9f6-aa3f-4d15-8c2e-7322585a7f2d	016a7dbb-d448-4b16-825d-f871a51ec4b3	Percakapan baru	chatbot	2026-10-15 05:27:35.832981+00	2026-10-15 05:27:35.832981+00
+49f96f7e-ec9b-402b-b073-233e44dbfa3a	016a7dbb-d448-4b16-825d-f871a51ec4b3	Percakapan baru	chatbot	2026-10-15 05:27:35.844945+00	2026-10-15 05:27:35.844945+00
+100f7bd5-1245-4e8f-82a1-f6ae80301fe2	016a7dbb-d448-4b16-825d-f871a51ec4b3	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:27:35.846286+00	2026-10-15 05:27:35.881811+00
+b437df4c-3809-4534-8d5e-a0f28a42a097	016a7dbb-d448-4b16-825d-f871a51ec4b3	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:27:35.852298+00	2026-10-15 05:27:35.885113+00
+b74f2a45-34bb-4e82-a587-4a3d29862fd2	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:24:37.265922+00	2026-10-15 05:24:37.341674+00
+aa005cb1-771c-480e-bb99-d32779153dc5	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:24:37.269155+00	2026-10-15 05:24:37.338493+00
+e7eeb9ea-eead-45e9-98be-3668672ede9d	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:24:37.285216+00	2026-10-15 05:24:37.341672+00
+cf613dc4-2d8c-405f-8f4a-49a639a120a1	728d78c0-84ad-4026-a91e-76fc60619a5a	Percakapan baru	chatbot	2026-10-15 05:25:27.990339+00	2026-10-15 05:25:27.990339+00
+22644693-0531-4f5c-a116-3e1ccdeb496c	728d78c0-84ad-4026-a91e-76fc60619a5a	Percakapan baru	chatbot	2026-10-15 05:25:28.048954+00	2026-10-15 05:25:28.048954+00
+27009a4d-8fe1-41f9-97e7-2b5ba501a703	728d78c0-84ad-4026-a91e-76fc60619a5a	Percakapan baru	chatbot	2026-10-15 05:25:28.077856+00	2026-10-15 05:25:28.077856+00
+65a67fde-18ed-4fa2-96ec-98c5168a5294	728d78c0-84ad-4026-a91e-76fc60619a5a	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:25:28.026658+00	2026-10-15 05:25:28.153594+00
+964113a2-0d9e-49fa-966e-84dd0407728f	728d78c0-84ad-4026-a91e-76fc60619a5a	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:25:28.090468+00	2026-10-15 05:25:28.197144+00
+875b5b06-5075-4620-8586-577348a42f5e	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Percakapan baru	chatbot	2026-10-15 05:26:27.427735+00	2026-10-15 05:26:27.427735+00
+4bc0676c-6579-4247-ac21-1dc37dbd3142	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Percakapan baru	chatbot	2026-10-15 05:26:27.619604+00	2026-10-15 05:26:27.619604+00
+1be7f117-c930-4700-b8ba-a61e3425974c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Percakapan baru	chatbot	2026-10-15 05:26:27.714001+00	2026-10-15 05:26:27.714001+00
+cfeffc10-3fb4-46e8-9524-150da105213e	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:26:27.658346+00	2026-10-15 05:26:27.78748+00
+2b81be14-09e3-419f-9693-6baeccba3324	29e9fbc8-dd38-4d42-8871-649e2562b1ae	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:26:27.753495+00	2026-10-15 05:26:27.833112+00
+6d4b646d-f440-4d5a-a078-15d574b4af80	016a7dbb-d448-4b16-825d-f871a51ec4b3	Percakapan baru	chatbot	2026-10-15 05:27:35.799276+00	2026-10-15 05:27:35.799276+00
+09f1b01a-8324-408f-b085-c4322dd72d9b	016a7dbb-d448-4b16-825d-f871a51ec4b3	Percakapan baru	chatbot	2026-10-15 05:27:35.817186+00	2026-10-15 05:27:35.817186+00
+afa32979-144e-4372-84bc-f5a23150bb64	016a7dbb-d448-4b16-825d-f871a51ec4b3	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:27:35.823969+00	2026-10-15 05:27:35.872158+00
+264c16d1-958f-4d93-ade0-7237fa8b07eb	016a7dbb-d448-4b16-825d-f871a51ec4b3	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:27:35.842347+00	2026-10-15 05:27:35.874356+00
+6ac06b1b-1f62-4f4c-a27e-994db9c4e382	016a7dbb-d448-4b16-825d-f871a51ec4b3	Berapa total pengeluaran saya bulan ini	chatbot	2026-10-15 05:27:35.830964+00	2026-10-15 05:27:35.876885+00
+cba62799-cdfa-4c20-8d90-883d585384f6	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	Percakapan baru	chatbot	2026-10-15 05:28:12.530152+00	2026-10-15 05:28:12.530152+00
+678e1460-5bcc-4591-b0e2-fbd154df389b	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	Percakapan baru	chatbot	2026-10-15 05:28:12.536899+00	2026-10-15 05:28:12.536899+00
 \.
 
 
@@ -1033,6 +1427,7 @@ c0020001-0000-0000-0000-00000000000c	Lain-lain	ellipsis	#94a3b8	Pengeluaran lain
 1e58aea8-0132-4925-a930-2fe513595425	OYO	circle	#94a3b8	\N	t	99	\N	2026-06-24 11:51:17.256948+00	2026-06-24 11:51:17.256948+00
 3d82d541-542c-4354-bfec-64281bb24393	Pulsa	circle	#94a3b8	\N	t	99	\N	2026-06-25 00:50:29.368461+00	2026-06-25 00:50:29.368461+00
 20bff1f1-4c3a-44eb-a5e8-09be9263dc21	Buku	circle	#94a3b8	\N	t	99	\N	2026-06-25 06:15:38.396668+00	2026-06-25 06:15:38.396668+00
+508f51ad-636a-435a-8c00-07880052ccc8	Ent Test Category	circle	#3b5bdb	\N	t	0	\N	2026-10-14 04:22:22.228327+00	2026-10-15 05:27:31.210401+00
 \.
 
 
@@ -1097,6 +1492,22 @@ e7ac0daa-f172-4795-a910-c8b97f015471	c0020001-0000-0000-0000-000000000005	Game	g
 
 
 --
+-- Data for Name: feature_definitions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.feature_definitions (key, label, description, group_key, sort_order, is_active, created_at, updated_at) FROM stdin;
+ai_chat	Asisten AI (chat)	Chat keuangan dengan AI.	fitur	10	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+ocr_receipt	Pindai struk (OCR)	Ekstraksi data dari foto struk.	fitur	20	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+voice_input	Input suara	Transkripsi perintah suara.	fitur	30	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+rag_search	Pencarian cerdas (RAG)	Pencarian semantik atas transaksi.	fitur	40	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+reports_export	Ekspor laporan	Unduh laporan keuangan.	fitur	50	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+advanced_budgeting	Anggaran lanjutan	Anggaran & analisis lanjutan.	fitur	60	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+api_access	Akses API	Akses API publik.	fitur	70	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+bank_sync	Sinkronisasi bank	Sinkronisasi rekening bank (belum tersedia).	fitur	80	t	2026-10-15 04:36:35.360675+00	2026-10-15 04:36:35.360675+00
+\.
+
+
+--
 -- Data for Name: feature_flags; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -1107,6 +1518,10 @@ ba339f08-ff2b-479b-9449-959dcdba74dd	ff_e2e_e3e26c77-67fc-4a04-aeb3-dcb2a7d9dd83
 90b1b225-4393-43f9-96e4-23cb4c102a11	ff_e2e_4deafea7-0bc4-4734-a19f-0fee305feb51	e2e		f	100	{}	\N	2026-10-11 09:23:36.713525+00	2026-10-11 09:23:36.727806+00
 cd3e780c-30e8-48c9-a802-7bae50a6a3b3	ff_e2e_5a22c078-69df-479b-8532-5134a93fb90a	e2e		f	100	{}	\N	2026-10-11 09:47:25.747812+00	2026-10-11 09:47:25.75639+00
 39c767ef-a6de-4921-ba13-5043ee1c43b6	feature_ai_gateway_centralized	AI Gateway Centralized		t	25	{}	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 09:04:14.991917+00	2026-10-11 10:36:55.259656+00
+fd1babaa-b559-40d5-90ad-d0fed76c7524	ff_e2e_a13f7ab1-ce26-4ed6-a54b-4d814e7564a7	e2e		f	100	{}	\N	2026-10-14 04:20:07.870738+00	2026-10-14 04:20:08.104534+00
+93465ef3-bd07-4c0b-a6b2-5ece4b783d94	ff_e2e_c8ca21b5-bef6-4f97-a9ba-2aaae91cbef4	e2e		f	100	{}	\N	2026-10-15 05:25:05.26059+00	2026-10-15 05:25:05.276561+00
+3e63a1bf-653b-4c8e-8002-144d3be74504	ff_e2e_3782623c-f648-4ff5-973a-9725cdd160c0	e2e		f	100	{}	\N	2026-10-15 05:25:48.038229+00	2026-10-15 05:25:48.048084+00
+d805047c-8dae-4a55-a0c2-8f91c9330098	ff_e2e_3b5469c1-04a3-44b0-ab6a-e20dff89d56e	e2e		f	100	{}	\N	2026-10-15 05:27:21.577619+00	2026-10-15 05:27:21.58962+00
 \.
 
 
@@ -1148,6 +1563,15 @@ c0010001-0000-0000-0000-000000000009	Komisi	percent	#84cc16	Komisi penjualan ata
 c0010001-0000-0000-0000-00000000000a	Pendapatan Pasif	sleep	#6366f1	Royalti, afiliasi, atau pendapatan pasif lainnya	t	10	00000000-0000-0000-0000-000000000001	2026-10-13 11:56:32.777112+00	2026-10-13 11:56:32.777112+00
 c0010001-0000-0000-0000-00000000000b	Lainnya	ellipsis	#94a3b8	Pemasukan lain yang tidak terkategorikan	t	11	00000000-0000-0000-0000-000000000001	2026-10-13 11:56:32.777112+00	2026-10-13 11:56:32.777112+00
 0cd74c94-bb74-4f34-acf6-bcf402299a98	Konten	circle	#94a3b8	\N	t	99	\N	2026-10-13 14:02:58.270207+00	2026-10-13 14:02:58.270207+00
+ef4e53f7-5ad0-4f98-a23c-476fe775969c	IT Cat a722d494-d333-4b44-84a7-606c2d8dcab6	x	#000000	\N	t	0	\N	2026-10-14 04:22:15.179684+00	2026-10-14 04:22:15.179684+00
+90c80aae-82bf-4619-a225-e15cf461fe8e	IT Lock 65b526ca-c8e0-43f2-aa37-dfe3f7280b09	x	#000000	\N	t	0	\N	2026-10-14 04:22:15.280766+00	2026-10-14 04:22:15.280766+00
+af379478-a4ea-4e52-828c-4a30e78e107d	IT Race 07af1765-8aaf-47fe-b1a5-811e1f7719b4	x	#000000	\N	t	0	\N	2026-10-14 04:22:15.352713+00	2026-10-14 04:22:15.352713+00
+6b33cc82-c967-4eba-b5e7-0347fa6a532c	IT Cat e660b95f-df6e-4658-bc73-2eb7812fe68a	x	#000000	\N	t	0	\N	2026-10-14 11:15:00.840907+00	2026-10-14 11:15:00.840907+00
+2500400f-ce4c-414b-a162-6b813b1a8250	IT Lock 3c2d5d51-2137-412a-abdb-e95a3292d922	x	#000000	\N	t	0	\N	2026-10-14 11:15:00.894072+00	2026-10-14 11:15:00.894072+00
+4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	IT Race 73eadfad-25af-42c5-8d25-8bb431bbf66d	x	#000000	\N	t	0	\N	2026-10-14 11:15:00.945285+00	2026-10-14 11:15:00.945285+00
+d61f968a-cc5e-4e5a-b6bf-597ea1642d23	IT Cat 320e4cbe-32f8-49ee-8063-e45eb8385b8f	x	#000000	\N	t	0	\N	2026-10-15 05:25:08.774879+00	2026-10-15 05:25:08.774879+00
+8116c5c3-e38a-4d45-9621-51287a932b64	IT Lock 4c328f30-7c27-409f-a2d9-bddbad3c1199	x	#000000	\N	t	0	\N	2026-10-15 05:25:08.867386+00	2026-10-15 05:25:08.867386+00
+44998d9a-6472-4765-b8d8-58a4348838aa	IT Race 621cc9f4-dfae-4a3d-abd3-921dc998a5ce	x	#000000	\N	t	0	\N	2026-10-15 05:25:08.940077+00	2026-10-15 05:25:08.940077+00
 \.
 
 
@@ -1157,6 +1581,7 @@ c0010001-0000-0000-0000-00000000000b	Lainnya	ellipsis	#94a3b8	Pemasukan lain yan
 
 COPY public.invoice_counters (day, seq) FROM stdin;
 2026-10-13	15
+2026-10-14	11
 \.
 
 
@@ -1164,23 +1589,77 @@ COPY public.invoice_counters (day, seq) FROM stdin;
 -- Data for Name: invoices; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.invoices (id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr, status, notes, issued_at, due_at, paid_at, voided_at, created_at, updated_at) FROM stdin;
-49ec9f02-db52-4acb-a544-dc7d09c9d622	INV-SMOKE-0001	c5d4f372-d0b9-43de-9cbc-c4003d704101	\N	100000	11000	111000	paid	\N	2026-10-11 10:34:33.021936+00	\N	2026-10-11 10:34:57.57501+00	\N	2026-10-11 10:34:33.021936+00	2026-10-11 10:34:57.57501+00
-f9346534-59bc-4b9c-9dbb-40d861c2f50c	INV/20261013/00001	5793635b-7f82-4324-b314-bcf86eed2f0d	\N	39000	4290	43290	issued	pro	2026-10-13 13:34:20.828923+00	2026-10-16 13:34:20.793709+00	\N	\N	2026-10-13 13:34:20.828923+00	2026-10-13 13:34:20.828923+00
-e615e7ea-91ed-4db3-8c95-8bd50068e270	INV/20261013/00002	243215bb-e1eb-4071-b5cd-0b7c292d8638	\N	39000	4290	43290	issued	pro	2026-10-13 13:48:09.612991+00	2026-10-16 13:48:09.607731+00	\N	\N	2026-10-13 13:48:09.612991+00	2026-10-13 13:48:09.612991+00
-7c0e86ab-d7f0-4d76-a7e2-afc46ab2037d	INV/20261013/00003	243215bb-e1eb-4071-b5cd-0b7c292d8638	\N	129000	14190	143190	issued	business	2026-10-13 13:51:59.695941+00	2026-10-16 13:51:59.683642+00	\N	\N	2026-10-13 13:51:59.695941+00	2026-10-13 13:51:59.695941+00
-0e738d8e-03d4-4a93-97bd-30150f7081b2	INV/20261013/00004	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	39000	4290	43290	paid	pro	2026-10-13 14:15:58.011143+00	2026-10-16 14:15:57.996782+00	2026-10-13 14:16:50.522243+00	\N	2026-10-13 14:15:58.011143+00	2026-10-13 14:16:50.522243+00
-70ff954b-c7ae-4781-bd17-e304f9491353	INV/20261013/00005	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	129000	14190	143190	issued	business	2026-10-13 14:16:59.041632+00	2026-10-16 14:16:59.034494+00	\N	\N	2026-10-13 14:16:59.041632+00	2026-10-13 14:16:59.041632+00
-d6da7365-da61-4cd7-a099-341ee218de58	INV/20261013/00006	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	129000	14190	143190	issued	business	2026-10-13 14:17:09.633989+00	2026-10-16 14:17:09.618892+00	\N	\N	2026-10-13 14:17:09.633989+00	2026-10-13 14:17:09.633989+00
-1a35a92a-d050-470b-a129-19a3870e0872	INV/20261013/00007	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	39000	4290	43290	paid	pro	2026-10-13 14:28:18.458996+00	2026-10-16 14:28:18.447909+00	2026-10-13 14:28:19.071072+00	\N	2026-10-13 14:28:18.458996+00	2026-10-13 14:28:19.071072+00
-4d5a5446-64a8-487b-9d3a-c12152107827	INV/20261013/00008	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	issued	business	2026-10-13 14:30:12.90051+00	2026-10-16 14:30:12.887581+00	\N	\N	2026-10-13 14:30:12.90051+00	2026-10-13 14:30:12.90051+00
-8a593391-df5f-46cb-b061-57c651b885f5	INV/20261013/00009	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	issued	business	2026-10-13 14:30:52.080417+00	2026-10-16 14:30:52.060419+00	\N	\N	2026-10-13 14:30:52.080417+00	2026-10-13 14:30:52.080417+00
-c466e285-afc2-43a6-9c35-46a586f57da2	INV/20261013/00010	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	issued	business	2026-10-13 14:31:17.494262+00	2026-10-16 14:31:17.488324+00	\N	\N	2026-10-13 14:31:17.494262+00	2026-10-13 14:31:17.494262+00
-2516bd4a-9168-4e6e-a49e-c22284691abd	INV/20261013/00011	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	issued	business	2026-10-13 14:31:23.672343+00	2026-10-16 14:31:23.666791+00	\N	\N	2026-10-13 14:31:23.672343+00	2026-10-13 14:31:23.672343+00
-e243fccf-fc47-4a86-b9a0-9e32174b8cd8	INV/20261013/00012	57046e28-960a-4e46-9de0-21b4ac1a599d	\N	39000	4290	43290	paid	pro	2026-10-13 14:32:55.555138+00	2026-10-16 14:32:55.546915+00	2026-10-13 14:32:55.82188+00	\N	2026-10-13 14:32:55.555138+00	2026-10-13 14:32:55.82188+00
-c2dd43b5-8f51-42e2-849b-660cd1bf4d75	INV/20261013/00013	00000000-0000-0000-0000-000000000002	\N	39000	4290	43290	issued	pro	2026-10-13 16:13:24.488471+00	2026-10-16 16:13:24.478487+00	\N	\N	2026-10-13 16:13:24.488471+00	2026-10-13 16:13:24.488471+00
-bd1f8bdf-4858-4f31-a25f-1a57ff322a19	INV/20261013/00014	00000000-0000-0000-0000-000000000002	\N	39000	4290	43290	issued	pro	2026-10-13 16:13:33.265432+00	2026-10-16 16:13:33.25728+00	\N	\N	2026-10-13 16:13:33.265432+00	2026-10-13 16:13:33.265432+00
-81b66556-9694-4e44-8e4c-987875e6d117	INV/20261013/00015	00000000-0000-0000-0000-000000000002	\N	129000	14190	143190	issued	business	2026-10-13 16:13:37.270724+00	2026-10-16 16:13:37.251307+00	\N	\N	2026-10-13 16:13:37.270724+00	2026-10-13 16:13:37.270724+00
+COPY public.invoices (id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr, status, notes, issued_at, due_at, paid_at, voided_at, created_at, updated_at, closed_reason, expired_at) FROM stdin;
+49ec9f02-db52-4acb-a544-dc7d09c9d622	INV-SMOKE-0001	c5d4f372-d0b9-43de-9cbc-c4003d704101	\N	100000	11000	111000	paid	\N	2026-10-11 10:34:33.021936+00	\N	2026-10-11 10:34:57.57501+00	\N	2026-10-11 10:34:33.021936+00	2026-10-11 10:34:57.57501+00	\N	\N
+f9346534-59bc-4b9c-9dbb-40d861c2f50c	INV/20261013/00001	5793635b-7f82-4324-b314-bcf86eed2f0d	\N	39000	4290	43290	issued	pro	2026-10-13 13:34:20.828923+00	2026-10-16 13:34:20.793709+00	\N	\N	2026-10-13 13:34:20.828923+00	2026-10-13 13:34:20.828923+00	\N	\N
+7c0e86ab-d7f0-4d76-a7e2-afc46ab2037d	INV/20261013/00003	243215bb-e1eb-4071-b5cd-0b7c292d8638	\N	129000	14190	143190	issued	business	2026-10-13 13:51:59.695941+00	2026-10-16 13:51:59.683642+00	\N	\N	2026-10-13 13:51:59.695941+00	2026-10-13 13:51:59.695941+00	\N	\N
+0e738d8e-03d4-4a93-97bd-30150f7081b2	INV/20261013/00004	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	39000	4290	43290	paid	pro	2026-10-13 14:15:58.011143+00	2026-10-16 14:15:57.996782+00	2026-10-13 14:16:50.522243+00	\N	2026-10-13 14:15:58.011143+00	2026-10-13 14:16:50.522243+00	\N	\N
+d6da7365-da61-4cd7-a099-341ee218de58	INV/20261013/00006	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	129000	14190	143190	issued	business	2026-10-13 14:17:09.633989+00	2026-10-16 14:17:09.618892+00	\N	\N	2026-10-13 14:17:09.633989+00	2026-10-13 14:17:09.633989+00	\N	\N
+1a35a92a-d050-470b-a129-19a3870e0872	INV/20261013/00007	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	39000	4290	43290	paid	pro	2026-10-13 14:28:18.458996+00	2026-10-16 14:28:18.447909+00	2026-10-13 14:28:19.071072+00	\N	2026-10-13 14:28:18.458996+00	2026-10-13 14:28:19.071072+00	\N	\N
+2516bd4a-9168-4e6e-a49e-c22284691abd	INV/20261013/00011	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	issued	business	2026-10-13 14:31:23.672343+00	2026-10-16 14:31:23.666791+00	\N	\N	2026-10-13 14:31:23.672343+00	2026-10-13 14:31:23.672343+00	\N	\N
+e243fccf-fc47-4a86-b9a0-9e32174b8cd8	INV/20261013/00012	57046e28-960a-4e46-9de0-21b4ac1a599d	\N	39000	4290	43290	paid	pro	2026-10-13 14:32:55.555138+00	2026-10-16 14:32:55.546915+00	2026-10-13 14:32:55.82188+00	\N	2026-10-13 14:32:55.555138+00	2026-10-13 14:32:55.82188+00	\N	\N
+ae31d0a7-4dfc-4ce3-951d-bc9de45d76a0	INV/20261014/00003	00000000-0000-0000-0000-000000000002	\N	129000	14190	143190	issued	business	2026-10-14 03:35:26.512891+00	2026-10-17 03:35:26.484411+00	\N	\N	2026-10-14 03:35:26.512891+00	2026-10-14 03:35:26.512891+00	\N	\N
+d38ea36a-a309-4c7c-9027-463ed5eaf8b5	INV/20261014/00004	00000000-0000-0000-0000-000000000003	\N	39000	4290	43290	issued	pro	2026-10-14 08:29:39.584767+00	2026-10-17 08:29:39.569574+00	\N	\N	2026-10-14 08:29:39.584767+00	2026-10-14 08:29:39.584767+00	\N	\N
+ecdc856e-b86e-4ced-a61b-309fbb1338e6	INV/20261014/00002	00000000-0000-0000-0000-000000000002	\N	129000	14190	143190	voided	business	2026-10-14 03:35:21.722211+00	2026-10-17 03:35:21.534664+00	\N	2026-10-14 10:45:31.608308+00	2026-10-14 03:35:21.722211+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+b678a7b0-e21d-4c41-bd82-170b956784bb	INV/20261014/00001	00000000-0000-0000-0000-000000000002	\N	129000	14190	143190	voided	business	2026-10-14 03:35:14.277069+00	2026-10-17 03:35:14.25109+00	\N	2026-10-14 10:45:31.608308+00	2026-10-14 03:35:14.277069+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+81b66556-9694-4e44-8e4c-987875e6d117	INV/20261013/00015	00000000-0000-0000-0000-000000000002	\N	129000	14190	143190	voided	business	2026-10-13 16:13:37.270724+00	2026-10-16 16:13:37.251307+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 16:13:37.270724+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+bd1f8bdf-4858-4f31-a25f-1a57ff322a19	INV/20261013/00014	00000000-0000-0000-0000-000000000002	\N	39000	4290	43290	voided	pro	2026-10-13 16:13:33.265432+00	2026-10-16 16:13:33.25728+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 16:13:33.265432+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+c2dd43b5-8f51-42e2-849b-660cd1bf4d75	INV/20261013/00013	00000000-0000-0000-0000-000000000002	\N	39000	4290	43290	voided	pro	2026-10-13 16:13:24.488471+00	2026-10-16 16:13:24.478487+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 16:13:24.488471+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+e615e7ea-91ed-4db3-8c95-8bd50068e270	INV/20261013/00002	243215bb-e1eb-4071-b5cd-0b7c292d8638	\N	39000	4290	43290	voided	pro	2026-10-13 13:48:09.612991+00	2026-10-16 13:48:09.607731+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 13:48:09.612991+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+5c5f5651-9fb2-4d8f-982b-5a468b03f4a5	INV/20261014/00005	0eb40d2c-9262-4130-8a99-963cae88e54b	\N	39000	4290	43290	voided	pro	2026-10-14 09:53:13.81688+00	2026-10-17 09:53:13.805763+00	\N	2026-10-14 11:13:06.920844+00	2026-10-14 09:53:13.81688+00	2026-10-14 11:13:06.920844+00	cancelled_by_user	\N
+70ff954b-c7ae-4781-bd17-e304f9491353	INV/20261013/00005	5abd3878-94a0-4fd6-875c-7dec161bc107	\N	129000	14190	143190	voided	business	2026-10-13 14:16:59.041632+00	2026-10-16 14:16:59.034494+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 14:16:59.041632+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+c466e285-afc2-43a6-9c35-46a586f57da2	INV/20261013/00010	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	voided	business	2026-10-13 14:31:17.494262+00	2026-10-16 14:31:17.488324+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 14:31:17.494262+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+8a593391-df5f-46cb-b061-57c651b885f5	INV/20261013/00009	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	voided	business	2026-10-13 14:30:52.080417+00	2026-10-16 14:30:52.060419+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 14:30:52.080417+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+4d5a5446-64a8-487b-9d3a-c12152107827	INV/20261013/00008	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	\N	129000	14190	143190	voided	business	2026-10-13 14:30:12.90051+00	2026-10-16 14:30:12.887581+00	\N	2026-10-14 10:45:31.608308+00	2026-10-13 14:30:12.90051+00	2026-10-14 10:45:31.608308+00	superseded_by_unique_open_invoice_constraint	\N
+2771e8f7-d242-44dd-8ba4-3cbe583eedb3	INV/20261014/00006	93844cb5-7b06-4a85-b225-ab34108d3c87	\N	39000	4680	43680	voided	pro	2026-10-14 11:01:38.102152+00	2026-10-15 11:01:38.119595+00	\N	2026-10-14 11:02:05.365027+00	2026-10-14 11:01:38.102152+00	2026-10-14 11:02:05.365027+00	cancelled_by_user	\N
+83f7bbd0-2413-493b-bfde-9bdcf609baa9	INV/20261014/00007	93844cb5-7b06-4a85-b225-ab34108d3c87	\N	39000	4680	43680	voided	pro	2026-10-14 11:02:34.782293+00	2026-10-15 11:02:34.784388+00	\N	2026-10-14 11:03:10.229291+00	2026-10-14 11:02:34.782293+00	2026-10-14 11:03:10.229291+00	cancelled_by_user	\N
+21554179-13cd-4fcf-96a2-877d455e42ff	INV/20261014/00008	93844cb5-7b06-4a85-b225-ab34108d3c87	\N	39000	4680	43680	voided	pro	2026-10-14 11:05:15.5059+00	2026-10-15 11:05:15.509485+00	\N	2026-10-14 11:06:03.513555+00	2026-10-14 11:05:15.5059+00	2026-10-14 11:06:03.513555+00	cancelled_by_user	\N
+7c911e41-8497-4b44-b71c-acb763901a78	INV/20261014/00009	93844cb5-7b06-4a85-b225-ab34108d3c87	\N	39000	4680	43680	voided	pro	2026-10-14 11:06:03.526661+00	2026-10-15 11:06:03.527375+00	\N	2026-10-14 11:06:03.548695+00	2026-10-14 11:06:03.526661+00	2026-10-14 11:06:03.548695+00	cancelled_by_user	\N
+d2f84e39-2125-4fce-b959-cbf6a94678b4	INV/20261014/00010	93844cb5-7b06-4a85-b225-ab34108d3c87	\N	39000	4680	43680	expired	pro	2026-10-14 11:06:46.048189+00	2026-10-14 11:01:54.945198+00	\N	\N	2026-10-14 11:06:46.048189+00	2026-10-14 11:11:29.540463+00	expired	2026-10-14 11:11:29.540463+00
+660a8724-0ecc-472f-a5f8-00d62e475df1	INV/20261014/00011	0eb40d2c-9262-4130-8a99-963cae88e54b	\N	99000	0	99000	issued	business	2026-10-14 11:13:50.639065+00	2026-10-15 11:13:50.640833+00	\N	\N	2026-10-14 11:13:50.639065+00	2026-10-14 11:13:50.639065+00	\N	\N
+\.
+
+
+--
+-- Data for Name: metric_definitions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.metric_definitions (key, label, unit, description, is_enforced, resolver_key, ratio_adjusted, per_cycle, group_key, sort_order, is_active, created_at, updated_at) FROM stdin;
+ai_tokens_per_cycle	Kuota AI / siklus	kuota	Kuota AI per siklus, diukur dalam unit kuota (bukan token mentah).	t	token_period_usage	t	t	kuota	10	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+ai_requests_per_cycle	Permintaan AI / siklus	permintaan	Jumlah panggilan AI (chat, OCR, suara) per siklus.	t	ai_requests_in_period	f	t	kuota	20	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+max_transactions	Transaksi	transaksi	Transaksi aktif yang dapat disimpan.	t	active_transactions	f	t	kuota	30	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+ocr_scans_per_cycle	Pindai struk / siklus	scan	Pemindaian struk (OCR) per siklus.	t	vision_scans_in_period	f	t	kuota	40	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+max_categories	Kategori	kategori	Jumlah kategori maksimum (belum ditegakkan).	f	\N	f	t	kuota	50	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+max_wallets	Dompet	dompet	Jumlah dompet maksimum (belum ditegakkan).	f	\N	f	t	kuota	60	t	2026-10-15 04:36:35.354457+00	2026-10-15 04:36:35.354457+00
+voice_requests_per_day	Input suara / hari	permintaan	Permintaan suara per hari.	t	voice_requests_per_day	f	t	kuota	45	t	2026-10-15 06:21:47.820375+00	2026-10-15 06:21:47.820375+00
+\.
+
+
+--
+-- Data for Name: notification_preferences; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.notification_preferences (user_id, transaction_email, category_reminder, weekly_report, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notifications; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.notifications (id, user_id, event, title, body, href, read_at, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: payment_accounts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.payment_accounts (id, kind, name, account_number, account_holder, qris_url, sort_order, is_active, created_at, updated_at) FROM stdin;
+333f50a4-0fcc-44f0-b5a6-7949658795b2	bank	BCA	1234567890	PT FinTrack		1	t	2026-10-14 09:53:07.37404+00	2026-10-14 09:53:07.37404+00
+847f6e6e-db27-447a-a58c-508f06b9dfca	ewallet	DANA	081234567890	FinTrack		2	t	2026-10-14 09:53:07.543231+00	2026-10-14 09:53:07.543231+00
+6870f7b7-7328-41f1-a176-4ab228de71ef	qris	QRIS			https://example.com/qris.png	3	t	2026-10-14 09:53:07.672919+00	2026-10-14 09:53:07.672919+00
+f050d546-7acd-43d2-b6c6-9c5569866464	bank	SeaBank	9012345678	PT FinTrack		4	t	2026-10-14 10:02:21.282387+00	2026-10-14 10:02:21.282387+00
 \.
 
 
@@ -1220,6 +1699,17 @@ b19f0927-8f79-4ebb-8426-757b5f32f84c	e243fccf-fc47-4a86-b9a0-9e32174b8cd8	57046e
 367f06b8-feff-4f75-a93a-e59a959364a2	c2dd43b5-8f51-42e2-849b-660cd1bf4d75	00000000-0000-0000-0000-000000000002	manual	INV/20261013/00013	43290	pending	\N	\N	checkout:c2dd43b5-8f51-42e2-849b-660cd1bf4d75	{"instructions": {"order_id": "INV/20261013/00013", "amount_idr": 43290}}	2026-10-13 16:13:24.49413+00	2026-10-13 16:13:24.49413+00	\N	\N	\N	0	\N	\N	\N
 5feb5a02-55f8-4f13-ac78-8a02790fe25a	bd1f8bdf-4858-4f31-a25f-1a57ff322a19	00000000-0000-0000-0000-000000000002	manual	INV/20261013/00014	43290	pending	\N	\N	checkout:bd1f8bdf-4858-4f31-a25f-1a57ff322a19	{"instructions": {"order_id": "INV/20261013/00014", "amount_idr": 43290}}	2026-10-13 16:13:33.271167+00	2026-10-13 16:13:33.271167+00	\N	\N	\N	0	\N	\N	\N
 62b1908c-2e9e-4355-ae3b-8eb60c67042a	81b66556-9694-4e44-8e4c-987875e6d117	00000000-0000-0000-0000-000000000002	manual	INV/20261013/00015	143190	pending	\N	\N	checkout:81b66556-9694-4e44-8e4c-987875e6d117	{"instructions": {"order_id": "INV/20261013/00015", "amount_idr": 143190}}	2026-10-13 16:13:37.276734+00	2026-10-13 16:13:37.276734+00	\N	\N	\N	0	\N	\N	\N
+31c16dd3-609e-47dc-b8ea-8394ffb96de7	b678a7b0-e21d-4c41-bd82-170b956784bb	00000000-0000-0000-0000-000000000002	manual	INV/20261014/00001	143190	pending	\N	\N	checkout:b678a7b0-e21d-4c41-bd82-170b956784bb	{"instructions": {"order_id": "INV/20261014/00001", "amount_idr": 143190}}	2026-10-14 03:35:14.289485+00	2026-10-14 03:35:14.289485+00	\N	\N	\N	0	\N	\N	\N
+c2e97ae6-6c92-4be2-9989-e0196cad5a18	ecdc856e-b86e-4ced-a61b-309fbb1338e6	00000000-0000-0000-0000-000000000002	manual	INV/20261014/00002	143190	pending	\N	\N	checkout:ecdc856e-b86e-4ced-a61b-309fbb1338e6	{"instructions": {"order_id": "INV/20261014/00002", "amount_idr": 143190}}	2026-10-14 03:35:21.732384+00	2026-10-14 03:35:21.732384+00	\N	\N	\N	0	\N	\N	\N
+9814ea1e-f47a-40c7-b0cb-e8dc99b658c7	ae31d0a7-4dfc-4ce3-951d-bc9de45d76a0	00000000-0000-0000-0000-000000000002	manual	INV/20261014/00003	143190	pending	\N	\N	checkout:ae31d0a7-4dfc-4ce3-951d-bc9de45d76a0	{"instructions": {"order_id": "INV/20261014/00003", "amount_idr": 143190}}	2026-10-14 03:35:26.517636+00	2026-10-14 03:35:26.517636+00	\N	\N	\N	0	\N	\N	\N
+cf65db3b-ed1a-4a39-b32d-32a9f2669afa	d38ea36a-a309-4c7c-9027-463ed5eaf8b5	00000000-0000-0000-0000-000000000003	manual	INV/20261014/00004	43290	pending	\N	\N	checkout:d38ea36a-a309-4c7c-9027-463ed5eaf8b5	{"instructions": {"order_id": "INV/20261014/00004", "amount_idr": 43290}}	2026-10-14 08:29:39.603767+00	2026-10-14 08:29:39.603767+00	\N	\N	\N	0	\N	\N	\N
+b1556952-6cc6-4060-9021-52fc2bb23670	2771e8f7-d242-44dd-8ba4-3cbe583eedb3	93844cb5-7b06-4a85-b225-ab34108d3c87	manual	INV/20261014/00006	43680	pending	\N	\N	checkout:2771e8f7-d242-44dd-8ba4-3cbe583eedb3	{"instructions": {"order_id": "INV/20261014/00006", "amount_idr": 43680}}	2026-10-14 11:01:38.166511+00	2026-10-14 11:01:38.166511+00	\N	\N	\N	0	\N	\N	\N
+abb96679-dd90-4b88-a65f-8058fd0dff52	83f7bbd0-2413-493b-bfde-9bdcf609baa9	93844cb5-7b06-4a85-b225-ab34108d3c87	manual	INV/20261014/00007	43680	expired	\N	\N	checkout:83f7bbd0-2413-493b-bfde-9bdcf609baa9	{"instructions": {"order_id": "INV/20261014/00007", "amount_idr": 43680}}	2026-10-14 11:02:34.800846+00	2026-10-14 11:03:31.136729+00	\N	\N	\N	0	\N	\N	\N
+8a573660-4096-4800-8b3b-ff8e8e5d55a9	5c5f5651-9fb2-4d8f-982b-5a468b03f4a5	0eb40d2c-9262-4130-8a99-963cae88e54b	manual	INV/20261014/00005	43290	expired	\N	payment-proofs/8a573660-4096-4800-8b3b-ff8e8e5d55a9.png	checkout:5c5f5651-9fb2-4d8f-982b-5a468b03f4a5	{"instructions": {"order_id": "INV/20261014/00005", "amount_idr": 43290}}	2026-10-14 09:53:13.829447+00	2026-10-14 11:13:06.927669+00	\N	\N	\N	0	\N	\N	\N
+a22340cb-047d-4e37-b12f-b28156b3e9e4	21554179-13cd-4fcf-96a2-877d455e42ff	93844cb5-7b06-4a85-b225-ab34108d3c87	manual	INV/20261014/00008	43680	expired	\N	\N	checkout:21554179-13cd-4fcf-96a2-877d455e42ff	{"instructions": {"order_id": "INV/20261014/00008", "amount_idr": 43680}}	2026-10-14 11:05:15.524573+00	2026-10-14 11:06:03.517384+00	\N	\N	\N	0	\N	\N	\N
+47681b5c-0439-40b5-86c3-e7ea8acf80db	7c911e41-8497-4b44-b71c-acb763901a78	93844cb5-7b06-4a85-b225-ab34108d3c87	manual	INV/20261014/00009	43680	expired	\N	\N	checkout:7c911e41-8497-4b44-b71c-acb763901a78	{"instructions": {"order_id": "INV/20261014/00009", "amount_idr": 43680}}	2026-10-14 11:06:03.542033+00	2026-10-14 11:06:03.551114+00	\N	\N	\N	0	\N	\N	\N
+c843ff09-30b8-453f-9e0b-ef5070aa7c12	d2f84e39-2125-4fce-b959-cbf6a94678b4	93844cb5-7b06-4a85-b225-ab34108d3c87	manual	INV/20261014/00010	43680	expired	\N	\N	checkout:d2f84e39-2125-4fce-b959-cbf6a94678b4	{"instructions": {"order_id": "INV/20261014/00010", "amount_idr": 43680}}	2026-10-14 11:06:46.067+00	2026-10-14 11:11:29.545439+00	\N	\N	\N	0	\N	\N	\N
+ed29f561-a012-491d-a1e5-6772a39894d9	660a8724-0ecc-472f-a5f8-00d62e475df1	0eb40d2c-9262-4130-8a99-963cae88e54b	manual	INV/20261014/00011	99000	pending	\N	\N	checkout:660a8724-0ecc-472f-a5f8-00d62e475df1	{"instructions": {"order_id": "INV/20261014/00011", "amount_idr": 99000}}	2026-10-14 11:13:50.651932+00	2026-10-14 11:13:50.651932+00	\N	\N	\N	0	\N	\N	\N
 \.
 
 
@@ -1228,32 +1718,32 @@ b19f0927-8f79-4ebb-8426-757b5f32f84c	e243fccf-fc47-4a86-b9a0-9e32174b8cd8	57046e
 --
 
 COPY public.plan_entitlements (id, plan_id, feature_key, is_enabled, created_at, updated_at) FROM stdin;
-cff59216-47ba-4f4a-8b53-28a31257cce3	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat	t	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
-b7ce0105-072c-46be-9c57-14d7713c2880	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_vision	f	2026-10-11 10:36:31.857302+00	2026-10-11 10:36:31.857302+00
-843690ec-88b9-4f91-ade9-b3bb2796bbee	a0000000-0000-0000-0000-000000000001	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-e45c6459-3aae-4bcb-a409-160ddcdc8e18	a0000000-0000-0000-0000-000000000001	ocr_receipt	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-d0878baa-b8a7-485a-880d-c8edf09dc29c	a0000000-0000-0000-0000-000000000001	voice_input	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-12da3b84-55a8-4a8b-99aa-6f76c6511b3c	a0000000-0000-0000-0000-000000000001	rag_search	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-dd2af0b1-7e2a-458e-9229-bb847cc08e97	a0000000-0000-0000-0000-000000000001	reports_export	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-21153ecf-b462-4983-8f54-883756803451	a0000000-0000-0000-0000-000000000001	advanced_budgeting	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-b01c4105-df0e-4bde-84b9-bee9adbb9bbc	a0000000-0000-0000-0000-000000000001	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-d3f8082b-345e-4a44-8dab-b84a3faec3f7	a0000000-0000-0000-0000-000000000001	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 3d919d02-2fef-411c-af84-1270322b252e	a0000000-0000-0000-0000-000000000002	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 a24ad394-f62f-4546-8935-8897ace654ce	a0000000-0000-0000-0000-000000000002	ocr_receipt	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 f9099af8-c015-460b-9d0a-7e2a2435805f	a0000000-0000-0000-0000-000000000002	voice_input	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-746004ea-9a07-452e-a424-71d4282e9826	a0000000-0000-0000-0000-000000000002	rag_search	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-d36394e0-afda-40c9-826d-6ddd7ce0342d	a0000000-0000-0000-0000-000000000002	reports_export	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-e9d72bbe-e6c4-488d-8f13-030f9f54782e	a0000000-0000-0000-0000-000000000002	advanced_budgeting	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-1348b56a-ca5d-4b30-b522-1d7969b124d9	a0000000-0000-0000-0000-000000000002	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-b60ea4c3-8e73-41f0-b1d7-9fc70d71e0bf	a0000000-0000-0000-0000-000000000002	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+643f2eeb-1f71-4bc2-bfdc-94efaf2f7ce1	a0000000-0000-0000-0000-000000000003	api_access	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+c1be1e58-3ac6-4745-9dc4-f9728158b677	a0000000-0000-0000-0000-000000000003	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 2bd662de-6b63-4351-bcec-2be824c147a2	a0000000-0000-0000-0000-000000000003	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 2b0652fc-c815-4941-ba2e-d6a74916087c	a0000000-0000-0000-0000-000000000003	ocr_receipt	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 0e6750f4-b0b0-4bfa-a6ed-a9ae5c61a65f	a0000000-0000-0000-0000-000000000003	voice_input	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 333c61c1-cec5-40d0-87e6-bf79ce40b001	a0000000-0000-0000-0000-000000000003	rag_search	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 dcb4f52b-2c1e-42ca-956c-2fb37d11b77d	a0000000-0000-0000-0000-000000000003	reports_export	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 c6396b94-3f97-4112-808b-4290ec1a4799	a0000000-0000-0000-0000-000000000003	advanced_budgeting	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-643f2eeb-1f71-4bc2-bfdc-94efaf2f7ce1	a0000000-0000-0000-0000-000000000003	api_access	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
-c1be1e58-3ac6-4745-9dc4-f9728158b677	a0000000-0000-0000-0000-000000000003	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d0878baa-b8a7-485a-880d-c8edf09dc29c	a0000000-0000-0000-0000-000000000001	voice_input	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+12da3b84-55a8-4a8b-99aa-6f76c6511b3c	a0000000-0000-0000-0000-000000000001	rag_search	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+dd2af0b1-7e2a-458e-9229-bb847cc08e97	a0000000-0000-0000-0000-000000000001	reports_export	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+21153ecf-b462-4983-8f54-883756803451	a0000000-0000-0000-0000-000000000001	advanced_budgeting	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+b01c4105-df0e-4bde-84b9-bee9adbb9bbc	a0000000-0000-0000-0000-000000000001	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d3f8082b-345e-4a44-8dab-b84a3faec3f7	a0000000-0000-0000-0000-000000000001	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+843690ec-88b9-4f91-ade9-b3bb2796bbee	a0000000-0000-0000-0000-000000000001	ai_chat	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+e45c6459-3aae-4bcb-a409-160ddcdc8e18	a0000000-0000-0000-0000-000000000001	ocr_receipt	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+cff59216-47ba-4f4a-8b53-28a31257cce3	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat	t	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
+b7ce0105-072c-46be-9c57-14d7713c2880	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_vision	f	2026-10-11 10:36:31.857302+00	2026-10-11 10:36:31.857302+00
+746004ea-9a07-452e-a424-71d4282e9826	a0000000-0000-0000-0000-000000000002	rag_search	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+d36394e0-afda-40c9-826d-6ddd7ce0342d	a0000000-0000-0000-0000-000000000002	reports_export	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+e9d72bbe-e6c4-488d-8f13-030f9f54782e	a0000000-0000-0000-0000-000000000002	advanced_budgeting	t	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+1348b56a-ca5d-4b30-b522-1d7969b124d9	a0000000-0000-0000-0000-000000000002	api_access	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
+b60ea4c3-8e73-41f0-b1d7-9fc70d71e0bf	a0000000-0000-0000-0000-000000000002	bank_sync	f	2026-10-11 09:10:16.652876+00	2026-10-11 09:10:16.652876+00
 \.
 
 
@@ -1262,25 +1752,25 @@ c1be1e58-3ac6-4745-9dc4-f9728158b677	a0000000-0000-0000-0000-000000000003	bank_s
 --
 
 COPY public.plan_limits (id, plan_id, limit_key, limit_value, created_at, updated_at) FROM stdin;
-cef4be0b-bffb-4cfa-891e-5f67e516dff4	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat_daily	250	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
-2d0e74cd-31e0-4ad9-82dc-7b8ffbd7c503	a0000000-0000-0000-0000-000000000001	ai_tokens_per_cycle	5000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+305aa19d-4320-4cee-b84b-e7c0b9d0074d	a0000000-0000-0000-0000-000000000003	ai_requests_per_cycle	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 18f9725b-f943-4970-b8fc-596fad46c7ca	a0000000-0000-0000-0000-000000000001	ai_requests_per_cycle	50	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 8b76e4c7-cbdd-462d-a46f-0ba99f427147	a0000000-0000-0000-0000-000000000001	max_transactions	100	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 be74aa5e-cdb4-4043-9e15-cc8b7242b0f8	a0000000-0000-0000-0000-000000000001	max_categories	5	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 ff6b87a2-1f7b-458d-bcba-155adac5d530	a0000000-0000-0000-0000-000000000001	max_wallets	1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 4084ced6-4a9a-4be3-89a6-f8ce73951e43	a0000000-0000-0000-0000-000000000001	ocr_scans_per_cycle	0	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
-b38caade-5137-4e53-9285-21f74c0e2f02	a0000000-0000-0000-0000-000000000002	ai_tokens_per_cycle	150000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+2d0e74cd-31e0-4ad9-82dc-7b8ffbd7c503	a0000000-0000-0000-0000-000000000001	ai_tokens_per_cycle	5000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 9ccdd7e3-af20-4f3f-ae00-ea814d45fb3a	a0000000-0000-0000-0000-000000000002	max_transactions	5000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 b2437b73-2ba6-4174-ac21-d7c593f81964	a0000000-0000-0000-0000-000000000002	max_categories	30	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 17872a70-b848-4b78-89a3-fed2e90e1c86	a0000000-0000-0000-0000-000000000002	max_wallets	5	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
-721c6ddf-5166-4be2-8418-a3504e560c96	a0000000-0000-0000-0000-000000000003	ai_tokens_per_cycle	1000000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
-305aa19d-4320-4cee-b84b-e7c0b9d0074d	a0000000-0000-0000-0000-000000000003	ai_requests_per_cycle	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+c95d8931-5eff-4e56-8fd8-482b09898589	a0000000-0000-0000-0000-000000000002	ocr_scans_per_cycle	100	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+b38caade-5137-4e53-9285-21f74c0e2f02	a0000000-0000-0000-0000-000000000002	ai_tokens_per_cycle	150000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+26bbb1fa-9d1e-4a4a-82de-d1ed386a8dbf	a0000000-0000-0000-0000-000000000002	ai_requests_per_cycle	2000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+cef4be0b-bffb-4cfa-891e-5f67e516dff4	2f309db0-c0eb-41e8-ba04-2b2372bd2179	ai_chat_daily	250	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.857302+00
 4256c4c9-2471-4ee2-9dcb-5aeaf8224e25	a0000000-0000-0000-0000-000000000003	max_transactions	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 5289567a-aea0-4b11-9d90-a6872367cba3	a0000000-0000-0000-0000-000000000003	max_categories	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 8e94da06-daf9-4eea-9346-d75119067458	a0000000-0000-0000-0000-000000000003	max_wallets	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 08a0e555-92f5-48a1-8737-a36a50489aae	a0000000-0000-0000-0000-000000000003	ocr_scans_per_cycle	-1	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
-26bbb1fa-9d1e-4a4a-82de-d1ed386a8dbf	a0000000-0000-0000-0000-000000000002	ai_requests_per_cycle	2000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
-c95d8931-5eff-4e56-8fd8-482b09898589	a0000000-0000-0000-0000-000000000002	ocr_scans_per_cycle	100	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
+721c6ddf-5166-4be2-8418-a3504e560c96	a0000000-0000-0000-0000-000000000003	ai_tokens_per_cycle	1000000	2026-10-11 09:10:16.660741+00	2026-10-11 09:10:16.660741+00
 \.
 
 
@@ -1288,11 +1778,11 @@ c95d8931-5eff-4e56-8fd8-482b09898589	a0000000-0000-0000-0000-000000000002	ocr_sc
 -- Data for Name: plans; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.plans (id, code, name, description, price_monthly_idr, price_yearly_idr, billing_period_days, is_active, is_public, fallback_gateway, sort_order, created_at, updated_at) FROM stdin;
-2f309db0-c0eb-41e8-ba04-2b2372bd2179	smoke_plan	Smoke Plan v2	\N	59000	0	30	f	f	manual	99	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.967382+00
-a0000000-0000-0000-0000-000000000001	free	Free	Paket gratis untuk mulai mencatat keuangan.	0	0	30	t	t	manual	1	2026-10-11 09:10:16.646119+00	2026-10-13 11:56:33.114532+00
-a0000000-0000-0000-0000-000000000002	pro	Pro	Untuk pengguna aktif dengan kebutuhan AI.	39000	390000	30	t	t	midtrans	2	2026-10-11 09:10:16.646119+00	2026-10-13 11:56:33.114532+00
-a0000000-0000-0000-0000-000000000003	business	Business	Untuk power user dan usaha kecil.	129000	1290000	30	t	t	midtrans	3	2026-10-11 09:10:16.646119+00	2026-10-13 11:56:33.114532+00
+COPY public.plans (id, code, name, description, price_monthly_idr, price_yearly_idr, billing_period_days, is_active, is_public, fallback_gateway, sort_order, created_at, updated_at, token_quota_ratio) FROM stdin;
+2f309db0-c0eb-41e8-ba04-2b2372bd2179	smoke_plan	Smoke Plan v2	\N	59000	0	30	f	f	manual	99	2026-10-11 10:36:29.070286+00	2026-10-11 10:36:31.967382+00	1
+a0000000-0000-0000-0000-000000000001	free	Free	Paket gratis untuk mulai mencatat keuangan.	0	0	30	t	t	manual	1	2026-10-11 09:10:16.646119+00	2026-10-15 05:28:12.342125+00	1
+a0000000-0000-0000-0000-000000000003	business	Business	Untuk power user dan usaha kecil.	99000	1290000	30	t	t	midtrans	3	2026-10-11 09:10:16.646119+00	2026-10-15 05:28:12.362253+00	1
+a0000000-0000-0000-0000-000000000002	pro	Pro	Untuk pengguna aktif dengan kebutuhan AI.	39000	390000	30	t	t	midtrans	2	2026-10-11 09:10:16.646119+00	2026-10-15 05:32:09.609957+00	1
 \.
 
 
@@ -1300,8 +1790,8 @@ a0000000-0000-0000-0000-000000000003	business	Business	Untuk power user dan usah
 -- Data for Name: pricing_rules; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.pricing_rules (id, rule_name, base_per_1k_idr, markup_multiplier, markup_percent, modality_multipliers, is_active, created_at, updated_at) FROM stdin;
-9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	default	300	1.2500	0	{"chat": 1.0, "voice": 3.0, "vision": 2.5, "embedding": 0.5, "reasoning": 2.0}	t	2026-10-11 09:10:16.668208+00	2026-10-14 02:40:52.847058+00
+COPY public.pricing_rules (id, rule_name, base_per_1k_idr, markup_multiplier, markup_percent, modality_multipliers, is_active, created_at, updated_at, provider_cost_per_1k_idr, price_unit) FROM stdin;
+9d2fdddd-455d-46d7-9a86-cd29bd1f6d53	default	300	1.2500	0	{"chat": 1.0, "voice": 3.0, "vision": 2.5, "embedding": 0.5, "reasoning": 2.0}	t	2026-10-11 09:10:16.668208+00	2026-10-14 04:10:59.412129+00	200	per_1k
 \.
 
 
@@ -1316,72 +1806,122 @@ e5665163-656f-4e61-a99e-593644a35a26	00000000-0000-0000-0000-000000000001	d12adf
 dc818d90-e6da-4f75-8e96-02f89622511a	00000000-0000-0000-0000-000000000002	bd32ae1f6ecd546df16305ca2ce6a0c480b9d5acba1b668ddaf5e992c1c70b6a	2026-11-12 13:08:09.902533+00	2026-10-13 13:29:56.556446+00	33bf4ddd-9d17-413b-8ccd-5b9c076892f6	2026-10-13 13:08:09.902791+00	2026-10-13 13:29:56.556446+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 c5d06fd5-97bf-47c4-a636-c80e32bdf05a	00000000-0000-0000-0000-000000000002	f8d054137f6ea28a9d81bd897265789f38c587359545b6dff20336740d7cc605	2026-11-13 02:32:10.457185+00	2026-10-14 02:39:43.193649+00	edca382b-cd89-4dea-835e-a5af98e8038d	2026-10-14 02:32:10.460802+00	2026-10-14 02:39:43.193649+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 33bf4ddd-9d17-413b-8ccd-5b9c076892f6	00000000-0000-0000-0000-000000000002	899506f59aeebc34b61c24cb674d3b61592cd5c27c4c595c15539c655673b43d	2026-11-12 13:29:56.556018+00	2026-10-13 13:50:50.566742+00	c57cb1ae-6834-444b-93db-085181cc45bb	2026-10-13 13:29:56.556446+00	2026-10-13 13:50:50.566742+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-9261144d-0b1d-486a-9ab1-f643fae55ffe	00000000-0000-0000-0000-000000000002	62b95e12606cc6c70e969b87ee684e745bb32a530ac2abe0ad529df8a0f8ea19	2026-11-13 02:36:45.610914+00	\N	\N	2026-10-14 02:36:45.614185+00	\N	curl/8.21.0
+9261144d-0b1d-486a-9ab1-f643fae55ffe	00000000-0000-0000-0000-000000000002	62b95e12606cc6c70e969b87ee684e745bb32a530ac2abe0ad529df8a0f8ea19	2026-11-13 02:36:45.610914+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 02:36:45.614185+00	\N	curl/8.21.0
+13f938c6-14f5-4840-9c50-8eb9326e32b7	00000000-0000-0000-0000-000000000002	450ed14948569f4274d5be3ec535c2233878481d7498987c7a5977e489495393	2026-11-14 03:36:14.628486+00	\N	\N	2026-10-15 03:36:14.631593+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
+d1e799eb-7a0a-4174-94de-cc6289103d27	acfe4ad1-9dba-4b57-8e69-3e09e45856f0	bf8bc55fb08c0c49cbb749d8f120fe42d78dc0466f9e7d5eb35d6b504f0417d4	2026-11-14 05:25:08.674789+00	2026-10-15 05:25:08.696613+00	c6284c94-dce6-4252-90af-4fe09ae26f77	2026-10-15 05:25:08.677717+00	2026-10-15 05:25:08.696613+00	test-agent
+c6284c94-dce6-4252-90af-4fe09ae26f77	acfe4ad1-9dba-4b57-8e69-3e09e45856f0	099ad4ef5df64e8ea52d2c876c2c6eda771bf8b6b5f84799a16a35c675ca7b56	2026-11-14 05:25:08.69642+00	2026-10-15 05:25:08.713551+00	\N	2026-10-15 05:25:08.696613+00	\N	test-agent
 a535ffc7-e7e3-4573-8112-b4f216c2bd6a	5793635b-7f82-4324-b314-bcf86eed2f0d	c4472f8604fb993c72fa2ff70a112c6cf4bd0498c1830534998f32aac1736ca7	2026-11-12 13:34:12.250888+00	\N	\N	2026-10-13 13:34:12.25336+00	\N	curl/8.21.0
 d3a8dae5-db8d-4ece-946b-0e6a7ffde50b	5793635b-7f82-4324-b314-bcf86eed2f0d	8e8e803233e3fbb55c64ac9e99df550ec9d37e767537722e14532a7b6306d8dd	2026-11-12 13:35:03.260348+00	\N	\N	2026-10-13 13:35:04.885479+00	\N	curl/8.21.0
 4ae665ad-066a-460d-a91f-70d9f2e03385	661ae48b-19ed-476e-8fd3-4968fa105c28	f01117ea15620b20eed46b8cb7e94778f0e5e92eddbc683cddd138f4d2441f10	2026-11-12 13:35:08.959754+00	\N	\N	2026-10-13 13:35:10.110809+00	\N	curl/8.21.0
 51d7ca96-fe9b-4a3b-9bb8-f0ba5be32caf	243215bb-e1eb-4071-b5cd-0b7c292d8638	c3ef4ac474621594dbb29b791e623d4895ce4919280cd97a0a68886f4122ddbb	2026-11-12 13:48:09.45+00	\N	\N	2026-10-13 13:48:09.450666+00	\N	curl/8.21.0
 aad6fce8-f276-4329-a1f0-3cd1d66e5e53	661ae48b-19ed-476e-8fd3-4968fa105c28	12c700705f6a3b72da479cd66195f6481a953f1cdd3814e3cea960f2e9da8e45	2026-11-13 02:39:16.928056+00	\N	\N	2026-10-14 02:39:16.931221+00	\N	curl/8.21.0
 c4d06fda-6851-4b2b-8676-274ca0ed28ea	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	9f86492b1a67f22b52c9894d2f9aed1fcfcaabf33902b36bbd64b8456626634d	2026-11-13 02:39:25.177571+00	\N	\N	2026-10-14 02:39:25.181604+00	\N	curl/8.21.0
-7a04fc81-85e8-4b6d-a0ae-a315a29cef61	00000000-0000-0000-0000-000000000002	ecd49f98936012608c64aa0d5d95e6282a0262ae86daa2ae299bff5781daf301	2026-11-13 02:54:14.586255+00	\N	\N	2026-10-14 02:54:14.586851+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-7e2a2bd6-b856-4335-9bd1-37382536dec0	00000000-0000-0000-0000-000000000002	2b836c0fa04f0f943e9add4c628c0e0baf39165b4b2ba81a58b4d740c94d54bf	2026-11-13 02:56:12.515474+00	\N	\N	2026-10-14 02:56:12.514501+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 edca382b-cd89-4dea-835e-a5af98e8038d	00000000-0000-0000-0000-000000000002	c3045bb1262a8797b3c47b613002f95e112dec26e593f9cad8713810589ee686	2026-11-13 02:39:43.193187+00	2026-10-14 02:56:12.514501+00	7e2a2bd6-b856-4335-9bd1-37382536dec0	2026-10-14 02:39:43.193649+00	2026-10-14 02:56:12.514501+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-c863d9a1-af9d-4f5f-b83d-151670b8241b	0eb40d2c-9262-4130-8a99-963cae88e54b	b3c190d9052637d19fb9b47d3c708a613f06fb3c76aa3f4cf738e19c18f3349a	2026-11-13 03:04:51.07167+00	\N	\N	2026-10-14 03:04:51.07297+00	\N	curl/8.21.0
+7e2a2bd6-b856-4335-9bd1-37382536dec0	00000000-0000-0000-0000-000000000002	2b836c0fa04f0f943e9add4c628c0e0baf39165b4b2ba81a58b4d740c94d54bf	2026-11-13 02:56:12.515474+00	2026-10-14 03:11:16.937466+00	02c8233c-143d-4756-b8ae-2a9e1e053829	2026-10-14 02:56:12.514501+00	2026-10-14 03:11:16.937466+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+7a04fc81-85e8-4b6d-a0ae-a315a29cef61	00000000-0000-0000-0000-000000000002	ecd49f98936012608c64aa0d5d95e6282a0262ae86daa2ae299bff5781daf301	2026-11-13 02:54:14.586255+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 02:54:14.586851+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+c863d9a1-af9d-4f5f-b83d-151670b8241b	0eb40d2c-9262-4130-8a99-963cae88e54b	b3c190d9052637d19fb9b47d3c708a613f06fb3c76aa3f4cf738e19c18f3349a	2026-11-13 03:04:51.07167+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 03:04:51.07297+00	\N	curl/8.21.0
 70301ff6-181b-4f52-a2c3-47bff2b10d90	661ae48b-19ed-476e-8fd3-4968fa105c28	fe59c747d870da5b341cb189bdd6ff5ffb8984d51fe627563952eeb5843fd360	2026-11-12 13:48:33.36327+00	\N	\N	2026-10-13 13:48:33.377075+00	\N	curl/8.21.0
 c57cb1ae-6834-444b-93db-085181cc45bb	00000000-0000-0000-0000-000000000002	2c6edc20e1b9f8ea1301b4629e1f47ea3b2798ec736c49d159c0b59544816b67	2026-11-12 13:50:50.566152+00	2026-10-13 14:12:39.53276+00	2fe2a6c4-a4ed-4703-a10c-fb521924b366	2026-10-13 13:50:50.566742+00	2026-10-13 14:12:39.53276+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-c09e34b2-3e10-4394-be41-99c973e28703	00000000-0000-0000-0000-000000000002	df37cfbbeee2e7dc339526cce461a931ed9ceb1002a17cd7c84ffc55a525deb9	2026-11-13 02:42:45.652695+00	\N	\N	2026-10-14 02:42:45.728938+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-d5bfe564-6bd4-4d2d-82dd-09182273d6d8	0eb40d2c-9262-4130-8a99-963cae88e54b	d845f86077e94b65c62924d8c0b4b04098d5019467c60891706b14e0d5b39909	2026-11-13 03:01:42.259225+00	\N	\N	2026-10-14 03:01:42.259733+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-667d9d57-9bea-4394-9b90-84b51e441ac0	0eb40d2c-9262-4130-8a99-963cae88e54b	d6f1f930afb1526ae25aac99ece712bad21ee77df93f11f07822a818de30a476	2026-11-13 03:01:47.627262+00	\N	\N	2026-10-14 03:01:47.629726+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-5243e17b-e671-46a3-ac24-60064505b403	00000000-0000-0000-0000-000000000002	7bc3e7abbc1c294270900c696fb890e41e86862c2d9e204435cc191c587eb777	2026-11-12 14:04:26.978975+00	\N	\N	2026-10-13 14:04:26.982332+00	\N	curl/8.21.0
-f47f5f41-6ef6-414f-a09f-60d98640e154	00000000-0000-0000-0000-000000000002	2f308c30bd7eadcae716e4a089a416a97c65260da9ab1fcd4fb099af1119902f	2026-11-12 14:07:26.330507+00	\N	\N	2026-10-13 14:07:26.332824+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-4969f43d-483f-4a5c-9751-e9c89ce2dcdd	00000000-0000-0000-0000-000000000002	2ab832e96ffcc1f8c1732d93bc445a7246cfc60b1882799741b76db3a2a19c86	2026-11-13 02:45:11.919391+00	\N	\N	2026-10-14 02:45:11.923367+00	\N	curl/8.21.0
+c09e34b2-3e10-4394-be41-99c973e28703	00000000-0000-0000-0000-000000000002	df37cfbbeee2e7dc339526cce461a931ed9ceb1002a17cd7c84ffc55a525deb9	2026-11-13 02:42:45.652695+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 02:42:45.728938+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+d5bfe564-6bd4-4d2d-82dd-09182273d6d8	0eb40d2c-9262-4130-8a99-963cae88e54b	d845f86077e94b65c62924d8c0b4b04098d5019467c60891706b14e0d5b39909	2026-11-13 03:01:42.259225+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 03:01:42.259733+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+667d9d57-9bea-4394-9b90-84b51e441ac0	0eb40d2c-9262-4130-8a99-963cae88e54b	d6f1f930afb1526ae25aac99ece712bad21ee77df93f11f07822a818de30a476	2026-11-13 03:01:47.627262+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 03:01:47.629726+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 2fab815b-a61d-4237-930b-de661eeff8c6	661ae48b-19ed-476e-8fd3-4968fa105c28	1d32ab2efb11194bbbf44803ef44dce1351b7bd0222349e99552e3028d04bb53	2026-11-13 02:51:56.209522+00	\N	\N	2026-10-14 02:51:56.213216+00	\N	curl/8.21.0
+5243e17b-e671-46a3-ac24-60064505b403	00000000-0000-0000-0000-000000000002	7bc3e7abbc1c294270900c696fb890e41e86862c2d9e204435cc191c587eb777	2026-11-12 14:04:26.978975+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:04:26.982332+00	\N	curl/8.21.0
+f47f5f41-6ef6-414f-a09f-60d98640e154	00000000-0000-0000-0000-000000000002	2f308c30bd7eadcae716e4a089a416a97c65260da9ab1fcd4fb099af1119902f	2026-11-12 14:07:26.330507+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:07:26.332824+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+4969f43d-483f-4a5c-9751-e9c89ce2dcdd	00000000-0000-0000-0000-000000000002	2ab832e96ffcc1f8c1732d93bc445a7246cfc60b1882799741b76db3a2a19c86	2026-11-13 02:45:11.919391+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 02:45:11.923367+00	\N	curl/8.21.0
 c94d530e-1920-490d-b512-d9791bc72791	00000000-0000-0000-0000-000000000001	d56576fe78ed675fe445c7fa19b8a6fc18e9e6aeecd6234874d7572631120cd0	2026-11-12 14:04:40.152694+00	\N	\N	2026-10-13 14:04:40.153974+00	\N	curl/8.21.0
 2fe2a6c4-a4ed-4703-a10c-fb521924b366	00000000-0000-0000-0000-000000000002	d35562f0033b97a7790d089c79a64e4d28a8c1d2b6a7a5b8fb59a2d4fa4dc83c	2026-11-12 14:12:39.753064+00	2026-10-13 14:16:54.243109+00	dac78449-d253-4c60-869f-89252c90f198	2026-10-13 14:12:39.53276+00	2026-10-13 14:16:54.243109+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-b5731306-8235-48f0-97d4-f38e2318f6b2	0eb40d2c-9262-4130-8a99-963cae88e54b	6792ae4e9689d8b9ad740f9faf2b742662774d9274e92784caf63fa975484daa	2026-11-13 03:01:34.898716+00	\N	\N	2026-10-14 03:01:34.925154+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-0ade976b-cbf8-4e6d-8c6c-e05ac8b68efc	00000000-0000-0000-0000-000000000002	a9e45552a347ac5e0536ffd33ede443aa8b6b0c649f7d62ea974c8086ea29c5c	2026-11-12 14:15:28.100582+00	\N	\N	2026-10-13 14:15:28.102946+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+b5731306-8235-48f0-97d4-f38e2318f6b2	0eb40d2c-9262-4130-8a99-963cae88e54b	6792ae4e9689d8b9ad740f9faf2b742662774d9274e92784caf63fa975484daa	2026-11-13 03:01:34.898716+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 03:01:34.925154+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+3415629b-863f-44a7-965e-fa5ba4e5b00a	00000000-0000-0000-0000-000000000002	032ad6238f3c4c1c32bdf672da983f2d17d2fa8ef4830a92f982e55db3ee26ed	2026-11-14 05:39:10.94716+00	\N	\N	2026-10-15 05:39:10.950526+00	\N	curl/8.21.0
+e6aaf242-0e44-4c9f-bac5-5ee08eb5c47f	00000000-0000-0000-0000-000000000002	2437a9e397c2cbbc3bffc69ecdac0b18a56e18cf00baf9c92bf68b458bf2c416	2026-11-14 05:39:26.07902+00	\N	\N	2026-10-15 05:39:26.078995+00	\N	curl/8.21.0
 93f5ca43-ded8-4cb6-badc-f6954b1f23f6	a2933b3b-b878-418d-b345-13ada67e2c56	bbe97630d9a9cdda3cbdc4630b4bfc401ca98cc0ef150e92dd7d02c8906fb893	2026-11-12 14:16:58.784825+00	\N	\N	2026-10-13 14:16:58.786775+00	\N	curl/8.21.0
-00e1c5f8-9880-4bcf-9bb5-9603cd1d277a	00000000-0000-0000-0000-000000000002	c119b8dca4f99c4a8ab08e73a6f050354438e56fcd4b898a65da2222da43e7a7	2026-11-12 14:17:12.256795+00	\N	\N	2026-10-13 14:17:12.256441+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-4b1c8059-b2c3-4100-8915-3d970becee0d	00000000-0000-0000-0000-000000000002	5e257f276769f8137176702cd68d3ce8a068065ac9f57e8fde637deeeb9c8980	2026-11-12 14:17:39.645382+00	\N	\N	2026-10-13 14:17:39.64791+00	\N	curl/8.21.0
-1b1562c7-84fa-4603-a577-724ba364eba5	0eb40d2c-9262-4130-8a99-963cae88e54b	b839acbbca92d730d5b955124d5696b85e76b1d093a1b4f7b8b63bff8db076a9	2026-11-13 03:04:57.214056+00	\N	\N	2026-10-14 03:04:57.218002+00	\N	curl/8.21.0
+0ade976b-cbf8-4e6d-8c6c-e05ac8b68efc	00000000-0000-0000-0000-000000000002	a9e45552a347ac5e0536ffd33ede443aa8b6b0c649f7d62ea974c8086ea29c5c	2026-11-12 14:15:28.100582+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:15:28.102946+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+00e1c5f8-9880-4bcf-9bb5-9603cd1d277a	00000000-0000-0000-0000-000000000002	c119b8dca4f99c4a8ab08e73a6f050354438e56fcd4b898a65da2222da43e7a7	2026-11-12 14:17:12.256795+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:17:12.256441+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+4b1c8059-b2c3-4100-8915-3d970becee0d	00000000-0000-0000-0000-000000000002	5e257f276769f8137176702cd68d3ce8a068065ac9f57e8fde637deeeb9c8980	2026-11-12 14:17:39.645382+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:17:39.64791+00	\N	curl/8.21.0
+1b1562c7-84fa-4603-a577-724ba364eba5	0eb40d2c-9262-4130-8a99-963cae88e54b	b839acbbca92d730d5b955124d5696b85e76b1d093a1b4f7b8b63bff8db076a9	2026-11-13 03:04:57.214056+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 03:04:57.218002+00	\N	curl/8.21.0
+7e0f8a93-59d0-4725-b479-17c19d1f7dcc	00000000-0000-0000-0000-000000000001	375c09303956cdcb5c2cd1dd529a8ff3663c0dec99b08efa40fc00ee84bf382f	2026-11-14 05:40:45.4725+00	\N	\N	2026-10-15 05:40:45.476323+00	\N	curl/8.21.0
 cdd8739a-3fca-4d0d-ad13-523771ded7a4	5abd3878-94a0-4fd6-875c-7dec161bc107	478de421af68ffd667b1e9c0e25176ff69ef70f38609ec47bffc3cf593ec0ee3	2026-11-12 14:15:47.552362+00	\N	\N	2026-10-13 14:15:47.552533+00	\N	curl/8.21.0
 4944ab51-6709-442b-a548-c34dca03a2b4	661ae48b-19ed-476e-8fd3-4968fa105c28	e45c205431eb15f1b9b36301dc1b8de0fed510d39c7066ad0b50a5228999779a	2026-11-12 14:16:45.06386+00	\N	\N	2026-10-13 14:16:45.06494+00	\N	curl/8.21.0
 4d1dfe01-acf8-4543-8fb7-f30e5df06a08	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b203a381de7475cb7a3b235d4cb94591a3c06034a8812bdb072da23d8ebc0e52	2026-11-13 03:05:39.586435+00	\N	\N	2026-10-14 03:05:39.589457+00	\N	curl/8.21.0
+02c8233c-143d-4756-b8ae-2a9e1e053829	00000000-0000-0000-0000-000000000002	2bbdd4a2a3d2b8409cc165df33db026880230c507c1100309f68323df61e4b56	2026-11-13 03:11:16.935051+00	2026-10-14 03:32:27.376864+00	90dc27ee-1e4a-4256-bb60-bc36b313e3f4	2026-10-14 03:11:16.937466+00	2026-10-14 03:32:27.376864+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 dac78449-d253-4c60-869f-89252c90f198	00000000-0000-0000-0000-000000000002	80a2de755b0ae0d3cf87d3427c4cc0b11f33e390b03bd78b00d0a7e50643607b	2026-11-12 14:16:54.241069+00	2026-10-13 14:31:59.389601+00	e4597d6a-e999-4085-8141-ff9cab8567e4	2026-10-13 14:16:54.243109+00	2026-10-13 14:31:59.389601+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-796ed6e3-9f5e-4be7-825f-7e6f23d653b5	00000000-0000-0000-0000-000000000002	d2a6e8eb977cbddaa06ea1f858f5ab5bc27b07a91fbf16a60185d196c6dac0a5	2026-11-12 14:20:16.544465+00	\N	\N	2026-10-13 14:20:16.549917+00	\N	curl/8.21.0
-d497ca86-56d9-4044-9cd5-4171a2cdd22b	00000000-0000-0000-0000-000000000002	9dde90155c287fc29cb394b5931dd78688a22e4c3c40f8f030ac659bf182950c	2026-11-12 14:25:06.545338+00	\N	\N	2026-10-13 14:25:06.551368+00	\N	curl/8.21.0
-63cdc398-2a14-4a12-9024-ffa2fac1aa25	00000000-0000-0000-0000-000000000002	c9825c4d66f1a54ba738f2eed7ec31a4f84d30186a098f9a523b6f0d05d2d758	2026-11-12 14:26:23.00493+00	\N	\N	2026-10-13 14:26:23.006984+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-84f105b9-0c81-455e-be6f-80d8e6481e63	00000000-0000-0000-0000-000000000002	c3fad9ef4b4807b0c937d90b602abf249e9756f5fd95d008cee6a14e45e04d1a	2026-11-12 14:26:37.309737+00	\N	\N	2026-10-13 14:26:37.312761+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-3742c397-92e3-4578-9316-58f57e231441	00000000-0000-0000-0000-000000000002	8c49cf9ac0460f0d98c7ab7ecf1577ac42c1b210e5c80811d65470fc3c0b9adf	2026-11-12 14:28:05.508122+00	\N	\N	2026-10-13 14:28:05.511535+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
-e34631b4-ac1f-4392-b498-f744e14dd4b8	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	49145b51016977ff13b8e2497d72599f912e647dd95bd4b1076cea6dcd03044a	2026-11-12 14:28:17.894307+00	\N	\N	2026-10-13 14:28:17.896274+00	\N	curl/8.21.0
+1e781b84-bd40-4eab-92f5-b17478337a4e	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	596d881b14f249a211fab0a0d35b30b8023fe2f365cbdca60b16bc8dcc2fed93	2026-11-13 03:21:51.090483+00	\N	\N	2026-10-14 03:21:51.093442+00	\N	curl/8.21.0
+4a15a9a4-c91b-4095-a367-686fb968c04b	00000000-0000-0000-0000-000000000002	4274c03e97b1ca6457cc4acd5d1e4ea457089e45f89caa51d502e2a7a801ff3a	2026-11-13 03:13:40.725593+00	2026-10-14 03:29:15.342725+00	b4bfbee3-6fde-48f2-bb5e-174fc9574b13	2026-10-14 03:13:40.738151+00	2026-10-14 03:29:15.342725+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+90dc27ee-1e4a-4256-bb60-bc36b313e3f4	00000000-0000-0000-0000-000000000002	7cabbd6d95ee35a991b1882467a8f3aedc2edd9c05b27667d052a1d9a5c9e03b	2026-11-13 03:32:27.378582+00	2026-10-14 03:48:23.110531+00	1e64530b-16e6-4439-897f-5326d261e14f	2026-10-14 03:32:27.376864+00	2026-10-14 03:48:23.110531+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+fea42645-a26e-4f34-afa5-e2737ed71908	661ae48b-19ed-476e-8fd3-4968fa105c28	ea5addf6f2ba8721d1fef071259d09e368a6b2880f7e3b3db316a607b9a49c7d	2026-11-13 03:20:30.293891+00	\N	\N	2026-10-14 03:20:30.300769+00	\N	curl/8.21.0
+35276b04-6867-44fb-9074-e8c92d60627e	661ae48b-19ed-476e-8fd3-4968fa105c28	b3d35d3376d6600bba6b0bc8682e59522bc4529037efa3692be065a19e6ae1e2	2026-11-13 03:29:22.03446+00	\N	\N	2026-10-14 03:29:22.035885+00	\N	curl/8.21.0
+796ed6e3-9f5e-4be7-825f-7e6f23d653b5	00000000-0000-0000-0000-000000000002	d2a6e8eb977cbddaa06ea1f858f5ab5bc27b07a91fbf16a60185d196c6dac0a5	2026-11-12 14:20:16.544465+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:20:16.549917+00	\N	curl/8.21.0
+720a9ee4-47b7-41d8-96ba-d16985c9c833	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	fff006bf6178cedea409a33cf7a72234f0170b52492e1fc0a53b9d1b5b9232a8	2026-11-13 03:21:02.057592+00	\N	\N	2026-10-14 03:21:02.062261+00	\N	curl/8.21.0
+9251a85f-ae53-4fa3-9ecc-1c651c66c87f	661ae48b-19ed-476e-8fd3-4968fa105c28	8d46598fa3b985c34d701c61fcd9e5efe926e29634dec6e0743d424587084d42	2026-11-13 03:21:10.570477+00	\N	\N	2026-10-14 03:21:10.575322+00	\N	curl/8.21.0
+d497ca86-56d9-4044-9cd5-4171a2cdd22b	00000000-0000-0000-0000-000000000002	9dde90155c287fc29cb394b5931dd78688a22e4c3c40f8f030ac659bf182950c	2026-11-12 14:25:06.545338+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:25:06.551368+00	\N	curl/8.21.0
+b4bfbee3-6fde-48f2-bb5e-174fc9574b13	00000000-0000-0000-0000-000000000002	6befe68be352177b20f07a7622c0d558a54472934729eb8587f6d876c0166078	2026-11-13 03:29:15.342291+00	2026-10-14 03:48:26.852743+00	99a24eb7-2370-477c-aec8-d8efd42616dc	2026-10-14 03:29:15.342725+00	2026-10-14 03:48:26.852743+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+63cdc398-2a14-4a12-9024-ffa2fac1aa25	00000000-0000-0000-0000-000000000002	c9825c4d66f1a54ba738f2eed7ec31a4f84d30186a098f9a523b6f0d05d2d758	2026-11-12 14:26:23.00493+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:26:23.006984+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+708c59c6-5b62-443a-ad28-032db83ed7cf	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	bd17fbee3efdab7025da5145d4bdf852e7f606a37a5ead246c8bd84290d4441b	2026-11-13 03:41:33.150063+00	\N	\N	2026-10-14 03:41:33.15414+00	\N	curl/8.21.0
+84f105b9-0c81-455e-be6f-80d8e6481e63	00000000-0000-0000-0000-000000000002	c3fad9ef4b4807b0c937d90b602abf249e9756f5fd95d008cee6a14e45e04d1a	2026-11-12 14:26:37.309737+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:26:37.312761+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+1e64530b-16e6-4439-897f-5326d261e14f	00000000-0000-0000-0000-000000000002	87feec6683d6c524b9a7c242191c753f50ba6e34f0fc7343ae134fc9f2ccfde3	2026-11-13 03:48:23.110077+00	2026-10-14 04:06:41.227603+00	a05511c8-7528-484a-9e53-c429b4a2cfd5	2026-10-14 03:48:23.110531+00	2026-10-14 04:06:41.227603+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+3742c397-92e3-4578-9316-58f57e231441	00000000-0000-0000-0000-000000000002	8c49cf9ac0460f0d98c7ab7ecf1577ac42c1b210e5c80811d65470fc3c0b9adf	2026-11-12 14:28:05.508122+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:28:05.511535+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 bbb32440-a11e-4f8d-b1ca-5cf3e84a4278	661ae48b-19ed-476e-8fd3-4968fa105c28	9f1e92ff52b5902986248bd38e46e880b43b4468947a8067a5d733c7b6518090	2026-11-12 14:28:18.359118+00	\N	\N	2026-10-13 14:28:18.360368+00	\N	curl/8.21.0
-8003ef88-0ad6-496b-bf96-8a3d4f7e1d70	00000000-0000-0000-0000-000000000002	66e537bfbf9ae78fb3d8773a14c0ba4c0160f90c482f05bd0a7785b47c23a7e6	2026-11-12 14:28:50.03752+00	\N	\N	2026-10-13 14:28:50.038968+00	\N	curl/8.21.0
-0b23c134-a283-4b7d-bbfd-c670baea99c4	00000000-0000-0000-0000-000000000002	706ff115c4eb1bf8c7853bf015e2557fb8d4b9143cf49e99959f27ce96368ee7	2026-11-12 14:28:51.282348+00	\N	\N	2026-10-13 14:28:51.282893+00	\N	curl/8.21.0
-92c2660e-f100-4ef3-9bc9-a1edd10300bb	00000000-0000-0000-0000-000000000002	72e75fdf25ce6c5309474c1f00f5014e775817d577d420272253f69b37363010	2026-11-12 14:29:54.687978+00	\N	\N	2026-10-13 14:29:54.690454+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+99a24eb7-2370-477c-aec8-d8efd42616dc	00000000-0000-0000-0000-000000000002	8b070cd6bef3d09036cefc6524b2b805a1c18aa08390cb47f70ccc3033011b1e	2026-11-13 03:48:26.852145+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 03:48:26.852743+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+e34631b4-ac1f-4392-b498-f744e14dd4b8	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	49145b51016977ff13b8e2497d72599f912e647dd95bd4b1076cea6dcd03044a	2026-11-12 14:28:17.894307+00	2026-10-15 02:12:47.031324+00	6599ca7b-451f-41ae-aaf9-7f5651306eb3	2026-10-13 14:28:17.896274+00	2026-10-15 02:12:47.031324+00	curl/8.21.0
+86220840-fe61-415f-ab70-887bfe72efdf	661ae48b-19ed-476e-8fd3-4968fa105c28	d6dcf1fd865e6ad17f13e2c6f5a7411b0f4b751d7734a29afe05a165e6479e35	2026-11-13 03:54:05.985852+00	\N	\N	2026-10-14 03:54:05.98944+00	\N	curl/8.21.0
+a05511c8-7528-484a-9e53-c429b4a2cfd5	00000000-0000-0000-0000-000000000002	34c2b783b03cf531e8a511110fd0d16caf07fc9253c14477a9ec1319d5c49bbc	2026-11-13 04:06:41.225019+00	2026-10-14 04:22:13.154973+00	8016c127-e106-4961-8961-1d0c79eb674e	2026-10-14 04:06:41.227603+00	2026-10-14 04:22:13.154973+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+8003ef88-0ad6-496b-bf96-8a3d4f7e1d70	00000000-0000-0000-0000-000000000002	66e537bfbf9ae78fb3d8773a14c0ba4c0160f90c482f05bd0a7785b47c23a7e6	2026-11-12 14:28:50.03752+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:28:50.038968+00	\N	curl/8.21.0
+0b23c134-a283-4b7d-bbfd-c670baea99c4	00000000-0000-0000-0000-000000000002	706ff115c4eb1bf8c7853bf015e2557fb8d4b9143cf49e99959f27ce96368ee7	2026-11-12 14:28:51.282348+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:28:51.282893+00	\N	curl/8.21.0
+84188660-9352-4a1c-98ff-1efb49e5ef2b	6bb6d175-edcf-4cea-a352-291875ec6588	2cc785081a355a6b947a8bf90ea4ddad459ba6a018dc8b0e88ba48dc1e41c5d2	2026-11-13 03:54:22.523316+00	\N	\N	2026-10-14 03:54:22.525729+00	\N	curl/8.21.0
+92c2660e-f100-4ef3-9bc9-a1edd10300bb	00000000-0000-0000-0000-000000000002	72e75fdf25ce6c5309474c1f00f5014e775817d577d420272253f69b37363010	2026-11-12 14:29:54.687978+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:29:54.690454+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 a9427f31-9fad-4d16-97ba-e47332d877dd	661ae48b-19ed-476e-8fd3-4968fa105c28	2841884309feabb01e7e04f596b6cb79e6d760c0fb67eee68df92066adc14476	2026-11-12 14:30:33.734998+00	\N	\N	2026-10-13 14:30:33.739031+00	\N	curl/8.21.0
-a5755951-03a4-4730-a7ea-dabbbf58024b	00000000-0000-0000-0000-000000000002	a84471e6151f6b745c7b26e07eb2ac6cefb8b1805848ba338c7e004c5b82a5e3	2026-11-12 14:31:59.515052+00	\N	\N	2026-10-13 14:31:59.519216+00	\N	curl/8.21.0
+8016c127-e106-4961-8961-1d0c79eb674e	00000000-0000-0000-0000-000000000002	f80b7568376ad065111015161eb54a2de4d8571c503737901661f1c168b20ace	2026-11-13 04:22:13.164445+00	2026-10-14 04:37:29.8192+00	344d2ecd-c1e2-4475-847b-e94ba99615dd	2026-10-14 04:22:13.154973+00	2026-10-14 04:37:29.8192+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 e4597d6a-e999-4085-8141-ff9cab8567e4	00000000-0000-0000-0000-000000000002	6e96cf7dad21d6b572f44fce70ccc53575f17744766cd216785a86d3b764f0a0	2026-11-12 14:31:59.391478+00	2026-10-13 14:49:50.021879+00	fafdb54c-cc0b-49d3-9b4a-b09498a2b6a8	2026-10-13 14:31:59.389601+00	2026-10-13 14:49:50.021879+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
-e5e026e9-2081-446e-a19b-b0e6a6577813	00000000-0000-0000-0000-000000000002	2c2a948e001e028d0408ea0e60b4ad33d421e30a5fce06a59ce2df8f9ab62d12	2026-11-12 14:32:12.207467+00	\N	\N	2026-10-13 14:32:12.208972+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+f1b5b9cf-60db-40f9-9b9e-d8fd97bc5527	029d85b2-fc96-46fd-abd2-ca83d99405cf	7edc6944e35f3ee480eaccc397a5640a44e1992e5958225af2b5c87563c86258	2026-11-13 04:22:15.10175+00	2026-10-14 04:22:15.107553+00	57190de2-d06c-4c22-8ad6-d2d605542b0e	2026-10-14 04:22:15.094181+00	2026-10-14 04:22:15.107553+00	test-agent
+57190de2-d06c-4c22-8ad6-d2d605542b0e	029d85b2-fc96-46fd-abd2-ca83d99405cf	c52aa5565e6cf4dbf71ad0dc854672da1e31573e308f01d16cbf3909193732e1	2026-11-13 04:22:15.117635+00	2026-10-14 04:22:15.128433+00	\N	2026-10-14 04:22:15.107553+00	\N	test-agent
+a5755951-03a4-4730-a7ea-dabbbf58024b	00000000-0000-0000-0000-000000000002	a84471e6151f6b745c7b26e07eb2ac6cefb8b1805848ba338c7e004c5b82a5e3	2026-11-12 14:31:59.515052+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:31:59.519216+00	\N	curl/8.21.0
 1bcab378-fef5-4a1b-9fc0-18a59045f178	2d2f1f27-4d1f-451c-be4a-0a5bfe74e79e	b4b8d114fb67f70717fa23a1d4460a43f87e73ec32e3d9d0b4180c53edf94083	2026-11-12 14:32:47.006685+00	\N	\N	2026-10-13 14:32:47.007109+00	\N	curl/8.21.0
+e5e026e9-2081-446e-a19b-b0e6a6577813	00000000-0000-0000-0000-000000000002	2c2a948e001e028d0408ea0e60b4ad33d421e30a5fce06a59ce2df8f9ab62d12	2026-11-12 14:32:12.207467+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:32:12.208972+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 df1d5c29-d5ed-46ff-8b58-b3b044acc3f9	57046e28-960a-4e46-9de0-21b4ac1a599d	20d89a815b167748d19c0c86187e59b7ec3b7756be95a2b2c449b6222ab19266	2026-11-12 14:32:55.34946+00	\N	\N	2026-10-13 14:32:55.35285+00	\N	curl/8.21.0
-94f671ec-61c2-48db-ac44-eb028360ec46	00000000-0000-0000-0000-000000000002	cc991afd7fcbd78246b3682d1d0c2753db099f5aa13d741b1d24cc2d6bd04dca	2026-11-12 14:37:36.674279+00	\N	\N	2026-10-13 14:37:36.678669+00	\N	curl/8.21.0
-0176dcf5-e764-4f58-818e-d00828e4c836	00000000-0000-0000-0000-000000000002	e83e88495c1bf11d4c97b9f8329edd0159ed739429cb9f831f3ef7b118a0b7e5	2026-11-12 14:41:22.167061+00	\N	\N	2026-10-13 14:41:22.169161+00	\N	curl/8.21.0
-aba02040-fc01-4c80-a5c3-e854297d2e83	00000000-0000-0000-0000-000000000002	b454c431437b1985bcb5809a6b6f151c127aa86a508466cbe9883489955a053c	2026-11-12 14:41:25.156285+00	\N	\N	2026-10-13 14:41:25.15742+00	\N	curl/8.21.0
+028b5485-2b5e-4bc7-859e-a6b707435c13	556125ac-4164-4775-9b29-181670af47d8	ea9f6efc5992e62c60fa4201d80d5342c0b4d54338b7b0cc31aa044f00656872	2026-11-13 04:25:47.053564+00	\N	\N	2026-10-14 04:25:47.055476+00	\N	curl/8.21.0
+5dacbda1-418a-405b-8f49-4bf8e72eca15	556125ac-4164-4775-9b29-181670af47d8	484c87662be69f24a701656f6ab49676c8db6a722993a23ce7942d2351e14b95	2026-11-13 04:27:49.221282+00	\N	\N	2026-10-14 04:27:49.221546+00	\N	curl/8.21.0
+94f671ec-61c2-48db-ac44-eb028360ec46	00000000-0000-0000-0000-000000000002	cc991afd7fcbd78246b3682d1d0c2753db099f5aa13d741b1d24cc2d6bd04dca	2026-11-12 14:37:36.674279+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:37:36.678669+00	\N	curl/8.21.0
+92e42705-f775-4b86-846d-9c80dafc79b4	00000000-0000-0000-0000-000000000002	150645db9b1bda3d6f1463279d38baa58b3fdef6b73d9dc6238d8b9b8db8ae00	2026-11-13 04:27:41.810198+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 04:27:41.822454+00	\N	curl/8.21.0
+cbcda094-a8f1-44cc-8652-0b8145d7ccd3	00000000-0000-0000-0000-000000000001	adad6d9f3d62e466e73b8026041c3530340a00761b47d21d4cc1b020a240a1d4	2026-11-13 04:29:23.037862+00	\N	\N	2026-10-14 04:29:23.038971+00	\N	curl/8.21.0
+0176dcf5-e764-4f58-818e-d00828e4c836	00000000-0000-0000-0000-000000000002	e83e88495c1bf11d4c97b9f8329edd0159ed739429cb9f831f3ef7b118a0b7e5	2026-11-12 14:41:22.167061+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:41:22.169161+00	\N	curl/8.21.0
+aba02040-fc01-4c80-a5c3-e854297d2e83	00000000-0000-0000-0000-000000000002	b454c431437b1985bcb5809a6b6f151c127aa86a508466cbe9883489955a053c	2026-11-12 14:41:25.156285+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 14:41:25.15742+00	\N	curl/8.21.0
+5291e955-9210-4676-99cf-ac46cf9b358b	00000000-0000-0000-0000-000000000002	25cd64f8e2942cab2ba3e098d40130c8b19917fc2a45f1e6e1cfc28857d83fc8	2026-11-13 04:29:04.61492+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 04:29:04.620381+00	\N	curl/8.21.0
 fafdb54c-cc0b-49d3-9b4a-b09498a2b6a8	00000000-0000-0000-0000-000000000002	a87c85361e2875467d87477a5681e5d3856e4c163ef71ff2551afafb546508c4	2026-11-12 14:49:50.021328+00	2026-10-13 15:22:44.756362+00	76302fc2-9558-41b2-b017-b726b056829f	2026-10-13 14:49:50.021879+00	2026-10-13 15:22:44.756362+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+c1307924-b25e-4cce-98c7-f273674dc1e4	00000000-0000-0000-0000-000000000002	d176a08d4180e0426a696c4bc278d8787152588d0baf992ee65b2e75f9eb8bc1	2026-11-13 04:29:43.396768+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 04:29:43.398956+00	\N	curl/8.21.0
 76302fc2-9558-41b2-b017-b726b056829f	00000000-0000-0000-0000-000000000002	953cc58a28f4286c0379b195ffe9ebf3ae36611a15917d2539cf48297abbdf6e	2026-11-12 15:22:44.75576+00	2026-10-13 15:53:17.29942+00	3bd03d49-6ed1-4f74-b2c9-a39bd1bc95f2	2026-10-13 15:22:44.756362+00	2026-10-13 15:53:17.29942+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+4f551d48-b9ef-418c-8e7b-160b4a599ebf	00000000-0000-0000-0000-000000000002	e0a7b74de5f503e142d9b2c529efa7d17e1c11a5f3b9829a523d66cf87f73bb3	2026-11-13 04:35:13.835464+00	2026-10-14 04:35:34.28186+00	188cd7b2-b1e9-4ca5-ab1f-a9b26d8177cd	2026-10-14 04:35:13.835335+00	2026-10-14 04:35:34.28186+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 dc9ab1ac-64af-4d5f-8b22-ca27a07216ce	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	a5fb51aabd4b4ee2164fdb4513c5dab7832b0f0abede2c9caeb77bbf05d9e240	2026-11-12 15:27:59.51656+00	\N	\N	2026-10-13 15:27:59.519136+00	\N	curl/8.21.0
+188cd7b2-b1e9-4ca5-ab1f-a9b26d8177cd	00000000-0000-0000-0000-000000000002	ce4252e7d9434b549ff771ca58163dc2328d4bd2cb6ffce2229192236393c2bb	2026-11-13 04:35:34.271527+00	2026-10-14 04:45:27.282089+00	2e8e2464-967d-4064-994d-d0c7bc55813d	2026-10-14 04:35:34.28186+00	2026-10-14 04:45:27.282089+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 0473cd6d-94c7-4aa1-92c8-682e02e5b8e6	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	83533f54fefab0369efb52096c1921904c4778b3445b0b08fded5deb90952c7b	2026-11-12 16:06:06.390116+00	\N	\N	2026-10-13 16:06:06.393614+00	\N	curl/8.21.0
 3bd03d49-6ed1-4f74-b2c9-a39bd1bc95f2	00000000-0000-0000-0000-000000000002	ebf5d2d2e89824bfbae34a6573784069abd8b816729f886791e172b567b279ce	2026-11-12 15:53:17.299325+00	2026-10-13 16:12:33.571686+00	d25fcdeb-1b3c-4dc9-b2fe-70a31f99e967	2026-10-13 15:53:17.29942+00	2026-10-13 16:12:33.571686+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+344d2ecd-c1e2-4475-847b-e94ba99615dd	00000000-0000-0000-0000-000000000002	3a0441405ad8913c4f6c3408d4e49b7e35f15ebc0e952f18b8c3529248150f4b	2026-11-13 04:37:29.81717+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 04:37:29.8192+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 80207044-5c14-49d4-87b0-21522680cbc7	661ae48b-19ed-476e-8fd3-4968fa105c28	3c0a0b7f5c2dfe945703bd919eb700ccf306106bb5869547f0cc3bc3af307ca2	2026-11-12 16:02:51.798274+00	\N	\N	2026-10-13 16:02:51.80087+00	\N	curl/8.21.0
+2e8e2464-967d-4064-994d-d0c7bc55813d	00000000-0000-0000-0000-000000000002	6f71f67dfd2f1a52769b0b3705d3955556d936f097a54ccbe99283501d90bfc3	2026-11-13 04:45:27.280464+00	2026-10-14 04:45:46.749673+00	\N	2026-10-14 04:45:27.282089+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+1ef2d9f2-c088-4289-8119-7e4988e79551	00000000-0000-0000-0000-000000000002	2415f09693198a4315292f07f459e9bee8102dde6940e0e7568e614bfbd6c6ec	2026-11-13 04:45:46.784594+00	2026-10-14 04:53:39.747849+00	\N	2026-10-14 04:45:46.78485+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+193aeae8-fadd-4479-8e84-bdb32ecfc243	00000000-0000-0000-0000-000000000002	c62ef56193bae47680df3f7ee743ad3c425fa021bad863317a81f09dbc82bdc3	2026-11-13 04:46:35.009266+00	2026-10-14 04:53:39.747849+00	\N	2026-10-14 04:46:35.011174+00	\N	curl/8.21.0
 a01aa946-463f-4f2d-8cf6-de5e88a6ec8b	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	9dc0e1361495e33e885eb931206c7781c625736f8e54f7d0778404f357635e7a	2026-11-12 16:07:11.058005+00	\N	\N	2026-10-13 16:07:11.064098+00	\N	curl/8.21.0
+0bf4af42-452a-4a9d-9fb6-89b459ac6ecf	00000000-0000-0000-0000-000000000002	2f5191914d241cd1ba9c161574b01afe51624846d6b8a1212ca510ddb6288369	2026-11-13 04:45:57.850004+00	2026-10-14 04:53:39.747849+00	\N	2026-10-14 04:45:57.852256+00	\N	curl/8.21.0
+970a945e-1c0d-458a-af16-0c68c7231f31	00000000-0000-0000-0000-000000000002	3dcfb2535e5a0e6331e619893f373e3c91d23bee936f54936fe3c65c7d0d5951	2026-11-13 04:47:12.555471+00	2026-10-14 04:53:39.747849+00	\N	2026-10-14 04:47:12.546344+00	\N	curl/8.21.0
 d25fcdeb-1b3c-4dc9-b2fe-70a31f99e967	00000000-0000-0000-0000-000000000002	5c8947e3508dd644f329b4fd855dddb7ffd04513db60836de943faa26700ac2c	2026-11-12 16:12:33.570021+00	2026-10-14 02:32:10.460802+00	c5d06fd5-97bf-47c4-a636-c80e32bdf05a	2026-10-13 16:12:33.571686+00	2026-10-14 02:32:10.460802+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+31888f5c-eb95-466f-af7f-48e0b4c59d3f	0eb40d2c-9262-4130-8a99-963cae88e54b	32bc7424fc5b8a26ae2ecac16f1238e8e359ab5c30b603fd5f9f14c1d56f9883	2026-11-13 05:03:29.018347+00	2026-10-14 05:18:33.977273+00	4d50c1eb-6c2c-477a-942b-3860c8575903	2026-10-14 05:03:29.023256+00	2026-10-14 05:18:33.977273+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 f8eeffc6-45e2-4121-bac2-2989b2d85050	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	062c0eec80ea4480553b0220b0e7afe2e4850c1b85a60c80242bac91284892ad	2026-11-12 16:16:35.825732+00	\N	\N	2026-10-13 16:16:35.8303+00	\N	curl/8.21.0
-cc7c2422-af2b-4742-a7ea-2a62df450d18	00000000-0000-0000-0000-000000000002	76b40a6a45878d120ae42d968085b8ae521af2baa875368bffe36aecd78dc6d5	2026-11-12 16:20:19.2277+00	\N	\N	2026-10-13 16:20:19.229871+00	\N	curl/8.21.0
+3b27babd-9a3c-49ad-9fd8-6d64bd71c5e4	0eb40d2c-9262-4130-8a99-963cae88e54b	2b30bef32086447e7befda256eea1e11fd751bdb5717bf82d33412fc96014b81	2026-11-13 05:05:55.856331+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 05:05:55.856947+00	\N	curl/8.21.0
+cc7c2422-af2b-4742-a7ea-2a62df450d18	00000000-0000-0000-0000-000000000002	76b40a6a45878d120ae42d968085b8ae521af2baa875368bffe36aecd78dc6d5	2026-11-12 16:20:19.2277+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:20:19.229871+00	\N	curl/8.21.0
+4d50c1eb-6c2c-477a-942b-3860c8575903	0eb40d2c-9262-4130-8a99-963cae88e54b	0b69a9d12a60f824a4275da0d3c73069f41b9130dea5420d6c095d7c425bb065	2026-11-13 05:18:33.968878+00	2026-10-14 05:33:34.512028+00	9595c96b-36a9-49dd-a347-fd0e5d822a17	2026-10-14 05:18:33.977273+00	2026-10-14 05:33:34.512028+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 7b73ad2d-30ce-4588-9352-1ad6601d0c65	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	f3d2619d3c5317a06bd5d143702233de65383574ba5b3f4a4e7cf7cc2f44b723	2026-11-12 16:32:02.30303+00	\N	\N	2026-10-13 16:32:02.30562+00	\N	curl/8.21.0
-13f2aa57-1c61-4ee5-bff2-e10cf1832f43	00000000-0000-0000-0000-000000000002	ff742c05ad5ea7d61d538743982d81534bb9123fc33b527208eba058b0949d16	2026-11-12 16:32:57.283797+00	\N	\N	2026-10-13 16:32:57.286082+00	\N	curl/8.21.0
+9595c96b-36a9-49dd-a347-fd0e5d822a17	0eb40d2c-9262-4130-8a99-963cae88e54b	7b5d3352073791d320b2c185988867673c1fad70daf6eb6824eeaab6728ac45c	2026-11-13 05:33:34.510463+00	2026-10-14 05:48:39.607077+00	b15f1a09-dcac-4d30-9644-c11a6ad895c2	2026-10-14 05:33:34.512028+00	2026-10-14 05:48:39.607077+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+13f2aa57-1c61-4ee5-bff2-e10cf1832f43	00000000-0000-0000-0000-000000000002	ff742c05ad5ea7d61d538743982d81534bb9123fc33b527208eba058b0949d16	2026-11-12 16:32:57.283797+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:32:57.286082+00	\N	curl/8.21.0
+b70b9268-1b4b-42dd-adc9-2a30d0922a8d	00000000-0000-0000-0000-000000000002	3f405af289ef07816056a68f8d42f69cc137cd556e91d579d348852313645ea1	2026-11-13 05:42:37.612594+00	\N	\N	2026-10-14 05:42:37.615723+00	\N	curl/8.21.0
 3f049c7f-bf1e-4663-8a7b-87cc5f6fa9d1	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	5e4fd9a2409c65eb9b1cdae8cebd2340135807f0f0b6ac6c6f1d6b2266a0ccec	2026-11-12 16:33:18.748132+00	\N	\N	2026-10-13 16:33:18.74991+00	\N	curl/8.21.0
+82e3af54-ed18-4cf6-914f-c978e5edbb53	00000000-0000-0000-0000-000000000004	b0ffe2acaf23f165e15d76e54b9594ffdd01e012a8ac2c183317ef360ef17e88	2026-11-13 05:44:40.360183+00	\N	\N	2026-10-14 05:44:41.79068+00	\N	curl/8.21.0
 3cca81b2-7f25-4ea5-8b4a-80226b96e291	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	cb49ca843a68e5905091d8a8e278fc8944841159bac2fb3aa7aa5ce7972563f1	2026-11-12 16:34:03.573859+00	\N	\N	2026-10-13 16:34:03.576682+00	\N	curl/8.21.0
+a2754f97-6079-4376-b740-ee0769495ab5	00000000-0000-0000-0000-000000000004	c984b598ea548f0ac569cdcd320c64f0e5b8579b8e56025c29b94705dea472ad	2026-11-13 05:46:23.37587+00	\N	\N	2026-10-14 05:46:23.382429+00	\N	curl/8.21.0
+7dcb20ac-ba17-436f-ad27-713b1d580ee2	00000000-0000-0000-0000-000000000004	affbfa21a62d25d86e44234b4adb3b054d9bf1cef1cd8d6fe53d013710c39852	2026-11-13 05:46:24.126262+00	\N	\N	2026-10-14 05:46:24.127049+00	\N	curl/8.21.0
+ab4c29d6-01f3-4df2-9fe8-8d5a90d4d70a	00000000-0000-0000-0000-000000000004	3268c5b4d1fe783bb74fc409a7338b84fb04a5c314d5b544ffb0f401bf364f28	2026-11-13 05:46:26.903156+00	\N	\N	2026-10-14 05:46:26.908107+00	\N	curl/8.21.0
+5096d94c-d6e5-4b3a-aef8-a5265248b5c0	00000000-0000-0000-0000-000000000004	1f088c47656e3af24bafadb9b48a76fd2e7c48405fe6d97218fefb869f3815dd	2026-11-13 05:52:17.037512+00	\N	\N	2026-10-14 05:52:17.043469+00	\N	curl/8.21.0
 1b3540af-bc06-4adb-a284-b1b32b6a4c00	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	d91387d8949cf49d097a1c80df4dd94e42b6b4923ffefe286ae67c12997ee310	2026-11-12 16:34:31.226155+00	\N	\N	2026-10-13 16:34:31.228692+00	\N	curl/8.21.0
+35525ca5-dfda-47cf-80f4-c4006b145a7f	00000000-0000-0000-0000-000000000004	d588db5992675f50679a8b36c09096aee4435b4ce1566fedd9432caf981bfb60	2026-11-13 05:46:35.136309+00	\N	\N	2026-10-14 05:46:35.139644+00	\N	curl/8.21.0
+8bf9d360-6b37-483a-aebb-b02c94c483cd	00000000-0000-0000-0000-000000000002	8df5d7e2f690f66bee4cc24f1c0a06bf15ed300baeb1388ad04c8befc27e4710	2026-11-13 05:50:49.954301+00	\N	\N	2026-10-14 05:50:50.039913+00	\N	curl/8.21.0
 3cd8e149-dc5d-4bf3-8095-9b769cecd669	00000000-0000-0000-0000-000000000002	aa73d7a3a1d69dcaafc39ad5af1143cf221a069fcadc31e7f91f34af09748b8d	2026-11-09 19:51:47.394879+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.395099+00	\N	Grafana k6/2.3.0
 37d8d1fc-488f-4835-9261-2a46f156eb2e	00000000-0000-0000-0000-000000000002	8a8f84ea3bd1e3ec4b39bae676e70d01d89a282f596ae7b002a8de7026673216	2026-11-09 19:51:47.455599+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.455729+00	\N	Grafana k6/2.3.0
 98ddca1e-e0c8-45b3-8bb0-895c8febb098	00000000-0000-0000-0000-000000000002	ef55b1eb871e7a99deda834efd5604962971e8141149676069492c3b6fb63f74	2026-11-09 19:51:47.493343+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.493526+00	\N	Grafana k6/2.3.0
@@ -1410,6 +1950,9 @@ dbc13d45-d7d9-4ec8-b095-d8d7aa487a87	00000000-0000-0000-0000-000000000002	724b3c
 6e9f49bc-e276-405d-9d96-300555a94f20	00000000-0000-0000-0000-000000000002	8ff167036dd50458a1f57092d2f6db1a22fa539847f2f31f91071d703238b5bf	2026-11-09 19:51:50.50241+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.503469+00	\N	Grafana k6/2.3.0
 6cbce769-9cdf-4930-9f0e-ba2df76622df	00000000-0000-0000-0000-000000000002	0708b873514a0b2ca4678b207484899207d161a67875ca61eba0d2c2b002b5d4	2026-11-09 19:51:50.562012+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.562214+00	\N	Grafana k6/2.3.0
 e4a90a9b-42c2-4ace-b5b3-982fd394bbdb	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	319a99fb8accd0f6e32686f51b8583ce8cd805e810120b0e39d02f8b75c6b891	2026-11-12 16:37:33.323089+00	\N	\N	2026-10-13 16:37:33.325946+00	\N	curl/8.21.0
+f35d6d24-0166-476c-8bcf-c2aba5119cf1	00000000-0000-0000-0000-000000000004	2b37e7a9587c52b70aeea92312f2d072531fce407400c00cb89c93a83befc48a	2026-11-13 05:52:41.097944+00	\N	\N	2026-10-14 05:52:41.109798+00	\N	curl/8.21.0
+fd520d81-ddc9-453a-931d-a4f8bd0ae69a	00000000-0000-0000-0000-000000000004	7c68015941d0367118c50736e94cd121fb24c3b11e245357164d8f7e3789e60b	2026-11-13 05:52:48.925245+00	\N	\N	2026-10-14 05:52:48.934657+00	\N	curl/8.21.0
+b15f1a09-dcac-4d30-9644-c11a6ad895c2	0eb40d2c-9262-4130-8a99-963cae88e54b	dce9f12b7cf191c5f7052868b254c93883487cbfde47ac8a3f71c7e92356807f	2026-11-13 05:48:36.862914+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 05:48:39.607077+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 b03c8a78-5884-49b8-89c1-78f0f93b98ab	00000000-0000-0000-0000-000000000002	af12681bdb5b81453ce393c8aab9326b8308b1ad5d0035f7991e57c040a6f915	2026-11-09 19:51:47.410048+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.410204+00	\N	Grafana k6/2.3.0
 eac330a3-62b1-4476-b9f0-16121b7d51a5	00000000-0000-0000-0000-000000000002	248f6f5c6c4e2089cae86570c04503743c274bdc4d7c5a191b7133217610dcf2	2026-11-09 19:51:48.894142+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.894288+00	\N	Grafana k6/2.3.0
 ce0fa875-9885-4c4b-9942-c9a15ecff304	00000000-0000-0000-0000-000000000002	4af514d32b219d5f2b356173e4a44baf759f9df6d144489d9182d7fa98d46cdd	2026-11-09 19:51:48.972455+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.97264+00	\N	Grafana k6/2.3.0
@@ -1428,6 +1971,7 @@ d75e33a0-9354-4bbe-b794-b14de8631714	00000000-0000-0000-0000-000000000002	d9878b
 1feb1da9-e40e-4685-9d7c-8f3d14b79b8a	00000000-0000-0000-0000-000000000002	f755c7b40058bb561f6776bde1269f733c713486ca1a092d4b56c2ff9fdf816a	2026-11-09 19:51:56.422011+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.422252+00	\N	Grafana k6/2.3.0
 7a69c900-85de-4500-ad36-6b104d48782f	00000000-0000-0000-0000-000000000002	adcf9e45ac8b09e5b06c24a07e2f98b209357ce60b5aa8ccb410a46676c23ac0	2026-11-09 19:51:56.549374+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.549641+00	\N	Grafana k6/2.3.0
 d280e5e6-d893-44fe-aa0b-4f9f7d0e56fa	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	bf012c4fce30f70a36fbbb341be6533890e9c78b674d94a2c3116774118d4063	2026-11-12 16:38:04.027538+00	\N	\N	2026-10-13 16:38:04.031226+00	\N	curl/8.21.0
+e25d976c-9a61-4095-ac9d-f66a05d80848	00000000-0000-0000-0000-000000000004	dc5b65efa2631841ef19b66f7371e23b5f8b38bb7d5502c4f42bf11a259e01fc	2026-11-13 05:55:42.790403+00	2026-10-14 08:48:15.350827+00	e098f53b-5266-4d65-8104-757da8d503a6	2026-10-14 05:55:42.794158+00	2026-10-14 08:48:15.350827+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 5c2cba76-681c-45f4-95eb-8fa94b9453ce	00000000-0000-0000-0000-000000000002	5049673910b5d37055dcbff1ee19af6c7683b3a25cc350647a86fbd6e920fcbb	2026-11-09 19:51:47.415209+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.415383+00	\N	Grafana k6/2.3.0
 0419568e-bef2-4fc7-be98-647edcca5262	00000000-0000-0000-0000-000000000002	cf52055bcba48a55b869dff1d07e358a6a1ce50e91ef2d0c630854715e68d8d4	2026-11-09 19:51:48.993808+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.993942+00	\N	Grafana k6/2.3.0
 50644621-058a-465f-a9d0-8466a2d7540c	00000000-0000-0000-0000-000000000002	29d4374307f2b788ed1e0453ef76299ac62cfe4a71b2edbd73095201b03cd106	2026-11-09 19:51:50.359234+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.359448+00	\N	Grafana k6/2.3.0
@@ -1446,9 +1990,10 @@ f30a90fe-5bf5-4805-b26e-7438797dfe87	00000000-0000-0000-0000-000000000002	6ca175
 833de370-193d-45e5-a518-357d81801efd	00000000-0000-0000-0000-000000000002	817cac229831a7b2e2afed71d5c8f155bc738aac37ba75b9951e81cb95d7bf8f	2026-11-09 19:51:58.463971+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.464207+00	\N	Grafana k6/2.3.0
 b0bdb678-b8fe-49d8-9380-54ad6b584baf	00000000-0000-0000-0000-000000000002	724f38717ebcdb6e8a921e49c4e1f4dd79d4b51bf73575f3903b9135fa2fe479	2026-11-09 19:51:58.523771+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.525592+00	\N	Grafana k6/2.3.0
 27995144-8b34-4457-8dcd-5941a2a3cd76	00000000-0000-0000-0000-000000000002	688109979ccc88f4e23e3454a7d3b57fdd167a96feb3110c6eada1dd26ad2660	2026-11-09 19:51:58.549424+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.549618+00	\N	Grafana k6/2.3.0
-30668351-80ae-4feb-b45c-5cf2520e12f8	00000000-0000-0000-0000-000000000002	a86425165fc9a4ecbfa252fd997395ddb89abdc4120eab52bfddc587a5c4466d	2026-11-12 16:39:25.800166+00	\N	\N	2026-10-13 16:39:25.803651+00	\N	curl/8.21.0
-56af4ff0-6a7c-45da-a9fa-9626122e8d6f	00000000-0000-0000-0000-000000000002	921c0b6689cba7cce4ba6f9913aed27ed8c308d9ae641c36b0bc001af485efb6	2026-11-12 16:43:35.246299+00	\N	\N	2026-10-13 16:43:35.249788+00	\N	curl/8.21.0
-5853a171-2530-4970-b828-f39ce58182a8	00000000-0000-0000-0000-000000000002	aa7334161cde3b942b240ac5618d5b5035ff8faba70cf2151471757735b39ef1	2026-11-12 16:43:44.295941+00	\N	\N	2026-10-13 16:43:44.296887+00	\N	curl/8.21.0
+30668351-80ae-4feb-b45c-5cf2520e12f8	00000000-0000-0000-0000-000000000002	a86425165fc9a4ecbfa252fd997395ddb89abdc4120eab52bfddc587a5c4466d	2026-11-12 16:39:25.800166+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:39:25.803651+00	\N	curl/8.21.0
+183b4159-d192-4073-8868-349e18241ad4	00000000-0000-0000-0000-000000000002	97e374aea099639e20c797774c6d95df5b41af7714c15db3d86f398619997fac	2026-11-13 08:16:40.308458+00	\N	\N	2026-10-14 08:16:40.312413+00	\N	curl/8.21.0
+56af4ff0-6a7c-45da-a9fa-9626122e8d6f	00000000-0000-0000-0000-000000000002	921c0b6689cba7cce4ba6f9913aed27ed8c308d9ae641c36b0bc001af485efb6	2026-11-12 16:43:35.246299+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:43:35.249788+00	\N	curl/8.21.0
+5853a171-2530-4970-b828-f39ce58182a8	00000000-0000-0000-0000-000000000002	aa7334161cde3b942b240ac5618d5b5035ff8faba70cf2151471757735b39ef1	2026-11-12 16:43:44.295941+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:43:44.296887+00	\N	curl/8.21.0
 6b4565ce-bb9f-4724-956c-eef744383d9c	00000000-0000-0000-0000-000000000002	adbac8875caac0b3f006649d6f145b08fd84eb08c46aba7e747bb6d72a7ffaeb	2026-11-09 19:51:47.426967+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.427288+00	\N	Grafana k6/2.3.0
 1d07ef5f-9b2c-41b2-a3e6-798d13fd5301	00000000-0000-0000-0000-000000000002	1ef124a2a4d8a9fd125e0b25b0825a6f7cf661d2d3732cb71c9d08a0e05867cf	2026-11-09 19:51:48.851604+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.851789+00	\N	Grafana k6/2.3.0
 5b9ac2e1-20b5-4cf9-b47f-c31e779ae039	00000000-0000-0000-0000-000000000002	0561b460d3bcf4dffbd648098677d5aabc4b4ea93274ee80885e85f3b3dc8f81	2026-11-09 19:51:48.920825+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.920966+00	\N	Grafana k6/2.3.0
@@ -1469,6 +2014,7 @@ f681091e-93df-49f8-8bec-92d0a79b8041	00000000-0000-0000-0000-000000000002	675771
 2bef2846-5741-494f-a846-2ebec126f0c4	00000000-0000-0000-0000-000000000002	e1c0337ccce34baa2fa676f40ed7d798d36be97b5fc3294479c7798cff9db3a1	2026-11-09 19:51:50.461636+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.461847+00	\N	Grafana k6/2.3.0
 6bb7de56-e2b9-4de5-a38c-8e6028632a96	00000000-0000-0000-0000-000000000002	0b8b166363cd941bb91e2668e2fdb6e5a1184d3255d6f261bddc3a76ca9c7079	2026-11-09 19:51:50.528866+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.529016+00	\N	Grafana k6/2.3.0
 6acdee96-e38c-4656-a401-41042d57fb2c	00000000-0000-0000-0000-000000000002	d894eddb9d8a65f5b7265b8caf9e442996de5370a239cee2e489fa91407f0ba0	2026-11-09 19:51:50.573933+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.575237+00	\N	Grafana k6/2.3.0
+c31facb3-3043-4332-8877-3aaaa3c0cb75	00000000-0000-0000-0000-000000000002	d82d1a8678198fd159e3a86c4ab3093f2e7607b0699277f9add9ebde7b5161f1	2026-11-13 08:17:34.744792+00	\N	\N	2026-10-14 08:17:34.746929+00	\N	curl/8.21.0
 030f5a95-5074-440a-9e7c-90fb4c9c6dce	00000000-0000-0000-0000-000000000002	79bd9ae8778e8203da61a81a5e790902e9c437b9f12916ba2bdaecd53f9b51b8	2026-11-09 19:51:47.427564+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.427864+00	\N	Grafana k6/2.3.0
 2f558ae6-4936-4c74-aa09-6c7fb46f13e1	00000000-0000-0000-0000-000000000002	513819a3eaf070144868a289e47c9dd79ac3ccdfdfa5554f3ee366cb19af0f76	2026-11-09 19:51:48.9132+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.913409+00	\N	Grafana k6/2.3.0
 b14ef088-95ff-4ab5-9e5f-3bfa2ce3d0c9	00000000-0000-0000-0000-000000000002	0a67557081cd09d7d6d4383acacdc70c10691c6741faa9bbe1b3220bf0c8beaf	2026-11-09 19:51:50.046334+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.046603+00	\N	Grafana k6/2.3.0
@@ -1480,8 +2026,10 @@ a58173a4-d00c-4066-ab37-771ee23f0d0a	00000000-0000-0000-0000-000000000002	21b14e
 001172d6-47ba-480f-ba05-4bec04366449	00000000-0000-0000-0000-000000000002	04fa33c14f9461bab6d484983627eefc534894c374847397e4a1050a67a8ebcc	2026-11-09 19:51:50.569599+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.569729+00	\N	Grafana k6/2.3.0
 67b4470b-a648-4a1b-9427-8b96631c633e	00000000-0000-0000-0000-000000000002	632d5043e4fde164b6ea1c6e85fd77deb480d5f0b69a3e042999fad032abac9d	2026-11-09 19:51:50.616742+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.616873+00	\N	Grafana k6/2.3.0
 888c25ab-187c-4f8c-bc99-9a3f1992d1e7	00000000-0000-0000-0000-000000000002	df7d6741cb520cba81dbf6ecc8abc1b444044ac8af7e2b44e67a1e6d4d4dc47e	2026-11-09 19:51:50.646828+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:50.647037+00	\N	Grafana k6/2.3.0
-864074e5-a37e-4ce9-8a93-585eb848094b	00000000-0000-0000-0000-000000000002	1589f7fc4963fef265081c12c7b6a6792e2f8e72d3a94cf5248c36d0e0b0abf2	2026-11-12 16:51:07.844298+00	\N	\N	2026-10-13 16:51:07.84987+00	\N	curl/8.21.0
+864074e5-a37e-4ce9-8a93-585eb848094b	00000000-0000-0000-0000-000000000002	1589f7fc4963fef265081c12c7b6a6792e2f8e72d3a94cf5248c36d0e0b0abf2	2026-11-12 16:51:07.844298+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 16:51:07.84987+00	\N	curl/8.21.0
+e96c9d7c-c128-428f-9808-654fc88f9366	00000000-0000-0000-0000-000000000002	7ff96f6e4ee2e1f20ef376c12ece95e1b8cdd8af004ddeacf813b60116ef6ed0	2026-11-13 08:20:49.091362+00	\N	\N	2026-10-14 08:20:49.096371+00	\N	curl/8.21.0
 ecd9039e-e4b8-48cc-83b5-892e5897d44d	661ae48b-19ed-476e-8fd3-4968fa105c28	86e043a639d914c8297817716680052ce7f3bfb2f4b42ca69d137155beacda39	2026-11-12 17:12:13.822284+00	\N	\N	2026-10-13 17:12:13.825787+00	\N	curl/8.21.0
+d0d1988c-f525-47b2-989c-74b798481398	00000000-0000-0000-0000-000000000003	4cb1e5cc8b60785b2c295dbde035c1b9bae33d6ca85e160b6a20b56d278c4dd1	2026-11-13 08:28:07.533074+00	2026-10-14 08:44:00.216738+00	a06ae52f-0e9d-447e-a8ee-ea7ae34b7d51	2026-10-14 08:28:07.535457+00	2026-10-14 08:44:00.216738+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 ed317047-539a-4188-9505-5593768db1b3	00000000-0000-0000-0000-000000000002	b2491936f2fc7c197a381d49ef71c607dc23644f90158e18a63b0e6683abfd98	2026-11-09 19:51:47.430029+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.430204+00	\N	Grafana k6/2.3.0
 25753521-e901-4f4d-9bf5-83ef9832206c	00000000-0000-0000-0000-000000000002	50c196442527c245b6e50a00f1f01ce46a21eb32665e121d38be1aed1ff2d946	2026-11-09 19:51:47.469888+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.470033+00	\N	Grafana k6/2.3.0
 e953dd39-6de4-4c74-8133-06a17667f7d6	00000000-0000-0000-0000-000000000002	10cee0d382ad8b90f349dc153b7ec0d4c652949145e9848790a078914bd69c73	2026-11-09 19:51:47.502575+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.502715+00	\N	Grafana k6/2.3.0
@@ -1493,6 +2041,8 @@ ea785fdb-1b63-46fa-90c2-5e557ef41d9d	00000000-0000-0000-0000-000000000002	296da8
 8d853c6d-749d-4414-882e-9317b6763384	00000000-0000-0000-0000-000000000002	6cf558e2031d9ba3fc6235f82f9551e965391c29d6eb115f65aa8fcfeb9ba0ec	2026-11-09 19:51:49.002379+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:49.002494+00	\N	Grafana k6/2.3.0
 8b672aa9-cad2-4fb8-b2c8-3e0da5fcae07	661ae48b-19ed-476e-8fd3-4968fa105c28	1948ba29d100f0f9612bf8e67e1f79d679eb651512e52cce99df75366e3bd424	2026-11-12 17:14:15.099841+00	\N	\N	2026-10-13 17:14:15.104136+00	\N	curl/8.21.0
 216f2857-4a43-4136-8213-c07009230e24	661ae48b-19ed-476e-8fd3-4968fa105c28	478ad0bc2a7790c423ebb8292756dca299adb6d3189c0924b2c832ffc649c6bb	2026-11-12 17:14:15.119863+00	\N	\N	2026-10-13 17:14:15.122913+00	\N	curl/8.21.0
+e098f53b-5266-4d65-8104-757da8d503a6	00000000-0000-0000-0000-000000000004	ca8b22e8e3d0aa4fea60178d21400097d2a438b30150cedd14eaa7ea31edc5d1	2026-11-13 08:48:15.349719+00	2026-10-14 09:03:26.785877+00	8c8d099a-39ff-426d-9555-4ba2a7d45822	2026-10-14 08:48:15.350827+00	2026-10-14 09:03:26.785877+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+a06ae52f-0e9d-447e-a8ee-ea7ae34b7d51	00000000-0000-0000-0000-000000000003	1771904c54eb50091253e5d3f31c5fd87f120407525b04186a5ffe64a7ee7f8c	2026-11-13 08:44:00.216685+00	2026-10-14 09:22:36.541369+00	16701800-571d-4fcc-92b7-d819c4dfc7eb	2026-10-14 08:44:00.216738+00	2026-10-14 09:22:36.541369+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 9364b08c-80af-48e2-b706-6178f026477c	00000000-0000-0000-0000-000000000002	73b73b371d5986f75ccb2968632bd158b1a8338ff6a0efa569fc5857f4e683be	2026-11-09 19:51:47.434237+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.434399+00	\N	Grafana k6/2.3.0
 37dbb729-89f2-4f2b-90f3-298614f19740	00000000-0000-0000-0000-000000000002	dfb0c89d4f1443222a44e39c2cedb8059a23c729064110a4c93543a82a98ed5a	2026-11-09 19:51:47.438726+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.438855+00	\N	Grafana k6/2.3.0
 536c7361-3891-4725-86d2-db59170eaeb5	00000000-0000-0000-0000-000000000002	a1c0e687de07362882a9a5c0578da86d9a0c3446d4f3139e420c906e993b314a	2026-11-09 19:51:47.485501+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.485675+00	\N	Grafana k6/2.3.0
@@ -1508,7 +2058,8 @@ de57bc32-988e-470a-9513-de844457e13d	00000000-0000-0000-0000-000000000002	7fdb29
 8a672e18-4439-4da7-a243-61bc041e860c	00000000-0000-0000-0000-000000000002	9bfab46d65d6d178ec1d86ab416403980cb1d64edefd9cff756801bdf3311ced	2026-11-09 19:51:56.925594+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.925782+00	\N	Grafana k6/2.3.0
 f54fba13-cbe0-4efe-ad4a-801656634277	00000000-0000-0000-0000-000000000002	a4389fed8e8cdfb845f86f4d3c0356af1ba487e24ca406969602cb522771dd8a	2026-11-09 19:51:56.950442+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.950582+00	\N	Grafana k6/2.3.0
 62950ae6-eb65-4dee-bc4e-b364748f22b0	00000000-0000-0000-0000-000000000002	337fdbe843623c04425f5b1aa17bba7273bf0d0eceae2306ad84eaf0ab562883	2026-11-09 19:51:57.006669+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:57.00692+00	\N	Grafana k6/2.3.0
-9d719130-053f-42c8-a457-7c44edfc1585	00000000-0000-0000-0000-000000000002	c5016e9c48a87643a36889e20242ab9bd6d15ab627eec65ab2b065649e4460d3	2026-11-12 17:14:25.219376+00	\N	\N	2026-10-13 17:14:25.225822+00	\N	curl/8.21.0
+9d719130-053f-42c8-a457-7c44edfc1585	00000000-0000-0000-0000-000000000002	c5016e9c48a87643a36889e20242ab9bd6d15ab627eec65ab2b065649e4460d3	2026-11-12 17:14:25.219376+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 17:14:25.225822+00	\N	curl/8.21.0
+a87d82f4-f1bb-427f-8e68-fbb2c50da9f2	0eb40d2c-9262-4130-8a99-963cae88e54b	8a0dfe3f29f71b107053f3add582a0324cfca09ac0d21f786034602d1828934d	2026-11-13 08:45:44.74713+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 08:45:44.758733+00	\N	curl/8.21.0
 1d4750ed-c254-4a63-9474-eba5fc4316ca	00000000-0000-0000-0000-000000000002	ea6e58bb5f95381d2561fdaac5964b304f05bed0fe0ab90d62fe7d2558106805	2026-11-09 19:51:47.469323+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.469495+00	\N	Grafana k6/2.3.0
 b8158e79-6081-4009-97f8-9a354ce5d786	00000000-0000-0000-0000-000000000002	e1fbcd8671b15de2210eac4794122641ede1e96ad733fb82a79da10992db5d68	2026-11-09 19:51:47.502+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.502701+00	\N	Grafana k6/2.3.0
 c28b695f-e989-49e6-833e-c06ad3716a4f	00000000-0000-0000-0000-000000000002	dfaa905cd9a925cfa4f0f50dc94eb510bc35f1b97142a8b9ca88feb58cf5be59	2026-11-09 19:51:47.527048+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:47.527292+00	\N	Grafana k6/2.3.0
@@ -1524,9 +2075,11 @@ dc80213a-bbd6-46f4-aa5f-b1089151f2d4	00000000-0000-0000-0000-000000000002	d93ad3
 c6881fab-f5be-4941-a475-4ab0ec8404d8	00000000-0000-0000-0000-000000000002	79a6bfe0430d90176b630d9aa9da6c7fcf39c65813bc4fda845c32d5f30b4381	2026-11-09 19:51:48.145385+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.145651+00	\N	Grafana k6/2.3.0
 0181f89e-2e2e-412c-9215-522b7a68a6ef	00000000-0000-0000-0000-000000000002	5054cda548681294bf89cf42542a461f89fd3629b4d3f3ceee575c501e5c6394	2026-11-09 19:51:48.329792+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:48.33016+00	\N	Grafana k6/2.3.0
 dbba9d07-120d-41f6-a2e6-b0ffb4e88d60	661ae48b-19ed-476e-8fd3-4968fa105c28	5db67d82413a59b2f1e837be85006c416e6984c16f3b38657520b5869c87b8b8	2026-11-12 17:14:57.347407+00	\N	\N	2026-10-13 17:14:57.350706+00	\N	curl/8.21.0
-38c0f3de-6dfe-419a-898f-de3556eff016	00000000-0000-0000-0000-000000000002	490a4d8c2dcafcdd78cab3f93fca148bc1d93b987562a813ef2624ae8a0a731b	2026-11-12 17:14:57.745727+00	\N	\N	2026-10-13 17:14:57.751853+00	\N	curl/8.21.0
+38c0f3de-6dfe-419a-898f-de3556eff016	00000000-0000-0000-0000-000000000002	490a4d8c2dcafcdd78cab3f93fca148bc1d93b987562a813ef2624ae8a0a731b	2026-11-12 17:14:57.745727+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 17:14:57.751853+00	\N	curl/8.21.0
+d92ccab8-8263-44b6-aa02-6eb96944bd04	0eb40d2c-9262-4130-8a99-963cae88e54b	5e6795ee3ab07cd44e4e2d8674105199a1caef98a89e88ade41e28c7e9fc484f	2026-11-13 08:46:19.983845+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 08:46:19.988168+00	\N	curl/8.21.0
 982ddc4d-d4e5-4de4-969a-75eaaf02bee7	661ae48b-19ed-476e-8fd3-4968fa105c28	9b60a5711cb4be723ab1aa8e061b1d58b6efb5ae683849775f843b70fe0e9e34	2026-11-12 17:15:25.376171+00	\N	\N	2026-10-13 17:15:25.37826+00	\N	curl/8.21.0
-f531fb73-3cd8-4d19-b9a6-926668933778	00000000-0000-0000-0000-000000000002	a7473af278077fd6ff31c612fcceea6560cfaa136c01cbc88fa63cd335fd0d43	2026-11-12 17:15:25.788527+00	\N	\N	2026-10-13 17:15:25.790032+00	\N	curl/8.21.0
+f531fb73-3cd8-4d19-b9a6-926668933778	00000000-0000-0000-0000-000000000002	a7473af278077fd6ff31c612fcceea6560cfaa136c01cbc88fa63cd335fd0d43	2026-11-12 17:15:25.788527+00	2026-10-14 04:45:46.749673+00	\N	2026-10-13 17:15:25.790032+00	\N	curl/8.21.0
+8c8d099a-39ff-426d-9555-4ba2a7d45822	00000000-0000-0000-0000-000000000004	6c08905894f9f20d588ef8c8159205a5236487d895af5b74d0b1bea2576025d3	2026-11-13 09:03:26.785205+00	2026-10-14 09:18:28.655519+00	da94d8fa-4e1b-4af7-a0cc-ac751ba4fb7d	2026-10-14 09:03:26.785877+00	2026-10-14 09:18:28.655519+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 2cb841c8-e8bb-4b10-8f3f-6cc7737aed3f	00000000-0000-0000-0000-000000000002	c23a108b9f0e3db46ab735703374753005215d35faef4cd35c0df00d67136f5f	2026-11-09 19:51:51.644994+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:51.645213+00	\N	Grafana k6/2.3.0
 feeca466-0fbb-4ce3-9d3c-04d791726a02	00000000-0000-0000-0000-000000000002	c756d898c77855df734cdaf7845e18010649f91346a1d20b413111a8c77f385b	2026-11-09 19:51:52.045561+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.045817+00	\N	Grafana k6/2.3.0
 b87a1656-966d-4879-9e87-89afbfeb322e	00000000-0000-0000-0000-000000000002	c8a3053d665fd6de8c36b98b39e8b87635d6ffd69bbeb53968559c55e34c88b5	2026-11-09 19:51:52.109741+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.109936+00	\N	Grafana k6/2.3.0
@@ -1547,8 +2100,13 @@ d2943502-f169-44b6-89d0-a6f4ad0579b4	00000000-0000-0000-0000-000000000002	77c312
 43637587-86f3-48d9-928c-df53232e47f6	00000000-0000-0000-0000-000000000002	a092b3cb9596f85dbbcb5e68d68dd67f3ce4641d4a1b8b5fdbe609fe4066462c	2026-11-09 19:51:52.036825+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.036988+00	\N	Grafana k6/2.3.0
 6b87e3b0-7a74-478d-bb3f-2eec2ca9c38f	00000000-0000-0000-0000-000000000002	a4c67118d02346d70669d5644155642ce176d766b70a596b77a7877a2739113f	2026-11-09 19:51:52.215507+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.215676+00	\N	Grafana k6/2.3.0
 12951038-2d16-4e54-b797-6ae0c01eca5a	661ae48b-19ed-476e-8fd3-4968fa105c28	327e01a2447b8bbdcf4b1f922b742485a2d633491891e29363a7eae77a8527e0	2026-11-12 17:15:44.764463+00	\N	\N	2026-10-13 17:15:44.766366+00	\N	curl/8.21.0
+da94d8fa-4e1b-4af7-a0cc-ac751ba4fb7d	00000000-0000-0000-0000-000000000004	135ef2c4b0730a5e886e599b0077fef8c9374fe9238188a5b46030300af3c607	2026-11-13 09:18:28.655515+00	2026-10-14 10:00:13.401379+00	70010802-6c9b-4dd5-91f7-f0b3d200a069	2026-10-14 09:18:28.655519+00	2026-10-14 10:00:13.401379+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+16701800-571d-4fcc-92b7-d819c4dfc7eb	00000000-0000-0000-0000-000000000003	a9ec94b352df091461defdd63c514d77652e609bb515d3136ce35745326b2f27	2026-11-13 09:22:36.539566+00	2026-10-14 13:19:46.613102+00	8b13cc69-6ad0-4ff1-aed6-3501847496c3	2026-10-14 09:22:36.541369+00	2026-10-14 13:19:46.613102+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 f11ef5a4-ec58-4c3f-9dc0-f4d3a85b4c2f	661ae48b-19ed-476e-8fd3-4968fa105c28	4a7fe78f57269527bf987468d7c8e18a51279927307860b61bc140c0e4890f03	2026-11-12 17:17:01.981713+00	\N	\N	2026-10-13 17:17:02.748639+00	\N	curl/8.21.0
 06d81a56-e4ef-4548-a1f2-0c8bc7a80e5a	00000000-0000-0000-0000-000000000003	cd86eadcbe350bde84681aaaf3d7aca97509a6b096522e653fb29e4696dc3dc2	2026-11-12 17:17:02.194453+00	\N	\N	2026-10-13 17:17:02.942672+00	\N	curl/8.21.0
+70010802-6c9b-4dd5-91f7-f0b3d200a069	00000000-0000-0000-0000-000000000004	97a3615ee60c74324130966dfd256c2f75b68089400524f0b1100b79a54b8702	2026-11-13 10:00:13.399136+00	\N	\N	2026-10-14 10:00:13.401379+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+feec070f-4970-4f31-8e1a-81fcf7af4587	0eb40d2c-9262-4130-8a99-963cae88e54b	0047dd03608dee8ad490e9806330b7fccd2790c94af8a10da37c32786600987e	2026-11-13 10:00:15.007728+00	2026-10-14 11:12:33.718277+00	01000009-a7d5-41d2-96d9-adeca7befecf	2026-10-14 10:00:15.009424+00	2026-10-14 11:12:33.718277+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+be8aaac2-54d9-4b4b-8223-099e7d888cb1	0eb40d2c-9262-4130-8a99-963cae88e54b	72bf441e14d864510db7ea6b082a875167496d5bee343b67cb95afd1f5f38aa1	2026-11-13 09:53:07.212163+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 09:53:07.215146+00	\N	curl/8.21.0
 29f4f0c8-fed2-44f9-a55e-22d106408686	00000000-0000-0000-0000-000000000002	3a8e553fe8cca11bfc17db0024330d698d563d0159f28e3f70c46dc5dcb63086	2026-11-09 19:51:52.062101+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.062358+00	\N	Grafana k6/2.3.0
 6a426389-0af7-48c6-a0fc-b70d2e6a9b6a	00000000-0000-0000-0000-000000000002	df2a19befccc8012e3aacfa35c3a534206fc9e616c7b5558fee7df0e39039aa9	2026-11-09 19:51:52.124011+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.12847+00	\N	Grafana k6/2.3.0
 bc8cf9f3-de08-407d-bd19-d95eea65c693	00000000-0000-0000-0000-000000000002	64298a1ec3f0263d427fad116532aba9083f0a45ba62864227a1913acf2cccf4	2026-11-09 19:51:52.169222+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.171856+00	\N	Grafana k6/2.3.0
@@ -1582,11 +2140,16 @@ f62030c0-882d-4815-96fd-98fede0870ae	00000000-0000-0000-0000-000000000002	84b771
 b635c7dc-081f-429e-b539-ea4afd589c34	00000000-0000-0000-0000-000000000002	49ed2356abb7c41db0d0371a37a9ecd40eb8673509b85ffef805f0755af5b4c3	2026-11-09 19:51:56.909461+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.909595+00	\N	Grafana k6/2.3.0
 405dba51-470f-4134-bbb1-6fca12d52538	00000000-0000-0000-0000-000000000002	391f11275977ed293291c163c3598adadf627e6ac1b9d7cd2528f4e7bb895e9a	2026-11-09 19:51:56.95267+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.952849+00	\N	Grafana k6/2.3.0
 26a9cbf8-0f79-4b47-ae29-32f68c0f362d	00000000-0000-0000-0000-000000000002	7c35a3bdc4a2c37bc87f9e2e5b342ac171394c57e8078e8af172dd09928bcd53	2026-11-09 19:51:56.994574+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:56.994723+00	\N	Grafana k6/2.3.0
+fb06a0a1-9652-4512-aaf3-68bf6cf7ced9	93844cb5-7b06-4a85-b225-ab34108d3c87	cfdaf3c618787b88c87f087e00b167c2cb58d780ab872e1ee01335a8304ce48c	2026-11-13 11:01:21.893556+00	\N	\N	2026-10-14 11:01:21.89852+00	\N	curl/8.21.0
 eb0f9559-3e3c-426a-bc45-dd17c20d196e	00000000-0000-0000-0000-000000000002	288f8152000274b90f831cbb018bb5444346f767be2df625b7a297a5c116a86e	2026-11-09 19:51:52.245398+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.245999+00	\N	Grafana k6/2.3.0
 972ac7b5-5d7d-430e-b625-31056e932944	00000000-0000-0000-0000-000000000002	0f190ca39b4741e1ddea607ddd2d46ff2ede1142da8649481428f302e0e5e9bd	2026-11-09 19:51:53.828163+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:53.82848+00	\N	Grafana k6/2.3.0
 ce622e90-63d7-4f1c-a030-51fe79206f77	00000000-0000-0000-0000-000000000002	673b1e78c1351d465d07b21afd7e93c7180a3e05b8694f47af5b30ac9f9d7a8f	2026-11-09 19:51:55.406626+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.40694+00	\N	Grafana k6/2.3.0
+d2a70cdd-cad5-4e99-9428-abf88bf7a9a7	93844cb5-7b06-4a85-b225-ab34108d3c87	338275ef96ac8ae86f2ab4dbe0bc1f097b499f938469e4fbe5a30746162636c9	2026-11-13 11:02:54.545331+00	\N	\N	2026-10-14 11:02:57.602592+00	\N	Python-urllib/3.11
+e1e48a11-6b25-4233-97ca-ec25fbbbcfbf	93844cb5-7b06-4a85-b225-ab34108d3c87	0354abe99b345489a3595ecf3fdf721fd5d9d91978d5412c9aedd73f205d80a4	2026-11-13 11:03:02.134189+00	\N	\N	2026-10-14 11:03:05.193028+00	\N	Python-urllib/3.11
 22be9d17-b3d8-45f5-89e7-be823bea1e0a	00000000-0000-0000-0000-000000000002	05a5ab5a5644a8d5f865c09ba7bac2878f42d5d0909be606d7cf593ffcdf8863	2026-11-09 19:51:52.255959+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.259524+00	\N	Grafana k6/2.3.0
 e086b6a7-a4fd-4399-a88a-fad70f5deaa3	00000000-0000-0000-0000-000000000002	2c1474af6248a1488a06cfafacdc085bafa7eea1458dfb86ddbe2f783504f244	2026-11-09 19:51:55.428222+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.428407+00	\N	Grafana k6/2.3.0
+3952557e-e8d7-4bb5-a57c-54a8a1c63ac7	93844cb5-7b06-4a85-b225-ab34108d3c87	75e63d651feb720910cdaa458be91433fe8a44a9af0416c50b49ee7ee15c7921	2026-11-13 11:05:08.493603+00	\N	\N	2026-10-14 11:05:08.498083+00	\N	Python-urllib/3.11
+4a7280b2-bb4b-4acb-8857-8d8adc57a5bd	93844cb5-7b06-4a85-b225-ab34108d3c87	04feaf10e17f0417c6ecc16fe53b7233daf6d14c8ae08a99292769d52315e6c1	2026-11-13 11:05:15.49099+00	\N	\N	2026-10-14 11:05:15.492446+00	\N	Python-urllib/3.11
 f168f135-bd64-42c3-90d9-5fb1b9451080	00000000-0000-0000-0000-000000000002	110540121d68a96668c2a217b7b1775747647e4060229fde7c6df5b7a23e6f35	2026-11-09 19:51:52.255618+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.261259+00	\N	Grafana k6/2.3.0
 adb3cec9-faf1-4cac-adef-1a7305fdfaa8	00000000-0000-0000-0000-000000000002	fea31368afce9b03bdc2fc6c5c8b361013dc650f2af136251909be9e913d3a84	2026-11-09 19:51:52.271764+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.271947+00	\N	Grafana k6/2.3.0
 4bf3051b-0713-48a2-b5fd-10f07e1277dd	00000000-0000-0000-0000-000000000002	fb367f34f4e27b5940485c5ce356297daa77654a40322089f836db7ab5d744e0	2026-11-09 19:51:52.288636+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.288762+00	\N	Grafana k6/2.3.0
@@ -1594,6 +2157,11 @@ adb3cec9-faf1-4cac-adef-1a7305fdfaa8	00000000-0000-0000-0000-000000000002	fea313
 0013efe4-60c3-49a2-8751-a45ab714570f	00000000-0000-0000-0000-000000000002	2294048cb8a36c691625b62d3d0980572eac2224ea7b786b8aa68e486b1b0fac	2026-11-09 19:51:53.762144+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:53.765395+00	\N	Grafana k6/2.3.0
 e82814be-65ff-4f0e-aad7-32368a54d444	00000000-0000-0000-0000-000000000002	d9e805b9fcab033c5be161ae61780656398fdf23bd1514c295d8c9eeb374cea9	2026-11-09 19:51:53.839542+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:53.84139+00	\N	Grafana k6/2.3.0
 bdda2603-0b4f-4bd7-bdf6-ee34a1cbd211	00000000-0000-0000-0000-000000000002	9ab43d06b15ea17db936bf29ec741ba8adb59c4baac23e61e463a9f857f44fbb	2026-11-09 19:51:53.881009+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:53.881194+00	\N	Grafana k6/2.3.0
+c5033714-09e3-498c-9f1a-712dabc0caa5	93844cb5-7b06-4a85-b225-ab34108d3c87	2d7e7bd78e65ebd801ffa26b3319ae8cd508b328adf3224e88459943688521dc	2026-11-13 11:05:55.688966+00	\N	\N	2026-10-14 11:05:55.692516+00	\N	Python-urllib/3.11
+f64e6765-3d56-4f43-bbe3-d75bc29233eb	93844cb5-7b06-4a85-b225-ab34108d3c87	590eb9387a3799d8867c8a65c1cab45534063b5236735a08e2dbf20850943cc4	2026-11-13 11:06:03.484447+00	\N	\N	2026-10-14 11:06:03.486341+00	\N	Python-urllib/3.11
+1b77909a-21c4-4d07-8f0c-4bc098067b87	93844cb5-7b06-4a85-b225-ab34108d3c87	ae8733f64998238854adc15f68441fd402193d730b9763861e0c7740416981c1	2026-11-13 11:06:46.014578+00	\N	\N	2026-10-14 11:06:46.017018+00	\N	Python-urllib/3.11
+01000009-a7d5-41d2-96d9-adeca7befecf	0eb40d2c-9262-4130-8a99-963cae88e54b	12cc691b4bff9e9c9d8d044e62778e6f5651eed78562a5b37d26a72d74ed9ec4	2026-11-13 11:12:33.716984+00	2026-10-14 11:12:35.443668+00	40531174-34c7-49ce-810a-3342c7672bf1	2026-10-14 11:12:33.718277+00	2026-10-14 11:12:35.443668+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+40531174-34c7-49ce-810a-3342c7672bf1	0eb40d2c-9262-4130-8a99-963cae88e54b	39b9dd88717f9a9d3b1fba339c27e226c5c9742aa9c76f5129f7b4fae1d3825f	2026-11-13 11:12:35.44234+00	2026-10-14 11:12:35.897979+00	892de3db-d053-4c76-80e8-fbe4014cc550	2026-10-14 11:12:35.443668+00	2026-10-14 11:12:35.897979+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
 543eb4e0-652a-435d-a563-971a121dfb40	00000000-0000-0000-0000-000000000002	4b070269f530506942c88b463d0099d14ac9c3f050ff8e38e550f16b7b3a4c5e	2026-11-09 19:51:52.254973+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.263552+00	\N	Grafana k6/2.3.0
 3af3827c-f1d0-42fe-926e-ad1e0d42ae5a	00000000-0000-0000-0000-000000000002	ec0795b6f2826bdf1d0c3ca800a15cc069ae755ff0141d2bcd43d06e1ee80ec3	2026-11-09 19:51:52.267693+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.273808+00	\N	Grafana k6/2.3.0
 54ae7c4f-8433-447a-8de7-2188bdce6879	00000000-0000-0000-0000-000000000002	53510b147d605c4c2535ff062c3d1bb64c143f39978ae2364173550668fb07f5	2026-11-09 19:51:52.321946+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:52.322325+00	\N	Grafana k6/2.3.0
@@ -1613,6 +2181,17 @@ a1292191-fbf4-4281-95bf-30b0c430660b	00000000-0000-0000-0000-000000000002	008e9f
 66a44dcd-42c8-4b50-9720-21ab0db3a2df	00000000-0000-0000-0000-000000000002	592ca2a4fe8c36581ac04d49a00a72308c4d01f912a7a18a1110733aca4e7a02	2026-11-09 19:51:55.181067+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.181279+00	\N	Grafana k6/2.3.0
 db2e1a99-a27f-4e32-a1f9-51e6cf685cca	00000000-0000-0000-0000-000000000002	6b283d722223dd19d41dd633f1b2d0ab83e15e93c1c20f738f8eeb2f4b732ef5	2026-11-09 19:51:55.306874+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.307059+00	\N	Grafana k6/2.3.0
 4fc3565c-a25c-458f-9350-85e6d36a31bc	00000000-0000-0000-0000-000000000002	5fa2ad253b946a42f0da24720b4b5579407f0b0d7fc9e193f37dfac44f5c8786	2026-11-09 19:51:55.380972+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.381211+00	\N	Grafana k6/2.3.0
+892de3db-d053-4c76-80e8-fbe4014cc550	0eb40d2c-9262-4130-8a99-963cae88e54b	df26396c6cbb4d735c820af65e12f9210937528d37f402c4543feb480951f556	2026-11-13 11:12:35.896737+00	2026-10-14 11:12:36.628564+00	15228a0c-22e4-464b-9c43-f757cc09187d	2026-10-14 11:12:35.897979+00	2026-10-14 11:12:36.628564+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+15228a0c-22e4-464b-9c43-f757cc09187d	0eb40d2c-9262-4130-8a99-963cae88e54b	9c7f280356d95c00881aa9fefc0c3b24c845badb9d08c63f6098e9de8797e2c9	2026-11-13 11:12:36.627228+00	2026-10-14 11:12:36.642649+00	\N	2026-10-14 11:12:36.628564+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+2dd402a8-6a65-4bc4-9920-f407e37f26be	0eb40d2c-9262-4130-8a99-963cae88e54b	c433a758fbcf0c2c2ca36f1b5c9e5a851adfe7643b79024a921c34bbef344dd9	2026-11-13 11:13:38.505229+00	2026-10-14 11:13:39.007644+00	b4ee97f9-66e4-417e-940b-f029fe661e16	2026-10-14 11:13:38.5046+00	2026-10-14 11:13:39.007644+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+b4ee97f9-66e4-417e-940b-f029fe661e16	0eb40d2c-9262-4130-8a99-963cae88e54b	71e31db5262acd12d6beba12eb79bd1a90f2674623f7a9bece78facb3350956e	2026-11-13 11:13:39.008546+00	2026-10-14 11:13:42.196731+00	3c12ea87-e60e-49b4-96a3-7a33cfc6344f	2026-10-14 11:13:39.007644+00	2026-10-14 11:13:42.196731+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+3c12ea87-e60e-49b4-96a3-7a33cfc6344f	0eb40d2c-9262-4130-8a99-963cae88e54b	bc72b8edf6de4b9ec6517fded2fa5242d86ec91d49af015414182df8207ca6fd	2026-11-13 11:13:42.19756+00	2026-10-14 11:13:42.884979+00	f8aeecdc-e3e2-425f-bdeb-d7bb5d3ff797	2026-10-14 11:13:42.196731+00	2026-10-14 11:13:42.884979+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+f8aeecdc-e3e2-425f-bdeb-d7bb5d3ff797	0eb40d2c-9262-4130-8a99-963cae88e54b	7900e90fd46fbaeb547f437c07f760948785440b1a3d32ee096ab553a08ff45f	2026-11-13 11:13:42.886067+00	2026-10-14 11:13:52.175392+00	62cb1517-93a2-4654-a6ce-2465025997c4	2026-10-14 11:13:42.884979+00	2026-10-14 11:13:52.175392+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+62cb1517-93a2-4654-a6ce-2465025997c4	0eb40d2c-9262-4130-8a99-963cae88e54b	8b8ac22b416ee4b742c04147d8ac0cb6738c6e9071433f23d3743047d394b146	2026-11-13 11:13:52.174869+00	2026-10-14 11:13:53.346437+00	d8f011d5-7963-4286-8559-99665aa47b6e	2026-10-14 11:13:52.175392+00	2026-10-14 11:13:53.346437+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+d8f011d5-7963-4286-8559-99665aa47b6e	0eb40d2c-9262-4130-8a99-963cae88e54b	a3788715a633cd93c96a347fcd05784e4f6e4c476207897718eb10b65fbffcb0	2026-11-13 11:13:53.345505+00	2026-10-14 11:13:55.03038+00	fef1f252-d79a-4d97-b21e-342c802c463b	2026-10-14 11:13:53.346437+00	2026-10-14 11:13:55.03038+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+fef1f252-d79a-4d97-b21e-342c802c463b	0eb40d2c-9262-4130-8a99-963cae88e54b	a423fb5d8ad1fa9c57f76167aebf9c58f32393a619e635d2d23265a5c9fb2507	2026-11-13 11:13:55.029327+00	2026-10-14 11:13:58.670037+00	328b0101-531c-45b6-a9e5-650cefeefba3	2026-10-14 11:13:55.03038+00	2026-10-14 11:13:58.670037+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+328b0101-531c-45b6-a9e5-650cefeefba3	0eb40d2c-9262-4130-8a99-963cae88e54b	80abb3c2a7d9ed3700e335d075a893c526afbe24135134c7a05c07fa06eef9d9	2026-11-13 11:13:58.668677+00	2026-10-14 11:14:04.179677+00	62fb5eda-bb09-4977-ba43-01e370876d22	2026-10-14 11:13:58.670037+00	2026-10-14 11:14:04.179677+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+f752ddb0-dc80-4744-96c1-f0e0cdb1e49c	0eb40d2c-9262-4130-8a99-963cae88e54b	3d7837000bcd78ba053c4a42c99d61bf78eb1c903b17b84e03cb887445a92c9f	2026-11-13 11:14:40.419642+00	2026-10-14 11:14:42.590298+00	f6ff82c0-d635-4e4f-879b-a2a7b3fcbd3a	2026-10-14 11:14:40.419431+00	2026-10-14 11:14:42.590298+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
 31c80db0-601a-43d7-b80d-8b650bd1d8a8	00000000-0000-0000-0000-000000000002	d5679486a9fc85308cb558b444c8bcc284324a468abc6864ffbf5e3036059e07	2026-11-09 19:51:55.155785+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.156058+00	\N	Grafana k6/2.3.0
 92c74d6f-ad25-4039-af71-363f87e633e6	00000000-0000-0000-0000-000000000002	4b0410339a1882fc4383034f79e506e274f49b71543296e0edeaa546d7eb13ae	2026-11-09 19:51:55.263773+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.265387+00	\N	Grafana k6/2.3.0
 c8c36d36-26e4-4b40-928c-7b11cc9aab9b	00000000-0000-0000-0000-000000000002	2d87a5dd5f91f2d6969d3ca3b4c8cce75765979174035e7d358db8923d0cd2dc	2026-11-09 19:51:55.383296+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:55.383661+00	\N	Grafana k6/2.3.0
@@ -1634,6 +2213,15 @@ df53c6b8-83fc-4cc0-a5af-c6890ab6aa22	00000000-0000-0000-0000-000000000002	38db95
 da264a08-32fe-41da-9557-92ad627c23da	00000000-0000-0000-0000-000000000002	90793a2fed1d49c12fa2f0a0c458414021e62cb975e8cfc0b6d9a79ef69d2ef3	2026-11-09 19:51:58.593131+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.593268+00	\N	Grafana k6/2.3.0
 0fe6ada9-b977-4960-8f95-8be3fc527b4e	00000000-0000-0000-0000-000000000002	1dd4735e1b3bb1f42d8677a478813a4133ea53595e51a4b80c3dc390b4bc836a	2026-11-09 19:51:58.603591+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.60384+00	\N	Grafana k6/2.3.0
 d7ddc3e3-58fd-4bb0-bf5e-b447afe25d0c	00000000-0000-0000-0000-000000000002	00bf75bd655d9d3ce4f025f0f9ec83bbd87a8c991ef62beadd90a19fb100e83b	2026-11-09 19:51:58.627519+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:51:58.627802+00	\N	Grafana k6/2.3.0
+8eae370d-f52b-47a4-ad29-7a5c0e354ad0	0eb40d2c-9262-4130-8a99-963cae88e54b	e101a1e678baa7276e3f70557f962c534fff954c627494ddccff0ca16ba7c5ec	2026-11-13 11:12:37.213223+00	2026-10-14 11:12:37.808277+00	8af70848-7a61-441e-b776-14b15bd72c71	2026-10-14 11:12:37.216157+00	2026-10-14 11:12:37.808277+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+8af70848-7a61-441e-b776-14b15bd72c71	0eb40d2c-9262-4130-8a99-963cae88e54b	23c0c50234d8abd7d15917de8bc465f8ae61bc8ccbca9e82baae04a27c295b9d	2026-11-13 11:12:37.806694+00	2026-10-14 11:12:38.512416+00	1a1d41ab-7b12-4b17-ac04-63b2383dce93	2026-10-14 11:12:37.808277+00	2026-10-14 11:12:38.512416+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+1a1d41ab-7b12-4b17-ac04-63b2383dce93	0eb40d2c-9262-4130-8a99-963cae88e54b	ec7e7d1acc52d7ee080f3238e37cf6c0254d5d4594bf606a7c18ace79b407502	2026-11-13 11:12:38.513098+00	2026-10-14 11:12:38.838987+00	d295e752-7cf2-4847-8506-e04709879b71	2026-10-14 11:12:38.512416+00	2026-10-14 11:12:38.838987+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+d295e752-7cf2-4847-8506-e04709879b71	0eb40d2c-9262-4130-8a99-963cae88e54b	a9dc7e78ed23b00add7f1467a457acb5238d7d717803968daf5fad2f5c358ad7	2026-11-13 11:12:38.839876+00	2026-10-14 11:13:38.5046+00	2dd402a8-6a65-4bc4-9920-f407e37f26be	2026-10-14 11:12:38.838987+00	2026-10-14 11:13:38.5046+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+62fb5eda-bb09-4977-ba43-01e370876d22	0eb40d2c-9262-4130-8a99-963cae88e54b	5eaf31a90a583865c606fe90e4d8ea3cbd3538948197b8b2ac6a9b1133cedace	2026-11-13 11:14:04.178105+00	2026-10-14 11:14:07.761144+00	525707d7-8167-416d-bc46-ad275cff1426	2026-10-14 11:14:04.179677+00	2026-10-14 11:14:07.761144+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+525707d7-8167-416d-bc46-ad275cff1426	0eb40d2c-9262-4130-8a99-963cae88e54b	73201b37de2c066e7c2b758b83865254919aa20c467d04772e6c53ad75b558fb	2026-11-13 11:14:07.758539+00	2026-10-14 11:14:39.80016+00	a510389e-0720-497d-9ea3-8862b24174a9	2026-10-14 11:14:07.761144+00	2026-10-14 11:14:39.80016+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+a015e5a3-6ec9-40e4-9d49-7f4497ba9ead	0eb40d2c-9262-4130-8a99-963cae88e54b	5af2920c2434b7bed692cace822f7117ca991886203f925e56599ad66888485f	2026-11-13 11:15:04.766513+00	2026-10-14 11:15:05.692153+00	3d5669d5-5ca6-4388-ad02-3937fa339705	2026-10-14 11:15:04.76838+00	2026-10-14 11:15:05.692153+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+3d5669d5-5ca6-4388-ad02-3937fa339705	0eb40d2c-9262-4130-8a99-963cae88e54b	5e187296f3a884b634b1f186b636cc2d6e56f4e2df5b3234a5b17bbe6f83d65a	2026-11-13 11:15:05.690268+00	2026-10-14 11:15:06.32868+00	3aab87c6-f71c-4db4-b419-91987ddb2621	2026-10-14 11:15:05.692153+00	2026-10-14 11:15:06.32868+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+3aab87c6-f71c-4db4-b419-91987ddb2621	0eb40d2c-9262-4130-8a99-963cae88e54b	8aea5f8005219fd5b2e95da0a1be33a9858701e6d757d59573859e0a6ffdddae	2026-11-13 11:15:06.326817+00	2026-10-14 13:49:30.61721+00	fe7eda94-3696-4a07-bdf2-e8e0483990f2	2026-10-14 11:15:06.32868+00	2026-10-14 13:49:30.61721+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
 3848e131-f222-4a36-946d-412c5b744205	00000000-0000-0000-0000-000000000002	4af49dea5bda02572926a97749ff16b11b7b1eb715b260aeb1e25dd8b41accc8	2026-11-09 19:52:00.202604+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.202976+00	\N	Grafana k6/2.3.0
 fc997174-b99a-4beb-8f6a-13c06bddcf75	00000000-0000-0000-0000-000000000002	f89a64f34a712cd566094c7b37409b78d1613f85bfadb5d616fb0108181987e3	2026-11-09 19:52:00.213476+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.213802+00	\N	Grafana k6/2.3.0
 adaf01b7-4efe-4d69-8ae5-8eb0447c21eb	00000000-0000-0000-0000-000000000002	bb0425266196b3f437a2f235a3f7753c4879df48a6874a4e2a5a34422126dfd2	2026-11-09 19:52:00.225047+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.225328+00	\N	Grafana k6/2.3.0
@@ -1641,6 +2229,12 @@ adaf01b7-4efe-4d69-8ae5-8eb0447c21eb	00000000-0000-0000-0000-000000000002	bb0425
 fe76abde-358a-4767-a793-a39525da4fb8	00000000-0000-0000-0000-000000000002	63f2a9ce703fc7dfafad893ec67ed91d8803905b0db8e32e6c9429334490ed07	2026-11-09 19:52:01.441858+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.442099+00	\N	Grafana k6/2.3.0
 ba0696c7-6787-4caa-a964-a7fa42a01f29	00000000-0000-0000-0000-000000000002	102da4740fef6fd06a1d894298606e0cdc219f44ce4f01c282bcd9d631b9892e	2026-11-09 19:52:01.461962+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.462339+00	\N	Grafana k6/2.3.0
 90de4635-d1e5-465c-bea7-b63046616cde	00000000-0000-0000-0000-000000000002	f60cd7124e8a6d612ac5bd9b0fed04f82b387361d04cd0ca0c1b88e3faa13392	2026-11-09 19:52:01.523012+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.523625+00	\N	Grafana k6/2.3.0
+a510389e-0720-497d-9ea3-8862b24174a9	0eb40d2c-9262-4130-8a99-963cae88e54b	7728f1ee941455080fdf34a25f027487cb50c3e7b18284cbf79fd729b7e853ba	2026-11-13 11:14:39.800506+00	2026-10-14 11:14:40.419431+00	f752ddb0-dc80-4744-96c1-f0e0cdb1e49c	2026-10-14 11:14:39.80016+00	2026-10-14 11:14:40.419431+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+f6ff82c0-d635-4e4f-879b-a2a7b3fcbd3a	0eb40d2c-9262-4130-8a99-963cae88e54b	a5f8806323378568595fd764657d349f5494977a64665234bd5ac7387e395e4e	2026-11-13 11:14:42.590358+00	2026-10-14 11:14:51.063015+00	42059d3b-25c8-4126-bdb7-2072119eb816	2026-10-14 11:14:42.590298+00	2026-10-14 11:14:51.063015+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+42059d3b-25c8-4126-bdb7-2072119eb816	0eb40d2c-9262-4130-8a99-963cae88e54b	959d61e6ecf6f95189e39d283c0bc246c08440f991854ca537e63c5464cf4497	2026-11-13 11:14:51.062475+00	2026-10-14 11:14:55.104419+00	bcefb84b-47d8-482c-bf23-99d15e51d210	2026-10-14 11:14:51.063015+00	2026-10-14 11:14:55.104419+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+bcefb84b-47d8-482c-bf23-99d15e51d210	0eb40d2c-9262-4130-8a99-963cae88e54b	9830a08fd76d658b4ba52e71d0b34417709c5fcf5270637ecc15105f32f612af	2026-11-13 11:14:55.103402+00	2026-10-14 11:14:55.786972+00	eb2728cf-8e53-45e0-b8c3-1dfd8ecfe7ab	2026-10-14 11:14:55.104419+00	2026-10-14 11:14:55.786972+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+eb2728cf-8e53-45e0-b8c3-1dfd8ecfe7ab	0eb40d2c-9262-4130-8a99-963cae88e54b	6a2fa8e6ea0f24c16a74c4a74107417a63e2f59d86cfcba5a1fed317fb0a1c2a	2026-11-13 11:14:55.785882+00	2026-10-14 11:14:56.541125+00	9378653f-bda1-4262-89ef-7aa9a24af587	2026-10-14 11:14:55.786972+00	2026-10-14 11:14:56.541125+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+9378653f-bda1-4262-89ef-7aa9a24af587	0eb40d2c-9262-4130-8a99-963cae88e54b	7a6b4a5b17166f33d9b74f385ea78b287709b6a5abbd803b42242f8e77428d22	2026-11-13 11:14:56.540105+00	2026-10-14 11:15:04.76838+00	a015e5a3-6ec9-40e4-9d49-7f4497ba9ead	2026-10-14 11:14:56.541125+00	2026-10-14 11:15:04.76838+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 db86b088-0c2e-4801-85a0-23c2377311ed	00000000-0000-0000-0000-000000000002	877249fa05f866e0266fba67e0ab0252092a6ec2b653f6b78634f0fe8a8cf574	2026-11-09 19:52:00.199919+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.200102+00	\N	Grafana k6/2.3.0
 74b2234c-7266-4e6d-ad25-a53a3edc0756	00000000-0000-0000-0000-000000000002	f78f7d9c0a5a7e6d83a6df419ca9a64a28f7dcb2189c95e75f7e978959185666	2026-11-09 19:52:00.220517+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.220785+00	\N	Grafana k6/2.3.0
 e911d0ae-48ed-48c1-965f-fa9cfe6c4c59	00000000-0000-0000-0000-000000000002	14036596602a9618872336c595629df10d55978be897c42c447b29e23e744332	2026-11-09 19:52:01.502866+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.503053+00	\N	Grafana k6/2.3.0
@@ -1661,6 +2255,9 @@ daa26988-967c-45e0-ada5-97ac09dd50e1	00000000-0000-0000-0000-000000000002	294068
 f7014916-9a9b-4ae6-8597-1ebe115326af	00000000-0000-0000-0000-000000000002	29b7641196a71571310f6ca4b4276b0c259033f4c44fb3024d29dfd350ab9229	2026-11-09 19:52:02.897069+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.8972+00	\N	Grafana k6/2.3.0
 32b8f60d-2fd5-4738-8a8a-76af93d07833	00000000-0000-0000-0000-000000000002	20af2feb80e83d2efc7a833d4e00ec4f9b42973e858291ab9b1f1f9868fba0de	2026-11-09 19:52:02.928454+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.92863+00	\N	Grafana k6/2.3.0
 aa17216f-2829-497e-9219-987da268be89	00000000-0000-0000-0000-000000000002	7e1a62bab210696ae08941956c8d9137fbab07ced0b570d5b3883a2c70d3bf70	2026-11-09 19:52:02.959758+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.960075+00	\N	Grafana k6/2.3.0
+feddacdd-9def-4a9a-9b65-af3b6b6e4918	b7c5041b-e56b-4db3-b028-ce3e08327273	2914d4092dcea3ab8d4dfacd4e7d2016b92eeef90fa307240caeb7010a6d8b04	2026-11-13 11:15:00.770829+00	2026-10-14 11:15:00.787861+00	de4a906e-d774-49f6-9dd7-7e2fb749f2c8	2026-10-14 11:15:00.776033+00	2026-10-14 11:15:00.787861+00	test-agent
+de4a906e-d774-49f6-9dd7-7e2fb749f2c8	b7c5041b-e56b-4db3-b028-ce3e08327273	e57f88b3c4fe03e35169cdf045a73a7199fa6a5cf119685db849dc6a320a700d	2026-11-13 11:15:00.786049+00	2026-10-14 11:15:00.801898+00	\N	2026-10-14 11:15:00.787861+00	\N	test-agent
+d3e7d633-2f9d-4fe0-9fcb-fc15c46553bb	00000000-0000-0000-0000-000000000003	6ca544541ea50aa02bf0486435888bab54af0be112383e3d739ea777473d558f	2026-11-14 02:05:33.449685+00	2026-10-15 03:13:12.94732+00	e0af64eb-0152-4283-914c-15e44ccda989	2026-10-15 02:05:33.449214+00	2026-10-15 03:13:12.94732+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 9f88c0fc-58fa-4e22-abdc-d3c2450cd668	00000000-0000-0000-0000-000000000002	20864f6b996e3833d362cfdf096fac0f2f6bdd35fbcd94327321958e959cc23e	2026-11-09 19:52:00.21002+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.210194+00	\N	Grafana k6/2.3.0
 8f7b930c-d928-47e0-ba18-3097711f787a	00000000-0000-0000-0000-000000000002	f20abb0d218dd60bd211fcf686aa692fabb80cd5b64dd411c839d0b82df4122b	2026-11-09 19:52:00.220657+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.220807+00	\N	Grafana k6/2.3.0
 c7da83ee-dfd3-48f1-83d3-a2b277d52ad6	00000000-0000-0000-0000-000000000002	e908c615eecdab4d0be7358c1ac030a3ea5183710a068aba5576de223c2e9562	2026-11-09 19:52:01.036506+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.036778+00	\N	Grafana k6/2.3.0
@@ -1675,6 +2272,8 @@ f5d9204a-1f1f-4aab-85fa-852fa379fdf7	00000000-0000-0000-0000-000000000002	24fc4f
 05c147da-eb39-4475-8b8e-1c09c2899f19	00000000-0000-0000-0000-000000000002	9def1826a0543f3bfe8896d34633d48579d1779efc3fff1b931a2db47d75ecb9	2026-11-09 19:52:02.909556+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.909757+00	\N	Grafana k6/2.3.0
 18e08b0c-a568-4fed-93d2-9e1f09273b17	00000000-0000-0000-0000-000000000002	8093933ae08a66aec1e1eb06ea15419e738768e38697b3ecfeb5befa3b885d84	2026-11-09 19:52:02.917802+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.917984+00	\N	Grafana k6/2.3.0
 749b275e-bd91-47fa-991c-d4361469abb0	00000000-0000-0000-0000-000000000002	eb116254654c7fcbb8ac4057873e1a342f437ab5966e08d051294c350689e0e3	2026-11-09 19:52:02.928013+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.928147+00	\N	Grafana k6/2.3.0
+8b13cc69-6ad0-4ff1-aed6-3501847496c3	00000000-0000-0000-0000-000000000003	dbfb96a590c9d76305f840e74e81e72d60ded07f6071783e217645cc50785572	2026-11-13 13:19:46.612228+00	2026-10-15 02:05:33.449214+00	d3e7d633-2f9d-4fe0-9fcb-fc15c46553bb	2026-10-14 13:19:46.613102+00	2026-10-15 02:05:33.449214+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+321cc1b8-597c-4d3e-b907-b0efaa6b9a7f	0eb40d2c-9262-4130-8a99-963cae88e54b	9b5163c9bbafe7936079958067ee5461c1d1d5d7817048b9fee3b4ef90c1cfc6	2026-11-14 02:12:32.04272+00	\N	\N	2026-10-15 02:12:32.043956+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
 8048672a-a6c5-406c-b9c3-941781b21f17	00000000-0000-0000-0000-000000000002	bd10de3acf29f9ff89a07e2cc669dca03363db459c325cb0ebf3a5ba9aaa4ff3	2026-11-09 19:52:00.250199+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.250416+00	\N	Grafana k6/2.3.0
 88d8cdfa-9afe-4c9c-b379-340ea9fa06c8	00000000-0000-0000-0000-000000000002	6e1357f7fca9e3c5c9742f4ac7eaf7b5c0949ecc7be4fb54e0255bd9164df47c	2026-11-09 19:52:00.844612+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.844924+00	\N	Grafana k6/2.3.0
 90d47aa1-aa31-4385-b825-e5399df57616	00000000-0000-0000-0000-000000000002	d5a3db858db9c3f353d685c16c7fa4ed96275c091bd8ac18b131a2e323eecc60	2026-11-09 19:52:00.872988+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.87326+00	\N	Grafana k6/2.3.0
@@ -1687,17 +2286,28 @@ e90796fb-982b-4580-90eb-205e6a5a8d2e	00000000-0000-0000-0000-000000000002	8507b2
 d46c5f79-a618-4221-974f-74eba89de089	00000000-0000-0000-0000-000000000002	dec8081aaff7b99da54e0b6f4cd93c4e12f854c2f1654f8a4add317d5636976f	2026-11-09 19:52:02.869302+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.869549+00	\N	Grafana k6/2.3.0
 d453a192-b88e-4a3e-8d51-7d8289260e8c	00000000-0000-0000-0000-000000000002	c73f8ba9f98ca50efbf779c105e0bf1c1d9e6f6124a627990eb1f5cb0a79d29a	2026-11-09 19:52:02.87554+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.87573+00	\N	Grafana k6/2.3.0
 fd56e5a2-4105-42eb-9f0f-f0d4db49fb82	00000000-0000-0000-0000-000000000002	7f72a1a33b59cf76762a4f9e5f939ea10423e93e69488a2ed08dbb061816c938	2026-11-09 19:53:06.622712+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:53:06.622997+00	\N	curl/8.21.0
+fe7eda94-3696-4a07-bdf2-e8e0483990f2	0eb40d2c-9262-4130-8a99-963cae88e54b	54666f69ed809de62f6b50368bc7c8700e4a52047f951a4790c3afca02e39e7b	2026-11-13 13:49:30.615524+00	2026-10-15 02:12:32.043956+00	321cc1b8-597c-4d3e-b907-b0efaa6b9a7f	2026-10-14 13:49:30.61721+00	2026-10-15 02:12:32.043956+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+6599ca7b-451f-41ae-aaf9-7f5651306eb3	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	40643f1e521f3c822f8b93654374bf261719d281fab000f780757ff6a97f136e	2026-11-14 02:12:47.028804+00	2026-10-15 02:14:50.523747+00	aa8eb1ca-c98b-4029-a2a5-c47a5d44e866	2026-10-15 02:12:47.031324+00	2026-10-15 02:14:50.523747+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+aa8eb1ca-c98b-4029-a2a5-c47a5d44e866	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	055a790928b76a9c64ae8ee5d5b11dcaa432ebe9c2ee2379f85ee43bd186375a	2026-11-14 02:14:50.523989+00	2026-10-15 02:34:05.467255+00	\N	2026-10-15 02:14:50.523747+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+252b1e76-f760-406b-9e20-c9bed6b375cb	00000000-0000-0000-0000-000000000002	7391c2f94a73cfa22193dfa62f735163c30043f5fcb225dcb97e3e33d48319df	2026-11-14 02:58:57.475466+00	\N	\N	2026-10-15 02:58:57.476692+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
+0853cc6e-ba3a-41c3-85e4-a7bf79fdf31a	00000000-0000-0000-0000-000000000002	91f1f6102038bfb75f88a6c58662faa88b07b99aaa49d82d6764e4fda964f552	2026-11-14 03:01:02.418753+00	\N	\N	2026-10-15 03:01:02.419593+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
 3254bd9b-77b3-4316-9238-2d685b58fe8e	00000000-0000-0000-0000-000000000002	3e1722bc522ecfdda01b95619a11740a1d6e764a43fb900474d62861d39b8230	2026-11-09 19:52:00.266115+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.266399+00	\N	Grafana k6/2.3.0
 e46d0281-045a-4afd-83fa-604c2c33482a	00000000-0000-0000-0000-000000000002	50ee823d4472b5d8972307dd31cc6c90c2d694c4e4eed46749ec0251cab08a39	2026-11-09 19:52:00.272138+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:00.272627+00	\N	Grafana k6/2.3.0
 fb6b5334-0ade-4918-9a41-68bb545bd710	00000000-0000-0000-0000-000000000002	e431d266449bd4f9a7cb14d124929f0c7531ff1bbbc19dedf487f5f42a2b8eb2	2026-11-09 19:52:01.508273+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.508626+00	\N	Grafana k6/2.3.0
 0811a80b-292a-47e6-bb9e-bf899e315fd3	00000000-0000-0000-0000-000000000002	1f07e12f41caf63bf743945c6c475eef30db666409ffeb269bb796ecc4bf80ec	2026-11-09 19:52:02.694194+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.69444+00	\N	Grafana k6/2.3.0
 52f7e04c-b416-4d9b-a69f-9c307ccc5c41	00000000-0000-0000-0000-000000000002	b352d8e78c4813f479a48eb69d01c3b146edd4d765379db8c462b06303c5d511	2026-11-09 19:52:02.80272+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.803263+00	\N	Grafana k6/2.3.0
+ad4d0c99-efb4-4158-a4cb-4a8070c719a7	00000000-0000-0000-0000-000000000002	477649dc9c99a036718f143f42984d8a5e6047e4f34cf3cbc5029ccb1137f5f2	2026-11-14 03:03:17.759616+00	\N	\N	2026-10-15 03:03:17.769146+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
 c95494b0-0699-41b0-ba43-51ea6bc60f81	00000000-0000-0000-0000-000000000002	8631daacf3d545e182ebc4c96efcd53c003b55d0fc17c478cce2195dee9635b9	2026-11-09 19:52:01.51302+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.513387+00	\N	Grafana k6/2.3.0
 51cb26be-d5f1-4328-b7d7-23b5ac593307	00000000-0000-0000-0000-000000000002	158eb5d043ffa9b953235155ac1a961a6cf87e54a4824723a39985a945f01ae8	2026-11-09 19:52:02.808244+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.808426+00	\N	Grafana k6/2.3.0
 00d55b29-8d40-49da-93c7-20621dabe519	00000000-0000-0000-0000-000000000002	4f39588e5543d4bfe6752704c135a1b327391078585923615633fbefd310114a	2026-11-09 19:52:02.834767+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.835065+00	\N	Grafana k6/2.3.0
 17d28bf6-3fcf-4f3e-9ede-4dc110436f27	00000000-0000-0000-0000-000000000002	60141f4f069a07cb2aafbfab2cda527b164b34e7b51555392c09ecc6082250c6	2026-11-09 19:52:02.871577+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.871751+00	\N	Grafana k6/2.3.0
+e0af64eb-0152-4283-914c-15e44ccda989	00000000-0000-0000-0000-000000000003	e6503f8047291fb79117fa385c4f0127b3189b37f221559f46703a9d566978d9	2026-11-14 03:13:12.944609+00	\N	\N	2026-10-15 03:13:12.94732+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
 9f5d7892-da0c-4053-ae0c-f1a241446095	00000000-0000-0000-0000-000000000002	d42ae0a4c549a1eb11ccd54915527f7e9f69ab7388a834f0e61044e776a44cb2	2026-11-09 19:52:01.512482+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:01.515004+00	\N	Grafana k6/2.3.0
 4de5284a-c526-4ade-966a-ec138ad1ea53	00000000-0000-0000-0000-000000000002	54870bdc6ec2758194c111bef112de49a7bf72929345b5fa252a175f5534d1d6	2026-11-09 19:52:02.862643+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:52:02.862964+00	\N	Grafana k6/2.3.0
+ee476c1c-1b2a-4550-9119-90af95834786	00000000-0000-0000-0000-000000000002	4f7e1dde9616dd6cc7c4078a3cdfdfff14fc4cdc5ce592b32198435d23255bca	2026-11-14 03:28:48.903094+00	\N	\N	2026-10-15 03:28:48.906372+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36
+5cd6165e-e88b-4692-b1e5-ae962d288577	00000000-0000-0000-0000-000000000002	c461d5610e85111d82b93a67abe3ba55900d3c077ea72dc7c23ecdd56aeb04fd	2026-11-14 03:31:16.829645+00	\N	\N	2026-10-15 03:31:16.824305+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36
+4e14cce9-c364-4954-935a-3df1c5da745e	00000000-0000-0000-0000-000000000002	879cf443dc8685effd64cfb20d7e8277658c3cb20140566659bd785975887a54	2026-11-14 03:38:50.439396+00	\N	\N	2026-10-15 03:38:50.441303+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
+57331f42-9c55-49df-9342-7de741101d8b	00000000-0000-0000-0000-000000000002	ba80d3902b267b1395ceb2167549a6543f108c5f9421b14bf2d9204f2ee6c05e	2026-11-14 03:28:59.940607+00	\N	\N	2026-10-15 03:28:59.943901+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
 28cdfb08-7b0e-401d-9d6c-a45f51219071	00000000-0000-0000-0000-000000000003	fd5cfd7563b51ee02a2fd8f7ddb7893261d3bd12dcfff8a0c92e6a847d221fac	2026-11-09 19:55:02.324093+00	\N	\N	2026-10-10 19:55:02.324415+00	\N	curl/8.21.0
 cfc0bf61-ce82-4f10-8cef-15fbcd76fa44	4c40f185-5d03-466b-8acc-c81ba80137ec	9030df9a1cc6ed70365405496e76a6b6fbd8e87adfae76e7c2116d0d135d1be5	2026-11-10 08:29:34.192351+00	2026-10-11 08:29:34.209009+00	b3dd1f6a-a5d9-4892-8489-e79e8a915073	2026-10-11 08:29:34.193632+00	2026-10-11 08:29:34.209009+00	test-agent
 b3dd1f6a-a5d9-4892-8489-e79e8a915073	4c40f185-5d03-466b-8acc-c81ba80137ec	2fba2c40f8bd2e852d2b7b71c41d80449a7c4206f426965a83d955083b6609fd	2026-11-10 08:29:34.209213+00	2026-10-11 08:29:34.22087+00	\N	2026-10-11 08:29:34.209009+00	\N	test-agent
@@ -1762,6 +2372,7 @@ f69c7233-cfca-4266-812f-fd23643868bf	00000000-0000-0000-0000-000000000002	c74a98
 7ed87dfc-4c1b-4660-9596-ce1bfa81e5bb	00000000-0000-0000-0000-000000000002	f59e400a2c2299acb5274edfc93997a2ba85d7e3de86147040aba32818a250f6	2026-11-09 19:49:04.86139+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:49:04.862353+00	\N	Grafana k6/2.3.0
 52cdb739-1299-4227-8bfb-6dad4f497e75	00000000-0000-0000-0000-000000000002	3cd3ff1b135914b4b57d93a37d4640fca0b8b4edf6b484d0ebfe4133cceac9cf	2026-11-09 19:49:04.884346+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:49:04.884472+00	\N	Grafana k6/2.3.0
 17b9b172-4c94-41cd-b24a-1570c7517d88	00000000-0000-0000-0000-000000000002	d6304825476b22d41d5183307b9c9c9b367e2c747596662d67a820d295f3b4cd	2026-11-12 12:35:02.088405+00	2026-10-13 12:35:13.466725+00	\N	2026-10-13 12:35:02.104068+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+ef3ad6cd-e5d0-415b-8f15-0332f8afec91	00000000-0000-0000-0000-000000000002	6e0c44f864ec4247a7e2bd4dc362c381d61cd3b9479dc89230d74d19517b4f03	2026-11-14 03:32:10.394739+00	\N	\N	2026-10-15 03:32:10.413831+00	\N	Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
 783f7ec6-4ca0-4bd2-b4e7-8490def5b425	00000000-0000-0000-0000-000000000002	5c54d1feb03c4d04de8897ef75ae2ee7c5026ab2e234ad1e5cec3233151757f9	2026-11-09 19:49:04.889826+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:49:04.890382+00	\N	Grafana k6/2.3.0
 0ac33426-d003-48ee-9cc1-e6baff3330b4	00000000-0000-0000-0000-000000000002	7c7dc5e79533ec1fc93d30c20e755223ae298539b70dc0cea7227b622bb4d682	2026-11-09 19:49:04.884829+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:49:04.884954+00	\N	Grafana k6/2.3.0
 e0e65851-630e-47aa-8ccf-010a01c4dcec	00000000-0000-0000-0000-000000000002	bec0989254a860c7b32b88f568ade72552ce9eaa578c72d74ec1e9cd37025918	2026-11-09 19:49:04.886921+00	2026-10-13 12:35:13.466725+00	\N	2026-10-10 19:49:04.88761+00	\N	Grafana k6/2.3.0
@@ -3616,6 +4227,7 @@ b172eef5-f3d5-4446-bf4f-4a5838ea7a7e	00000000-0000-0000-0000-000000000002	ab3614
 058002d1-76ae-4c4f-b180-a672ac3cae47	00000000-0000-0000-0000-000000000002	ceae9913ad07fbc6ecaaa719d7ff3711425fda6887e7a18b074f6743c577cfe0	2026-11-10 09:25:21.392446+00	2026-10-13 12:35:13.466725+00	\N	2026-10-11 09:25:21.393314+00	\N	curl/8.21.0
 28a07167-6b8b-403d-9d85-03e9ad35304e	00000000-0000-0000-0000-000000000002	4f9284e55bcdf1d6a93de9ac0c452544177a4616b3521fd229dbd4074eaab394	2026-11-10 09:25:30.02846+00	2026-10-13 12:35:13.466725+00	\N	2026-10-11 09:25:30.028864+00	\N	curl/8.21.0
 57a1e4f7-a146-4d48-9afe-a5c4749e0725	00000000-0000-0000-0000-000000000002	1e7eea46a6d453abcf038da6f6298d35c21138aab04055bf111bdaaceb9cf1b3	2026-11-12 12:35:37.761859+00	2026-10-13 12:50:52.582615+00	0de5dd9b-ad06-4bef-882f-90c3f33ea179	2026-10-13 12:35:37.763737+00	2026-10-13 12:50:52.582615+00	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0
+d201939c-f0bd-4e97-8833-4d2ce0ceca5d	00000000-0000-0000-0000-000000000002	bf7366de75726caa1c0a38181beb618baa88b321a3a6f8852867fdd767bda85f	2026-11-14 03:35:51.051285+00	\N	\N	2026-10-15 03:35:51.053388+00	\N	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36
 \.
 
 
@@ -3645,17 +4257,151 @@ b9452d69-f306-48bc-a891-1281eb00fd07	Lainnya	piggy-bank	#64748b	Kategori tabunga
 
 
 --
+-- Data for Name: setting_definitions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.setting_definitions (key, kind, min_value, max_value, enum_values, max_len, default_value, group_key, label, description, is_writable, is_secret, sort_order, is_active, created_at, updated_at) FROM stdin;
+quota_rounding_mode	enum	\N	\N	["ceil", "floor", "round"]	0	"ceil"	kuota	Mode pembulatan kuota	Cara membulatkan unit kuota: ceil (ke atas), floor (ke bawah), round (terdekat).	t	f	10	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+quota_default_ratio	int	1	1000	\N	0	1	kuota	Rasio kuota default	Rasio awal untuk plan baru yang dibuat operator.	t	f	20	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+quota_default_tokens_per_cycle	int	1	1000000000	\N	0	10000	kuota	Kuota default / siklus	Kuota awal untuk plan baru (dalam unit kuota).	t	f	30	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+quota_unit_label	string	\N	\N	\N	24	"kuota"	kuota	Label satuan kuota	Satuan yang ditampilkan ke user (mis. kuota).	t	f	40	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+quota_unlimited_sentinel	int	1	1000000000000	\N	0	1000000000	kuota	Nilai pengganti unlimited	Angka yang dipakai saat limit plan = -1 (unlimited).	t	f	50	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+quota_min_charge_units	int	0	1000000	\N	0	1	kuota	Lantai tagih minimum	Minimum unit yang ditagih per permintaan (menutup celah mode floor).	t	f	60	t	2026-10-15 04:36:35.324409+00	2026-10-15 04:36:35.324409+00
+ai_estimate_overhead_tokens	int	0	1000000	\N	0	3000	ai	Overhead estimasi (token)	Token tetap per chat: system prompt + tools + RAG + riwayat.	t	f	10	t	2026-10-15 04:36:35.335942+00	2026-10-15 04:36:35.335942+00
+ai_estimate_output_headroom	int	0	1000000	\N	0	800	ai	Headroom keluaran (token)	Perkiraan token keluaran per chat.	t	f	20	t	2026-10-15 04:36:35.335942+00	2026-10-15 04:36:35.335942+00
+ai_estimate_chars_per_token	int	1	100	\N	0	4	ai	Karakter per token	Perkiraan rasio karakter→token untuk estimasi panjang pesan.	t	f	30	t	2026-10-15 04:36:35.335942+00	2026-10-15 04:36:35.335942+00
+pricing_default_provider_cost_per_1k_idr	int	0	100000000	\N	0	150	pricing	Biaya provider default / 1k token	Dipakai saat membuat aturan harga baru, agar margin langsung terukur.	t	f	10	t	2026-10-15 04:36:35.338931+00	2026-10-15 04:36:35.338931+00
+payment_gateway_default	enum	\N	\N	["manual", "midtrans"]	0	\N	pembayaran	Gateway pembayaran default		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+grace_period_hours	int	0	720	\N	0	\N	pembayaran	Masa tenggang (jam)		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+tax_rate_percent	int	0	100	\N	0	\N	pajak	Persentase pajak		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+tax_enabled	bool	\N	\N	\N	0	\N	pajak	Aktifkan pajak		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+tax_label	string	\N	\N	\N	32	\N	pajak	Label pajak		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+invoice_due_hours	int	1	720	\N	0	\N	invoice	Jatuh tempo invoice (jam)		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+invoice_expiry_hours	int	0	8760	\N	0	\N	invoice	Kedaluwarsa invoice (jam)		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+invoice_expiry_minutes	int	0	59	\N	0	\N	invoice	Kedaluwarsa invoice (menit)		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+storage_driver	enum	\N	\N	["local", "r2"]	0	\N	penyimpanan	Driver penyimpanan		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_estimate_chat	int	1	1000000	\N	0	\N	ai	Estimasi chat (lantai)		t	f	40	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_estimate_reasoning	int	1	1000000	\N	0	\N	ai	Estimasi reasoning (lantai)		t	f	50	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_estimate_vision	int	1	1000000	\N	0	\N	ai	Estimasi vision (lantai)		t	f	60	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_estimate_voice	int	1	1000000	\N	0	\N	ai	Estimasi voice (lantai)		t	f	70	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_estimate_embedding	int	1	1000000	\N	0	\N	ai	Estimasi embedding (lantai)		t	f	80	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+ai_reasoning_effort	enum	\N	\N	["", "low", "medium", "high"]	0	\N	ai	Reasoning effort		t	f	90	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+dunning_hours_urgent	int	1	720	\N	0	\N	dunning	Pengingat mendesak (jam)		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+dunning_hours_soon	int	1	720	\N	0	\N	dunning	Pengingat segera (jam)		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+breaker_failure_threshold	int	1	100	\N	0	\N	gateway	Ambang kegagalan breaker		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+breaker_cooldown_seconds	int	1	3600	\N	0	\N	gateway	Cooldown breaker (detik)		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+breaker_half_open_probes	int	1	100	\N	0	\N	gateway	Probe half-open		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+route_breaker_threshold	int	1	100	\N	0	\N	gateway	Ambang breaker rute		t	f	40	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+route_breaker_cooldown_secs	int	1	3600	\N	0	\N	gateway	Cooldown breaker rute (detik)		t	f	50	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+metering_chars_per_token	int	1	100	\N	0	\N	metering	Karakter per token (metering)		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+metering_safety_buffer_pct	int	0	100	\N	0	\N	metering	Buffer keamanan (%)		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+metering_image_tokens	int	1	10000	\N	0	\N	metering	Token per gambar		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+metering_audio_tokens_per_sec	int	1	1000	\N	0	\N	metering	Token audio per detik		t	f	40	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_enabled	bool	\N	\N	\N	0	\N	mail	Aktifkan email		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_host	string	\N	\N	\N	0	\N	mail	SMTP host		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_port	int	1	65535	\N	0	\N	mail	SMTP port		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_username	string	\N	\N	\N	0	\N	mail	SMTP username		t	f	40	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_from	string	\N	\N	\N	0	\N	mail	Alamat pengirim		t	f	50	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_from_name	string	\N	\N	\N	0	\N	mail	Nama pengirim		t	f	60	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_use_tls	bool	\N	\N	\N	0	\N	mail	Gunakan TLS		t	f	70	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+midtrans_enabled	bool	\N	\N	\N	0	\N	midtrans	Aktifkan Midtrans		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+midtrans_client_key	string	\N	\N	\N	0	\N	midtrans	Midtrans client key		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+midtrans_is_production	bool	\N	\N	\N	0	\N	midtrans	Midtrans produksi		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+manual_bank_name	string	\N	\N	\N	0	\N	manual	Nama bank		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+manual_account_number	string	\N	\N	\N	0	\N	manual	Nomor rekening		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+manual_account_holder	string	\N	\N	\N	0	\N	manual	Nama pemilik rekening		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_account_id	string	\N	\N	\N	0	\N	r2	R2 account id		t	f	10	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_access_key_id	string	\N	\N	\N	0	\N	r2	R2 access key id		t	f	20	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_bucket	string	\N	\N	\N	0	\N	r2	R2 bucket		t	f	30	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_region	string	\N	\N	\N	0	\N	r2	R2 region		t	f	40	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_endpoint	string	\N	\N	\N	0	\N	r2	R2 endpoint		t	f	50	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_prefix	string	\N	\N	\N	0	\N	r2	R2 prefix		t	f	60	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+r2_public_base_url	string	\N	\N	\N	0	\N	r2	R2 public base url		t	f	70	t	2026-10-15 04:36:35.341937+00	2026-10-15 04:36:35.341937+00
+mail_password	secret	\N	\N	\N	0	\N	mail	SMTP password		t	t	45	t	2026-10-15 04:36:35.351478+00	2026-10-15 04:36:35.351478+00
+midtrans_server_key	secret	\N	\N	\N	0	\N	midtrans	Midtrans server key		t	t	25	t	2026-10-15 04:36:35.351478+00	2026-10-15 04:36:35.351478+00
+r2_secret_access_key	secret	\N	\N	\N	0	\N	r2	R2 secret access key		t	t	25	t	2026-10-15 04:36:35.351478+00	2026-10-15 04:36:35.351478+00
+gemini_embedding_api_key	secret	\N	\N	\N	0	\N	ai	Gemini embedding API key		t	t	100	t	2026-10-15 04:36:35.351478+00	2026-10-15 04:36:35.351478+00
+ai_timeout_chat_ms	int	0	1800000	\N	0	60000	ai_timeout	Batas waktu: Chat (ms)	Batas waktu panggilan AI untuk chat streaming. 0 = pakai nilai rute/default gateway.	t	f	10	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_timeout_vision_ms	int	0	1800000	\N	0	120000	ai_timeout	Batas waktu: Vision/OCR (ms)	Batas waktu panggilan AI untuk scan struk (OCR). 0 = pakai nilai rute/default gateway.	t	f	20	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_timeout_voice_ms	int	0	1800000	\N	0	120000	ai_timeout	Batas waktu: Suara (ms)	Batas waktu panggilan AI untuk transkripsi suara. 0 = pakai nilai rute/default gateway.	t	f	30	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_timeout_embedding_ms	int	0	1800000	\N	0	60000	ai_timeout	Batas waktu: Embedding (ms)	Batas waktu panggilan AI untuk embedding (RAG). 0 = pakai nilai rute/default gateway.	t	f	40	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_timeout_reasoning_ms	int	0	1800000	\N	0	120000	ai_timeout	Batas waktu: Penalaran (ms)	Batas waktu panggilan AI untuk mode penalaran. 0 = pakai nilai rute/default gateway.	t	f	50	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_timeout_client_ms	int	0	1800000	\N	0	0	ai_timeout	Batas waktu klien/browser (ms)	Batas waktu yang diberikan ke browser. 0 = otomatis (use case terlama + margin).	t	f	60	t	2026-10-15 05:35:18.18959+00	2026-10-15 05:35:18.18959+00
+ai_estimate_voice_bytes_per_sec	int	1000	64000	\N	0	4000	ai_estimate	Voice: Byte per detik	Perkiraan ukuran byte audio per detik (WebM Opus ~4000 byte/detik, MP3 ~16000 byte/detik).	t	f	30	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_voice_tokens_per_sec	int	1	200	\N	0	25	ai_estimate	Voice: Token per detik	Rasio token provider yang dikonsumsi per detik audio.	t	f	31	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_voice_overhead	int	0	5000	\N	0	50	ai_estimate	Voice: Overhead (token)	Overhead token tetap untuk pemrosesan transkripsi suara.	t	f	32	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_voice_output_headroom	int	0	5000	\N	0	150	ai_estimate	Voice: Headroom output (token)	Perkiraan jumlah token hasil transkripsi teks audio.	t	f	33	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_vision_image_tokens	int	50	10000	\N	0	800	ai_estimate	Vision: Token per gambar	Estimasi token provider untuk satu gambar struk.	t	f	40	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_vision_output_headroom	int	50	5000	\N	0	400	ai_estimate	Vision: Headroom output (token)	Perkiraan jumlah token JSON hasil ekstraksi struk.	t	f	41	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_vision_large_file_bytes	int	100000	5000000	\N	0	500000	ai_estimate	Vision: Ambang file besar (byte)	Batas ukuran file gambar di mana token tambahan dialokasikan.	t	f	42	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+ai_estimate_vision_large_file_extra	int	0	5000	\N	0	400	ai_estimate	Vision: Token ekstra file besar	Token tambahan untuk gambar berukuran di atas ambang batas.	t	f	43	t	2026-10-15 06:40:12.612157+00	2026-10-15 06:40:12.612157+00
+\.
+
+
+--
 -- Data for Name: settings; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.settings (key, value, updated_by, updated_at, description) FROM stdin;
 feature_flags	{}	\N	2026-10-11 10:15:35.082271+00	Toggle fitur eksperimental global
+dunning_hours_soon	72	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Ingatkan (segera) saat sisa waktu invoice <= N jam
+breaker_failure_threshold	5	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Kegagalan beruntun sebelum breaker endpoint terbuka
 payment_gateway_default	"manual"	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:36:37.380568+00	Gateway pembayaran default (midtrans|manual)
 invoice_due_hours	72	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:36:37.380568+00	Jam jatuh tempo invoice sejak diterbitkan
+tax_label	"PPN"	\N	2026-10-14 10:45:31.637491+00	Label pajak yang ditampilkan pada faktur
 grace_period_hours	24	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:50:53.659533+00	Jam masa tenggang sebelum fitur dibekukan
-tax_rate_percent	11	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-11 10:50:53.659533+00	Persentase PPN/PPN (integer, 0-100)
-ai_kill_switch	{"chat": false, "global": false}	\N	2026-10-11 10:50:53.794592+00	Status Emergency Kill Switch AI Gateway per modalitas
+ai_estimate_voice	200	\N	2026-10-14 04:08:34.513374+00	
+breaker_cooldown_seconds	30	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Durasi (detik) breaker endpoint terbuka
+ai_estimate_vision	500	\N	2026-10-14 04:08:34.513374+00	
+breaker_half_open_probes	1	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Probe paralel saat half-open
 storage_driver	"local"	661ae48b-19ed-476e-8fd3-4968fa105c28	2026-10-13 14:31:34.894951+00	
+ai_estimate_reasoning	4000	\N	2026-10-14 04:08:34.513374+00	
+ai_estimate_embedding	1000	\N	2026-10-14 04:08:34.513374+00	
+tax_enabled	false	\N	2026-10-14 10:45:31.637491+00	Aktifkan PPN pada faktur (true/false)
+invoice_expiry_hours	24	\N	2026-10-14 10:45:31.637491+00	Batas waktu pembayaran faktur (jam)
+invoice_expiry_minutes	0	\N	2026-10-14 10:45:31.637491+00	Batas waktu pembayaran faktur (menit tambahan)
+route_breaker_threshold	2	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Kegagalan beruntun sebelum rute dikarantina
+ai_timeout_chat_ms	60000	\N	2026-10-15 05:19:48.104279+00	Batas waktu panggilan AI (ms) untuk Chat (streaming)
+ai_timeout_embedding_ms	60000	\N	2026-10-15 05:19:48.104279+00	Batas waktu panggilan AI (ms) untuk Embedding (RAG)
+ai_timeout_reasoning_ms	120000	\N	2026-10-15 05:19:48.104279+00	Batas waktu panggilan AI (ms) untuk mode Penalaran
+route_breaker_cooldown_secs	60	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Durasi (detik) karantina rute
+ai_kill_switch	{}	\N	2026-10-15 05:27:25.053143+00	Status Emergency Kill Switch AI Gateway per modalitas
+tax_rate_percent	12	2cbfbbf5-0a16-4040-b51f-f106f7ebdfa1	2026-10-15 05:27:25.155835+00	Persentase PPN/PPN (integer, 0-100)
+ai_estimate_chat	2000	c49e44b4-406e-4dcd-94d0-edae68c6a195	2026-10-15 05:27:25.362013+00	
+metering_chars_per_token	4	1f4f366e-1813-42b6-80e4-f7b01d047a17	2026-10-15 05:27:25.597432+00	Rasio rata-rata karakter per token untuk teks latin/Indonesia
+metering_safety_buffer_pct	10	1f4f366e-1813-42b6-80e4-f7b01d047a17	2026-10-15 05:27:25.597432+00	Persentase buffer pengaman overhead estimasi teks
+metering_image_tokens	85	1f4f366e-1813-42b6-80e4-f7b01d047a17	2026-10-15 05:27:25.597432+00	Estimasi kuota token per gambar/struk (OCR low-res patch)
+dunning_hours_urgent	24	d0fb1788-223e-4ef3-b721-ff0651e36556	2026-10-15 05:27:25.465587+00	Ingatkan (mendesak) saat sisa waktu invoice <= N jam
+metering_audio_tokens_per_sec	25	1f4f366e-1813-42b6-80e4-f7b01d047a17	2026-10-15 05:27:25.597432+00	Estimasi kuota token per detik audio transkripsi suara
+ai_timeout_vision_ms	120000	\N	2026-10-15 05:41:18.512694+00	Batas waktu panggilan AI (ms) untuk Vision/OCR (scan struk)
+ai_timeout_voice_ms	120000	\N	2026-10-15 05:41:18.512694+00	Batas waktu panggilan AI (ms) untuk transkripsi suara
+ai_estimate_voice_bytes_per_sec	4000	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_voice_tokens_per_sec	25	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_voice_overhead	50	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_voice_output_headroom	150	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_vision_image_tokens	800	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_vision_output_headroom	400	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_vision_large_file_bytes	500000	\N	2026-10-15 06:40:12.612157+00	
+ai_estimate_vision_large_file_extra	400	\N	2026-10-15 06:40:12.612157+00	
+\.
+
+
+--
+-- Data for Name: spk_metric_defaults; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.spk_metric_defaults (id, name, description, indicators, status_thresholds, is_active, updated_by, created_at, updated_at) FROM stdin;
+a11e6b35-8ce8-4496-8b1d-27a6ef0ad277	Model SPK Default	Model penilaian kesehatan finansial bawaan (metode 50/30/20, rasio tabungan, tren arus kas).	[{"key": "saving_ratio", "type": "saving_ratio", "label": "Rasio Tabungan", "target": 0.20, "weight": 0.30, "direction": "higher_better"}, {"key": "needs_vs_wants", "type": "needs_ratio", "label": "Kebutuhan vs Keinginan", "target": 0.70, "weight": 0.25, "direction": "higher_better", "categories": ["Makanan & Minuman", "Kesehatan", "Utilitas & Tagihan", "Transportasi", "Pendidikan", "Tempat Tinggal"]}, {"key": "consistency", "type": "consistency", "label": "Konsistensi Catatan", "target": 1.0, "weight": 0.15, "direction": "higher_better"}, {"key": "expense_trend", "type": "expense_trend", "label": "Tren Pengeluaran", "target": 1.0, "weight": 0.20, "direction": "higher_better"}, {"key": "diversification", "type": "diversification", "label": "Diversifikasi", "target": 1.0, "weight": 0.10, "direction": "higher_better"}]	[{"min": 80, "label": "Sangat Baik"}, {"min": 60, "label": "Baik"}, {"min": 40, "label": "Cukup"}, {"min": 20, "label": "Boros"}, {"min": 0, "label": "Kritis"}]	f	\N	2026-10-14 04:14:16.202146+00	2026-10-14 04:14:16.202146+00
+84e68558-e6ad-4720-bbe9-970cf6c149fe	Model Ketat 2026	Bobot tabungan dinaikkan	[{"key": "saving_ratio", "type": "saving_ratio", "label": "Rasio Tabungan", "target": 0.3, "weight": 0.5}, {"key": "expense_trend", "type": "expense_trend", "label": "Tren Pengeluaran", "target": 1, "weight": 0.5}]	[{"min": 70, "label": "Sangat Baik"}, {"min": 40, "label": "Baik"}, {"min": 0, "label": "Kritis"}]	f	556125ac-4164-4775-9b29-181670af47d8	2026-10-14 04:27:49.641009+00	2026-10-14 04:27:49.641009+00
+fb046f42-5915-4464-bb88-43350f2ec42b	Model SPK Default	Model penilaian kesehatan finansial bawaan (metode 50/30/20, rasio tabungan, tren arus kas).	[{"key": "saving_ratio", "type": "saving_ratio", "label": "Rasio Tabungan", "target": 0.20, "weight": 0.30, "direction": "higher_better"}, {"key": "needs_vs_wants", "type": "needs_ratio", "label": "Kebutuhan vs Keinginan", "target": 0.70, "weight": 0.25, "direction": "higher_better", "categories": ["Makanan & Minuman", "Kesehatan", "Utilitas & Tagihan", "Transportasi", "Pendidikan", "Tempat Tinggal"]}, {"key": "consistency", "type": "consistency", "label": "Konsistensi Catatan", "target": 1.0, "weight": 0.15, "direction": "higher_better"}, {"key": "expense_trend", "type": "expense_trend", "label": "Tren Pengeluaran", "target": 1.0, "weight": 0.20, "direction": "higher_better"}, {"key": "diversification", "type": "diversification", "label": "Diversifikasi", "target": 1.0, "weight": 0.10, "direction": "higher_better"}]	[{"min": 80, "label": "Sangat Baik"}, {"min": 60, "label": "Baik"}, {"min": 40, "label": "Cukup"}, {"min": 20, "label": "Boros"}, {"min": 0, "label": "Kritis"}]	t	\N	2026-10-14 04:27:58.552396+00	2026-10-14 04:27:58.552396+00
+\.
+
+
+--
+-- Data for Name: spk_metric_overrides; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.spk_metric_overrides (user_id, indicators, status_thresholds, created_at, updated_at) FROM stdin;
 \.
 
 
@@ -3729,6 +4475,11 @@ d5d40d2d-34a1-4b7d-9e97-331a4cd45dc4	5ae1be02-8c17-48a7-9ebc-62af712f9b32	60.48	
 60fa5dfd-a819-4835-a652-d1ec47f7f0e4	7a5eac40-9951-4b8f-9649-5a294028dc94	60.48	Baik	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 100}	2026-09-11	2026-10-11	2026-10-11 09:47:26.892825+00
 71659adc-fc05-4353-8316-096e39240187	00000000-0000-0000-0000-000000000002	28.32	Boros	{"consistency": 3.23, "saving_ratio": 0, "expense_trend": 50, "needs_vs_wants": 55.75, "diversification": 39.02}	2026-09-13	2026-10-13	2026-10-13 13:13:43.720572+00
 bcbb6892-edd6-419d-8b69-b6fab41e2341	00000000-0000-0000-0000-000000000002	28.32	Boros	{"consistency": 3.23, "saving_ratio": 0, "expense_trend": 50, "needs_vs_wants": 55.75, "diversification": 39.02}	2026-09-13	2026-10-13	2026-10-13 13:13:55.187769+00
+613880dc-4eb5-4b71-9cc4-1f75e1efa3ba	9c8254db-b9c6-4e42-946e-03507a11da2e	50.48	Cukup	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 0}	2026-09-14	2026-10-14	2026-10-14 04:22:15.471303+00
+d98ee962-c5da-4db3-b913-d6795d1f4792	556125ac-4164-4775-9b29-181670af47d8	74.13	Baik	{"consistency": 9.68, "saving_ratio": 100, "expense_trend": 76.47, "needs_vs_wants": 100, "diversification": 23.81}	2026-09-14	2026-10-14	2026-10-14 04:27:30.134873+00
+108c2042-d945-4dc9-8504-aa8ea5e0d5db	556125ac-4164-4775-9b29-181670af47d8	72.90	Bagus	{"consistency": 9.68, "saving_ratio": 100}	2026-09-14	2026-10-14	2026-10-14 04:27:30.726334+00
+d2dd75e9-4cd4-48e6-a547-c03bf453a051	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	50.48	Cukup	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 0}	2026-09-14	2026-10-14	2026-10-14 11:15:01.031754+00
+b012dadf-f378-45b8-9e5b-ead74a6e0047	840da61a-cb01-4458-a2d4-af610231c81f	50.48	Cukup	{"consistency": 3.23, "saving_ratio": 100, "expense_trend": 100, "needs_vs_wants": 0, "diversification": 0}	2026-09-15	2026-10-15	2026-10-15 05:25:09.133323+00
 \.
 
 
@@ -3755,10 +4506,17 @@ f8c5ea74-48aa-42cc-8984-2f9b31d0e365	a2890237-6cee-4328-b58a-b38ffea13be0	8aed13
 COPY public.subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, gateway, gateway_subscription_id, metadata, created_at, updated_at) FROM stdin;
 7ac6e366-8a37-4d1a-a10b-a334add9a1a9	c5d4f372-d0b9-43de-9cbc-c4003d704101	a0000000-0000-0000-0000-000000000001	active	2026-10-11 10:35:16.654118+00	2026-12-10 10:35:16.654118+00	t	2026-10-11 10:35:21.294822+00	manual	\N	{}	2026-10-11 10:35:16.654118+00	2026-10-11 10:35:21.294822+00
 65ed68e1-c4eb-443b-bbd0-e3a8928db44c	5abd3878-94a0-4fd6-875c-7dec161bc107	a0000000-0000-0000-0000-000000000002	active	2026-10-13 14:16:50.534684+00	2026-11-12 14:16:50.534684+00	f	\N	manual	\N	{}	2026-10-13 14:16:50.522243+00	2026-10-13 14:16:50.522243+00
+bc8e6810-7fc5-4376-8ebb-206f0c8ccfea	728d78c0-84ad-4026-a91e-76fc60619a5a	a0000000-0000-0000-0000-000000000002	active	2026-10-15 04:25:27.744372+00	2026-11-14 05:25:27.744372+00	f	\N	manual	\N	{}	2026-10-15 05:25:27.748362+00	2026-10-15 05:25:27.748362+00
 a2890237-6cee-4328-b58a-b38ffea13be0	8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	a0000000-0000-0000-0000-000000000002	active	2026-10-13 14:28:19.081418+00	2026-11-12 14:28:19.081418+00	f	\N	manual	\N	{}	2026-10-13 14:28:19.071072+00	2026-10-13 14:29:27.764839+00
 776129f9-c551-47d6-9e29-f3661958b95a	57046e28-960a-4e46-9de0-21b4ac1a599d	a0000000-0000-0000-0000-000000000002	active	2026-10-13 14:32:55.83185+00	2026-11-12 14:32:55.83185+00	f	\N	manual	\N	{}	2026-10-13 14:32:55.82188+00	2026-10-13 14:32:55.82188+00
 afce7871-83b9-4be4-9864-48accbe17254	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	a0000000-0000-0000-0000-000000000002	active	2026-10-13 16:05:58.124304+00	2026-11-12 16:05:58.124304+00	f	\N	manual	\N	{}	2026-10-13 16:05:58.124304+00	2026-10-13 16:05:58.124304+00
 f0d86f47-704c-4fb0-aba9-e993639cdf53	00000000-0000-0000-0000-000000000002	a0000000-0000-0000-0000-000000000002	active	2026-10-11 09:25:21.802063+00	2026-11-10 09:25:21.802063+00	f	\N	manual	\N	{}	2026-10-11 09:25:21.802063+00	2026-10-14 02:44:35.740718+00
+f13d8a80-2cd9-4a45-8afa-cbbda26faf8f	556125ac-4164-4775-9b29-181670af47d8	a0000000-0000-0000-0000-000000000002	active	2026-10-14 04:25:46.501588+00	2026-11-13 04:25:46.501588+00	f	\N	manual	\N	{}	2026-10-14 04:25:46.501588+00	2026-10-14 04:25:46.501588+00
+fb57e8cf-171c-40ad-989f-98f731d67a73	0eb40d2c-9262-4130-8a99-963cae88e54b	a0000000-0000-0000-0000-000000000002	active	2026-10-14 05:06:22.708852+00	2026-11-13 05:06:22.708852+00	f	\N	manual	\N	{}	2026-10-14 05:06:22.708852+00	2026-10-14 05:06:22.708852+00
+33c2088a-3b52-4029-aa9b-1c9aff433986	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	a0000000-0000-0000-0000-000000000002	active	2026-10-15 04:24:37.052926+00	2026-11-14 05:24:37.052926+00	f	\N	manual	\N	{}	2026-10-15 05:24:37.054991+00	2026-10-15 05:24:37.054991+00
+7b9b5383-7bcc-4a85-824a-61ce7da57b37	29e9fbc8-dd38-4d42-8871-649e2562b1ae	a0000000-0000-0000-0000-000000000002	active	2026-10-15 04:26:27.283367+00	2026-11-14 05:26:27.283367+00	f	\N	manual	\N	{}	2026-10-15 05:26:27.288717+00	2026-10-15 05:26:27.288717+00
+143ab4c4-c9c9-422c-bf90-b3d9c9270ff3	016a7dbb-d448-4b16-825d-f871a51ec4b3	a0000000-0000-0000-0000-000000000002	active	2026-10-15 04:27:35.695761+00	2026-11-14 05:27:35.695761+00	f	\N	manual	\N	{}	2026-10-15 05:27:35.697119+00	2026-10-15 05:27:35.697119+00
+6fad17fd-0fe7-49e9-ac7e-c3044d0d98d8	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	a0000000-0000-0000-0000-000000000002	active	2026-10-15 04:28:12.489146+00	2026-11-14 05:28:12.489146+00	f	\N	manual	\N	{}	2026-10-15 05:28:12.492893+00	2026-10-15 05:28:12.492893+00
 \.
 
 
@@ -3766,245 +4524,559 @@ f0d86f47-704c-4fb0-aba9-e993639cdf53	00000000-0000-0000-0000-000000000002	a00000
 -- Data for Name: token_ledger; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at) FROM stdin;
-ab8a7ab9-61a6-4beb-b0fd-f5fd3e1ee36e	f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	\N	grant	100	chat	0	test-trigger-1	\N	\N	2026-10-11 09:09:53.985961+00
-6b43a759-e4ca-47f4-8011-c8bb06edc0f3	2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-2d095794-5232-406a-96ca-8b068bd5b77f	\N	\N	2026-10-11 09:11:55.697656+00
-9f10a7c4-15a2-4ab0-a09f-dfae27d156af	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-5c5db3f5-614d-42af-a44c-3c9a9ac72248	\N	\N	2026-10-11 09:15:13.900753+00
-4174a255-8657-49c5-80f3-70e7196bae95	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	reserve	300	chat	0	itest-res-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:13.973281+00
-f1b96a6a-c784-46f2-a1b0-2c772d161ad5	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	commit	120	chat	45	itest-com-4174a255-8657-49c5-80f3-70e7196bae95	\N	\N	2026-10-11 09:15:14.003195+00
-7b5bdc67-7217-4a9c-abde-456517892dad	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	reserve	200	vision	0	itest-res2-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:14.030375+00
-3491473a-c292-4da3-854c-28bd5afd0314	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	release	-200	vision	0	itest-rel-7b5bdc67-7217-4a9c-abde-456517892dad	\N	\N	2026-10-11 09:15:14.043306+00
-fe1d787e-efc0-470d-ab5c-61fdf3ee856e	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	reserve	250	chat	0	itest-clean-93237f05-47f6-450b-8018-3ab9b433a1c5	\N	\N	2026-10-11 09:15:14.192422+00
-85c025ae-dce4-41e9-b21b-b197d06d62dd	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	6b43a759-e4ca-47f4-8011-c8bb06edc0f3	release	-100	chat	0	cleanup:6b43a759-e4ca-47f4-8011-c8bb06edc0f3	\N	\N	2026-10-11 09:15:14.218358+00
-f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-7667adb7-ea63-4ba0-88f1-572d878e15cc	\N	\N	2026-10-11 09:16:18.286069+00
-ccc21b17-15a2-40f3-8194-9b60e03b2e48	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	reserve	300	chat	0	itest-res-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.341555+00
-8e180681-901a-4581-adcb-4dcde3ff6a13	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	commit	120	chat	45	itest-com-ccc21b17-15a2-40f3-8194-9b60e03b2e48	\N	\N	2026-10-11 09:16:18.363488+00
-f926401c-ba88-4c72-bb22-8b8579028471	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	reserve	200	vision	0	itest-res2-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.385729+00
-d35fa89a-ffa3-4b03-98de-ed43c9a5db8d	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	release	-200	vision	0	itest-rel-f926401c-ba88-4c72-bb22-8b8579028471	\N	\N	2026-10-11 09:16:18.394909+00
-05978f05-48e5-4452-bf41-a9e397def6ab	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	reserve	250	chat	0	itest-clean-e51250cd-facf-4bd7-a23d-27b8bfc0864a	\N	\N	2026-10-11 09:16:18.523369+00
-f2d34a50-f5bb-45d4-b5d9-57fee29cdb44	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	9f10a7c4-15a2-4ab0-a09f-dfae27d156af	release	-100	chat	0	cleanup:9f10a7c4-15a2-4ab0-a09f-dfae27d156af	\N	\N	2026-10-11 09:16:18.551242+00
-e9b8fe04-6022-4467-80af-4bacd33b9b77	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	release	-250	chat	0	cleanup:fe1d787e-efc0-470d-ab5c-61fdf3ee856e	\N	\N	2026-10-11 09:16:18.562392+00
-01ca435d-c642-45c3-9f14-8359dbbb851c	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	release	-250	chat	0	cleanup:05978f05-48e5-4452-bf41-a9e397def6ab	\N	\N	2026-10-11 09:16:18.582509+00
-93e6d1ee-8c51-4373-a6f9-d018555a4951	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-a6e0fb42-d387-4ab0-9046-918d411fbc8f	\N	\N	2026-10-11 09:20:32.856806+00
-6596beb8-6234-4037-b450-142d184cc173	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	reserve	300	chat	0	itest-res-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:33.974717+00
-4063e1f9-d332-46bf-8707-4d04d511081c	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	commit	120	chat	45	itest-com-6596beb8-6234-4037-b450-142d184cc173	\N	\N	2026-10-11 09:20:33.996172+00
-b3179fc5-52bf-4d47-952d-e51f0545b579	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	reserve	200	vision	0	itest-res2-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:34.009568+00
-c66d62ae-06e6-4948-9883-73586f328ec4	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	release	-200	vision	0	itest-rel-b3179fc5-52bf-4d47-952d-e51f0545b579	\N	\N	2026-10-11 09:20:34.019018+00
-129382e1-91df-4ff9-b1f6-2abf0b03d0d8	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	reserve	250	chat	0	itest-clean-c539a480-fbc6-4cf3-bea3-839807c7e8ad	\N	\N	2026-10-11 09:20:34.129819+00
-da104410-dd77-43ee-a919-d29d48b58b53	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	release	-100	chat	0	cleanup:f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	\N	\N	2026-10-11 09:20:34.151061+00
-1061cb56-b5b8-42ff-ad2a-cad0f7c677f0	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	release	-250	chat	0	cleanup:129382e1-91df-4ff9-b1f6-2abf0b03d0d8	\N	\N	2026-10-11 09:20:34.166346+00
-84b1c699-b3da-4725-b174-1a0a1c1291ea	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-8	\N	\N	2026-10-11 09:22:40.012881+00
-8a54a113-57fb-4f5f-8bd3-78a026594aef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-16	\N	\N	2026-10-11 09:22:40.07227+00
-678a0e09-f260-4659-a896-67e9d3f9e7ef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-20	\N	\N	2026-10-11 09:22:40.072378+00
-422a9e4b-c226-4039-84db-e7d6999f44e6	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-5	\N	\N	2026-10-11 09:22:40.078447+00
-c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-38	\N	\N	2026-10-11 09:22:40.083909+00
-a6100d1f-0d21-4e39-a2f2-7eb1758014d8	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-7	\N	\N	2026-10-11 09:22:40.0753+00
-e7466dc6-6428-4955-a8d2-b16eee6be3cc	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-39	\N	\N	2026-10-11 09:22:40.092486+00
-a368ccc8-069a-4ed4-b0e2-c8419e01a555	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-4	\N	\N	2026-10-11 09:22:40.10975+00
-1e028d4c-6672-427e-94a3-39d9dc9a1c8d	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-25	\N	\N	2026-10-11 09:22:40.118472+00
-57187bab-e33d-49c3-9da3-b1c1596d56e7	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-30	\N	\N	2026-10-11 09:22:40.081069+00
-b8d28f66-97f1-4c12-9b36-6beec196ec52	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-0	\N	\N	2026-10-11 09:22:40.227525+00
-c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-1	\N	\N	2026-10-11 09:22:40.244859+00
-b6ae5911-8514-4723-ba2a-af35b962bf99	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-2	\N	\N	2026-10-11 09:22:40.25197+00
-322a98d8-bab7-45a6-80d9-3016b34b52d2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-3	\N	\N	2026-10-11 09:22:40.260418+00
-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-4	\N	\N	2026-10-11 09:22:40.26713+00
-24d51382-5b82-4b83-804c-47bada6606f3	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-5	\N	\N	2026-10-11 09:22:40.274448+00
-769665b1-4439-4aad-bb35-417e6864c848	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-6	\N	\N	2026-10-11 09:22:40.281309+00
-48a6d620-4045-4969-9456-ca6a50d941a2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	48a6d620-4045-4969-9456-ca6a50d941a2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-7	\N	\N	2026-10-11 09:22:40.292198+00
-9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-8	\N	\N	2026-10-11 09:22:40.299851+00
-5e85c061-dea0-41a5-9ae6-c02d3435d49b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-9	\N	\N	2026-10-11 09:22:40.306748+00
-f338223f-7c34-4ac9-8360-557efdd82678	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	commit	100	chat	0	commit-c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6-0	\N	\N	2026-10-11 09:22:40.353639+00
-30d83acc-232f-41d2-9b0e-dd4ea95ed3d6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-1	\N	\N	2026-10-11 09:22:40.361864+00
-3fe9af7c-3a46-4099-bbb6-a46335317fb2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	commit	100	chat	0	commit-322a98d8-bab7-45a6-80d9-3016b34b52d2-1	\N	\N	2026-10-11 09:22:40.370979+00
-60f68d14-7e4b-4f24-98d9-0b25db70b3c4	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-0	\N	\N	2026-10-11 09:22:40.383284+00
-2a411a77-34c4-42d7-9e04-68d6512ed20c	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	commit	100	chat	0	commit-769665b1-4439-4aad-bb35-417e6864c848-1	\N	\N	2026-10-11 09:22:40.393864+00
-614a2f56-7294-4a40-a470-7fc327f349eb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	commit	100	chat	0	commit-5e85c061-dea0-41a5-9ae6-c02d3435d49b-0	\N	\N	2026-10-11 09:22:40.387357+00
-777f1549-578a-4cf1-8702-f60d68a2c0f2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-1	\N	\N	2026-10-11 09:22:40.401118+00
-e1b2e044-a312-413b-92e1-350cd9f1d991	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	commit	100	chat	0	commit-b6ae5911-8514-4723-ba2a-af35b962bf99-1	\N	\N	2026-10-11 09:22:40.414157+00
-36607016-59cc-49ae-913d-f4641938328b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	commit	100	chat	0	commit-b8d28f66-97f1-4c12-9b36-6beec196ec52-0	\N	\N	2026-10-11 09:22:40.41977+00
-a8745626-318b-4810-bf38-c4683de43cfb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-0	\N	\N	2026-10-11 09:22:40.401119+00
-36797fed-cee4-4cb3-b158-53a4e9f3a446	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-6221055c-f0b6-408c-a62a-6d209c393b96	\N	\N	2026-10-11 09:23:36.830075+00
-84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-39	\N	\N	2026-10-11 09:23:38.212052+00
-2f114616-69dd-41ad-b813-a7455b94ebc0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-33	\N	\N	2026-10-11 09:23:38.259321+00
-07971ddd-e662-4185-a3dd-3e873ade7bc2	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-31	\N	\N	2026-10-11 09:23:38.234378+00
-21490f3b-a4cc-4f3e-a674-28c9456adddf	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-22	\N	\N	2026-10-11 09:23:38.232525+00
-0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-23	\N	\N	2026-10-11 09:23:38.265152+00
-f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-37	\N	\N	2026-10-11 09:23:38.268029+00
-cbf45039-62a4-405b-866e-bed83bb0d3f0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-3	\N	\N	2026-10-11 09:23:38.24436+00
-a0187d13-bf11-417c-be37-639dd9b3c2d6	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-32	\N	\N	2026-10-11 09:23:38.304104+00
-369af912-46d0-422d-b0b2-6ba1bdcabc2a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-20	\N	\N	2026-10-11 09:23:38.229609+00
-5118fd28-3c35-4bfe-90b7-13385b6d1774	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-27	\N	\N	2026-10-11 09:23:38.319919+00
-6f47f204-3fa6-43c0-ace0-e19792d1de62	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-0	\N	\N	2026-10-11 09:23:38.466216+00
-253ce815-ea9f-4eed-bddc-6eb0574b0a84	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	253ce815-ea9f-4eed-bddc-6eb0574b0a84	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-1	\N	\N	2026-10-11 09:23:38.487249+00
-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-2	\N	\N	2026-10-11 09:23:38.495497+00
-6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-3	\N	\N	2026-10-11 09:23:38.503884+00
-3b325f60-e3d4-4fc1-871f-23f157115433	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-4	\N	\N	2026-10-11 09:23:38.512694+00
-375d7f58-0a0c-46b0-b453-e68480b4e398	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-5	\N	\N	2026-10-11 09:23:38.520024+00
-5f844e77-bff0-4434-bde5-3f6981a241bc	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	5f844e77-bff0-4434-bde5-3f6981a241bc	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-6	\N	\N	2026-10-11 09:23:38.527341+00
-91a42438-f102-4577-9bed-a70c6e107fd5	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-7	\N	\N	2026-10-11 09:23:38.533867+00
-2f49b5e2-2e11-4364-9623-8fb72c23579b	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-8	\N	\N	2026-10-11 09:23:38.54287+00
-37f37a3d-5fa0-4e63-bf28-3c8af5043cae	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-9	\N	\N	2026-10-11 09:23:38.550079+00
-ba95c8bd-2063-43af-a361-e49edf9d51b2	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-0	\N	\N	2026-10-11 09:23:38.608932+00
-0b01ad31-36a2-4933-8f93-dd2682bb8c97	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-0	\N	\N	2026-10-11 09:23:38.617729+00
-e2590c0d-ad29-4c94-99d9-80775b135a31	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-1	\N	\N	2026-10-11 09:23:38.624647+00
-085685a3-c6e1-4ee4-8bc9-f89a2c476756	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	commit	100	chat	0	commit-37f37a3d-5fa0-4e63-bf28-3c8af5043cae-0	\N	\N	2026-10-11 09:23:38.634113+00
-49623aa2-c3d2-45e3-b4be-d4f31051cb5a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-1	\N	\N	2026-10-11 09:23:38.639751+00
-fcba3f6d-9a3e-48e4-9e6b-afc79e0de044	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-0	\N	\N	2026-10-11 09:23:38.647488+00
-8af46e21-d17f-4c7f-b5d9-56428d0553bf	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-1	\N	\N	2026-10-11 09:23:38.648086+00
-983252c9-128b-451b-be0a-bd24524f1b58	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	commit	100	chat	0	commit-91a42438-f102-4577-9bed-a70c6e107fd5-1	\N	\N	2026-10-11 09:23:38.678181+00
-63ffac44-3715-4649-a598-5c07c04de36d	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	commit	100	chat	0	commit-6f47f204-3fa6-43c0-ace0-e19792d1de62-1	\N	\N	2026-10-11 09:23:38.656564+00
-395e1a7e-3999-48f1-b6c9-53eeb7bfc325	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	commit	100	chat	0	commit-375d7f58-0a0c-46b0-b453-e68480b4e398-0	\N	\N	2026-10-11 09:23:38.662151+00
-e2d314f4-f415-4f61-b05b-2cf93a6e089c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	reserve	300	chat	0	itest-res-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.803404+00
-8e5902aa-38fd-4265-b768-0896340df887	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	commit	120	chat	45	itest-com-e2d314f4-f415-4f61-b05b-2cf93a6e089c	\N	\N	2026-10-11 09:23:38.828442+00
-966c2336-6d4f-4789-a161-cde30354db6c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	reserve	200	vision	0	itest-res2-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.843254+00
-9474994b-1098-4877-a75f-311e26d0c227	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	release	-200	vision	0	itest-rel-966c2336-6d4f-4789-a161-cde30354db6c	\N	\N	2026-10-11 09:23:38.853368+00
-0b9c21d8-4a8d-4281-947f-2d09613e9cf1	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	reserve	250	chat	0	itest-clean-d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	\N	\N	2026-10-11 09:23:39.048647+00
-6ea1cc49-326b-4891-8a2b-ad1c1d1601c4	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	93e6d1ee-8c51-4373-a6f9-d018555a4951	release	-100	chat	0	cleanup:93e6d1ee-8c51-4373-a6f9-d018555a4951	\N	\N	2026-10-11 09:23:39.118342+00
-bbada801-6979-46cb-82d0-feddd9b8f9c0	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	release	-100	chat	0	cleanup:84b1c699-b3da-4725-b174-1a0a1c1291ea	\N	\N	2026-10-11 09:23:39.132643+00
-a84140bd-7b1c-49e5-9b00-5fadbf22126f	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	release	-100	chat	0	cleanup:8a54a113-57fb-4f5f-8bd3-78a026594aef	\N	\N	2026-10-11 09:23:39.152235+00
-0b95c0f5-9d99-49a9-83d5-525909104d82	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	release	-100	chat	0	cleanup:678a0e09-f260-4659-a896-67e9d3f9e7ef	\N	\N	2026-10-11 09:23:39.166184+00
-02bb3a56-9205-4ab9-bd21-37ca1cb9f577	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	release	-100	chat	0	cleanup:a6100d1f-0d21-4e39-a2f2-7eb1758014d8	\N	\N	2026-10-11 09:23:39.18006+00
-4490bd72-17ab-4d9c-839a-7f7f7e9232c3	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	release	-100	chat	0	cleanup:422a9e4b-c226-4039-84db-e7d6999f44e6	\N	\N	2026-10-11 09:23:39.1926+00
-361fb82a-2f5b-42d7-82f5-7fdfeb047d21	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	release	-100	chat	0	cleanup:57187bab-e33d-49c3-9da3-b1c1596d56e7	\N	\N	2026-10-11 09:23:39.208664+00
-6dc99c11-b1a2-4589-b6e1-984206463d02	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	release	-100	chat	0	cleanup:c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	\N	\N	2026-10-11 09:23:39.2211+00
-43bbada8-0bc3-49b5-8f82-83b5f8276894	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	release	-100	chat	0	cleanup:e7466dc6-6428-4955-a8d2-b16eee6be3cc	\N	\N	2026-10-11 09:23:39.238051+00
-f924fc5d-2e9e-4927-aa81-6b452f661d40	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	release	-100	chat	0	cleanup:a368ccc8-069a-4ed4-b0e2-c8419e01a555	\N	\N	2026-10-11 09:23:39.25021+00
-f22bf14c-84ab-445f-834c-8ea7405cb81c	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	release	-100	chat	0	cleanup:1e028d4c-6672-427e-94a3-39d9dc9a1c8d	\N	\N	2026-10-11 09:23:39.261173+00
-7e27d132-8713-497c-98d6-398c5ef4ca4f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	release	-100	chat	0	cleanup:84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	\N	\N	2026-10-11 09:23:39.296323+00
-a05187bd-ca16-4e92-928c-790c69df3f3d	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	release	-100	chat	0	cleanup:369af912-46d0-422d-b0b2-6ba1bdcabc2a	\N	\N	2026-10-11 09:23:39.306909+00
-d2ee9ad0-dad4-433b-bf4a-960b0a03308f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	release	-100	chat	0	cleanup:21490f3b-a4cc-4f3e-a674-28c9456adddf	\N	\N	2026-10-11 09:23:39.316008+00
-8b513c2e-ed8f-417b-a993-b51bbf4beab1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	release	-100	chat	0	cleanup:07971ddd-e662-4185-a3dd-3e873ade7bc2	\N	\N	2026-10-11 09:23:39.325722+00
-0439d074-c008-4a68-8133-545c1137760c	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	release	-100	chat	0	cleanup:cbf45039-62a4-405b-866e-bed83bb0d3f0	\N	\N	2026-10-11 09:23:39.333978+00
-c172271d-877b-4570-a36b-4a892d05e3e4	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	release	-100	chat	0	cleanup:2f114616-69dd-41ad-b813-a7455b94ebc0	\N	\N	2026-10-11 09:23:39.343734+00
-4dd1b0a9-34c2-46d8-9908-e5f23ced5219	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	release	-100	chat	0	cleanup:0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	\N	\N	2026-10-11 09:23:39.352201+00
-8d58055e-24ff-4039-ace7-c2e0b37c6c0e	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	release	-100	chat	0	cleanup:f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	\N	\N	2026-10-11 09:23:39.361419+00
-05aaec20-4bcd-4a36-967e-83aecdcf8ccd	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	release	-100	chat	0	cleanup:a0187d13-bf11-417c-be37-639dd9b3c2d6	\N	\N	2026-10-11 09:23:39.371412+00
-9dca86c4-ee96-4319-b2d5-f101883e2d0a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	release	-100	chat	0	cleanup:5118fd28-3c35-4bfe-90b7-13385b6d1774	\N	\N	2026-10-11 09:23:39.382393+00
-9f4db381-11c2-46a6-aa7b-e27975c0c8cb	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	release	-250	chat	0	cleanup:0b9c21d8-4a8d-4281-947f-2d09613e9cf1	\N	\N	2026-10-11 09:23:39.42263+00
-f14dae17-4511-4357-b50c-26462501abaf	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-58af872e-a089-4801-9f7a-8e0aa3c7c3d7	\N	\N	2026-10-11 09:47:25.829118+00
-f63f0a48-ea11-4baa-ad30-939a85fa3020	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-5	\N	\N	2026-10-11 09:47:27.000612+00
-628ad811-fc09-42d9-92b5-98e843f5dad9	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-25	\N	\N	2026-10-11 09:47:27.023164+00
-281e9640-dd17-4705-b8cd-fd56a8d5d35d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-20	\N	\N	2026-10-11 09:47:27.032435+00
-daa8ff87-fdd2-44ae-8313-7a1b047c0e94	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-34	\N	\N	2026-10-11 09:47:27.034872+00
-d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-16	\N	\N	2026-10-11 09:47:27.04188+00
-32ad2c62-e9fd-40eb-a63b-acb705bb6469	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-29	\N	\N	2026-10-11 09:47:27.057142+00
-9a1f6bc1-56f4-4fb4-85fa-782b1095b685	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-7	\N	\N	2026-10-11 09:47:27.055977+00
-f0a99d48-5e72-4834-afbd-3f426958dd4b	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-12	\N	\N	2026-10-11 09:47:27.047892+00
-f4ec0efb-c970-45fc-aeb0-0f242bbed7df	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-3	\N	\N	2026-10-11 09:47:27.078806+00
-85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-11	\N	\N	2026-10-11 09:47:27.070272+00
-8712c2cc-c14b-4c77-b9a9-540094579af1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	8712c2cc-c14b-4c77-b9a9-540094579af1	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-0	\N	\N	2026-10-11 09:47:27.202302+00
-cefce473-376b-4d8e-bec0-76ae27b6ed47	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-1	\N	\N	2026-10-11 09:47:27.221071+00
-b3d034de-118a-4aab-b37e-846ad5e33cad	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	b3d034de-118a-4aab-b37e-846ad5e33cad	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-2	\N	\N	2026-10-11 09:47:27.228592+00
-262036f2-2876-4e76-8cbe-bda6d2079db0	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-3	\N	\N	2026-10-11 09:47:27.237849+00
-81873929-d5a4-4040-b3c0-7759c3a4dafb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-4	\N	\N	2026-10-11 09:47:27.245568+00
-3ad0fba2-1141-4661-9390-39368b497e7c	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-5	\N	\N	2026-10-11 09:47:27.253011+00
-df7252b8-0168-4267-a24d-40286d1c0933	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-6	\N	\N	2026-10-11 09:47:27.259624+00
-a2b67738-20d9-4529-8448-76e36ccd2b28	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-7	\N	\N	2026-10-11 09:47:27.266659+00
-2c77fd24-09ff-4b84-b404-9deb8301e8fb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-8	\N	\N	2026-10-11 09:47:27.272906+00
-c6f03282-3853-41a9-9899-5637ec0016e8	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-9	\N	\N	2026-10-11 09:47:27.280008+00
-68a5aca9-3594-4bb5-bfe6-46ad4adcc2a2	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-1	\N	\N	2026-10-11 09:47:27.326748+00
-92c41b61-2cae-47dd-a9d4-8c3eea749275	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	commit	100	chat	0	commit-cefce473-376b-4d8e-bec0-76ae27b6ed47-1	\N	\N	2026-10-11 09:47:27.338016+00
-2cfa57d8-36ab-455e-8c02-0c420172e086	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-0	\N	\N	2026-10-11 09:47:27.369965+00
-c9b066eb-8ccb-44ca-a71b-a63615f61f55	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	commit	100	chat	0	commit-df7252b8-0168-4267-a24d-40286d1c0933-0	\N	\N	2026-10-11 09:47:27.369889+00
-0d9d0cf0-6e36-44d5-ad79-2b8c7473696f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	commit	100	chat	0	commit-3ad0fba2-1141-4661-9390-39368b497e7c-0	\N	\N	2026-10-11 09:47:27.373385+00
-41b3f9ea-4679-4290-91b4-8c50061ed35d	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	commit	100	chat	0	commit-262036f2-2876-4e76-8cbe-bda6d2079db0-0	\N	\N	2026-10-11 09:47:27.386348+00
-657c916f-85b0-4bc8-a670-0d1f37fbf7f1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-1	\N	\N	2026-10-11 09:47:27.367044+00
-dc6bc7f6-132a-46a6-b05c-df867fee907f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-0	\N	\N	2026-10-11 09:47:27.382371+00
-50fbad21-a5cf-42b7-bf83-9fd31f9b0d84	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	commit	100	chat	0	commit-a2b67738-20d9-4529-8448-76e36ccd2b28-0	\N	\N	2026-10-11 09:47:27.414601+00
-67a413da-53f9-4e71-9858-0ca620f722c9	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	commit	100	chat	0	commit-2c77fd24-09ff-4b84-b404-9deb8301e8fb-1	\N	\N	2026-10-11 09:47:27.380569+00
-35b6a641-65a4-40ff-b1ca-eb0d987e38ad	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	reserve	300	chat	0	itest-res-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.527764+00
-9ef270f6-c90f-4081-b7c2-dab10937781e	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	commit	120	chat	45	itest-com-35b6a641-65a4-40ff-b1ca-eb0d987e38ad	\N	\N	2026-10-11 09:47:27.551225+00
-a3b4b542-771b-4115-bde7-69efe25c1247	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	reserve	200	vision	0	itest-res2-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.565558+00
-5e1636ff-a711-41c1-81a2-aa82f4bde16b	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	release	-200	vision	0	itest-rel-a3b4b542-771b-4115-bde7-69efe25c1247	\N	\N	2026-10-11 09:47:27.574584+00
-510f9e21-a555-4d29-b271-89ae658fec98	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	reserve	250	chat	0	itest-clean-7cd26518-df13-4981-a5af-d7442f09f44b	\N	\N	2026-10-11 09:47:27.686057+00
-278fc9a7-15b1-4e82-b842-2796dff27454	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	36797fed-cee4-4cb3-b158-53a4e9f3a446	release	-100	chat	0	cleanup:36797fed-cee4-4cb3-b158-53a4e9f3a446	\N	\N	2026-10-11 09:47:27.730439+00
-b0ad585d-6f03-46a4-8ef9-fce31a712e3f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	release	-100	chat	0	cleanup:f63f0a48-ea11-4baa-ad30-939a85fa3020	\N	\N	2026-10-11 09:47:27.770729+00
-0824f611-ad39-4ec7-b6e7-0c4aefb335a3	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	release	-100	chat	0	cleanup:628ad811-fc09-42d9-92b5-98e843f5dad9	\N	\N	2026-10-11 09:47:27.780545+00
-28c44760-3ca7-4128-81f4-fa94aab61c23	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	release	-100	chat	0	cleanup:281e9640-dd17-4705-b8cd-fd56a8d5d35d	\N	\N	2026-10-11 09:47:27.789765+00
-0399171b-8126-4c91-bfb8-995e5e84db33	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	release	-100	chat	0	cleanup:daa8ff87-fdd2-44ae-8313-7a1b047c0e94	\N	\N	2026-10-11 09:47:27.798256+00
-2bf4e326-1787-4724-83a2-549575ce6d50	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	release	-100	chat	0	cleanup:d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	\N	\N	2026-10-11 09:47:27.807275+00
-f8cd5f13-00d2-42f1-9f8f-93fd5353c9ea	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	release	-100	chat	0	cleanup:f0a99d48-5e72-4834-afbd-3f426958dd4b	\N	\N	2026-10-11 09:47:27.816301+00
-61e756ca-1058-47f7-8f75-e8226260567d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	release	-100	chat	0	cleanup:9a1f6bc1-56f4-4fb4-85fa-782b1095b685	\N	\N	2026-10-11 09:47:27.824416+00
-b1d017de-27ec-4e6d-96cd-40218ddf0e5d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	release	-100	chat	0	cleanup:32ad2c62-e9fd-40eb-a63b-acb705bb6469	\N	\N	2026-10-11 09:47:27.833793+00
-c2c854ad-bd19-498c-8e33-4e3ac09cc73f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	release	-100	chat	0	cleanup:85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	\N	\N	2026-10-11 09:47:27.842056+00
-1850e8ce-ca5a-482d-b43b-f3888c44156e	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	release	-100	chat	0	cleanup:f4ec0efb-c970-45fc-aeb0-0f242bbed7df	\N	\N	2026-10-11 09:47:27.850866+00
-8071f6aa-cfba-4b10-89a4-3e58c242c0e7	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	release	-250	chat	0	cleanup:510f9e21-a555-4d29-b271-89ae658fec98	\N	\N	2026-10-11 09:47:27.873382+00
-42993fd8-1af4-4ff6-b6c9-f8601b5d998f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	42993fd8-1af4-4ff6-b6c9-f8601b5d998f	reserve	1	chat	0	chat-reserve:9b867a40-c82c-4271-b76f-580b71b064ea	\N	\N	2026-10-13 12:11:26.090423+00
-c4b8f43b-0a7a-4617-aef3-60ae5d4888c3	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	42993fd8-1af4-4ff6-b6c9-f8601b5d998f	commit	1	chat	0	commit:42993fd8-1af4-4ff6-b6c9-f8601b5d998f	\N	\N	2026-10-13 12:11:26.129372+00
-d26ef308-722b-47d5-beef-07fbfeab6b32	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	d26ef308-722b-47d5-beef-07fbfeab6b32	reserve	1	chat	0	chat-reserve:0344b21f-f77b-4d1e-8d49-bf093bb33d23	\N	\N	2026-10-13 12:35:52.467052+00
-f1e15ad4-3eb5-49dc-810d-259ddb5afcb3	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	d26ef308-722b-47d5-beef-07fbfeab6b32	release	-1	chat	0	release:d26ef308-722b-47d5-beef-07fbfeab6b32	\N	\N	2026-10-13 12:36:00.610553+00
-87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	reserve	1	chat	0	chat-reserve:31b403be-d0f9-4e20-b1df-395cb794331d	\N	\N	2026-10-13 12:50:52.790128+00
-1c51028f-60f9-4eea-a86f-b048654c46bc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	commit	1	chat	0	commit:87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	\N	\N	2026-10-13 12:50:57.886836+00
-c1b35203-085f-46a9-9dfe-5171992a812e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	c1b35203-085f-46a9-9dfe-5171992a812e	reserve	1	chat	0	chat-reserve:daf6ad20-30f1-4203-8ae1-a74f986636ee	\N	\N	2026-10-13 12:51:40.570016+00
-93bec4dc-a1f3-4848-a1f0-16e4c17738c8	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	c1b35203-085f-46a9-9dfe-5171992a812e	commit	1	chat	0	commit:c1b35203-085f-46a9-9dfe-5171992a812e	\N	\N	2026-10-13 12:51:44.795679+00
-31d19fa6-6e52-4349-83f7-004e911d74c7	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	31d19fa6-6e52-4349-83f7-004e911d74c7	reserve	1	chat	0	chat-reserve:95d42835-0a30-4909-a68c-3cd2d070d93e	\N	\N	2026-10-13 14:02:52.69952+00
-bdf8da15-2187-4c7a-a010-e711f504290e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	31d19fa6-6e52-4349-83f7-004e911d74c7	commit	1	chat	0	commit:31d19fa6-6e52-4349-83f7-004e911d74c7	\N	\N	2026-10-13 14:02:58.317347+00
-5bb7f36c-70d8-4d23-ba97-dda926e53c67	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5bb7f36c-70d8-4d23-ba97-dda926e53c67	reserve	1	chat	0	chat-reserve:18bd8e33-2faf-48bc-af3d-04daa3b364ea	\N	\N	2026-10-13 14:20:16.662952+00
-d4ec77b7-7b96-4d9b-a533-c5fb21e2fc73	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5bb7f36c-70d8-4d23-ba97-dda926e53c67	commit	1	chat	0	commit:5bb7f36c-70d8-4d23-ba97-dda926e53c67	\N	\N	2026-10-13 14:20:16.726406+00
-7482f9fa-a4da-4844-bfbb-610058d67125	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7482f9fa-a4da-4844-bfbb-610058d67125	reserve	1	chat	0	chat-reserve:ceb98f5d-e5f3-4238-8483-69d72b5d9297	\N	\N	2026-10-13 14:20:23.466086+00
-83015c09-cb61-46a1-aa61-a748e3af0965	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7482f9fa-a4da-4844-bfbb-610058d67125	commit	1	chat	0	commit:7482f9fa-a4da-4844-bfbb-610058d67125	\N	\N	2026-10-13 14:20:28.904435+00
-5d9180f7-53ad-41b1-9ea4-207dd9aab11c	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5d9180f7-53ad-41b1-9ea4-207dd9aab11c	reserve	1	chat	0	chat-reserve:ba535c12-743e-478e-90fd-25aa00265d9f	\N	\N	2026-10-13 14:28:51.386662+00
-243d750d-e4cc-4037-b056-2b6feb9892fc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5d9180f7-53ad-41b1-9ea4-207dd9aab11c	commit	1	chat	0	commit:5d9180f7-53ad-41b1-9ea4-207dd9aab11c	\N	\N	2026-10-13 14:29:02.617533+00
-15aed8e6-c907-4514-b548-8c37154ed820	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	15aed8e6-c907-4514-b548-8c37154ed820	reserve	1	reasoning	0	chat-reserve:7a6bc3d0-0eaa-4013-81bf-535b143e8ca0	\N	\N	2026-10-13 14:31:06.410194+00
-3f65a09f-54da-4b42-beb2-b981550ee921	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	15aed8e6-c907-4514-b548-8c37154ed820	commit	1	reasoning	0	commit:15aed8e6-c907-4514-b548-8c37154ed820	\N	\N	2026-10-13 14:31:18.589704+00
-ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	reserve	1	chat	0	chat-reserve:e581844f-8dae-4e86-a47a-e793b803dd73	\N	\N	2026-10-13 14:32:40.638133+00
-7b99cae0-f9b6-4a73-8339-e2e286ef720c	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	commit	1	chat	0	commit:ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	\N	\N	2026-10-13 14:32:40.66561+00
-02e6f449-e418-46dd-8bff-8160b93963f6	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	02e6f449-e418-46dd-8bff-8160b93963f6	reserve	1	chat	0	chat-reserve:c13925ed-9266-4274-958e-e805804c9597	\N	\N	2026-10-13 14:37:36.780743+00
-5fdd1e23-b2a7-428e-b272-5c687790ac01	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	02e6f449-e418-46dd-8bff-8160b93963f6	commit	1	chat	0	commit:02e6f449-e418-46dd-8bff-8160b93963f6	\N	\N	2026-10-13 14:37:36.821713+00
-85f8fd12-1f78-4d93-ba2c-67ba82693058	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	85f8fd12-1f78-4d93-ba2c-67ba82693058	reserve	1	chat	0	chat-reserve:cc8a1230-ff44-48ad-bb65-4e7d81d09561	\N	\N	2026-10-13 14:37:47.693895+00
-088ef0f2-9f5e-4d6c-8dda-1963d290e56d	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	85f8fd12-1f78-4d93-ba2c-67ba82693058	commit	1	chat	0	commit:85f8fd12-1f78-4d93-ba2c-67ba82693058	\N	\N	2026-10-13 14:37:47.739537+00
-ca031b14-2f28-4210-ac0b-17f492696f88	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ca031b14-2f28-4210-ac0b-17f492696f88	reserve	1	chat	0	chat-reserve:d29c7da8-26e7-40e6-8bb2-fd7e52368313	\N	\N	2026-10-13 14:41:22.277088+00
-acb53ddc-0ffa-4832-a54f-31bbd4861f6a	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ca031b14-2f28-4210-ac0b-17f492696f88	commit	1	chat	0	commit:ca031b14-2f28-4210-ac0b-17f492696f88	\N	\N	2026-10-13 14:41:34.193382+00
-4d8b6227-8a1f-4865-ba27-853cd7b654b5	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	4d8b6227-8a1f-4865-ba27-853cd7b654b5	reserve	1	chat	0	chat-reserve:c9772e75-2478-4210-a57c-14ebaf905066	\N	\N	2026-10-13 14:50:22.779332+00
-26933a28-61d2-4f0f-9826-6705a2b2d56f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	4d8b6227-8a1f-4865-ba27-853cd7b654b5	commit	1	chat	0	commit:4d8b6227-8a1f-4865-ba27-853cd7b654b5	\N	\N	2026-10-13 14:50:37.866155+00
-6190a51c-8e11-45ef-8bb8-778600a374c2	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6190a51c-8e11-45ef-8bb8-778600a374c2	reserve	1	chat	0	chat-reserve:7790fbb7-6e90-4179-80fb-992202750cd5	\N	\N	2026-10-13 14:51:40.563187+00
-c7417847-ef60-48a7-8ad8-270ecc10cc97	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6190a51c-8e11-45ef-8bb8-778600a374c2	commit	1	chat	0	commit:6190a51c-8e11-45ef-8bb8-778600a374c2	\N	\N	2026-10-13 14:51:46.658259+00
-a06d925c-f357-4ce1-ab41-73eaaacc5556	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	a06d925c-f357-4ce1-ab41-73eaaacc5556	reserve	1	chat	0	chat-reserve:c61e9656-8400-418c-98b8-aaa61540a161	\N	\N	2026-10-13 16:05:08.902057+00
-bdff335e-1a7b-43af-94ad-06327f98379e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	a06d925c-f357-4ce1-ab41-73eaaacc5556	commit	1	chat	0	commit:a06d925c-f357-4ce1-ab41-73eaaacc5556	\N	\N	2026-10-13 16:05:22.841694+00
-f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	reserve	1	chat	0	chat-reserve:65570b70-830f-406b-b445-39fc5365b448	\N	\N	2026-10-13 16:05:51.938717+00
-c5081778-0bd8-47d5-93ad-24368082fb4d	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	commit	1	chat	0	commit:f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	\N	\N	2026-10-13 16:05:55.585295+00
-ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	reserve	1	reasoning	0	chat-reserve:ecb7bae9-6d24-4cfd-bcc2-7c0244961f7c	\N	\N	2026-10-13 16:06:33.580341+00
-dfaaaa73-5614-47dd-8b55-af4fb5d81f6f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	commit	1	reasoning	0	commit:ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	\N	\N	2026-10-13 16:06:33.591666+00
-7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	reserve	1	reasoning	0	chat-reserve:43190d87-7d21-47b5-953a-6ff743de2c02	\N	\N	2026-10-13 16:06:51.88613+00
-694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	reserve	1	vision	0	vision-reserve:f79c9f1a-de05-4465-80df-80708fc582c6	\N	\N	2026-10-13 16:32:02.835667+00
-461be7d6-f076-4fc3-8e2d-a5ad507662b2	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	commit	3874	vision	0	vision-commit:694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	\N	\N	2026-10-13 16:32:08.065513+00
-b1a7551a-b9c7-44f6-acb1-2393c88322b4	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b1a7551a-b9c7-44f6-acb1-2393c88322b4	reserve	1	vision	0	vision-reserve:92bbce57-10b7-4877-ae0d-fc31cffea995	\N	\N	2026-10-13 16:32:08.152489+00
-229087e2-33ca-4f34-bcad-5e58e1de29f0	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b1a7551a-b9c7-44f6-acb1-2393c88322b4	commit	3763	vision	0	vision-commit:b1a7551a-b9c7-44f6-acb1-2393c88322b4	\N	\N	2026-10-13 16:32:10.486277+00
-c699a424-e205-4f43-af9e-33405c2532f9	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	c699a424-e205-4f43-af9e-33405c2532f9	reserve	1	vision	0	vision-reserve:439b11ed-43c6-4486-812a-acecdf63d25d	\N	\N	2026-10-13 16:32:10.57037+00
-0134113a-2270-44fb-a8b4-cb6e13dd706d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	c699a424-e205-4f43-af9e-33405c2532f9	commit	3750	vision	0	vision-commit:c699a424-e205-4f43-af9e-33405c2532f9	\N	\N	2026-10-13 16:32:13.183202+00
-0d42ec19-4e8d-49f8-939f-e47d369bf412	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	0d42ec19-4e8d-49f8-939f-e47d369bf412	reserve	1	vision	0	vision-reserve:9d97faa9-7925-4dc1-ada6-ae068ec40678	\N	\N	2026-10-13 16:32:31.443922+00
-0b7d4986-93ef-4552-8bcd-485474379855	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	0d42ec19-4e8d-49f8-939f-e47d369bf412	commit	3741	vision	0	vision-commit:0d42ec19-4e8d-49f8-939f-e47d369bf412	\N	\N	2026-10-13 16:32:34.394653+00
-adc451ca-57e4-43b7-8cd3-0addb1caac8d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	adc451ca-57e4-43b7-8cd3-0addb1caac8d	reserve	1	vision	0	vision-reserve:7d7766f4-acd5-431f-8ddd-33c2dc36c133	\N	\N	2026-10-13 16:32:34.595638+00
-9240242a-6c61-4de4-aa10-3fb42195bba3	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	adc451ca-57e4-43b7-8cd3-0addb1caac8d	commit	3853	vision	0	vision-commit:adc451ca-57e4-43b7-8cd3-0addb1caac8d	\N	\N	2026-10-13 16:32:37.485446+00
-2dc85d3b-f62e-42a6-83ba-bd431d98013a	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2dc85d3b-f62e-42a6-83ba-bd431d98013a	reserve	1	vision	0	vision-reserve:4ca3289e-a2eb-434d-9f53-bccd2738edeb	\N	\N	2026-10-13 16:32:37.688308+00
-6e7ddc8b-3a3d-4a65-8c6b-1963113fe868	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2dc85d3b-f62e-42a6-83ba-bd431d98013a	commit	3777	vision	0	vision-commit:2dc85d3b-f62e-42a6-83ba-bd431d98013a	\N	\N	2026-10-13 16:32:40.834341+00
-7da70aa7-9a06-4e50-b77f-5291ccc0a650	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7da70aa7-9a06-4e50-b77f-5291ccc0a650	reserve	1	vision	0	vision-reserve:b2dfaeb9-33cb-4568-af26-563f95628082	\N	\N	2026-10-13 16:32:41.038543+00
-54a26afb-b0eb-4cc8-a37b-7cba54184328	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7da70aa7-9a06-4e50-b77f-5291ccc0a650	release	-1	vision	0	vision-release:7da70aa7-9a06-4e50-b77f-5291ccc0a650	\N	\N	2026-10-13 16:32:41.808961+00
-49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	reserve	1	chat	0	chat-reserve:46030bf9-413e-40c5-88ec-d156754eba61	\N	\N	2026-10-13 16:33:28.07057+00
-e2e85fdb-8c86-4103-b0af-a174dd9c344e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	commit	9945	chat	0	commit:49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	\N	\N	2026-10-13 16:33:38.389321+00
-4cf34fab-1cb7-4509-89fd-750417605322	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4cf34fab-1cb7-4509-89fd-750417605322	reserve	1	chat	0	chat-reserve:59b6a738-34f8-44d5-b5f5-55fadcf2673c	\N	\N	2026-10-13 16:34:03.724658+00
-02cde0f1-48ca-42d0-a525-8dfcdb690c9f	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4cf34fab-1cb7-4509-89fd-750417605322	commit	1	chat	0	commit:4cf34fab-1cb7-4509-89fd-750417605322	\N	\N	2026-10-13 16:34:03.763327+00
-4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	reserve	1	voice	0	voice-reserve:0045608f-ae7a-4f96-912e-751927a26f6a	\N	\N	2026-10-13 16:38:23.427132+00
-ec9e1712-4f9b-447e-9e29-2a215f45e5a2	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	release	-1	voice	0	voice-release:4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	\N	\N	2026-10-13 16:38:24.697871+00
-6894db63-3f10-4152-a85e-1c50c588bf6b	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6894db63-3f10-4152-a85e-1c50c588bf6b	reserve	1	chat	0	chat-reserve:b34c7422-59ba-4854-87f1-eef6edd7f9a2	\N	\N	2026-10-13 17:14:25.507515+00
-e1b09141-350a-49b5-8f64-a2f96edbf689	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6894db63-3f10-4152-a85e-1c50c588bf6b	commit	10261	chat	3847	commit:6894db63-3f10-4152-a85e-1c50c588bf6b	\N	\N	2026-10-13 17:14:37.546597+00
-3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	reserve	1	chat	0	chat-reserve:e390f9fa-295b-4ad9-83e6-1c7188b3352e	\N	\N	2026-10-14 02:39:25.600208+00
-f63a06ba-25ce-479d-a6cd-ee5adf3c1e62	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	commit	9956	chat	3733	commit:3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	\N	\N	2026-10-14 02:39:39.943667+00
-7debe3ad-b47b-4138-bba7-056a5178cca8	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7debe3ad-b47b-4138-bba7-056a5178cca8	reserve	1	vision	0	vision-reserve:2b9432e2-03be-4200-818e-d1962e52b6b4	\N	\N	2026-10-14 02:40:01.54101+00
-e6929966-919e-4239-a2d1-28922d508d5e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7debe3ad-b47b-4138-bba7-056a5178cca8	commit	3729	vision	3495	vision-commit:7debe3ad-b47b-4138-bba7-056a5178cca8	\N	\N	2026-10-14 02:40:04.640336+00
-898be76f-c499-46a7-b505-3eb30997c6c1	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	898be76f-c499-46a7-b505-3eb30997c6c1	reserve	1	chat	0	chat-reserve:736f1c77-2f17-45a5-9080-f0a11b0c6623	\N	\N	2026-10-14 02:40:11.934213+00
-de9ae159-0e13-4c0b-b493-73e82ac1730d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	898be76f-c499-46a7-b505-3eb30997c6c1	commit	1	chat	0	commit:898be76f-c499-46a7-b505-3eb30997c6c1	\N	\N	2026-10-14 02:40:11.954412+00
-b31337f2-b27c-413a-9662-557e4736b603	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b31337f2-b27c-413a-9662-557e4736b603	reserve	1	chat	0	chat-reserve:81342392-04a1-44ac-9d1c-dd40aea29052	\N	\N	2026-10-14 02:40:18.977074+00
-43473f86-69c0-4bd7-9e10-f20f86ae28f6	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b31337f2-b27c-413a-9662-557e4736b603	commit	1	chat	0	commit:b31337f2-b27c-413a-9662-557e4736b603	\N	\N	2026-10-14 02:40:18.990005+00
-5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	reserve	1	chat	0	chat-reserve:32f33447-9815-4d88-8a92-1283ed9d33a7	\N	\N	2026-10-14 02:40:25.900118+00
-b1cfcd48-8bfa-44dc-94cc-c81a4b005f8f	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	commit	1	chat	0	commit:5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	\N	\N	2026-10-14 02:40:25.925938+00
-dc4da8fe-f75f-4d11-893b-9ee95f53e285	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	dc4da8fe-f75f-4d11-893b-9ee95f53e285	reserve	1	chat	0	chat-reserve:d7fc4c8f-d7c3-4f51-9268-a87c24938a32	\N	\N	2026-10-14 02:40:32.194547+00
-e3a1c237-27f0-4e2c-9d6a-74668e3bea5d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	dc4da8fe-f75f-4d11-893b-9ee95f53e285	commit	1	chat	0	commit:dc4da8fe-f75f-4d11-893b-9ee95f53e285	\N	\N	2026-10-14 02:40:32.205833+00
-12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	reserve	1	chat	0	chat-reserve:18e574a7-7c0d-4296-bde5-49543f54ce96	\N	\N	2026-10-14 02:40:40.823845+00
-b718700c-a641-4617-a2b9-9e1e06c13804	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	commit	10011	chat	6006	commit:12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	\N	\N	2026-10-14 02:40:44.965805+00
-bf7acdce-4d1c-461e-a902-40008fb123cc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bf7acdce-4d1c-461e-a902-40008fb123cc	reserve	1	chat	0	chat-reserve:e8035e9c-09d5-42fb-8b1d-bfd8f47521a4	\N	\N	2026-10-14 02:45:54.8882+00
-cb86c58c-e775-4676-9621-0987844ebd6a	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bf7acdce-4d1c-461e-a902-40008fb123cc	commit	1	chat	0	commit:bf7acdce-4d1c-461e-a902-40008fb123cc	\N	\N	2026-10-14 02:45:55.198191+00
-48099c92-b3c9-4db6-8cad-aa77877a25b7	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	release	-1	reasoning	0	cleanup:7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	\N	\N	2026-10-14 02:53:56.002284+00
+COPY public.token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at, raw_tokens) FROM stdin;
+ab8a7ab9-61a6-4beb-b0fd-f5fd3e1ee36e	f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	\N	grant	100	chat	0	test-trigger-1	\N	\N	2026-10-11 09:09:53.985961+00	0
+6b43a759-e4ca-47f4-8011-c8bb06edc0f3	2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-2d095794-5232-406a-96ca-8b068bd5b77f	\N	\N	2026-10-11 09:11:55.697656+00	0
+9f10a7c4-15a2-4ab0-a09f-dfae27d156af	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-5c5db3f5-614d-42af-a44c-3c9a9ac72248	\N	\N	2026-10-11 09:15:13.900753+00	0
+4174a255-8657-49c5-80f3-70e7196bae95	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	reserve	300	chat	0	itest-res-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:13.973281+00	0
+f1b96a6a-c784-46f2-a1b0-2c772d161ad5	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	4174a255-8657-49c5-80f3-70e7196bae95	commit	120	chat	45	itest-com-4174a255-8657-49c5-80f3-70e7196bae95	\N	\N	2026-10-11 09:15:14.003195+00	0
+7b5bdc67-7217-4a9c-abde-456517892dad	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	reserve	200	vision	0	itest-res2-cc5a957b-2117-4e53-afb0-a3252cf96b1f	\N	\N	2026-10-11 09:15:14.030375+00	0
+3491473a-c292-4da3-854c-28bd5afd0314	2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	7b5bdc67-7217-4a9c-abde-456517892dad	release	-200	vision	0	itest-rel-7b5bdc67-7217-4a9c-abde-456517892dad	\N	\N	2026-10-11 09:15:14.043306+00	0
+fe1d787e-efc0-470d-ab5c-61fdf3ee856e	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	reserve	250	chat	0	itest-clean-93237f05-47f6-450b-8018-3ab9b433a1c5	\N	\N	2026-10-11 09:15:14.192422+00	0
+85c025ae-dce4-41e9-b21b-b197d06d62dd	5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	6b43a759-e4ca-47f4-8011-c8bb06edc0f3	release	-100	chat	0	cleanup:6b43a759-e4ca-47f4-8011-c8bb06edc0f3	\N	\N	2026-10-11 09:15:14.218358+00	0
+f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-7667adb7-ea63-4ba0-88f1-572d878e15cc	\N	\N	2026-10-11 09:16:18.286069+00	0
+ccc21b17-15a2-40f3-8194-9b60e03b2e48	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	reserve	300	chat	0	itest-res-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.341555+00	0
+8e180681-901a-4581-adcb-4dcde3ff6a13	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	ccc21b17-15a2-40f3-8194-9b60e03b2e48	commit	120	chat	45	itest-com-ccc21b17-15a2-40f3-8194-9b60e03b2e48	\N	\N	2026-10-11 09:16:18.363488+00	0
+f926401c-ba88-4c72-bb22-8b8579028471	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	reserve	200	vision	0	itest-res2-2ffdcecc-b2af-4cf1-abfd-0bb182784422	\N	\N	2026-10-11 09:16:18.385729+00	0
+d35fa89a-ffa3-4b03-98de-ed43c9a5db8d	e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	f926401c-ba88-4c72-bb22-8b8579028471	release	-200	vision	0	itest-rel-f926401c-ba88-4c72-bb22-8b8579028471	\N	\N	2026-10-11 09:16:18.394909+00	0
+05978f05-48e5-4452-bf41-a9e397def6ab	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	reserve	250	chat	0	itest-clean-e51250cd-facf-4bd7-a23d-27b8bfc0864a	\N	\N	2026-10-11 09:16:18.523369+00	0
+f2d34a50-f5bb-45d4-b5d9-57fee29cdb44	7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	9f10a7c4-15a2-4ab0-a09f-dfae27d156af	release	-100	chat	0	cleanup:9f10a7c4-15a2-4ab0-a09f-dfae27d156af	\N	\N	2026-10-11 09:16:18.551242+00	0
+e9b8fe04-6022-4467-80af-4bacd33b9b77	aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	fe1d787e-efc0-470d-ab5c-61fdf3ee856e	release	-250	chat	0	cleanup:fe1d787e-efc0-470d-ab5c-61fdf3ee856e	\N	\N	2026-10-11 09:16:18.562392+00	0
+01ca435d-c642-45c3-9f14-8359dbbb851c	5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	05978f05-48e5-4452-bf41-a9e397def6ab	release	-250	chat	0	cleanup:05978f05-48e5-4452-bf41-a9e397def6ab	\N	\N	2026-10-11 09:16:18.582509+00	0
+93e6d1ee-8c51-4373-a6f9-d018555a4951	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-a6e0fb42-d387-4ab0-9046-918d411fbc8f	\N	\N	2026-10-11 09:20:32.856806+00	0
+6596beb8-6234-4037-b450-142d184cc173	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	reserve	300	chat	0	itest-res-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:33.974717+00	0
+4063e1f9-d332-46bf-8707-4d04d511081c	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	6596beb8-6234-4037-b450-142d184cc173	commit	120	chat	45	itest-com-6596beb8-6234-4037-b450-142d184cc173	\N	\N	2026-10-11 09:20:33.996172+00	0
+b3179fc5-52bf-4d47-952d-e51f0545b579	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	reserve	200	vision	0	itest-res2-e43afc50-295e-4941-9626-524b1f10f573	\N	\N	2026-10-11 09:20:34.009568+00	0
+c66d62ae-06e6-4948-9883-73586f328ec4	262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	b3179fc5-52bf-4d47-952d-e51f0545b579	release	-200	vision	0	itest-rel-b3179fc5-52bf-4d47-952d-e51f0545b579	\N	\N	2026-10-11 09:20:34.019018+00	0
+129382e1-91df-4ff9-b1f6-2abf0b03d0d8	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	reserve	250	chat	0	itest-clean-c539a480-fbc6-4cf3-bea3-839807c7e8ad	\N	\N	2026-10-11 09:20:34.129819+00	0
+da104410-dd77-43ee-a919-d29d48b58b53	a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	release	-100	chat	0	cleanup:f7f2c361-bd42-432c-a1c8-1bc6b7d45ef3	\N	\N	2026-10-11 09:20:34.151061+00	0
+1061cb56-b5b8-42ff-ad2a-cad0f7c677f0	50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	129382e1-91df-4ff9-b1f6-2abf0b03d0d8	release	-250	chat	0	cleanup:129382e1-91df-4ff9-b1f6-2abf0b03d0d8	\N	\N	2026-10-11 09:20:34.166346+00	0
+84b1c699-b3da-4725-b174-1a0a1c1291ea	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-8	\N	\N	2026-10-11 09:22:40.012881+00	0
+8a54a113-57fb-4f5f-8bd3-78a026594aef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-16	\N	\N	2026-10-11 09:22:40.07227+00	0
+678a0e09-f260-4659-a896-67e9d3f9e7ef	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-20	\N	\N	2026-10-11 09:22:40.072378+00	0
+422a9e4b-c226-4039-84db-e7d6999f44e6	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-5	\N	\N	2026-10-11 09:22:40.078447+00	0
+c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-38	\N	\N	2026-10-11 09:22:40.083909+00	0
+a6100d1f-0d21-4e39-a2f2-7eb1758014d8	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-7	\N	\N	2026-10-11 09:22:40.0753+00	0
+e7466dc6-6428-4955-a8d2-b16eee6be3cc	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-39	\N	\N	2026-10-11 09:22:40.092486+00	0
+a368ccc8-069a-4ed4-b0e2-c8419e01a555	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-4	\N	\N	2026-10-11 09:22:40.10975+00	0
+1e028d4c-6672-427e-94a3-39d9dc9a1c8d	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-25	\N	\N	2026-10-11 09:22:40.118472+00	0
+57187bab-e33d-49c3-9da3-b1c1596d56e7	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	reserve	100	chat	0	conc-fea2a34a-d77e-4cec-a0ea-3970f58a1f23-30	\N	\N	2026-10-11 09:22:40.081069+00	0
+b8d28f66-97f1-4c12-9b36-6beec196ec52	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-0	\N	\N	2026-10-11 09:22:40.227525+00	0
+c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-1	\N	\N	2026-10-11 09:22:40.244859+00	0
+b6ae5911-8514-4723-ba2a-af35b962bf99	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-2	\N	\N	2026-10-11 09:22:40.25197+00	0
+322a98d8-bab7-45a6-80d9-3016b34b52d2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-3	\N	\N	2026-10-11 09:22:40.260418+00	0
+2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-4	\N	\N	2026-10-11 09:22:40.26713+00	0
+24d51382-5b82-4b83-804c-47bada6606f3	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-5	\N	\N	2026-10-11 09:22:40.274448+00	0
+769665b1-4439-4aad-bb35-417e6864c848	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-6	\N	\N	2026-10-11 09:22:40.281309+00	0
+48a6d620-4045-4969-9456-ca6a50d941a2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	48a6d620-4045-4969-9456-ca6a50d941a2	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-7	\N	\N	2026-10-11 09:22:40.292198+00	0
+9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	9248e5cb-b31b-4fb9-943f-00ac3ef7be5d	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-8	\N	\N	2026-10-11 09:22:40.299851+00	0
+5e85c061-dea0-41a5-9ae6-c02d3435d49b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	reserve	100	chat	0	cc-3ab3c38c-06b7-4956-a376-7eaa52ccc710-9	\N	\N	2026-10-11 09:22:40.306748+00	0
+f338223f-7c34-4ac9-8360-557efdd82678	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6	commit	100	chat	0	commit-c85fa9f6-ce6c-454b-8a3a-4c734a6b62c6-0	\N	\N	2026-10-11 09:22:40.353639+00	0
+30d83acc-232f-41d2-9b0e-dd4ea95ed3d6	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-1	\N	\N	2026-10-11 09:22:40.361864+00	0
+3fe9af7c-3a46-4099-bbb6-a46335317fb2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	322a98d8-bab7-45a6-80d9-3016b34b52d2	commit	100	chat	0	commit-322a98d8-bab7-45a6-80d9-3016b34b52d2-1	\N	\N	2026-10-11 09:22:40.370979+00	0
+60f68d14-7e4b-4f24-98d9-0b25db70b3c4	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2fbc7b75-c5b4-4c1a-a626-76e1b8f523de	commit	100	chat	0	commit-2fbc7b75-c5b4-4c1a-a626-76e1b8f523de-0	\N	\N	2026-10-11 09:22:40.383284+00	0
+2a411a77-34c4-42d7-9e04-68d6512ed20c	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	769665b1-4439-4aad-bb35-417e6864c848	commit	100	chat	0	commit-769665b1-4439-4aad-bb35-417e6864c848-1	\N	\N	2026-10-11 09:22:40.393864+00	0
+614a2f56-7294-4a40-a470-7fc327f349eb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	5e85c061-dea0-41a5-9ae6-c02d3435d49b	commit	100	chat	0	commit-5e85c061-dea0-41a5-9ae6-c02d3435d49b-0	\N	\N	2026-10-11 09:22:40.387357+00	0
+777f1549-578a-4cf1-8702-f60d68a2c0f2	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-1	\N	\N	2026-10-11 09:22:40.401118+00	0
+e1b2e044-a312-413b-92e1-350cd9f1d991	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b6ae5911-8514-4723-ba2a-af35b962bf99	commit	100	chat	0	commit-b6ae5911-8514-4723-ba2a-af35b962bf99-1	\N	\N	2026-10-11 09:22:40.414157+00	0
+36607016-59cc-49ae-913d-f4641938328b	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	b8d28f66-97f1-4c12-9b36-6beec196ec52	commit	100	chat	0	commit-b8d28f66-97f1-4c12-9b36-6beec196ec52-0	\N	\N	2026-10-11 09:22:40.41977+00	0
+a8745626-318b-4810-bf38-c4683de43cfb	16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	24d51382-5b82-4b83-804c-47bada6606f3	commit	100	chat	0	commit-24d51382-5b82-4b83-804c-47bada6606f3-0	\N	\N	2026-10-11 09:22:40.401119+00	0
+36797fed-cee4-4cb3-b158-53a4e9f3a446	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-6221055c-f0b6-408c-a62a-6d209c393b96	\N	\N	2026-10-11 09:23:36.830075+00	0
+84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-39	\N	\N	2026-10-11 09:23:38.212052+00	0
+2f114616-69dd-41ad-b813-a7455b94ebc0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-33	\N	\N	2026-10-11 09:23:38.259321+00	0
+07971ddd-e662-4185-a3dd-3e873ade7bc2	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-31	\N	\N	2026-10-11 09:23:38.234378+00	0
+21490f3b-a4cc-4f3e-a674-28c9456adddf	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-22	\N	\N	2026-10-11 09:23:38.232525+00	0
+0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-23	\N	\N	2026-10-11 09:23:38.265152+00	0
+f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-37	\N	\N	2026-10-11 09:23:38.268029+00	0
+cbf45039-62a4-405b-866e-bed83bb0d3f0	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-3	\N	\N	2026-10-11 09:23:38.24436+00	0
+a0187d13-bf11-417c-be37-639dd9b3c2d6	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-32	\N	\N	2026-10-11 09:23:38.304104+00	0
+369af912-46d0-422d-b0b2-6ba1bdcabc2a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-20	\N	\N	2026-10-11 09:23:38.229609+00	0
+5118fd28-3c35-4bfe-90b7-13385b6d1774	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	reserve	100	chat	0	conc-861425c0-8837-4d6a-b203-7b1ca3f9cd4c-27	\N	\N	2026-10-11 09:23:38.319919+00	0
+6f47f204-3fa6-43c0-ace0-e19792d1de62	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-0	\N	\N	2026-10-11 09:23:38.466216+00	0
+253ce815-ea9f-4eed-bddc-6eb0574b0a84	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	253ce815-ea9f-4eed-bddc-6eb0574b0a84	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-1	\N	\N	2026-10-11 09:23:38.487249+00	0
+4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-2	\N	\N	2026-10-11 09:23:38.495497+00	0
+6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6ca1b61b-9e75-4bb7-8ae0-5ac9fbdeaf6a	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-3	\N	\N	2026-10-11 09:23:38.503884+00	0
+3b325f60-e3d4-4fc1-871f-23f157115433	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-4	\N	\N	2026-10-11 09:23:38.512694+00	0
+375d7f58-0a0c-46b0-b453-e68480b4e398	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-5	\N	\N	2026-10-11 09:23:38.520024+00	0
+5f844e77-bff0-4434-bde5-3f6981a241bc	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	5f844e77-bff0-4434-bde5-3f6981a241bc	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-6	\N	\N	2026-10-11 09:23:38.527341+00	0
+91a42438-f102-4577-9bed-a70c6e107fd5	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-7	\N	\N	2026-10-11 09:23:38.533867+00	0
+2f49b5e2-2e11-4364-9623-8fb72c23579b	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-8	\N	\N	2026-10-11 09:23:38.54287+00	0
+37f37a3d-5fa0-4e63-bf28-3c8af5043cae	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	reserve	100	chat	0	cc-88bb36fb-014c-44b9-a4e9-aaf56629d826-9	\N	\N	2026-10-11 09:23:38.550079+00	0
+ba95c8bd-2063-43af-a361-e49edf9d51b2	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-0	\N	\N	2026-10-11 09:23:38.608932+00	0
+0b01ad31-36a2-4933-8f93-dd2682bb8c97	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-0	\N	\N	2026-10-11 09:23:38.617729+00	0
+e2590c0d-ad29-4c94-99d9-80775b135a31	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2f49b5e2-2e11-4364-9623-8fb72c23579b	commit	100	chat	0	commit-2f49b5e2-2e11-4364-9623-8fb72c23579b-1	\N	\N	2026-10-11 09:23:38.624647+00	0
+085685a3-c6e1-4ee4-8bc9-f89a2c476756	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	37f37a3d-5fa0-4e63-bf28-3c8af5043cae	commit	100	chat	0	commit-37f37a3d-5fa0-4e63-bf28-3c8af5043cae-0	\N	\N	2026-10-11 09:23:38.634113+00	0
+49623aa2-c3d2-45e3-b4be-d4f31051cb5a	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-1	\N	\N	2026-10-11 09:23:38.639751+00	0
+fcba3f6d-9a3e-48e4-9e6b-afc79e0de044	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	3b325f60-e3d4-4fc1-871f-23f157115433	commit	100	chat	0	commit-3b325f60-e3d4-4fc1-871f-23f157115433-0	\N	\N	2026-10-11 09:23:38.647488+00	0
+8af46e21-d17f-4c7f-b5d9-56428d0553bf	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3	commit	100	chat	0	commit-4d80d0b2-5f1c-4d24-bcbd-897f1b117eb3-1	\N	\N	2026-10-11 09:23:38.648086+00	0
+983252c9-128b-451b-be0a-bd24524f1b58	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	91a42438-f102-4577-9bed-a70c6e107fd5	commit	100	chat	0	commit-91a42438-f102-4577-9bed-a70c6e107fd5-1	\N	\N	2026-10-11 09:23:38.678181+00	0
+63ffac44-3715-4649-a598-5c07c04de36d	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	6f47f204-3fa6-43c0-ace0-e19792d1de62	commit	100	chat	0	commit-6f47f204-3fa6-43c0-ace0-e19792d1de62-1	\N	\N	2026-10-11 09:23:38.656564+00	0
+395e1a7e-3999-48f1-b6c9-53eeb7bfc325	0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	375d7f58-0a0c-46b0-b453-e68480b4e398	commit	100	chat	0	commit-375d7f58-0a0c-46b0-b453-e68480b4e398-0	\N	\N	2026-10-11 09:23:38.662151+00	0
+e2d314f4-f415-4f61-b05b-2cf93a6e089c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	reserve	300	chat	0	itest-res-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.803404+00	0
+8e5902aa-38fd-4265-b768-0896340df887	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	e2d314f4-f415-4f61-b05b-2cf93a6e089c	commit	120	chat	45	itest-com-e2d314f4-f415-4f61-b05b-2cf93a6e089c	\N	\N	2026-10-11 09:23:38.828442+00	0
+966c2336-6d4f-4789-a161-cde30354db6c	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	reserve	200	vision	0	itest-res2-275360a9-652b-4224-afdb-c01b6aaa3211	\N	\N	2026-10-11 09:23:38.843254+00	0
+9474994b-1098-4877-a75f-311e26d0c227	ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	966c2336-6d4f-4789-a161-cde30354db6c	release	-200	vision	0	itest-rel-966c2336-6d4f-4789-a161-cde30354db6c	\N	\N	2026-10-11 09:23:38.853368+00	0
+0b9c21d8-4a8d-4281-947f-2d09613e9cf1	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	reserve	250	chat	0	itest-clean-d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	\N	\N	2026-10-11 09:23:39.048647+00	0
+6ea1cc49-326b-4891-8a2b-ad1c1d1601c4	6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	93e6d1ee-8c51-4373-a6f9-d018555a4951	release	-100	chat	0	cleanup:93e6d1ee-8c51-4373-a6f9-d018555a4951	\N	\N	2026-10-11 09:23:39.118342+00	0
+bbada801-6979-46cb-82d0-feddd9b8f9c0	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	84b1c699-b3da-4725-b174-1a0a1c1291ea	release	-100	chat	0	cleanup:84b1c699-b3da-4725-b174-1a0a1c1291ea	\N	\N	2026-10-11 09:23:39.132643+00	0
+a84140bd-7b1c-49e5-9b00-5fadbf22126f	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	8a54a113-57fb-4f5f-8bd3-78a026594aef	release	-100	chat	0	cleanup:8a54a113-57fb-4f5f-8bd3-78a026594aef	\N	\N	2026-10-11 09:23:39.152235+00	0
+0b95c0f5-9d99-49a9-83d5-525909104d82	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	678a0e09-f260-4659-a896-67e9d3f9e7ef	release	-100	chat	0	cleanup:678a0e09-f260-4659-a896-67e9d3f9e7ef	\N	\N	2026-10-11 09:23:39.166184+00	0
+02bb3a56-9205-4ab9-bd21-37ca1cb9f577	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a6100d1f-0d21-4e39-a2f2-7eb1758014d8	release	-100	chat	0	cleanup:a6100d1f-0d21-4e39-a2f2-7eb1758014d8	\N	\N	2026-10-11 09:23:39.18006+00	0
+4490bd72-17ab-4d9c-839a-7f7f7e9232c3	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	422a9e4b-c226-4039-84db-e7d6999f44e6	release	-100	chat	0	cleanup:422a9e4b-c226-4039-84db-e7d6999f44e6	\N	\N	2026-10-11 09:23:39.1926+00	0
+361fb82a-2f5b-42d7-82f5-7fdfeb047d21	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	57187bab-e33d-49c3-9da3-b1c1596d56e7	release	-100	chat	0	cleanup:57187bab-e33d-49c3-9da3-b1c1596d56e7	\N	\N	2026-10-11 09:23:39.208664+00	0
+6dc99c11-b1a2-4589-b6e1-984206463d02	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	release	-100	chat	0	cleanup:c5562cc6-f38f-4b3c-a40a-395bdc4bc3ab	\N	\N	2026-10-11 09:23:39.2211+00	0
+43bbada8-0bc3-49b5-8f82-83b5f8276894	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	e7466dc6-6428-4955-a8d2-b16eee6be3cc	release	-100	chat	0	cleanup:e7466dc6-6428-4955-a8d2-b16eee6be3cc	\N	\N	2026-10-11 09:23:39.238051+00	0
+f924fc5d-2e9e-4927-aa81-6b452f661d40	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	a368ccc8-069a-4ed4-b0e2-c8419e01a555	release	-100	chat	0	cleanup:a368ccc8-069a-4ed4-b0e2-c8419e01a555	\N	\N	2026-10-11 09:23:39.25021+00	0
+f22bf14c-84ab-445f-834c-8ea7405cb81c	e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	1e028d4c-6672-427e-94a3-39d9dc9a1c8d	release	-100	chat	0	cleanup:1e028d4c-6672-427e-94a3-39d9dc9a1c8d	\N	\N	2026-10-11 09:23:39.261173+00	0
+7e27d132-8713-497c-98d6-398c5ef4ca4f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	release	-100	chat	0	cleanup:84fb5f1f-9de6-421d-9e72-9232dbaf0cf0	\N	\N	2026-10-11 09:23:39.296323+00	0
+a05187bd-ca16-4e92-928c-790c69df3f3d	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	369af912-46d0-422d-b0b2-6ba1bdcabc2a	release	-100	chat	0	cleanup:369af912-46d0-422d-b0b2-6ba1bdcabc2a	\N	\N	2026-10-11 09:23:39.306909+00	0
+d2ee9ad0-dad4-433b-bf4a-960b0a03308f	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	21490f3b-a4cc-4f3e-a674-28c9456adddf	release	-100	chat	0	cleanup:21490f3b-a4cc-4f3e-a674-28c9456adddf	\N	\N	2026-10-11 09:23:39.316008+00	0
+8b513c2e-ed8f-417b-a993-b51bbf4beab1	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	07971ddd-e662-4185-a3dd-3e873ade7bc2	release	-100	chat	0	cleanup:07971ddd-e662-4185-a3dd-3e873ade7bc2	\N	\N	2026-10-11 09:23:39.325722+00	0
+0439d074-c008-4a68-8133-545c1137760c	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	cbf45039-62a4-405b-866e-bed83bb0d3f0	release	-100	chat	0	cleanup:cbf45039-62a4-405b-866e-bed83bb0d3f0	\N	\N	2026-10-11 09:23:39.333978+00	0
+c172271d-877b-4570-a36b-4a892d05e3e4	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2f114616-69dd-41ad-b813-a7455b94ebc0	release	-100	chat	0	cleanup:2f114616-69dd-41ad-b813-a7455b94ebc0	\N	\N	2026-10-11 09:23:39.343734+00	0
+4dd1b0a9-34c2-46d8-9908-e5f23ced5219	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	release	-100	chat	0	cleanup:0ca49e14-dadf-4bd0-8df6-7e62cd1ace22	\N	\N	2026-10-11 09:23:39.352201+00	0
+8d58055e-24ff-4039-ace7-c2e0b37c6c0e	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	release	-100	chat	0	cleanup:f5e5bdf0-2c59-4b6b-8595-fa7fca9fecc1	\N	\N	2026-10-11 09:23:39.361419+00	0
+05aaec20-4bcd-4a36-967e-83aecdcf8ccd	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	a0187d13-bf11-417c-be37-639dd9b3c2d6	release	-100	chat	0	cleanup:a0187d13-bf11-417c-be37-639dd9b3c2d6	\N	\N	2026-10-11 09:23:39.371412+00	0
+9dca86c4-ee96-4319-b2d5-f101883e2d0a	7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	5118fd28-3c35-4bfe-90b7-13385b6d1774	release	-100	chat	0	cleanup:5118fd28-3c35-4bfe-90b7-13385b6d1774	\N	\N	2026-10-11 09:23:39.382393+00	0
+9f4db381-11c2-46a6-aa7b-e27975c0c8cb	7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	0b9c21d8-4a8d-4281-947f-2d09613e9cf1	release	-250	chat	0	cleanup:0b9c21d8-4a8d-4281-947f-2d09613e9cf1	\N	\N	2026-10-11 09:23:39.42263+00	0
+f14dae17-4511-4357-b50c-26462501abaf	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-58af872e-a089-4801-9f7a-8e0aa3c7c3d7	\N	\N	2026-10-11 09:47:25.829118+00	0
+f63f0a48-ea11-4baa-ad30-939a85fa3020	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-5	\N	\N	2026-10-11 09:47:27.000612+00	0
+628ad811-fc09-42d9-92b5-98e843f5dad9	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-25	\N	\N	2026-10-11 09:47:27.023164+00	0
+281e9640-dd17-4705-b8cd-fd56a8d5d35d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-20	\N	\N	2026-10-11 09:47:27.032435+00	0
+daa8ff87-fdd2-44ae-8313-7a1b047c0e94	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-34	\N	\N	2026-10-11 09:47:27.034872+00	0
+d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-16	\N	\N	2026-10-11 09:47:27.04188+00	0
+32ad2c62-e9fd-40eb-a63b-acb705bb6469	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-29	\N	\N	2026-10-11 09:47:27.057142+00	0
+9a1f6bc1-56f4-4fb4-85fa-782b1095b685	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-7	\N	\N	2026-10-11 09:47:27.055977+00	0
+f0a99d48-5e72-4834-afbd-3f426958dd4b	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-12	\N	\N	2026-10-11 09:47:27.047892+00	0
+f4ec0efb-c970-45fc-aeb0-0f242bbed7df	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-3	\N	\N	2026-10-11 09:47:27.078806+00	0
+85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	reserve	100	chat	0	conc-7c74a854-3f1e-4259-8a21-7020ebfc375b-11	\N	\N	2026-10-11 09:47:27.070272+00	0
+8712c2cc-c14b-4c77-b9a9-540094579af1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	8712c2cc-c14b-4c77-b9a9-540094579af1	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-0	\N	\N	2026-10-11 09:47:27.202302+00	0
+cefce473-376b-4d8e-bec0-76ae27b6ed47	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-1	\N	\N	2026-10-11 09:47:27.221071+00	0
+b3d034de-118a-4aab-b37e-846ad5e33cad	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	b3d034de-118a-4aab-b37e-846ad5e33cad	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-2	\N	\N	2026-10-11 09:47:27.228592+00	0
+262036f2-2876-4e76-8cbe-bda6d2079db0	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-3	\N	\N	2026-10-11 09:47:27.237849+00	0
+81873929-d5a4-4040-b3c0-7759c3a4dafb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-4	\N	\N	2026-10-11 09:47:27.245568+00	0
+3ad0fba2-1141-4661-9390-39368b497e7c	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-5	\N	\N	2026-10-11 09:47:27.253011+00	0
+df7252b8-0168-4267-a24d-40286d1c0933	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-6	\N	\N	2026-10-11 09:47:27.259624+00	0
+a2b67738-20d9-4529-8448-76e36ccd2b28	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-7	\N	\N	2026-10-11 09:47:27.266659+00	0
+2c77fd24-09ff-4b84-b404-9deb8301e8fb	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-8	\N	\N	2026-10-11 09:47:27.272906+00	0
+c6f03282-3853-41a9-9899-5637ec0016e8	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	reserve	100	chat	0	cc-d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5-9	\N	\N	2026-10-11 09:47:27.280008+00	0
+68a5aca9-3594-4bb5-bfe6-46ad4adcc2a2	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-1	\N	\N	2026-10-11 09:47:27.326748+00	0
+92c41b61-2cae-47dd-a9d4-8c3eea749275	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	cefce473-376b-4d8e-bec0-76ae27b6ed47	commit	100	chat	0	commit-cefce473-376b-4d8e-bec0-76ae27b6ed47-1	\N	\N	2026-10-11 09:47:27.338016+00	0
+2cfa57d8-36ab-455e-8c02-0c420172e086	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-0	\N	\N	2026-10-11 09:47:27.369965+00	0
+c9b066eb-8ccb-44ca-a71b-a63615f61f55	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	df7252b8-0168-4267-a24d-40286d1c0933	commit	100	chat	0	commit-df7252b8-0168-4267-a24d-40286d1c0933-0	\N	\N	2026-10-11 09:47:27.369889+00	0
+0d9d0cf0-6e36-44d5-ad79-2b8c7473696f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	3ad0fba2-1141-4661-9390-39368b497e7c	commit	100	chat	0	commit-3ad0fba2-1141-4661-9390-39368b497e7c-0	\N	\N	2026-10-11 09:47:27.373385+00	0
+41b3f9ea-4679-4290-91b4-8c50061ed35d	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	262036f2-2876-4e76-8cbe-bda6d2079db0	commit	100	chat	0	commit-262036f2-2876-4e76-8cbe-bda6d2079db0-0	\N	\N	2026-10-11 09:47:27.386348+00	0
+657c916f-85b0-4bc8-a670-0d1f37fbf7f1	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	81873929-d5a4-4040-b3c0-7759c3a4dafb	commit	100	chat	0	commit-81873929-d5a4-4040-b3c0-7759c3a4dafb-1	\N	\N	2026-10-11 09:47:27.367044+00	0
+dc6bc7f6-132a-46a6-b05c-df867fee907f	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	c6f03282-3853-41a9-9899-5637ec0016e8	commit	100	chat	0	commit-c6f03282-3853-41a9-9899-5637ec0016e8-0	\N	\N	2026-10-11 09:47:27.382371+00	0
+50fbad21-a5cf-42b7-bf83-9fd31f9b0d84	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	a2b67738-20d9-4529-8448-76e36ccd2b28	commit	100	chat	0	commit-a2b67738-20d9-4529-8448-76e36ccd2b28-0	\N	\N	2026-10-11 09:47:27.414601+00	0
+67a413da-53f9-4e71-9858-0ca620f722c9	fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2c77fd24-09ff-4b84-b404-9deb8301e8fb	commit	100	chat	0	commit-2c77fd24-09ff-4b84-b404-9deb8301e8fb-1	\N	\N	2026-10-11 09:47:27.380569+00	0
+35b6a641-65a4-40ff-b1ca-eb0d987e38ad	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	reserve	300	chat	0	itest-res-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.527764+00	0
+9ef270f6-c90f-4081-b7c2-dab10937781e	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	35b6a641-65a4-40ff-b1ca-eb0d987e38ad	commit	120	chat	45	itest-com-35b6a641-65a4-40ff-b1ca-eb0d987e38ad	\N	\N	2026-10-11 09:47:27.551225+00	0
+a3b4b542-771b-4115-bde7-69efe25c1247	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	reserve	200	vision	0	itest-res2-a7a19023-9a67-4c09-a8e3-a9383c3b18a9	\N	\N	2026-10-11 09:47:27.565558+00	0
+5e1636ff-a711-41c1-81a2-aa82f4bde16b	a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	a3b4b542-771b-4115-bde7-69efe25c1247	release	-200	vision	0	itest-rel-a3b4b542-771b-4115-bde7-69efe25c1247	\N	\N	2026-10-11 09:47:27.574584+00	0
+510f9e21-a555-4d29-b271-89ae658fec98	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	reserve	250	chat	0	itest-clean-7cd26518-df13-4981-a5af-d7442f09f44b	\N	\N	2026-10-11 09:47:27.686057+00	0
+278fc9a7-15b1-4e82-b842-2796dff27454	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	36797fed-cee4-4cb3-b158-53a4e9f3a446	release	-100	chat	0	cleanup:36797fed-cee4-4cb3-b158-53a4e9f3a446	\N	\N	2026-10-11 09:47:27.730439+00	0
+b0ad585d-6f03-46a4-8ef9-fce31a712e3f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f63f0a48-ea11-4baa-ad30-939a85fa3020	release	-100	chat	0	cleanup:f63f0a48-ea11-4baa-ad30-939a85fa3020	\N	\N	2026-10-11 09:47:27.770729+00	0
+0824f611-ad39-4ec7-b6e7-0c4aefb335a3	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	628ad811-fc09-42d9-92b5-98e843f5dad9	release	-100	chat	0	cleanup:628ad811-fc09-42d9-92b5-98e843f5dad9	\N	\N	2026-10-11 09:47:27.780545+00	0
+28c44760-3ca7-4128-81f4-fa94aab61c23	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	281e9640-dd17-4705-b8cd-fd56a8d5d35d	release	-100	chat	0	cleanup:281e9640-dd17-4705-b8cd-fd56a8d5d35d	\N	\N	2026-10-11 09:47:27.789765+00	0
+0399171b-8126-4c91-bfb8-995e5e84db33	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	daa8ff87-fdd2-44ae-8313-7a1b047c0e94	release	-100	chat	0	cleanup:daa8ff87-fdd2-44ae-8313-7a1b047c0e94	\N	\N	2026-10-11 09:47:27.798256+00	0
+2bf4e326-1787-4724-83a2-549575ce6d50	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	release	-100	chat	0	cleanup:d3176c65-85f9-4c5f-b5fb-d4c03f26a8eb	\N	\N	2026-10-11 09:47:27.807275+00	0
+f8cd5f13-00d2-42f1-9f8f-93fd5353c9ea	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f0a99d48-5e72-4834-afbd-3f426958dd4b	release	-100	chat	0	cleanup:f0a99d48-5e72-4834-afbd-3f426958dd4b	\N	\N	2026-10-11 09:47:27.816301+00	0
+61e756ca-1058-47f7-8f75-e8226260567d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	9a1f6bc1-56f4-4fb4-85fa-782b1095b685	release	-100	chat	0	cleanup:9a1f6bc1-56f4-4fb4-85fa-782b1095b685	\N	\N	2026-10-11 09:47:27.824416+00	0
+b1d017de-27ec-4e6d-96cd-40218ddf0e5d	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	32ad2c62-e9fd-40eb-a63b-acb705bb6469	release	-100	chat	0	cleanup:32ad2c62-e9fd-40eb-a63b-acb705bb6469	\N	\N	2026-10-11 09:47:27.833793+00	0
+c2c854ad-bd19-498c-8e33-4e3ac09cc73f	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	release	-100	chat	0	cleanup:85a3aa43-c67e-4752-b2b7-fe1dd8eb37f7	\N	\N	2026-10-11 09:47:27.842056+00	0
+1850e8ce-ca5a-482d-b43b-f3888c44156e	c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	f4ec0efb-c970-45fc-aeb0-0f242bbed7df	release	-100	chat	0	cleanup:f4ec0efb-c970-45fc-aeb0-0f242bbed7df	\N	\N	2026-10-11 09:47:27.850866+00	0
+8071f6aa-cfba-4b10-89a4-3e58c242c0e7	835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	510f9e21-a555-4d29-b271-89ae658fec98	release	-250	chat	0	cleanup:510f9e21-a555-4d29-b271-89ae658fec98	\N	\N	2026-10-11 09:47:27.873382+00	0
+42993fd8-1af4-4ff6-b6c9-f8601b5d998f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	42993fd8-1af4-4ff6-b6c9-f8601b5d998f	reserve	1	chat	0	chat-reserve:9b867a40-c82c-4271-b76f-580b71b064ea	\N	\N	2026-10-13 12:11:26.090423+00	0
+c4b8f43b-0a7a-4617-aef3-60ae5d4888c3	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	42993fd8-1af4-4ff6-b6c9-f8601b5d998f	commit	1	chat	0	commit:42993fd8-1af4-4ff6-b6c9-f8601b5d998f	\N	\N	2026-10-13 12:11:26.129372+00	0
+d26ef308-722b-47d5-beef-07fbfeab6b32	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	d26ef308-722b-47d5-beef-07fbfeab6b32	reserve	1	chat	0	chat-reserve:0344b21f-f77b-4d1e-8d49-bf093bb33d23	\N	\N	2026-10-13 12:35:52.467052+00	0
+f1e15ad4-3eb5-49dc-810d-259ddb5afcb3	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	d26ef308-722b-47d5-beef-07fbfeab6b32	release	-1	chat	0	release:d26ef308-722b-47d5-beef-07fbfeab6b32	\N	\N	2026-10-13 12:36:00.610553+00	0
+87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	reserve	1	chat	0	chat-reserve:31b403be-d0f9-4e20-b1df-395cb794331d	\N	\N	2026-10-13 12:50:52.790128+00	0
+1c51028f-60f9-4eea-a86f-b048654c46bc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	commit	1	chat	0	commit:87710853-cc77-40cb-8a2c-9d4f3ec5c8a4	\N	\N	2026-10-13 12:50:57.886836+00	0
+c1b35203-085f-46a9-9dfe-5171992a812e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	c1b35203-085f-46a9-9dfe-5171992a812e	reserve	1	chat	0	chat-reserve:daf6ad20-30f1-4203-8ae1-a74f986636ee	\N	\N	2026-10-13 12:51:40.570016+00	0
+93bec4dc-a1f3-4848-a1f0-16e4c17738c8	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	c1b35203-085f-46a9-9dfe-5171992a812e	commit	1	chat	0	commit:c1b35203-085f-46a9-9dfe-5171992a812e	\N	\N	2026-10-13 12:51:44.795679+00	0
+31d19fa6-6e52-4349-83f7-004e911d74c7	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	31d19fa6-6e52-4349-83f7-004e911d74c7	reserve	1	chat	0	chat-reserve:95d42835-0a30-4909-a68c-3cd2d070d93e	\N	\N	2026-10-13 14:02:52.69952+00	0
+bdf8da15-2187-4c7a-a010-e711f504290e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	31d19fa6-6e52-4349-83f7-004e911d74c7	commit	1	chat	0	commit:31d19fa6-6e52-4349-83f7-004e911d74c7	\N	\N	2026-10-13 14:02:58.317347+00	0
+5bb7f36c-70d8-4d23-ba97-dda926e53c67	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5bb7f36c-70d8-4d23-ba97-dda926e53c67	reserve	1	chat	0	chat-reserve:18bd8e33-2faf-48bc-af3d-04daa3b364ea	\N	\N	2026-10-13 14:20:16.662952+00	0
+d4ec77b7-7b96-4d9b-a533-c5fb21e2fc73	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5bb7f36c-70d8-4d23-ba97-dda926e53c67	commit	1	chat	0	commit:5bb7f36c-70d8-4d23-ba97-dda926e53c67	\N	\N	2026-10-13 14:20:16.726406+00	0
+7482f9fa-a4da-4844-bfbb-610058d67125	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7482f9fa-a4da-4844-bfbb-610058d67125	reserve	1	chat	0	chat-reserve:ceb98f5d-e5f3-4238-8483-69d72b5d9297	\N	\N	2026-10-13 14:20:23.466086+00	0
+83015c09-cb61-46a1-aa61-a748e3af0965	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7482f9fa-a4da-4844-bfbb-610058d67125	commit	1	chat	0	commit:7482f9fa-a4da-4844-bfbb-610058d67125	\N	\N	2026-10-13 14:20:28.904435+00	0
+5d9180f7-53ad-41b1-9ea4-207dd9aab11c	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5d9180f7-53ad-41b1-9ea4-207dd9aab11c	reserve	1	chat	0	chat-reserve:ba535c12-743e-478e-90fd-25aa00265d9f	\N	\N	2026-10-13 14:28:51.386662+00	0
+243d750d-e4cc-4037-b056-2b6feb9892fc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	5d9180f7-53ad-41b1-9ea4-207dd9aab11c	commit	1	chat	0	commit:5d9180f7-53ad-41b1-9ea4-207dd9aab11c	\N	\N	2026-10-13 14:29:02.617533+00	0
+15aed8e6-c907-4514-b548-8c37154ed820	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	15aed8e6-c907-4514-b548-8c37154ed820	reserve	1	reasoning	0	chat-reserve:7a6bc3d0-0eaa-4013-81bf-535b143e8ca0	\N	\N	2026-10-13 14:31:06.410194+00	0
+3f65a09f-54da-4b42-beb2-b981550ee921	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	15aed8e6-c907-4514-b548-8c37154ed820	commit	1	reasoning	0	commit:15aed8e6-c907-4514-b548-8c37154ed820	\N	\N	2026-10-13 14:31:18.589704+00	0
+ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	reserve	1	chat	0	chat-reserve:e581844f-8dae-4e86-a47a-e793b803dd73	\N	\N	2026-10-13 14:32:40.638133+00	0
+7b99cae0-f9b6-4a73-8339-e2e286ef720c	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	commit	1	chat	0	commit:ee3c2fa1-d7b3-4458-8e1e-943e4b5cb399	\N	\N	2026-10-13 14:32:40.66561+00	0
+02e6f449-e418-46dd-8bff-8160b93963f6	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	02e6f449-e418-46dd-8bff-8160b93963f6	reserve	1	chat	0	chat-reserve:c13925ed-9266-4274-958e-e805804c9597	\N	\N	2026-10-13 14:37:36.780743+00	0
+5fdd1e23-b2a7-428e-b272-5c687790ac01	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	02e6f449-e418-46dd-8bff-8160b93963f6	commit	1	chat	0	commit:02e6f449-e418-46dd-8bff-8160b93963f6	\N	\N	2026-10-13 14:37:36.821713+00	0
+85f8fd12-1f78-4d93-ba2c-67ba82693058	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	85f8fd12-1f78-4d93-ba2c-67ba82693058	reserve	1	chat	0	chat-reserve:cc8a1230-ff44-48ad-bb65-4e7d81d09561	\N	\N	2026-10-13 14:37:47.693895+00	0
+088ef0f2-9f5e-4d6c-8dda-1963d290e56d	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	85f8fd12-1f78-4d93-ba2c-67ba82693058	commit	1	chat	0	commit:85f8fd12-1f78-4d93-ba2c-67ba82693058	\N	\N	2026-10-13 14:37:47.739537+00	0
+ca031b14-2f28-4210-ac0b-17f492696f88	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ca031b14-2f28-4210-ac0b-17f492696f88	reserve	1	chat	0	chat-reserve:d29c7da8-26e7-40e6-8bb2-fd7e52368313	\N	\N	2026-10-13 14:41:22.277088+00	0
+acb53ddc-0ffa-4832-a54f-31bbd4861f6a	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ca031b14-2f28-4210-ac0b-17f492696f88	commit	1	chat	0	commit:ca031b14-2f28-4210-ac0b-17f492696f88	\N	\N	2026-10-13 14:41:34.193382+00	0
+4d8b6227-8a1f-4865-ba27-853cd7b654b5	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	4d8b6227-8a1f-4865-ba27-853cd7b654b5	reserve	1	chat	0	chat-reserve:c9772e75-2478-4210-a57c-14ebaf905066	\N	\N	2026-10-13 14:50:22.779332+00	0
+26933a28-61d2-4f0f-9826-6705a2b2d56f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	4d8b6227-8a1f-4865-ba27-853cd7b654b5	commit	1	chat	0	commit:4d8b6227-8a1f-4865-ba27-853cd7b654b5	\N	\N	2026-10-13 14:50:37.866155+00	0
+6190a51c-8e11-45ef-8bb8-778600a374c2	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6190a51c-8e11-45ef-8bb8-778600a374c2	reserve	1	chat	0	chat-reserve:7790fbb7-6e90-4179-80fb-992202750cd5	\N	\N	2026-10-13 14:51:40.563187+00	0
+c7417847-ef60-48a7-8ad8-270ecc10cc97	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6190a51c-8e11-45ef-8bb8-778600a374c2	commit	1	chat	0	commit:6190a51c-8e11-45ef-8bb8-778600a374c2	\N	\N	2026-10-13 14:51:46.658259+00	0
+a06d925c-f357-4ce1-ab41-73eaaacc5556	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	a06d925c-f357-4ce1-ab41-73eaaacc5556	reserve	1	chat	0	chat-reserve:c61e9656-8400-418c-98b8-aaa61540a161	\N	\N	2026-10-13 16:05:08.902057+00	0
+bdff335e-1a7b-43af-94ad-06327f98379e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	a06d925c-f357-4ce1-ab41-73eaaacc5556	commit	1	chat	0	commit:a06d925c-f357-4ce1-ab41-73eaaacc5556	\N	\N	2026-10-13 16:05:22.841694+00	0
+f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	reserve	1	chat	0	chat-reserve:65570b70-830f-406b-b445-39fc5365b448	\N	\N	2026-10-13 16:05:51.938717+00	0
+c5081778-0bd8-47d5-93ad-24368082fb4d	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	commit	1	chat	0	commit:f6ec2553-c2a8-4639-a4fb-8c57fc5b4844	\N	\N	2026-10-13 16:05:55.585295+00	0
+ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	reserve	1	reasoning	0	chat-reserve:ecb7bae9-6d24-4cfd-bcc2-7c0244961f7c	\N	\N	2026-10-13 16:06:33.580341+00	0
+dfaaaa73-5614-47dd-8b55-af4fb5d81f6f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	commit	1	reasoning	0	commit:ea06e34a-f99c-4e5a-9b6f-e67a9a32f71e	\N	\N	2026-10-13 16:06:33.591666+00	0
+7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	reserve	1	reasoning	0	chat-reserve:43190d87-7d21-47b5-953a-6ff743de2c02	\N	\N	2026-10-13 16:06:51.88613+00	0
+694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	reserve	1	vision	0	vision-reserve:f79c9f1a-de05-4465-80df-80708fc582c6	\N	\N	2026-10-13 16:32:02.835667+00	0
+461be7d6-f076-4fc3-8e2d-a5ad507662b2	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	commit	3874	vision	0	vision-commit:694faa2a-3bc4-4fe4-8631-8260c1ea5dd5	\N	\N	2026-10-13 16:32:08.065513+00	0
+b1a7551a-b9c7-44f6-acb1-2393c88322b4	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b1a7551a-b9c7-44f6-acb1-2393c88322b4	reserve	1	vision	0	vision-reserve:92bbce57-10b7-4877-ae0d-fc31cffea995	\N	\N	2026-10-13 16:32:08.152489+00	0
+229087e2-33ca-4f34-bcad-5e58e1de29f0	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b1a7551a-b9c7-44f6-acb1-2393c88322b4	commit	3763	vision	0	vision-commit:b1a7551a-b9c7-44f6-acb1-2393c88322b4	\N	\N	2026-10-13 16:32:10.486277+00	0
+c699a424-e205-4f43-af9e-33405c2532f9	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	c699a424-e205-4f43-af9e-33405c2532f9	reserve	1	vision	0	vision-reserve:439b11ed-43c6-4486-812a-acecdf63d25d	\N	\N	2026-10-13 16:32:10.57037+00	0
+0134113a-2270-44fb-a8b4-cb6e13dd706d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	c699a424-e205-4f43-af9e-33405c2532f9	commit	3750	vision	0	vision-commit:c699a424-e205-4f43-af9e-33405c2532f9	\N	\N	2026-10-13 16:32:13.183202+00	0
+0d42ec19-4e8d-49f8-939f-e47d369bf412	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	0d42ec19-4e8d-49f8-939f-e47d369bf412	reserve	1	vision	0	vision-reserve:9d97faa9-7925-4dc1-ada6-ae068ec40678	\N	\N	2026-10-13 16:32:31.443922+00	0
+0b7d4986-93ef-4552-8bcd-485474379855	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	0d42ec19-4e8d-49f8-939f-e47d369bf412	commit	3741	vision	0	vision-commit:0d42ec19-4e8d-49f8-939f-e47d369bf412	\N	\N	2026-10-13 16:32:34.394653+00	0
+adc451ca-57e4-43b7-8cd3-0addb1caac8d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	adc451ca-57e4-43b7-8cd3-0addb1caac8d	reserve	1	vision	0	vision-reserve:7d7766f4-acd5-431f-8ddd-33c2dc36c133	\N	\N	2026-10-13 16:32:34.595638+00	0
+9240242a-6c61-4de4-aa10-3fb42195bba3	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	adc451ca-57e4-43b7-8cd3-0addb1caac8d	commit	3853	vision	0	vision-commit:adc451ca-57e4-43b7-8cd3-0addb1caac8d	\N	\N	2026-10-13 16:32:37.485446+00	0
+2dc85d3b-f62e-42a6-83ba-bd431d98013a	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2dc85d3b-f62e-42a6-83ba-bd431d98013a	reserve	1	vision	0	vision-reserve:4ca3289e-a2eb-434d-9f53-bccd2738edeb	\N	\N	2026-10-13 16:32:37.688308+00	0
+6e7ddc8b-3a3d-4a65-8c6b-1963113fe868	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2dc85d3b-f62e-42a6-83ba-bd431d98013a	commit	3777	vision	0	vision-commit:2dc85d3b-f62e-42a6-83ba-bd431d98013a	\N	\N	2026-10-13 16:32:40.834341+00	0
+7da70aa7-9a06-4e50-b77f-5291ccc0a650	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7da70aa7-9a06-4e50-b77f-5291ccc0a650	reserve	1	vision	0	vision-reserve:b2dfaeb9-33cb-4568-af26-563f95628082	\N	\N	2026-10-13 16:32:41.038543+00	0
+54a26afb-b0eb-4cc8-a37b-7cba54184328	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7da70aa7-9a06-4e50-b77f-5291ccc0a650	release	-1	vision	0	vision-release:7da70aa7-9a06-4e50-b77f-5291ccc0a650	\N	\N	2026-10-13 16:32:41.808961+00	0
+49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	reserve	1	chat	0	chat-reserve:46030bf9-413e-40c5-88ec-d156754eba61	\N	\N	2026-10-13 16:33:28.07057+00	0
+e2e85fdb-8c86-4103-b0af-a174dd9c344e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	commit	9945	chat	0	commit:49ed7aa5-9620-4b6c-a0d7-3d453659dbb3	\N	\N	2026-10-13 16:33:38.389321+00	0
+4cf34fab-1cb7-4509-89fd-750417605322	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4cf34fab-1cb7-4509-89fd-750417605322	reserve	1	chat	0	chat-reserve:59b6a738-34f8-44d5-b5f5-55fadcf2673c	\N	\N	2026-10-13 16:34:03.724658+00	0
+02cde0f1-48ca-42d0-a525-8dfcdb690c9f	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4cf34fab-1cb7-4509-89fd-750417605322	commit	1	chat	0	commit:4cf34fab-1cb7-4509-89fd-750417605322	\N	\N	2026-10-13 16:34:03.763327+00	0
+4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	reserve	1	voice	0	voice-reserve:0045608f-ae7a-4f96-912e-751927a26f6a	\N	\N	2026-10-13 16:38:23.427132+00	0
+ec9e1712-4f9b-447e-9e29-2a215f45e5a2	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	release	-1	voice	0	voice-release:4f9a7f1f-8370-4a76-8a52-eb92776b4dd5	\N	\N	2026-10-13 16:38:24.697871+00	0
+6894db63-3f10-4152-a85e-1c50c588bf6b	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6894db63-3f10-4152-a85e-1c50c588bf6b	reserve	1	chat	0	chat-reserve:b34c7422-59ba-4854-87f1-eef6edd7f9a2	\N	\N	2026-10-13 17:14:25.507515+00	0
+e1b09141-350a-49b5-8f64-a2f96edbf689	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	6894db63-3f10-4152-a85e-1c50c588bf6b	commit	10261	chat	3847	commit:6894db63-3f10-4152-a85e-1c50c588bf6b	\N	\N	2026-10-13 17:14:37.546597+00	0
+3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	reserve	1	chat	0	chat-reserve:e390f9fa-295b-4ad9-83e6-1c7188b3352e	\N	\N	2026-10-14 02:39:25.600208+00	0
+f63a06ba-25ce-479d-a6cd-ee5adf3c1e62	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	commit	9956	chat	3733	commit:3c770d5a-a5d2-4fc2-a73d-8c0de42816bb	\N	\N	2026-10-14 02:39:39.943667+00	0
+7debe3ad-b47b-4138-bba7-056a5178cca8	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7debe3ad-b47b-4138-bba7-056a5178cca8	reserve	1	vision	0	vision-reserve:2b9432e2-03be-4200-818e-d1962e52b6b4	\N	\N	2026-10-14 02:40:01.54101+00	0
+e6929966-919e-4239-a2d1-28922d508d5e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	7debe3ad-b47b-4138-bba7-056a5178cca8	commit	3729	vision	3495	vision-commit:7debe3ad-b47b-4138-bba7-056a5178cca8	\N	\N	2026-10-14 02:40:04.640336+00	0
+898be76f-c499-46a7-b505-3eb30997c6c1	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	898be76f-c499-46a7-b505-3eb30997c6c1	reserve	1	chat	0	chat-reserve:736f1c77-2f17-45a5-9080-f0a11b0c6623	\N	\N	2026-10-14 02:40:11.934213+00	0
+de9ae159-0e13-4c0b-b493-73e82ac1730d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	898be76f-c499-46a7-b505-3eb30997c6c1	commit	1	chat	0	commit:898be76f-c499-46a7-b505-3eb30997c6c1	\N	\N	2026-10-14 02:40:11.954412+00	0
+b31337f2-b27c-413a-9662-557e4736b603	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b31337f2-b27c-413a-9662-557e4736b603	reserve	1	chat	0	chat-reserve:81342392-04a1-44ac-9d1c-dd40aea29052	\N	\N	2026-10-14 02:40:18.977074+00	0
+43473f86-69c0-4bd7-9e10-f20f86ae28f6	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	b31337f2-b27c-413a-9662-557e4736b603	commit	1	chat	0	commit:b31337f2-b27c-413a-9662-557e4736b603	\N	\N	2026-10-14 02:40:18.990005+00	0
+5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	reserve	1	chat	0	chat-reserve:32f33447-9815-4d88-8a92-1283ed9d33a7	\N	\N	2026-10-14 02:40:25.900118+00	0
+b1cfcd48-8bfa-44dc-94cc-c81a4b005f8f	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	commit	1	chat	0	commit:5b2d2bf6-6c4f-4d75-aa12-0083f73499fa	\N	\N	2026-10-14 02:40:25.925938+00	0
+dc4da8fe-f75f-4d11-893b-9ee95f53e285	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	dc4da8fe-f75f-4d11-893b-9ee95f53e285	reserve	1	chat	0	chat-reserve:d7fc4c8f-d7c3-4f51-9268-a87c24938a32	\N	\N	2026-10-14 02:40:32.194547+00	0
+e3a1c237-27f0-4e2c-9d6a-74668e3bea5d	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	dc4da8fe-f75f-4d11-893b-9ee95f53e285	commit	1	chat	0	commit:dc4da8fe-f75f-4d11-893b-9ee95f53e285	\N	\N	2026-10-14 02:40:32.205833+00	0
+12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	reserve	1	chat	0	chat-reserve:18e574a7-7c0d-4296-bde5-49543f54ce96	\N	\N	2026-10-14 02:40:40.823845+00	0
+b718700c-a641-4617-a2b9-9e1e06c13804	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	commit	10011	chat	6006	commit:12f7fdc2-c3c7-4b96-baf4-c3b46c81c61e	\N	\N	2026-10-14 02:40:44.965805+00	0
+bf7acdce-4d1c-461e-a902-40008fb123cc	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bf7acdce-4d1c-461e-a902-40008fb123cc	reserve	1	chat	0	chat-reserve:e8035e9c-09d5-42fb-8b1d-bfd8f47521a4	\N	\N	2026-10-14 02:45:54.8882+00	0
+cb86c58c-e775-4676-9621-0987844ebd6a	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bf7acdce-4d1c-461e-a902-40008fb123cc	commit	1	chat	0	commit:bf7acdce-4d1c-461e-a902-40008fb123cc	\N	\N	2026-10-14 02:45:55.198191+00	0
+48099c92-b3c9-4db6-8cad-aa77877a25b7	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	release	-1	reasoning	0	cleanup:7ab2e0f2-1d03-4f07-a82e-6fd7d15ec9ac	\N	\N	2026-10-14 02:53:56.002284+00	0
+68f91803-5d72-4966-a099-f4bbf44d97aa	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	68f91803-5d72-4966-a099-f4bbf44d97aa	reserve	1	vision	0	vision-reserve:0f1c275e-873e-4353-addd-d197883e07d6	\N	\N	2026-10-14 03:12:38.288001+00	0
+dfa64d9e-f6c5-4eb1-8c36-b7de4598eb8f	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	68f91803-5d72-4966-a099-f4bbf44d97aa	release	-1	vision	0	vision-release:68f91803-5d72-4966-a099-f4bbf44d97aa	\N	\N	2026-10-14 03:13:08.359093+00	0
+f5fb3d9f-0743-4f24-8b37-dbba3399c1b5	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f5fb3d9f-0743-4f24-8b37-dbba3399c1b5	reserve	1	vision	0	vision-reserve:13fcf7f8-def4-4c13-8757-5696dea0ce9c	\N	\N	2026-10-14 03:13:11.901962+00	0
+e9df8500-5a90-4ddb-8f71-6a9991e2b64c	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	f5fb3d9f-0743-4f24-8b37-dbba3399c1b5	release	-1	vision	0	vision-release:f5fb3d9f-0743-4f24-8b37-dbba3399c1b5	\N	\N	2026-10-14 03:13:41.949212+00	0
+ef743948-b751-4130-990e-cea59aeb56eb	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	ef743948-b751-4130-990e-cea59aeb56eb	reserve	1	vision	0	vision-reserve:3f2ea4c9-c8f5-4481-8112-29169ed41894	\N	\N	2026-10-14 03:41:33.744543+00	0
+1adb9ebe-0efd-479d-9dd6-8e36b926fddd	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	ef743948-b751-4130-990e-cea59aeb56eb	commit	4600	vision	4312	vision-commit:ef743948-b751-4130-990e-cea59aeb56eb	\N	\N	2026-10-14 03:41:41.042709+00	0
+bbf1543b-19bc-4738-b9cb-c7d94d181b19	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bbf1543b-19bc-4738-b9cb-c7d94d181b19	reserve	1	chat	0	chat-reserve:86bdf6e4-3c86-49b9-9a28-b8b508fae545	\N	\N	2026-10-14 03:42:01.539853+00	0
+0d76d27f-0cf9-49a9-82d1-288cb5ea0e16	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	bbf1543b-19bc-4738-b9cb-c7d94d181b19	commit	5341	chat	2002	commit:bbf1543b-19bc-4738-b9cb-c7d94d181b19	\N	\N	2026-10-14 03:42:06.285175+00	0
+6ccb64fb-2681-42f1-ac48-d5bc71e3b0d8	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	6ccb64fb-2681-42f1-ac48-d5bc71e3b0d8	reserve	1	vision	0	vision-reserve:2c5e8f62-84a3-4273-b979-9daec31258f8	\N	\N	2026-10-14 03:48:58.636912+00	0
+7426289d-c498-47a2-9375-ca17382e4dac	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	6ccb64fb-2681-42f1-ac48-d5bc71e3b0d8	commit	4672	vision	4380	vision-commit:6ccb64fb-2681-42f1-ac48-d5bc71e3b0d8	\N	\N	2026-10-14 03:49:15.429214+00	0
+ecf1fee7-38c8-4112-9ad4-3cfde951287f	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	ecf1fee7-38c8-4112-9ad4-3cfde951287f	reserve	1	vision	0	vision-reserve:d50e9e67-ac99-46da-8629-c2800bb2b966	\N	\N	2026-10-14 03:49:15.564745+00	0
+8c8459b9-ecc6-4b0f-a547-abeae899dea2	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	ecf1fee7-38c8-4112-9ad4-3cfde951287f	commit	4600	vision	4312	vision-commit:ecf1fee7-38c8-4112-9ad4-3cfde951287f	\N	\N	2026-10-14 03:49:34.556975+00	0
+6b1b19dc-d5bf-459c-8c1f-8c9549fc3ed1	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	6b1b19dc-d5bf-459c-8c1f-8c9549fc3ed1	reserve	1	vision	0	vision-reserve:bf5deeaf-bdbe-4834-9f91-df9718170c58	\N	\N	2026-10-14 03:50:27.72707+00	0
+1cc072d5-ae91-494f-a16c-03924ace111b	f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	6b1b19dc-d5bf-459c-8c1f-8c9549fc3ed1	commit	4574	vision	4288	vision-commit:6b1b19dc-d5bf-459c-8c1f-8c9549fc3ed1	\N	\N	2026-10-14 03:50:35.071491+00	0
+9067399c-ef66-470f-aa1d-cf3941c745a8	c910ed98-e9ab-4cf6-a20b-b525ec05d3c5	019634a7-fa42-4a80-8942-02203c874d26	9067399c-ef66-470f-aa1d-cf3941c745a8	reserve	500	vision	0	itest-refund-res-019634a7-fa42-4a80-8942-02203c874d26	\N	\N	2026-10-14 04:19:22.32191+00	0
+921ce9a1-f53e-40b8-8c6a-eee77744ae9e	c910ed98-e9ab-4cf6-a20b-b525ec05d3c5	019634a7-fa42-4a80-8942-02203c874d26	9067399c-ef66-470f-aa1d-cf3941c745a8	commit	400	vision	0	itest-refund-com-019634a7-fa42-4a80-8942-02203c874d26	\N	\N	2026-10-14 04:19:22.387239+00	0
+d5cebfcf-27b9-4583-b1cc-7a2217ba2dcf	c910ed98-e9ab-4cf6-a20b-b525ec05d3c5	019634a7-fa42-4a80-8942-02203c874d26	\N	refund	-400	vision	0	itest-refund-019634a7-fa42-4a80-8942-02203c874d26	\N	\N	2026-10-14 04:19:22.40749+00	0
+976940b5-cc25-4c56-b7ac-08b0d8819cf9	eed02a88-c464-4165-84d6-1ef0748496ca	2ef6367b-792f-4952-9033-fe21c6b36b92	976940b5-cc25-4c56-b7ac-08b0d8819cf9	reserve	300	chat	0	itest-clamp-res-2ef6367b-792f-4952-9033-fe21c6b36b92	\N	\N	2026-10-14 04:19:22.579611+00	0
+414dba90-cbae-4632-a592-df74394b00c5	eed02a88-c464-4165-84d6-1ef0748496ca	2ef6367b-792f-4952-9033-fe21c6b36b92	976940b5-cc25-4c56-b7ac-08b0d8819cf9	commit	100	chat	0	itest-clamp-com-2ef6367b-792f-4952-9033-fe21c6b36b92	\N	\N	2026-10-14 04:19:22.619716+00	0
+39ded639-a374-4cab-ace2-42b2fe292338	eed02a88-c464-4165-84d6-1ef0748496ca	2ef6367b-792f-4952-9033-fe21c6b36b92	\N	refund	-100	chat	0	itest-clamp-refund-2ef6367b-792f-4952-9033-fe21c6b36b92	\N	\N	2026-10-14 04:19:22.635105+00	0
+40d0e526-b051-4267-bc5f-650b47dbbc60	12eb8362-1deb-4924-9e35-7f96fa732acf	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-18c9919d-27a4-42e4-aa0f-7f217d4a9700	\N	\N	2026-10-14 04:22:14.013186+00	0
+90a5b3f0-5b63-4a65-a431-ba4dfd54538b	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	90a5b3f0-5b63-4a65-a431-ba4dfd54538b	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-3	\N	\N	2026-10-14 04:22:15.606927+00	0
+3668a3dc-0676-49bf-b626-ed0876efc166	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	3668a3dc-0676-49bf-b626-ed0876efc166	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-33	\N	\N	2026-10-14 04:22:15.684991+00	0
+5b1939d2-8d9f-403e-9713-78dd0408bace	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	5b1939d2-8d9f-403e-9713-78dd0408bace	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-38	\N	\N	2026-10-14 04:22:15.689947+00	0
+5d8acdd4-c055-46fb-9956-4a516374beec	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	5d8acdd4-c055-46fb-9956-4a516374beec	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-21	\N	\N	2026-10-14 04:22:15.641863+00	0
+a1fc9aa9-09fa-4bf4-961a-65a6118118d3	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a1fc9aa9-09fa-4bf4-961a-65a6118118d3	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-29	\N	\N	2026-10-14 04:22:15.703335+00	0
+fd028708-0b04-4c92-ab7a-b5bb990fecf0	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	fd028708-0b04-4c92-ab7a-b5bb990fecf0	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-12	\N	\N	2026-10-14 04:22:15.687611+00	0
+623f61f1-86c7-462b-a7fa-42cac8447b4a	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	623f61f1-86c7-462b-a7fa-42cac8447b4a	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-0	\N	\N	2026-10-14 04:22:15.718172+00	0
+a2e971b5-20d1-4529-8c25-6f288fc27ece	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a2e971b5-20d1-4529-8c25-6f288fc27ece	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-19	\N	\N	2026-10-14 04:22:15.607343+00	0
+a0366b25-250a-4c71-aab4-a81148d71852	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a0366b25-250a-4c71-aab4-a81148d71852	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-34	\N	\N	2026-10-14 04:22:15.731243+00	0
+71346c7a-8211-474a-b69c-2188556ac657	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	71346c7a-8211-474a-b69c-2188556ac657	reserve	100	chat	0	conc-2e3e8650-c07b-4f5c-b471-3a3707534b0f-22	\N	\N	2026-10-14 04:22:15.667244+00	0
+ae37c395-3a7c-4c69-a89f-f23db9a97fcf	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	ae37c395-3a7c-4c69-a89f-f23db9a97fcf	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-0	\N	\N	2026-10-14 04:22:15.894317+00	0
+4b93969a-dc7f-4de0-bf4f-2efb6818c5db	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	4b93969a-dc7f-4de0-bf4f-2efb6818c5db	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-1	\N	\N	2026-10-14 04:22:15.949921+00	0
+66197d91-0596-42b2-9fc0-0a3215de10d5	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	66197d91-0596-42b2-9fc0-0a3215de10d5	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-2	\N	\N	2026-10-14 04:22:15.962663+00	0
+abbeb083-837a-4285-95d8-9db396f0f15a	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	abbeb083-837a-4285-95d8-9db396f0f15a	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-3	\N	\N	2026-10-14 04:22:15.971268+00	0
+7f569883-646f-45b8-9b2b-accb150a099f	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	7f569883-646f-45b8-9b2b-accb150a099f	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-4	\N	\N	2026-10-14 04:22:16.021371+00	0
+37d6c05a-db10-46c2-9bb4-cfcb197387bc	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	37d6c05a-db10-46c2-9bb4-cfcb197387bc	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-5	\N	\N	2026-10-14 04:22:16.035961+00	0
+0278f398-b206-46ea-8fa3-35bc55fd711f	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	0278f398-b206-46ea-8fa3-35bc55fd711f	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-6	\N	\N	2026-10-14 04:22:16.045289+00	0
+6a9ef6f9-2cc9-4928-b893-3afb73099439	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	6a9ef6f9-2cc9-4928-b893-3afb73099439	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-7	\N	\N	2026-10-14 04:22:16.052928+00	0
+7a54e2cf-a3ab-4e04-8d6d-0a8b9af661da	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	7a54e2cf-a3ab-4e04-8d6d-0a8b9af661da	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-8	\N	\N	2026-10-14 04:22:16.061733+00	0
+7771f4de-7c44-4762-8e62-4cc430a2b6a6	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	7771f4de-7c44-4762-8e62-4cc430a2b6a6	reserve	100	chat	0	cc-3eff48b3-13fb-42d0-ad2b-436d27614964-9	\N	\N	2026-10-14 04:22:16.070493+00	0
+24fbcb35-ed49-4e29-b0ce-b7113a196272	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	4b93969a-dc7f-4de0-bf4f-2efb6818c5db	commit	100	chat	0	commit-4b93969a-dc7f-4de0-bf4f-2efb6818c5db-0	\N	\N	2026-10-14 04:22:16.111143+00	0
+a7b2d8d3-c98e-4428-bb40-036a0012e826	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	7a54e2cf-a3ab-4e04-8d6d-0a8b9af661da	commit	100	chat	0	commit-7a54e2cf-a3ab-4e04-8d6d-0a8b9af661da-0	\N	\N	2026-10-14 04:22:16.116399+00	0
+06435248-99c9-4bf8-b2ee-48fd547e315b	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	66197d91-0596-42b2-9fc0-0a3215de10d5	commit	100	chat	0	commit-66197d91-0596-42b2-9fc0-0a3215de10d5-0	\N	\N	2026-10-14 04:22:16.116952+00	0
+12192c70-111f-4f1c-a637-439cbc3fc287	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	7f569883-646f-45b8-9b2b-accb150a099f	commit	100	chat	0	commit-7f569883-646f-45b8-9b2b-accb150a099f-0	\N	\N	2026-10-14 04:22:16.145722+00	0
+83b555cd-a88d-4049-bb4e-ae93f8ebd6d1	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	0278f398-b206-46ea-8fa3-35bc55fd711f	commit	100	chat	0	commit-0278f398-b206-46ea-8fa3-35bc55fd711f-1	\N	\N	2026-10-14 04:22:16.119036+00	0
+807f1dd3-fc0e-4188-b254-3d739a7fb4cb	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	37d6c05a-db10-46c2-9bb4-cfcb197387bc	commit	100	chat	0	commit-37d6c05a-db10-46c2-9bb4-cfcb197387bc-1	\N	\N	2026-10-14 04:22:16.201325+00	0
+6cdc9a39-5c02-47f0-861f-fff548e2be66	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	6a9ef6f9-2cc9-4928-b893-3afb73099439	commit	100	chat	0	commit-6a9ef6f9-2cc9-4928-b893-3afb73099439-0	\N	\N	2026-10-14 04:22:16.174252+00	0
+58c35a64-0035-45ba-aba8-941b88c96d62	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	37d6c05a-db10-46c2-9bb4-cfcb197387bc	commit	100	chat	0	commit-37d6c05a-db10-46c2-9bb4-cfcb197387bc-0	\N	\N	2026-10-14 04:22:16.20794+00	0
+7653087a-3d51-4e2c-80b9-231de5c88211	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	6a9ef6f9-2cc9-4928-b893-3afb73099439	commit	100	chat	0	commit-6a9ef6f9-2cc9-4928-b893-3afb73099439-1	\N	\N	2026-10-14 04:22:16.140659+00	0
+71d815ff-e6fd-4d42-95e2-f1f501171a7c	df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	ae37c395-3a7c-4c69-a89f-f23db9a97fcf	commit	100	chat	0	commit-ae37c395-3a7c-4c69-a89f-f23db9a97fcf-1	\N	\N	2026-10-14 04:22:16.174291+00	0
+676b21d2-a1e2-4857-b6b5-3d4a9596be18	6c160849-8ee6-4723-8d39-154bd1fd5b90	a43baa1e-a753-4669-b509-4d7fe570d367	676b21d2-a1e2-4857-b6b5-3d4a9596be18	reserve	1	vision	0	clamp-res-a43baa1e-a753-4669-b509-4d7fe570d367	\N	\N	2026-10-14 04:22:16.346283+00	0
+56827134-c63f-4a89-b07c-d3358bc8ae8b	6c160849-8ee6-4723-8d39-154bd1fd5b90	a43baa1e-a753-4669-b509-4d7fe570d367	676b21d2-a1e2-4857-b6b5-3d4a9596be18	commit	100	vision	0	clamp-commit-a43baa1e-a753-4669-b509-4d7fe570d367	\N	\N	2026-10-14 04:22:16.375466+00	0
+c6af0425-37fd-4cfd-99aa-f5c55a3af951	6769c748-0b6d-4c5e-87b0-390c26322a02	9a753792-beba-49af-b046-e141591603e3	c6af0425-37fd-4cfd-99aa-f5c55a3af951	reserve	300	chat	0	itest-res-9a753792-beba-49af-b046-e141591603e3	\N	\N	2026-10-14 04:22:16.433441+00	0
+e581f92e-1775-4ee6-b99e-bb272f81dd32	6769c748-0b6d-4c5e-87b0-390c26322a02	9a753792-beba-49af-b046-e141591603e3	c6af0425-37fd-4cfd-99aa-f5c55a3af951	commit	120	chat	45	itest-com-c6af0425-37fd-4cfd-99aa-f5c55a3af951	\N	\N	2026-10-14 04:22:16.473696+00	0
+d19d0160-37a2-4d53-910b-6db5f194f17b	6769c748-0b6d-4c5e-87b0-390c26322a02	9a753792-beba-49af-b046-e141591603e3	d19d0160-37a2-4d53-910b-6db5f194f17b	reserve	200	vision	0	itest-res2-9a753792-beba-49af-b046-e141591603e3	\N	\N	2026-10-14 04:22:16.525326+00	0
+6af1e5be-7ddd-40d5-95f3-3f01e90ce73a	6769c748-0b6d-4c5e-87b0-390c26322a02	9a753792-beba-49af-b046-e141591603e3	d19d0160-37a2-4d53-910b-6db5f194f17b	release	-200	vision	0	itest-rel-d19d0160-37a2-4d53-910b-6db5f194f17b	\N	\N	2026-10-14 04:22:16.535114+00	0
+0fd8f2a6-857e-463a-93ba-e58e69098ae9	e8d20beb-8a27-4381-b7ea-7d0fecea3120	87a6770e-e1f6-4185-a6b1-2a2974445c6b	0fd8f2a6-857e-463a-93ba-e58e69098ae9	reserve	500	vision	0	itest-refund-res-87a6770e-e1f6-4185-a6b1-2a2974445c6b	\N	\N	2026-10-14 04:22:16.616607+00	0
+85ac8720-43ab-404d-9603-50f4cee78ce6	e8d20beb-8a27-4381-b7ea-7d0fecea3120	87a6770e-e1f6-4185-a6b1-2a2974445c6b	0fd8f2a6-857e-463a-93ba-e58e69098ae9	commit	400	vision	0	itest-refund-com-87a6770e-e1f6-4185-a6b1-2a2974445c6b	\N	\N	2026-10-14 04:22:16.641614+00	0
+9e2c41ab-6857-457a-a949-bf160fc422e1	e8d20beb-8a27-4381-b7ea-7d0fecea3120	87a6770e-e1f6-4185-a6b1-2a2974445c6b	\N	refund	-400	vision	0	itest-refund-87a6770e-e1f6-4185-a6b1-2a2974445c6b	\N	\N	2026-10-14 04:22:16.65772+00	0
+053d593d-ea16-4c5e-83e3-cb31198a5659	76914c3b-0c44-4f70-a60f-9b4fd8e800dc	552f6195-ea07-4ac2-a0aa-90944079ce45	053d593d-ea16-4c5e-83e3-cb31198a5659	reserve	300	chat	0	itest-clamp-res-552f6195-ea07-4ac2-a0aa-90944079ce45	\N	\N	2026-10-14 04:22:16.733319+00	0
+46b8f56d-7acd-4fa0-a87e-6b4289f5ba9c	76914c3b-0c44-4f70-a60f-9b4fd8e800dc	552f6195-ea07-4ac2-a0aa-90944079ce45	053d593d-ea16-4c5e-83e3-cb31198a5659	commit	100	chat	0	itest-clamp-com-552f6195-ea07-4ac2-a0aa-90944079ce45	\N	\N	2026-10-14 04:22:16.757973+00	0
+26c289db-50a2-459a-b286-8ddfed8191c0	76914c3b-0c44-4f70-a60f-9b4fd8e800dc	552f6195-ea07-4ac2-a0aa-90944079ce45	\N	refund	-100	chat	0	itest-clamp-refund-552f6195-ea07-4ac2-a0aa-90944079ce45	\N	\N	2026-10-14 04:22:16.766854+00	0
+8bcaa365-9763-435a-9ea6-9490441695cd	271e33da-c8fd-43e5-a532-3e50199da183	96aaaf73-7451-428c-b932-c297eaaff4f4	8bcaa365-9763-435a-9ea6-9490441695cd	reserve	250	chat	0	itest-clean-old-96aaaf73-7451-428c-b932-c297eaaff4f4	\N	\N	2026-10-14 02:22:16.921473+00	0
+38c44f40-a9de-4bb9-80db-93efcc2a0af3	271e33da-c8fd-43e5-a532-3e50199da183	96aaaf73-7451-428c-b932-c297eaaff4f4	38c44f40-a9de-4bb9-80db-93efcc2a0af3	reserve	100	chat	0	itest-clean-fresh-96aaaf73-7451-428c-b932-c297eaaff4f4	\N	\N	2026-10-14 04:22:16.938778+00	0
+1171cbdd-cf4b-450e-8be7-c578dfe9bd57	12eb8362-1deb-4924-9e35-7f96fa732acf	00000000-0000-0000-0000-000000000002	f14dae17-4511-4357-b50c-26462501abaf	release	-100	chat	0	cleanup:f14dae17-4511-4357-b50c-26462501abaf	\N	\N	2026-10-14 04:22:17.000999+00	0
+08397132-9322-4fae-b15a-2d692e16a163	271e33da-c8fd-43e5-a532-3e50199da183	96aaaf73-7451-428c-b932-c297eaaff4f4	8bcaa365-9763-435a-9ea6-9490441695cd	release	-250	chat	0	cleanup:8bcaa365-9763-435a-9ea6-9490441695cd	\N	\N	2026-10-14 04:22:17.02903+00	0
+e2352b77-ab0b-47c0-a811-4415ecf85a71	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	reserve	10	chat	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:c1	\N	\N	2026-10-14 04:22:17.418151+00	0
+5763e1d7-1826-475d-9f43-c9b248b7733d	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	reserve	10	chat	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:c2	\N	\N	2026-10-14 04:22:17.42194+00	0
+de961e00-e0ec-40ce-b404-e08e084e03dc	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	reserve	10	vision	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:v1	\N	\N	2026-10-14 04:22:17.426146+00	0
+38e350b3-3939-4361-ad13-c718a10625e4	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	commit	10	vision	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:v1c	\N	\N	2026-10-14 04:22:17.430893+00	0
+f73c1ec1-5c39-4098-9055-7d6b7a549c84	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	reserve	10	vision	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:v2	\N	\N	2026-10-14 04:22:17.444074+00	0
+baa59f14-2113-419e-8476-9a0fc1e6cfa2	e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	\N	commit	10	vision	0	count-test:807563ee-0d8c-4b53-8673-f2b4ae1c28ef:v2c	\N	\N	2026-10-14 04:22:17.447975+00	0
+5138c4be-71f0-404a-a88b-6ec53c755fb3	c3a4c3df-a4dd-4a3a-9dc1-a1101cb4f923	34834ebb-945d-46da-b447-84dc23602beb	\N	adjust	250	admin	0	56984b73-7350-4c60-81f5-2aaaa1239196	\N	e2e top-up	2026-10-14 04:22:18.58164+00	0
+f12dba96-84ad-45f7-9a69-ef8c46ef27a8	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	90a5b3f0-5b63-4a65-a431-ba4dfd54538b	release	-100	chat	0	cleanup:90a5b3f0-5b63-4a65-a431-ba4dfd54538b	\N	\N	2026-10-14 04:59:18.519113+00	0
+d8638da8-d52b-4c5d-96e0-5006ccb0ac56	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a2e971b5-20d1-4529-8c25-6f288fc27ece	release	-100	chat	0	cleanup:a2e971b5-20d1-4529-8c25-6f288fc27ece	\N	\N	2026-10-14 04:59:18.556022+00	0
+63c3ab33-10ad-43db-a524-b409bc91289c	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	5d8acdd4-c055-46fb-9956-4a516374beec	release	-100	chat	0	cleanup:5d8acdd4-c055-46fb-9956-4a516374beec	\N	\N	2026-10-14 04:59:18.571404+00	0
+56600229-ede1-4a90-8080-9ae576e80dd9	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	71346c7a-8211-474a-b69c-2188556ac657	release	-100	chat	0	cleanup:71346c7a-8211-474a-b69c-2188556ac657	\N	\N	2026-10-14 04:59:18.592047+00	0
+a5fe4cb6-55bc-4770-bef6-cb6db25021a5	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	3668a3dc-0676-49bf-b626-ed0876efc166	release	-100	chat	0	cleanup:3668a3dc-0676-49bf-b626-ed0876efc166	\N	\N	2026-10-14 04:59:18.602779+00	0
+52be879d-e42f-4735-ab61-846929fb2236	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	fd028708-0b04-4c92-ab7a-b5bb990fecf0	release	-100	chat	0	cleanup:fd028708-0b04-4c92-ab7a-b5bb990fecf0	\N	\N	2026-10-14 04:59:18.610641+00	0
+232813a9-21e8-4ef3-8452-6c0957587d4d	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	5b1939d2-8d9f-403e-9713-78dd0408bace	release	-100	chat	0	cleanup:5b1939d2-8d9f-403e-9713-78dd0408bace	\N	\N	2026-10-14 04:59:18.618263+00	0
+bc69b2f8-57c8-4c4d-931f-59a76fde1fb8	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a1fc9aa9-09fa-4bf4-961a-65a6118118d3	release	-100	chat	0	cleanup:a1fc9aa9-09fa-4bf4-961a-65a6118118d3	\N	\N	2026-10-14 04:59:18.626125+00	0
+fc430ccf-f363-4e5e-aa72-81b8b56557f3	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	623f61f1-86c7-462b-a7fa-42cac8447b4a	release	-100	chat	0	cleanup:623f61f1-86c7-462b-a7fa-42cac8447b4a	\N	\N	2026-10-14 04:59:18.633661+00	0
+14c68329-861c-4e64-ade9-2ad15484dbfd	28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	a0366b25-250a-4c71-aab4-a81148d71852	release	-100	chat	0	cleanup:a0366b25-250a-4c71-aab4-a81148d71852	\N	\N	2026-10-14 04:59:18.64126+00	0
+6bde6482-eed7-4f69-9368-47a54a390ac6	271e33da-c8fd-43e5-a532-3e50199da183	96aaaf73-7451-428c-b932-c297eaaff4f4	38c44f40-a9de-4bb9-80db-93efcc2a0af3	release	-100	chat	0	cleanup:38c44f40-a9de-4bb9-80db-93efcc2a0af3	\N	\N	2026-10-14 04:59:18.661618+00	0
+1c509f48-3a8c-4a58-952a-f42fa4120cef	76e0489f-66ab-4fb5-b4d0-66ae81729ca2	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-f81661e9-27fe-4ae2-8b34-d76452620402	\N	\N	2026-10-14 11:15:00.022294+00	0
+ae0052a9-0650-467b-ae77-3d0f83e4c0d9	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	ae0052a9-0650-467b-ae77-3d0f83e4c0d9	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-8	\N	\N	2026-10-14 11:15:01.114808+00	0
+b3fcb19e-c6fd-4f33-a74a-fdb0feb254a2	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	b3fcb19e-c6fd-4f33-a74a-fdb0feb254a2	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-27	\N	\N	2026-10-14 11:15:01.148221+00	0
+d9e765ed-2ad4-432b-982c-65bbf2eeac78	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	d9e765ed-2ad4-432b-982c-65bbf2eeac78	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-32	\N	\N	2026-10-14 11:15:01.114768+00	0
+d252d114-d5ca-417e-91e4-b9a9abff8f7d	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	d252d114-d5ca-417e-91e4-b9a9abff8f7d	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-20	\N	\N	2026-10-14 11:15:01.135262+00	0
+5fd45e14-28f8-480b-a015-69ad2da14f9c	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	5fd45e14-28f8-480b-a015-69ad2da14f9c	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-3	\N	\N	2026-10-14 11:15:01.131533+00	0
+ac88e561-17a6-48c7-a3cc-dc65172aaf29	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	ac88e561-17a6-48c7-a3cc-dc65172aaf29	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-16	\N	\N	2026-10-14 11:15:01.114834+00	0
+fd735365-53b2-442c-8408-66aa06b92207	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	fd735365-53b2-442c-8408-66aa06b92207	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-10	\N	\N	2026-10-14 11:15:01.117381+00	0
+9664f531-ef47-4723-86b6-81cf8acf9d46	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	9664f531-ef47-4723-86b6-81cf8acf9d46	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-5	\N	\N	2026-10-14 11:15:01.121591+00	0
+556ce5ad-b537-434c-af73-0918f256e6e7	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	556ce5ad-b537-434c-af73-0918f256e6e7	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-0	\N	\N	2026-10-14 11:15:01.114809+00	0
+97f1e283-c60d-41da-9fd5-e169d1fb6776	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	97f1e283-c60d-41da-9fd5-e169d1fb6776	reserve	100	chat	0	conc-89de0400-a885-4574-9f7c-3409e726a0bf-25	\N	\N	2026-10-14 11:15:01.131511+00	0
+c589d5e9-32f2-49f2-aac3-44bb06dc35dd	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	c589d5e9-32f2-49f2-aac3-44bb06dc35dd	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-0	\N	\N	2026-10-14 11:15:01.358409+00	0
+6102473a-78ba-462d-b241-bba52a93f6f9	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	6102473a-78ba-462d-b241-bba52a93f6f9	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-1	\N	\N	2026-10-14 11:15:01.376122+00	0
+f981993b-6799-47d1-bfc6-88c003164c0e	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	f981993b-6799-47d1-bfc6-88c003164c0e	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-2	\N	\N	2026-10-14 11:15:01.386144+00	0
+e3b2fd8a-e701-4927-9d74-43f8442a03d7	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	e3b2fd8a-e701-4927-9d74-43f8442a03d7	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-3	\N	\N	2026-10-14 11:15:01.396102+00	0
+035b6ec2-c725-45f3-9820-7addafe615ae	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	035b6ec2-c725-45f3-9820-7addafe615ae	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-4	\N	\N	2026-10-14 11:15:01.408561+00	0
+ded604cb-edde-4de1-a8f1-856b51002760	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	ded604cb-edde-4de1-a8f1-856b51002760	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-5	\N	\N	2026-10-14 11:15:01.418178+00	0
+9ee67415-4e03-42e4-a2e0-bbd3489444b7	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	9ee67415-4e03-42e4-a2e0-bbd3489444b7	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-6	\N	\N	2026-10-14 11:15:01.428038+00	0
+1b0395f0-5536-41a1-9409-256116d982cc	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	1b0395f0-5536-41a1-9409-256116d982cc	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-7	\N	\N	2026-10-14 11:15:01.437376+00	0
+b16ac13f-96f4-4b69-973a-a9216d138c73	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	b16ac13f-96f4-4b69-973a-a9216d138c73	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-8	\N	\N	2026-10-14 11:15:01.447157+00	0
+734b14a1-c420-4403-b3e5-60c7daa156ff	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	734b14a1-c420-4403-b3e5-60c7daa156ff	reserve	100	chat	0	cc-4b45b698-2b46-42be-a539-26a7d3f98513-9	\N	\N	2026-10-14 11:15:01.456549+00	0
+a55e49c6-b04e-4ddc-ab84-91fbbce0666d	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	f981993b-6799-47d1-bfc6-88c003164c0e	commit	100	chat	0	commit-f981993b-6799-47d1-bfc6-88c003164c0e-0	\N	\N	2026-10-14 11:15:01.499143+00	0
+b6b99d68-c578-4df9-a250-a84267550ac8	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	6102473a-78ba-462d-b241-bba52a93f6f9	commit	100	chat	0	commit-6102473a-78ba-462d-b241-bba52a93f6f9-1	\N	\N	2026-10-14 11:15:01.498618+00	0
+1ce0fed4-abc8-4afc-847a-b93f46d5dd5a	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	e3b2fd8a-e701-4927-9d74-43f8442a03d7	commit	100	chat	0	commit-e3b2fd8a-e701-4927-9d74-43f8442a03d7-0	\N	\N	2026-10-14 11:15:01.499246+00	0
+958291d0-fb41-40b1-ae74-7e725408fa71	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	9ee67415-4e03-42e4-a2e0-bbd3489444b7	commit	100	chat	0	commit-9ee67415-4e03-42e4-a2e0-bbd3489444b7-1	\N	\N	2026-10-14 11:15:01.510519+00	0
+af9dd0f2-c5b5-4fd1-b21b-89eb02e30e86	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	1b0395f0-5536-41a1-9409-256116d982cc	commit	100	chat	0	commit-1b0395f0-5536-41a1-9409-256116d982cc-0	\N	\N	2026-10-14 11:15:01.511741+00	0
+363b8407-34c3-4fcd-a9c0-0b70cec21f69	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	ded604cb-edde-4de1-a8f1-856b51002760	commit	100	chat	0	commit-ded604cb-edde-4de1-a8f1-856b51002760-0	\N	\N	2026-10-14 11:15:01.499008+00	0
+df6a1b09-4f36-40d9-96a1-817da991a62e	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	e3b2fd8a-e701-4927-9d74-43f8442a03d7	commit	100	chat	0	commit-e3b2fd8a-e701-4927-9d74-43f8442a03d7-1	\N	\N	2026-10-14 11:15:01.514976+00	0
+ac6aeee4-da20-4cc1-92e1-ebed81d21236	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	c589d5e9-32f2-49f2-aac3-44bb06dc35dd	commit	100	chat	0	commit-c589d5e9-32f2-49f2-aac3-44bb06dc35dd-1	\N	\N	2026-10-14 11:15:01.555204+00	0
+f06e774b-881b-4f7f-bc38-4709a65b99d6	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	b16ac13f-96f4-4b69-973a-a9216d138c73	commit	100	chat	0	commit-b16ac13f-96f4-4b69-973a-a9216d138c73-0	\N	\N	2026-10-14 11:15:01.500474+00	0
+4ea2e738-1b86-4e17-9459-9c74cf4b5af1	af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	1b0395f0-5536-41a1-9409-256116d982cc	commit	100	chat	0	commit-1b0395f0-5536-41a1-9409-256116d982cc-1	\N	\N	2026-10-14 11:15:01.517116+00	0
+3000e186-8701-4dc8-989f-9b13262319c4	9b935e6b-10d1-40a3-bfce-f392aef61561	f8a65829-0e7e-43e4-abe7-51885c185bf4	3000e186-8701-4dc8-989f-9b13262319c4	reserve	1	vision	0	clamp-res-f8a65829-0e7e-43e4-abe7-51885c185bf4	\N	\N	2026-10-14 11:15:01.670224+00	0
+77988d9c-a814-4910-aa59-3d0285881e8a	9b935e6b-10d1-40a3-bfce-f392aef61561	f8a65829-0e7e-43e4-abe7-51885c185bf4	3000e186-8701-4dc8-989f-9b13262319c4	commit	100	vision	0	clamp-commit-f8a65829-0e7e-43e4-abe7-51885c185bf4	\N	\N	2026-10-14 11:15:01.693821+00	0
+1af52186-b297-4920-898a-fbbd532288f0	c47be232-b2b4-4da3-af28-e107b40e636a	667d35dd-8f50-4588-8843-c361988ee14d	1af52186-b297-4920-898a-fbbd532288f0	reserve	300	chat	0	itest-res-667d35dd-8f50-4588-8843-c361988ee14d	\N	\N	2026-10-14 11:15:01.748089+00	0
+a7da2c69-cc6e-4473-9fc2-e1866eb908d7	c47be232-b2b4-4da3-af28-e107b40e636a	667d35dd-8f50-4588-8843-c361988ee14d	1af52186-b297-4920-898a-fbbd532288f0	commit	120	chat	45	itest-com-1af52186-b297-4920-898a-fbbd532288f0	\N	\N	2026-10-14 11:15:01.776705+00	0
+345a4062-6e36-48d5-9f72-baf5b480c85a	c47be232-b2b4-4da3-af28-e107b40e636a	667d35dd-8f50-4588-8843-c361988ee14d	345a4062-6e36-48d5-9f72-baf5b480c85a	reserve	200	vision	0	itest-res2-667d35dd-8f50-4588-8843-c361988ee14d	\N	\N	2026-10-14 11:15:01.801349+00	0
+1230bdaa-e3ce-4837-8870-3ecf3e601860	c47be232-b2b4-4da3-af28-e107b40e636a	667d35dd-8f50-4588-8843-c361988ee14d	345a4062-6e36-48d5-9f72-baf5b480c85a	release	-200	vision	0	itest-rel-345a4062-6e36-48d5-9f72-baf5b480c85a	\N	\N	2026-10-14 11:15:01.815183+00	0
+24137abf-d1a2-4505-8774-9a07e156d373	6f745b7c-042b-4245-a5a3-482a3ed3e50d	dc6a1bc9-9495-444e-a660-df2e766dfc46	24137abf-d1a2-4505-8774-9a07e156d373	reserve	500	vision	0	itest-refund-res-dc6a1bc9-9495-444e-a660-df2e766dfc46	\N	\N	2026-10-14 11:15:01.868229+00	0
+f2b99039-2f0e-4602-8e9c-24276c11bedb	6f745b7c-042b-4245-a5a3-482a3ed3e50d	dc6a1bc9-9495-444e-a660-df2e766dfc46	24137abf-d1a2-4505-8774-9a07e156d373	commit	400	vision	0	itest-refund-com-dc6a1bc9-9495-444e-a660-df2e766dfc46	\N	\N	2026-10-14 11:15:01.891842+00	0
+507375a8-b10b-41f3-b119-75893f75cd01	6f745b7c-042b-4245-a5a3-482a3ed3e50d	dc6a1bc9-9495-444e-a660-df2e766dfc46	\N	refund	-400	vision	0	itest-refund-dc6a1bc9-9495-444e-a660-df2e766dfc46	\N	\N	2026-10-14 11:15:01.908704+00	0
+ef2e7d8b-6d1e-465d-a708-9153db8604c4	8009c0b3-e1b4-40e1-928a-5cb5e87d6a93	a15d92c1-2526-4d83-ad62-ee91711ed90d	ef2e7d8b-6d1e-465d-a708-9153db8604c4	reserve	300	chat	0	itest-clamp-res-a15d92c1-2526-4d83-ad62-ee91711ed90d	\N	\N	2026-10-14 11:15:01.966084+00	0
+442c9430-37f4-4da9-b513-85f882ce7b1f	8009c0b3-e1b4-40e1-928a-5cb5e87d6a93	a15d92c1-2526-4d83-ad62-ee91711ed90d	ef2e7d8b-6d1e-465d-a708-9153db8604c4	commit	100	chat	0	itest-clamp-com-a15d92c1-2526-4d83-ad62-ee91711ed90d	\N	\N	2026-10-14 11:15:01.988125+00	0
+444fb08c-76d5-4c79-a64b-44a0c86abcaf	8009c0b3-e1b4-40e1-928a-5cb5e87d6a93	a15d92c1-2526-4d83-ad62-ee91711ed90d	\N	refund	-100	chat	0	itest-clamp-refund-a15d92c1-2526-4d83-ad62-ee91711ed90d	\N	\N	2026-10-14 11:15:01.998885+00	0
+f88bb9cc-212e-41c2-8c82-7db8c2f34bb2	3edd66a5-2718-4f8b-9c95-caa3cda7f3dc	53b28e80-4726-49d8-a977-65a15f3dae9f	f88bb9cc-212e-41c2-8c82-7db8c2f34bb2	reserve	250	chat	0	itest-clean-old-53b28e80-4726-49d8-a977-65a15f3dae9f	\N	\N	2026-10-14 09:15:02.111672+00	0
+7f792861-4473-4f97-b8e8-cde204e21744	3edd66a5-2718-4f8b-9c95-caa3cda7f3dc	53b28e80-4726-49d8-a977-65a15f3dae9f	7f792861-4473-4f97-b8e8-cde204e21744	reserve	100	chat	0	itest-clean-fresh-53b28e80-4726-49d8-a977-65a15f3dae9f	\N	\N	2026-10-14 11:15:02.127708+00	0
+0f6b7185-3be3-4b49-bd8a-e04b6e4c28dc	76e0489f-66ab-4fb5-b4d0-66ae81729ca2	00000000-0000-0000-0000-000000000002	40d0e526-b051-4267-bc5f-650b47dbbc60	release	-100	chat	0	cleanup:40d0e526-b051-4267-bc5f-650b47dbbc60	\N	\N	2026-10-14 11:15:02.201543+00	0
+5ac6b840-3866-460c-8c43-25fa028c5c7d	3edd66a5-2718-4f8b-9c95-caa3cda7f3dc	53b28e80-4726-49d8-a977-65a15f3dae9f	f88bb9cc-212e-41c2-8c82-7db8c2f34bb2	release	-250	chat	0	cleanup:f88bb9cc-212e-41c2-8c82-7db8c2f34bb2	\N	\N	2026-10-14 11:15:02.253521+00	0
+5fd6a469-e27c-4f89-888e-4e10c6cd20a4	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	reserve	10	chat	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:c1	\N	\N	2026-10-14 11:15:02.547521+00	0
+7d27cdf9-8926-4e1c-b724-6a4acafb3da1	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	reserve	10	chat	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:c2	\N	\N	2026-10-14 11:15:02.550807+00	0
+70c7e3aa-415d-40ca-b4cc-80910ab0b432	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	reserve	10	vision	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:v1	\N	\N	2026-10-14 11:15:02.553313+00	0
+d594c8b4-2722-4b23-b43d-baae614cd4d3	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	commit	10	vision	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:v1c	\N	\N	2026-10-14 11:15:02.556131+00	0
+dfbf5a91-815e-4b18-8b37-0c4378c2e8bb	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	reserve	10	vision	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:v2	\N	\N	2026-10-14 11:15:02.563938+00	0
+4b0a39b5-4412-4c19-98e2-7bd3d8b1926e	3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	\N	commit	10	vision	0	count-test:4f00a93d-0b45-4509-97ea-cbdede2782cf:v2c	\N	\N	2026-10-14 11:15:02.567317+00	0
+3415b26d-3cb5-42bd-95a8-d5b4d8ab8f9b	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	d9e765ed-2ad4-432b-982c-65bbf2eeac78	release	-100	chat	0	cleanup:d9e765ed-2ad4-432b-982c-65bbf2eeac78	\N	\N	2026-10-14 11:57:25.68087+00	0
+0729294e-a267-4ec4-8046-eb78f6c17bea	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	ae0052a9-0650-467b-ae77-3d0f83e4c0d9	release	-100	chat	0	cleanup:ae0052a9-0650-467b-ae77-3d0f83e4c0d9	\N	\N	2026-10-14 11:57:25.723512+00	0
+b63f098f-06e5-4f74-bae7-f4f959923cd7	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	556ce5ad-b537-434c-af73-0918f256e6e7	release	-100	chat	0	cleanup:556ce5ad-b537-434c-af73-0918f256e6e7	\N	\N	2026-10-14 11:57:25.738695+00	0
+466f9497-d0a4-4bf1-931d-580eaf62630d	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	ac88e561-17a6-48c7-a3cc-dc65172aaf29	release	-100	chat	0	cleanup:ac88e561-17a6-48c7-a3cc-dc65172aaf29	\N	\N	2026-10-14 11:57:25.754037+00	0
+92721426-f7b3-49da-a9c2-2b37ac90db5d	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	fd735365-53b2-442c-8408-66aa06b92207	release	-100	chat	0	cleanup:fd735365-53b2-442c-8408-66aa06b92207	\N	\N	2026-10-14 11:57:25.76912+00	0
+1700c656-a2af-4fcc-96fd-d15688b76bd3	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	9664f531-ef47-4723-86b6-81cf8acf9d46	release	-100	chat	0	cleanup:9664f531-ef47-4723-86b6-81cf8acf9d46	\N	\N	2026-10-14 11:57:25.788493+00	0
+d4e7f112-9a62-48a1-8160-c4b280d306dc	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	97f1e283-c60d-41da-9fd5-e169d1fb6776	release	-100	chat	0	cleanup:97f1e283-c60d-41da-9fd5-e169d1fb6776	\N	\N	2026-10-14 11:57:25.802831+00	0
+6146100c-ff62-4ae7-9520-df8662f5010d	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	5fd45e14-28f8-480b-a015-69ad2da14f9c	release	-100	chat	0	cleanup:5fd45e14-28f8-480b-a015-69ad2da14f9c	\N	\N	2026-10-14 11:57:25.820694+00	0
+ab182c7d-5451-4796-8a4f-73d35a4eaf88	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	d252d114-d5ca-417e-91e4-b9a9abff8f7d	release	-100	chat	0	cleanup:d252d114-d5ca-417e-91e4-b9a9abff8f7d	\N	\N	2026-10-14 11:57:25.836312+00	0
+5fb0309f-a292-4ef8-a0e9-b4b90568c954	110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	b3fcb19e-c6fd-4f33-a74a-fdb0feb254a2	release	-100	chat	0	cleanup:b3fcb19e-c6fd-4f33-a74a-fdb0feb254a2	\N	\N	2026-10-14 11:57:25.850752+00	0
+9e9ec605-63c0-4cbc-b9b2-a6515d852fee	3edd66a5-2718-4f8b-9c95-caa3cda7f3dc	53b28e80-4726-49d8-a977-65a15f3dae9f	7f792861-4473-4f97-b8e8-cde204e21744	release	-100	chat	0	cleanup:7f792861-4473-4f97-b8e8-cde204e21744	\N	\N	2026-10-14 11:57:25.880762+00	0
+21a61de1-8992-4315-8cf0-49a1313b3f23	cc18ba11-af91-4748-8476-85f144be19d2	00000000-0000-0000-0000-000000000003	21a61de1-8992-4315-8cf0-49a1313b3f23	reserve	2000	chat	0	chat-reserve:c66e57d9-1357-46a1-a8e6-6e128ab3b356	\N	\N	2026-10-15 02:42:57.382029+00	0
+d4ae3110-b7c2-4983-a70b-95fd661aa212	cc18ba11-af91-4748-8476-85f144be19d2	00000000-0000-0000-0000-000000000003	d4ae3110-b7c2-4983-a70b-95fd661aa212	reserve	2000	chat	0	chat-reserve:d9344bad-5ed5-49fb-80f3-6fabcbdb313d	\N	\N	2026-10-15 02:42:57.419904+00	0
+f3e7fbe2-0bc7-4882-b0a8-13eeffc67327	cc18ba11-af91-4748-8476-85f144be19d2	00000000-0000-0000-0000-000000000003	d4ae3110-b7c2-4983-a70b-95fd661aa212	commit	5000	chat	1875	commit:d4ae3110-b7c2-4983-a70b-95fd661aa212	\N	\N	2026-10-15 02:43:08.388266+00	0
+b91dbe43-c385-486e-8abf-aaef8f15512d	cc18ba11-af91-4748-8476-85f144be19d2	00000000-0000-0000-0000-000000000003	21a61de1-8992-4315-8cf0-49a1313b3f23	commit	0	chat	0	commit:21a61de1-8992-4315-8cf0-49a1313b3f23	\N	\N	2026-10-15 02:43:10.128627+00	0
+4785de57-a6db-4fc4-8361-24c3a273b7b8	ca00b212-0a6d-40a6-bd12-5ae475d66791	34d2caed-3dac-4bb4-8f5d-11739b84390e	4785de57-a6db-4fc4-8361-24c3a273b7b8	reserve	762	chat	0	ratio-res-34d2caed-3dac-4bb4-8f5d-11739b84390e	\N	\N	2026-10-15 05:19:58.777739+00	3809
+ab83a149-08e2-42d9-9fd3-c8a679329c6f	ca00b212-0a6d-40a6-bd12-5ae475d66791	34d2caed-3dac-4bb4-8f5d-11739b84390e	4785de57-a6db-4fc4-8361-24c3a273b7b8	commit	1989	chat	0	ratio-com-34d2caed-3dac-4bb4-8f5d-11739b84390e	\N	\N	2026-10-15 05:19:58.812089+00	9945
+34471448-a449-491b-a5cd-3095d765b7c6	d8ac01bc-36aa-4243-bdfa-973af57dea03	59c9ac03-61a5-4ea9-8b59-d411896e8ec2	34471448-a449-491b-a5cd-3095d765b7c6	reserve	500	chat	0	id1-res-59c9ac03-61a5-4ea9-8b59-d411896e8ec2	\N	\N	2026-10-15 05:19:58.92353+00	500
+e119bad3-3757-441e-91c5-76953d44f03c	d8ac01bc-36aa-4243-bdfa-973af57dea03	59c9ac03-61a5-4ea9-8b59-d411896e8ec2	34471448-a449-491b-a5cd-3095d765b7c6	commit	500	chat	0	id1-com-59c9ac03-61a5-4ea9-8b59-d411896e8ec2	\N	\N	2026-10-15 05:19:58.960996+00	500
+0b857b0a-bfb6-4177-9c13-8b49c064602e	c04e76ee-276e-4499-ac79-4e002b881f68	63f00dfc-8f95-4d9d-b83b-7b06fd077454	0b857b0a-bfb6-4177-9c13-8b49c064602e	reserve	1989	chat	0	rel-res-63f00dfc-8f95-4d9d-b83b-7b06fd077454	\N	\N	2026-10-15 05:19:59.041925+00	9945
+e5059cf1-3991-4359-87f5-63b1931a9866	c04e76ee-276e-4499-ac79-4e002b881f68	63f00dfc-8f95-4d9d-b83b-7b06fd077454	0b857b0a-bfb6-4177-9c13-8b49c064602e	release	-1989	chat	0	rel-rel-63f00dfc-8f95-4d9d-b83b-7b06fd077454	\N	\N	2026-10-15 05:19:59.081118+00	0
+d099b245-43b1-459e-b144-a944dec7d84a	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	d099b245-43b1-459e-b144-a944dec7d84a	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-0	\N	\N	2026-10-15 05:20:08.642668+00	100
+b7a2272d-8175-4a3f-842e-f509f5f3f5bb	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	b7a2272d-8175-4a3f-842e-f509f5f3f5bb	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-28	\N	\N	2026-10-15 05:20:08.683049+00	100
+ae556c3d-b9b8-4d6c-a5d0-a0e2a5ed99ae	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	ae556c3d-b9b8-4d6c-a5d0-a0e2a5ed99ae	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-35	\N	\N	2026-10-15 05:20:08.686112+00	100
+30274be5-a897-4de9-96c4-5e31235ed357	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	30274be5-a897-4de9-96c4-5e31235ed357	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-37	\N	\N	2026-10-15 05:20:08.710274+00	100
+5bb41c2e-50c5-4278-9b53-0ea38f91e760	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	5bb41c2e-50c5-4278-9b53-0ea38f91e760	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-34	\N	\N	2026-10-15 05:20:08.716701+00	100
+46d33962-a5f8-4d1d-8793-80892cba3e54	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	46d33962-a5f8-4d1d-8793-80892cba3e54	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-27	\N	\N	2026-10-15 05:20:08.674043+00	100
+a39cf1bb-2e61-42e9-ab5a-53837b09673c	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	a39cf1bb-2e61-42e9-ab5a-53837b09673c	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-18	\N	\N	2026-10-15 05:20:08.7332+00	100
+934ab983-895a-47f9-b2df-9553ddd604f1	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	934ab983-895a-47f9-b2df-9553ddd604f1	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-17	\N	\N	2026-10-15 05:20:08.739673+00	100
+a0ee1933-307f-4455-99be-dd9fd1c7d307	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	a0ee1933-307f-4455-99be-dd9fd1c7d307	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-23	\N	\N	2026-10-15 05:20:08.758394+00	100
+e451844e-19e4-4914-b183-76fb372a54fe	569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	e451844e-19e4-4914-b183-76fb372a54fe	reserve	100	chat	0	conc-1e9064b3-98a6-4dc0-988e-406824fb5693-26	\N	\N	2026-10-15 05:20:08.762552+00	100
+ff85d251-87b6-4274-9881-0a0c6638004c	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	ff85d251-87b6-4274-9881-0a0c6638004c	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-0	\N	\N	2026-10-15 05:20:08.950722+00	100
+21875cfe-29b8-4f44-81fd-bfac8c6bf535	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	21875cfe-29b8-4f44-81fd-bfac8c6bf535	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-1	\N	\N	2026-10-15 05:20:08.974552+00	100
+0185b24f-c1c9-4763-b5df-3759de153d34	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	0185b24f-c1c9-4763-b5df-3759de153d34	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-2	\N	\N	2026-10-15 05:20:08.986679+00	100
+81c9edeb-c8e8-45ac-8a1b-486fcf7274ee	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	81c9edeb-c8e8-45ac-8a1b-486fcf7274ee	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-3	\N	\N	2026-10-15 05:20:08.999609+00	100
+9f361da9-24b3-4bb1-9d4c-ac1e8963e624	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	9f361da9-24b3-4bb1-9d4c-ac1e8963e624	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-4	\N	\N	2026-10-15 05:20:09.013135+00	100
+9299ca95-63f7-4067-85c0-7f54844187c8	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	9299ca95-63f7-4067-85c0-7f54844187c8	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-5	\N	\N	2026-10-15 05:20:09.025008+00	100
+e78cdb72-1a0a-45e1-aeb3-63fef5092269	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	e78cdb72-1a0a-45e1-aeb3-63fef5092269	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-6	\N	\N	2026-10-15 05:20:09.037437+00	100
+24fb1961-7302-472c-90e9-5961b11a65ef	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	24fb1961-7302-472c-90e9-5961b11a65ef	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-7	\N	\N	2026-10-15 05:20:09.049988+00	100
+77c533ff-ee56-42e5-abf3-1be2e3d06ab6	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	77c533ff-ee56-42e5-abf3-1be2e3d06ab6	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-8	\N	\N	2026-10-15 05:20:09.062241+00	100
+802df6fc-e911-4de0-aceb-8ea4331e5240	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	802df6fc-e911-4de0-aceb-8ea4331e5240	reserve	100	chat	0	cc-7c963f48-6540-4f8a-b6d2-dde681602eff-9	\N	\N	2026-10-15 05:20:09.073296+00	100
+cd98502b-8f7c-4886-b215-a908bf7c67cf	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	0185b24f-c1c9-4763-b5df-3759de153d34	commit	100	chat	0	commit-0185b24f-c1c9-4763-b5df-3759de153d34-0	\N	\N	2026-10-15 05:20:09.149514+00	100
+60c90075-1fa1-4762-98f4-1db6ba87f9fa	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	77c533ff-ee56-42e5-abf3-1be2e3d06ab6	commit	100	chat	0	commit-77c533ff-ee56-42e5-abf3-1be2e3d06ab6-1	\N	\N	2026-10-15 05:20:09.217587+00	100
+ff918186-05b6-406f-a105-3d58c6c23986	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	e78cdb72-1a0a-45e1-aeb3-63fef5092269	commit	100	chat	0	commit-e78cdb72-1a0a-45e1-aeb3-63fef5092269-0	\N	\N	2026-10-15 05:20:09.255023+00	100
+d184aa73-5e7f-4b0a-8ae1-0cb98791e0fc	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	77c533ff-ee56-42e5-abf3-1be2e3d06ab6	commit	100	chat	0	commit-77c533ff-ee56-42e5-abf3-1be2e3d06ab6-0	\N	\N	2026-10-15 05:20:09.218653+00	100
+ff8a4bf4-e725-4cb3-9b3c-7faa506cda67	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	24fb1961-7302-472c-90e9-5961b11a65ef	commit	100	chat	0	commit-24fb1961-7302-472c-90e9-5961b11a65ef-0	\N	\N	2026-10-15 05:20:09.226699+00	100
+b3164b3d-b79d-472f-81f3-52cc18e1c817	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	9299ca95-63f7-4067-85c0-7f54844187c8	commit	100	chat	0	commit-9299ca95-63f7-4067-85c0-7f54844187c8-1	\N	\N	2026-10-15 05:20:09.280183+00	100
+316af2f7-1033-4512-a690-012f84779089	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	802df6fc-e911-4de0-aceb-8ea4331e5240	commit	100	chat	0	commit-802df6fc-e911-4de0-aceb-8ea4331e5240-0	\N	\N	2026-10-15 05:20:09.251266+00	100
+10ba31cd-262b-4549-bf2d-55543ca392a9	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	21875cfe-29b8-4f44-81fd-bfac8c6bf535	commit	100	chat	0	commit-21875cfe-29b8-4f44-81fd-bfac8c6bf535-0	\N	\N	2026-10-15 05:20:09.336197+00	100
+b17d48f2-2c48-4341-a6cc-0cf71d082428	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	9f361da9-24b3-4bb1-9d4c-ac1e8963e624	commit	100	chat	0	commit-9f361da9-24b3-4bb1-9d4c-ac1e8963e624-0	\N	\N	2026-10-15 05:20:09.313116+00	100
+3fa5ca7a-2dfb-4e9e-99f5-e041f1566cc9	ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	ff85d251-87b6-4274-9881-0a0c6638004c	commit	100	chat	0	commit-ff85d251-87b6-4274-9881-0a0c6638004c-1	\N	\N	2026-10-15 05:20:09.300616+00	100
+2319dd21-812f-4272-a505-29ef80044b7b	1294d23f-4ccc-47ce-bd2c-5fdd8aa3a491	7725c576-dd57-4a2e-a86d-f28ac3ba2452	2319dd21-812f-4272-a505-29ef80044b7b	reserve	1	vision	0	clamp-res-7725c576-dd57-4a2e-a86d-f28ac3ba2452	\N	\N	2026-10-15 05:20:09.527603+00	1
+4cec2215-ceae-4e4d-bb9e-24370dc4cc90	1294d23f-4ccc-47ce-bd2c-5fdd8aa3a491	7725c576-dd57-4a2e-a86d-f28ac3ba2452	2319dd21-812f-4272-a505-29ef80044b7b	commit	100	vision	0	clamp-commit-7725c576-dd57-4a2e-a86d-f28ac3ba2452	\N	\N	2026-10-15 05:20:09.557756+00	5000
+f7669538-756e-46c9-ac1e-11c801f04357	a549dc00-5104-45d2-906c-5433a3af606a	55aa6578-903d-446e-9a71-984a64c8c867	f7669538-756e-46c9-ac1e-11c801f04357	reserve	762	chat	0	ratio-res-55aa6578-903d-446e-9a71-984a64c8c867	\N	\N	2026-10-15 05:20:09.638044+00	3809
+5b6e49af-ca45-4c1d-a976-461cc63d7416	a549dc00-5104-45d2-906c-5433a3af606a	55aa6578-903d-446e-9a71-984a64c8c867	f7669538-756e-46c9-ac1e-11c801f04357	commit	1989	chat	0	ratio-com-55aa6578-903d-446e-9a71-984a64c8c867	\N	\N	2026-10-15 05:20:09.668737+00	9945
+0cfbdeaa-ff95-4a95-a730-49f56d7c19c5	a2dc53cb-39fc-4990-aef2-6322a2270f07	4ac0e217-5d5c-4839-8275-af09aa798d8b	0cfbdeaa-ff95-4a95-a730-49f56d7c19c5	reserve	500	chat	0	id1-res-4ac0e217-5d5c-4839-8275-af09aa798d8b	\N	\N	2026-10-15 05:20:09.750808+00	500
+da2194a4-11cd-4e99-85e0-576de4dd0e43	a2dc53cb-39fc-4990-aef2-6322a2270f07	4ac0e217-5d5c-4839-8275-af09aa798d8b	0cfbdeaa-ff95-4a95-a730-49f56d7c19c5	commit	500	chat	0	id1-com-4ac0e217-5d5c-4839-8275-af09aa798d8b	\N	\N	2026-10-15 05:20:09.781424+00	500
+8f45cd3a-5ddc-414c-9c29-a09b941c5c95	7e317d1e-777d-4cb7-8d03-babfbea05b78	739b1bba-1806-46d5-9a2a-2a575584083d	8f45cd3a-5ddc-414c-9c29-a09b941c5c95	reserve	1989	chat	0	rel-res-739b1bba-1806-46d5-9a2a-2a575584083d	\N	\N	2026-10-15 05:20:09.86753+00	9945
+871e669f-2083-48bd-bec3-1e01d5570dc2	7e317d1e-777d-4cb7-8d03-babfbea05b78	739b1bba-1806-46d5-9a2a-2a575584083d	8f45cd3a-5ddc-414c-9c29-a09b941c5c95	release	-1989	chat	0	rel-rel-739b1bba-1806-46d5-9a2a-2a575584083d	\N	\N	2026-10-15 05:20:09.90556+00	0
+54bf3f01-c547-4ce1-95e3-b0b23d143e8c	2e3663d2-9bf4-4930-a8e9-f2f4f2d9563d	1b78121a-0335-4a3d-94ba-a5d15e4d58f2	54bf3f01-c547-4ce1-95e3-b0b23d143e8c	reserve	300	chat	0	itest-res-1b78121a-0335-4a3d-94ba-a5d15e4d58f2	\N	\N	2026-10-15 05:20:10.018549+00	300
+127293d2-b140-4d5a-85d9-e15a101a6ed2	2e3663d2-9bf4-4930-a8e9-f2f4f2d9563d	1b78121a-0335-4a3d-94ba-a5d15e4d58f2	54bf3f01-c547-4ce1-95e3-b0b23d143e8c	commit	120	chat	45	itest-com-54bf3f01-c547-4ce1-95e3-b0b23d143e8c	\N	\N	2026-10-15 05:20:10.061517+00	120
+1de151f2-978f-4ab6-8b3e-9bfedd4a8e07	2e3663d2-9bf4-4930-a8e9-f2f4f2d9563d	1b78121a-0335-4a3d-94ba-a5d15e4d58f2	1de151f2-978f-4ab6-8b3e-9bfedd4a8e07	reserve	200	vision	0	itest-res2-1b78121a-0335-4a3d-94ba-a5d15e4d58f2	\N	\N	2026-10-15 05:20:10.090715+00	200
+56a7571b-dd29-4806-ae01-dbf4e0324117	2e3663d2-9bf4-4930-a8e9-f2f4f2d9563d	1b78121a-0335-4a3d-94ba-a5d15e4d58f2	1de151f2-978f-4ab6-8b3e-9bfedd4a8e07	release	-200	vision	0	itest-rel-1de151f2-978f-4ab6-8b3e-9bfedd4a8e07	\N	\N	2026-10-15 05:20:10.108232+00	0
+4f0b9999-5c9e-44ea-8ea6-d12adeb6f6b2	f787a1d4-21cd-4fe0-8c6a-7f0d22cbab1c	0afee2d1-06fb-4276-8255-7e4c3ee9afd4	4f0b9999-5c9e-44ea-8ea6-d12adeb6f6b2	reserve	500	vision	0	itest-refund-res-0afee2d1-06fb-4276-8255-7e4c3ee9afd4	\N	\N	2026-10-15 05:20:10.188362+00	500
+c3921511-d08c-464e-aa16-a057dacab0d5	f787a1d4-21cd-4fe0-8c6a-7f0d22cbab1c	0afee2d1-06fb-4276-8255-7e4c3ee9afd4	4f0b9999-5c9e-44ea-8ea6-d12adeb6f6b2	commit	400	vision	0	itest-refund-com-0afee2d1-06fb-4276-8255-7e4c3ee9afd4	\N	\N	2026-10-15 05:20:10.217399+00	400
+45fa25d4-427d-405e-aee8-49d9f0e2a0d4	f787a1d4-21cd-4fe0-8c6a-7f0d22cbab1c	0afee2d1-06fb-4276-8255-7e4c3ee9afd4	\N	refund	-400	vision	0	itest-refund-0afee2d1-06fb-4276-8255-7e4c3ee9afd4	\N	\N	2026-10-15 05:20:10.233411+00	400
+9b2380bc-bffe-4cf9-9dab-b0fa0a8da64c	4b95f226-0c73-471d-840a-623a14d9cac0	34e260a7-20b6-4f08-b53d-9bcb9889fc94	9b2380bc-bffe-4cf9-9dab-b0fa0a8da64c	reserve	300	chat	0	itest-clamp-res-34e260a7-20b6-4f08-b53d-9bcb9889fc94	\N	\N	2026-10-15 05:20:10.318221+00	300
+65b133b1-0dd2-4ce6-a13c-c9920c820e6a	4b95f226-0c73-471d-840a-623a14d9cac0	34e260a7-20b6-4f08-b53d-9bcb9889fc94	9b2380bc-bffe-4cf9-9dab-b0fa0a8da64c	commit	100	chat	0	itest-clamp-com-34e260a7-20b6-4f08-b53d-9bcb9889fc94	\N	\N	2026-10-15 05:20:10.345181+00	100
+ee1ffc26-b11d-495f-9579-bfd9725e69cb	4b95f226-0c73-471d-840a-623a14d9cac0	34e260a7-20b6-4f08-b53d-9bcb9889fc94	\N	refund	-100	chat	0	itest-clamp-refund-34e260a7-20b6-4f08-b53d-9bcb9889fc94	\N	\N	2026-10-15 05:20:10.357385+00	500
+4646e7bd-17e8-44bf-83d2-86ee4deb0e38	ef643af1-38b0-47c6-a97c-43d72dafa865	7619c5a3-92cb-42a6-bccf-c16bbbb67b13	4646e7bd-17e8-44bf-83d2-86ee4deb0e38	reserve	250	chat	0	itest-clean-old-7619c5a3-92cb-42a6-bccf-c16bbbb67b13	\N	\N	2026-10-15 03:20:10.530412+00	0
+7988c65b-4a7c-44ea-a940-9136aca7cd65	ef643af1-38b0-47c6-a97c-43d72dafa865	7619c5a3-92cb-42a6-bccf-c16bbbb67b13	7988c65b-4a7c-44ea-a940-9136aca7cd65	reserve	100	chat	0	itest-clean-fresh-7619c5a3-92cb-42a6-bccf-c16bbbb67b13	\N	\N	2026-10-15 05:20:10.546809+00	100
+9f19af25-6ae8-4935-bc51-57f6ab589896	ef643af1-38b0-47c6-a97c-43d72dafa865	7619c5a3-92cb-42a6-bccf-c16bbbb67b13	4646e7bd-17e8-44bf-83d2-86ee4deb0e38	release	-250	chat	0	cleanup:4646e7bd-17e8-44bf-83d2-86ee4deb0e38	\N	\N	2026-10-15 05:20:10.744813+00	0
+ae0c48fe-e602-4f27-8ef9-c51a600746fa	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	ae0c48fe-e602-4f27-8ef9-c51a600746fa	reserve	1	chat	0	chat-reserve:vu-7-1792041877068549800	\N	\N	2026-10-15 05:24:37.15811+00	1
+934e0ab4-e4bd-4269-a1bd-aee6d3f80d6f	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	934e0ab4-e4bd-4269-a1bd-aee6d3f80d6f	reserve	1	chat	0	chat-reserve:vu-12-1792041877067100900	\N	\N	2026-10-15 05:24:37.170783+00	1
+0943ac17-3fff-4781-93ed-29828fe0bce1	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	0943ac17-3fff-4781-93ed-29828fe0bce1	reserve	1	chat	0	chat-reserve:vu-4-1792041877068040200	\N	\N	2026-10-15 05:24:37.195335+00	1
+8b15437d-1127-4707-a39f-ac05fbc0e00e	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	8b15437d-1127-4707-a39f-ac05fbc0e00e	reserve	1	chat	0	chat-reserve:vu-5-1792041877068040200	\N	\N	2026-10-15 05:24:37.183797+00	1
+e8d5e198-e518-453d-8550-14a0a76bd5de	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	e8d5e198-e518-453d-8550-14a0a76bd5de	reserve	1	chat	0	chat-reserve:vu-1-1792041877067652100	\N	\N	2026-10-15 05:24:37.191848+00	1
+ee85a13e-4800-430a-92a5-13aa7cb1447e	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	934e0ab4-e4bd-4269-a1bd-aee6d3f80d6f	commit	5	chat	0	commit:934e0ab4-e4bd-4269-a1bd-aee6d3f80d6f	\N	\N	2026-10-15 05:24:37.353561+00	5
+064590f1-4d6e-4cf2-8efb-23a4821148f8	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	e8d5e198-e518-453d-8550-14a0a76bd5de	commit	0	chat	0	commit:e8d5e198-e518-453d-8550-14a0a76bd5de	\N	\N	2026-10-15 05:24:37.355296+00	5
+4009e140-ac5f-4b62-b488-06506a52db93	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	ae0c48fe-e602-4f27-8ef9-c51a600746fa	commit	0	chat	0	commit:ae0c48fe-e602-4f27-8ef9-c51a600746fa	\N	\N	2026-10-15 05:24:37.357949+00	5
+dbad3ea8-f91d-4edf-8325-bf93e68ff9dd	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	8b15437d-1127-4707-a39f-ac05fbc0e00e	commit	0	chat	0	commit:8b15437d-1127-4707-a39f-ac05fbc0e00e	\N	\N	2026-10-15 05:24:37.360151+00	5
+50af3809-d422-499b-8493-7fc4e5c82408	8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	0943ac17-3fff-4781-93ed-29828fe0bce1	commit	0	chat	0	commit:0943ac17-3fff-4781-93ed-29828fe0bce1	\N	\N	2026-10-15 05:24:37.362302+00	5
+6bef219b-c4d0-40b6-9871-3064c6932a7b	0c26ef69-b3f4-4d2c-999e-ec562ed0e2fd	00000000-0000-0000-0000-000000000002	\N	reserve	100	chat	0	itest-e67653fe-a479-47d4-9ed7-34279477447b	\N	\N	2026-10-15 05:25:07.733996+00	0
+507abbef-95e7-4ba1-974f-7ddd97599393	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	507abbef-95e7-4ba1-974f-7ddd97599393	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-7	\N	\N	2026-10-15 05:25:09.315599+00	100
+f4515287-99e1-4e1a-8199-f0866e415d98	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	f4515287-99e1-4e1a-8199-f0866e415d98	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-13	\N	\N	2026-10-15 05:25:09.352895+00	100
+26730847-ad53-450d-853e-a59d9ce18781	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	26730847-ad53-450d-853e-a59d9ce18781	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-17	\N	\N	2026-10-15 05:25:09.357043+00	100
+b2469120-6b87-40a1-b6ab-da1a2d883752	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	b2469120-6b87-40a1-b6ab-da1a2d883752	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-4	\N	\N	2026-10-15 05:25:09.371754+00	100
+6302ac74-8485-4981-932d-20f4ffb6f94e	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	6302ac74-8485-4981-932d-20f4ffb6f94e	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-3	\N	\N	2026-10-15 05:25:09.397307+00	100
+e5b832a2-9aec-4c3f-a495-a0819237304c	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	e5b832a2-9aec-4c3f-a495-a0819237304c	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-6	\N	\N	2026-10-15 05:25:09.384407+00	100
+b03d5933-4300-4712-ab94-0b7fcc470442	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	b03d5933-4300-4712-ab94-0b7fcc470442	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-26	\N	\N	2026-10-15 05:25:09.403052+00	100
+2e38cb94-a48d-45a3-84b4-1ad52b470b33	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	2e38cb94-a48d-45a3-84b4-1ad52b470b33	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-19	\N	\N	2026-10-15 05:25:09.36333+00	100
+37c4887e-0b68-4844-93d1-a14fb50853b6	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	37c4887e-0b68-4844-93d1-a14fb50853b6	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-31	\N	\N	2026-10-15 05:25:09.437106+00	100
+e90ea260-c2b5-4c21-8235-a11c5db2ca83	dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	e90ea260-c2b5-4c21-8235-a11c5db2ca83	reserve	100	chat	0	conc-4a944bec-4e80-460c-9170-f3e8b9e638c0-33	\N	\N	2026-10-15 05:25:09.404612+00	100
+dc6a0de4-2fb5-4de3-8a37-cba55d9c235d	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	dc6a0de4-2fb5-4de3-8a37-cba55d9c235d	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-0	\N	\N	2026-10-15 05:25:09.606754+00	100
+eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-1	\N	\N	2026-10-15 05:25:09.635009+00	100
+3eccee71-c785-4a69-b10d-9b07d476b87c	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	3eccee71-c785-4a69-b10d-9b07d476b87c	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-2	\N	\N	2026-10-15 05:25:09.645986+00	100
+1c91ffa8-5008-420d-be54-886d867e6cfa	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	1c91ffa8-5008-420d-be54-886d867e6cfa	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-3	\N	\N	2026-10-15 05:25:09.656972+00	100
+eb992d0f-7ddb-4e1a-9a82-3f1eb366a7e5	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	eb992d0f-7ddb-4e1a-9a82-3f1eb366a7e5	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-4	\N	\N	2026-10-15 05:25:09.668678+00	100
+ba184f67-92af-4a2a-b24e-806aef7391b0	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	ba184f67-92af-4a2a-b24e-806aef7391b0	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-5	\N	\N	2026-10-15 05:25:09.679164+00	100
+4cab34a9-912c-4bf9-b05b-e57958415e0b	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	4cab34a9-912c-4bf9-b05b-e57958415e0b	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-6	\N	\N	2026-10-15 05:25:09.688773+00	100
+f5315f91-65da-4a47-b937-57be717e1e5c	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	f5315f91-65da-4a47-b937-57be717e1e5c	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-7	\N	\N	2026-10-15 05:25:09.698586+00	100
+0e714a6a-9adc-470d-bffc-c3281e9366b1	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	0e714a6a-9adc-470d-bffc-c3281e9366b1	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-8	\N	\N	2026-10-15 05:25:09.707296+00	100
+d1a9579c-c08b-46b6-8755-c5ca59debb7a	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	d1a9579c-c08b-46b6-8755-c5ca59debb7a	reserve	100	chat	0	cc-7d9cf17c-1815-49f6-b0bf-63d49f297a14-9	\N	\N	2026-10-15 05:25:09.716532+00	100
+b8a8b4cd-1ed4-4794-8fc5-c6fbeefa0660	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	d1a9579c-c08b-46b6-8755-c5ca59debb7a	commit	100	chat	0	commit-d1a9579c-c08b-46b6-8755-c5ca59debb7a-1	\N	\N	2026-10-15 05:25:09.779568+00	100
+e6f61d40-4a6e-432b-9a05-8736b4396d19	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d	commit	100	chat	0	commit-eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d-0	\N	\N	2026-10-15 05:25:09.816109+00	100
+e33235cc-1412-4c32-b15f-5d32464799e8	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	dc6a0de4-2fb5-4de3-8a37-cba55d9c235d	commit	100	chat	0	commit-dc6a0de4-2fb5-4de3-8a37-cba55d9c235d-1	\N	\N	2026-10-15 05:25:09.820837+00	100
+f8219061-dc0a-4ef1-8345-bacf76d5c168	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	ba184f67-92af-4a2a-b24e-806aef7391b0	commit	100	chat	0	commit-ba184f67-92af-4a2a-b24e-806aef7391b0-1	\N	\N	2026-10-15 05:25:09.8276+00	100
+0caa3670-fdb0-43b3-b68b-ac138bd64ea0	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	4cab34a9-912c-4bf9-b05b-e57958415e0b	commit	100	chat	0	commit-4cab34a9-912c-4bf9-b05b-e57958415e0b-1	\N	\N	2026-10-15 05:25:09.834518+00	100
+5748297c-22ab-43fc-aba4-1ffc29393f71	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	eb992d0f-7ddb-4e1a-9a82-3f1eb366a7e5	commit	100	chat	0	commit-eb992d0f-7ddb-4e1a-9a82-3f1eb366a7e5-0	\N	\N	2026-10-15 05:25:09.859593+00	100
+47b782a0-2960-4608-befe-4ebc86bde000	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	4cab34a9-912c-4bf9-b05b-e57958415e0b	commit	100	chat	0	commit-4cab34a9-912c-4bf9-b05b-e57958415e0b-0	\N	\N	2026-10-15 05:25:09.85173+00	100
+d93a6bad-1c54-41dc-ba19-04e78118595b	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d	commit	100	chat	0	commit-eb1ec6cc-4c0e-4c3f-ad2a-511a2f12f17d-1	\N	\N	2026-10-15 05:25:09.853906+00	100
+b9c7b050-217e-4d48-92e4-1189a1dd8414	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	3eccee71-c785-4a69-b10d-9b07d476b87c	commit	100	chat	0	commit-3eccee71-c785-4a69-b10d-9b07d476b87c-1	\N	\N	2026-10-15 05:25:09.908752+00	100
+e27476da-3cc9-46a8-a013-2e36104a0ef6	e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	1c91ffa8-5008-420d-be54-886d867e6cfa	commit	100	chat	0	commit-1c91ffa8-5008-420d-be54-886d867e6cfa-0	\N	\N	2026-10-15 05:25:09.902179+00	100
+82a70014-1ac0-4a10-80c5-4e19b749ecb0	2ed236fb-bd8a-4b9f-9a3b-6613344a0fef	d4f5f7f5-77cc-4502-887c-3b1748e527ff	82a70014-1ac0-4a10-80c5-4e19b749ecb0	reserve	1	vision	0	clamp-res-d4f5f7f5-77cc-4502-887c-3b1748e527ff	\N	\N	2026-10-15 05:25:10.048689+00	1
+f41ed8b7-8592-46d9-ad7f-bfec0f2748ba	2ed236fb-bd8a-4b9f-9a3b-6613344a0fef	d4f5f7f5-77cc-4502-887c-3b1748e527ff	82a70014-1ac0-4a10-80c5-4e19b749ecb0	commit	100	vision	0	clamp-commit-d4f5f7f5-77cc-4502-887c-3b1748e527ff	\N	\N	2026-10-15 05:25:10.089276+00	5000
+fa968bcc-e3ee-4a76-9332-8739f2ef753c	b2fc662f-60e1-4aa1-8286-6cb34b5871a0	74939948-7333-4603-90e9-af8cbd63fa02	fa968bcc-e3ee-4a76-9332-8739f2ef753c	reserve	762	chat	0	ratio-res-74939948-7333-4603-90e9-af8cbd63fa02	\N	\N	2026-10-15 05:25:10.194165+00	3809
+9c8e1967-2c17-4e1f-ac26-4d0d920098a0	b2fc662f-60e1-4aa1-8286-6cb34b5871a0	74939948-7333-4603-90e9-af8cbd63fa02	fa968bcc-e3ee-4a76-9332-8739f2ef753c	commit	1989	chat	0	ratio-com-74939948-7333-4603-90e9-af8cbd63fa02	\N	\N	2026-10-15 05:25:10.224242+00	9945
+52e80b61-cf8c-4325-b207-3b76a4cf25c7	2b90450a-d003-4c5c-b62e-42de33fa59e0	2e366086-a71b-437d-9bd8-8d29d247f301	52e80b61-cf8c-4325-b207-3b76a4cf25c7	reserve	500	chat	0	id1-res-2e366086-a71b-437d-9bd8-8d29d247f301	\N	\N	2026-10-15 05:25:10.336487+00	500
+f819d4e1-d55e-4484-b19a-4ef92ca8d33d	2b90450a-d003-4c5c-b62e-42de33fa59e0	2e366086-a71b-437d-9bd8-8d29d247f301	52e80b61-cf8c-4325-b207-3b76a4cf25c7	commit	500	chat	0	id1-com-2e366086-a71b-437d-9bd8-8d29d247f301	\N	\N	2026-10-15 05:25:10.371359+00	500
+7fb27d96-d48e-4673-94c1-41e49f36704a	5753708b-ec15-4d38-89f3-5221355608d5	2676caea-6fc1-4af1-9f12-b143a392fea8	7fb27d96-d48e-4673-94c1-41e49f36704a	reserve	1989	chat	0	rel-res-2676caea-6fc1-4af1-9f12-b143a392fea8	\N	\N	2026-10-15 05:25:10.450848+00	9945
+5648ea01-b615-47f0-b6e2-95aee2ff208b	5753708b-ec15-4d38-89f3-5221355608d5	2676caea-6fc1-4af1-9f12-b143a392fea8	7fb27d96-d48e-4673-94c1-41e49f36704a	release	-1989	chat	0	rel-rel-2676caea-6fc1-4af1-9f12-b143a392fea8	\N	\N	2026-10-15 05:25:10.479905+00	0
+dc2f4949-4144-47bd-8261-999c32e4c85e	a4df8881-0892-43a1-98c3-cd086c49c67d	5b29b8ed-ab3c-416a-a427-5eae1742b4c2	dc2f4949-4144-47bd-8261-999c32e4c85e	reserve	300	chat	0	itest-res-5b29b8ed-ab3c-416a-a427-5eae1742b4c2	\N	\N	2026-10-15 05:25:10.674287+00	300
+a7d9d4aa-8b32-4f8e-89ea-f6cb8c9070a6	a4df8881-0892-43a1-98c3-cd086c49c67d	5b29b8ed-ab3c-416a-a427-5eae1742b4c2	dc2f4949-4144-47bd-8261-999c32e4c85e	commit	120	chat	45	itest-com-dc2f4949-4144-47bd-8261-999c32e4c85e	\N	\N	2026-10-15 05:25:10.707292+00	120
+9d7045ea-a0a5-443c-9570-ab71ba0a01c4	a4df8881-0892-43a1-98c3-cd086c49c67d	5b29b8ed-ab3c-416a-a427-5eae1742b4c2	9d7045ea-a0a5-443c-9570-ab71ba0a01c4	reserve	200	vision	0	itest-res2-5b29b8ed-ab3c-416a-a427-5eae1742b4c2	\N	\N	2026-10-15 05:25:10.726931+00	200
+ed65dee4-b1b9-4917-9c02-8bb437a3e883	a4df8881-0892-43a1-98c3-cd086c49c67d	5b29b8ed-ab3c-416a-a427-5eae1742b4c2	9d7045ea-a0a5-443c-9570-ab71ba0a01c4	release	-200	vision	0	itest-rel-9d7045ea-a0a5-443c-9570-ab71ba0a01c4	\N	\N	2026-10-15 05:25:10.739813+00	0
+53b4df85-f211-4ad6-8418-48499976aee4	e67debec-f7dc-4704-81ca-774a4b0b9155	f9deb63c-b791-4769-b643-63155d8a1e70	53b4df85-f211-4ad6-8418-48499976aee4	reserve	500	vision	0	itest-refund-res-f9deb63c-b791-4769-b643-63155d8a1e70	\N	\N	2026-10-15 05:25:10.830847+00	500
+dfe53ebe-c2fe-4b63-8031-ade1b244364e	e67debec-f7dc-4704-81ca-774a4b0b9155	f9deb63c-b791-4769-b643-63155d8a1e70	53b4df85-f211-4ad6-8418-48499976aee4	commit	400	vision	0	itest-refund-com-f9deb63c-b791-4769-b643-63155d8a1e70	\N	\N	2026-10-15 05:25:10.856925+00	400
+0a89c6a0-fcb8-45de-89a7-d1cdfad09781	e67debec-f7dc-4704-81ca-774a4b0b9155	f9deb63c-b791-4769-b643-63155d8a1e70	\N	refund	-400	vision	0	itest-refund-f9deb63c-b791-4769-b643-63155d8a1e70	\N	\N	2026-10-15 05:25:10.871989+00	400
+31d97e01-3548-49a7-be65-3426b05c63cf	f1555eea-81f3-40d3-b836-da88cdba5c51	de60d3ee-b019-4a3d-865a-f64835f54d51	\N	adjust	250	admin	0	f8a305be-a3ff-40c3-94c0-b116c8f00088	\N	e2e top-up	2026-10-15 05:25:10.887325+00	0
+89faec23-ee42-4c7f-9c1e-661d4e099336	bdd46a86-15fb-44db-8443-a112423df836	5918a0ff-91fb-4a94-865f-0d6e8913f243	89faec23-ee42-4c7f-9c1e-661d4e099336	reserve	300	chat	0	itest-clamp-res-5918a0ff-91fb-4a94-865f-0d6e8913f243	\N	\N	2026-10-15 05:25:10.963723+00	300
+91fb4d29-1f27-4a85-ad80-4ffdc02e472b	bdd46a86-15fb-44db-8443-a112423df836	5918a0ff-91fb-4a94-865f-0d6e8913f243	89faec23-ee42-4c7f-9c1e-661d4e099336	commit	100	chat	0	itest-clamp-com-5918a0ff-91fb-4a94-865f-0d6e8913f243	\N	\N	2026-10-15 05:25:10.994727+00	100
+02d34d43-77b3-4d47-ba7c-bbd4fceea534	bdd46a86-15fb-44db-8443-a112423df836	5918a0ff-91fb-4a94-865f-0d6e8913f243	\N	refund	-100	chat	0	itest-clamp-refund-5918a0ff-91fb-4a94-865f-0d6e8913f243	\N	\N	2026-10-15 05:25:11.004111+00	500
+29b111a4-4f48-4150-8280-c9bd28ce574a	15b45abd-590a-408f-8e99-3fe79806ef39	280ceee9-b343-4621-b667-6821db35d520	29b111a4-4f48-4150-8280-c9bd28ce574a	reserve	250	chat	0	itest-clean-old-280ceee9-b343-4621-b667-6821db35d520	\N	\N	2026-10-15 03:25:11.18985+00	0
+b53d1acf-06fb-4be6-8f97-5208d5f48f45	15b45abd-590a-408f-8e99-3fe79806ef39	280ceee9-b343-4621-b667-6821db35d520	b53d1acf-06fb-4be6-8f97-5208d5f48f45	reserve	100	chat	0	itest-clean-fresh-280ceee9-b343-4621-b667-6821db35d520	\N	\N	2026-10-15 05:25:11.205559+00	100
+eebd2082-a1d3-4664-8422-7dc64c739a6f	0c26ef69-b3f4-4d2c-999e-ec562ed0e2fd	00000000-0000-0000-0000-000000000002	1c509f48-3a8c-4a58-952a-f42fa4120cef	release	-100	chat	0	cleanup:1c509f48-3a8c-4a58-952a-f42fa4120cef	\N	\N	2026-10-15 05:25:11.401471+00	0
+63bc3e9a-28ab-4d98-b27e-caf5166fb4b9	15b45abd-590a-408f-8e99-3fe79806ef39	280ceee9-b343-4621-b667-6821db35d520	29b111a4-4f48-4150-8280-c9bd28ce574a	release	-250	chat	0	cleanup:29b111a4-4f48-4150-8280-c9bd28ce574a	\N	\N	2026-10-15 05:25:11.538353+00	0
+38e731b2-0f44-4768-8f0b-e88559bc3f52	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	reserve	10	chat	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:c1	\N	\N	2026-10-15 05:25:12.445553+00	0
+dea8ab5f-793f-4fa5-8ded-e89f452e16f3	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	reserve	10	chat	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:c2	\N	\N	2026-10-15 05:25:12.449645+00	0
+62ac3fe2-81ce-47d2-9c07-4c8f362b0b58	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	reserve	10	vision	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:v1	\N	\N	2026-10-15 05:25:12.453299+00	0
+6c5cf58b-a42f-42cf-8fc9-812744c88a88	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	commit	10	vision	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:v1c	\N	\N	2026-10-15 05:25:12.456781+00	0
+88521749-23fc-4fc7-b1d2-776cdd05a372	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	reserve	10	vision	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:v2	\N	\N	2026-10-15 05:25:12.467952+00	0
+b8d3d4b8-df0b-4d33-80fa-fe56d1a83991	44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	\N	commit	10	vision	0	count-test:207ce1ff-74d5-466e-aa01-2905ac136123:v2c	\N	\N	2026-10-15 05:25:12.471775+00	0
+3277f21c-4d02-4b8b-9406-f195c488486d	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	3277f21c-4d02-4b8b-9406-f195c488486d	reserve	1	chat	0	chat-reserve:vu-19-1792041927755129600	\N	\N	2026-10-15 05:25:27.878103+00	1
+c9a6d1d9-050c-441f-a219-ad9004eccaf5	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	c9a6d1d9-050c-441f-a219-ad9004eccaf5	reserve	1	chat	0	chat-reserve:vu-2-1792041927758398400	\N	\N	2026-10-15 05:25:27.922536+00	1
+081c6cef-dc5a-41d6-aeef-216a43c2e2dc	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	081c6cef-dc5a-41d6-aeef-216a43c2e2dc	reserve	1	chat	0	chat-reserve:vu-17-1792041927758398400	\N	\N	2026-10-15 05:25:27.942169+00	1
+8d3a941e-84f4-48dc-bb86-900e768109b5	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	8d3a941e-84f4-48dc-bb86-900e768109b5	reserve	1	chat	0	chat-reserve:vu-9-1792041927755129600	\N	\N	2026-10-15 05:25:27.964844+00	1
+0b8f1466-ec62-4173-890e-a7200a73e4f7	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	0b8f1466-ec62-4173-890e-a7200a73e4f7	reserve	1	chat	0	chat-reserve:vu-8-1792041927758398400	\N	\N	2026-10-15 05:25:27.9656+00	1
+c736bd28-af3a-4a94-aeb4-685b2c777bd7	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	081c6cef-dc5a-41d6-aeef-216a43c2e2dc	commit	5	chat	0	commit:081c6cef-dc5a-41d6-aeef-216a43c2e2dc	\N	\N	2026-10-15 05:25:28.182656+00	5
+56472293-0e4f-4484-b3e2-daac971ebe1d	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	8d3a941e-84f4-48dc-bb86-900e768109b5	commit	0	chat	0	commit:8d3a941e-84f4-48dc-bb86-900e768109b5	\N	\N	2026-10-15 05:25:28.186453+00	5
+d6444dc0-0a67-47b1-aca5-07172b9a83c0	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	c9a6d1d9-050c-441f-a219-ad9004eccaf5	commit	0	chat	0	commit:c9a6d1d9-050c-441f-a219-ad9004eccaf5	\N	\N	2026-10-15 05:25:28.189382+00	5
+7578fd3a-c2e0-46fb-af69-67e4043ba724	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	0b8f1466-ec62-4173-890e-a7200a73e4f7	commit	0	chat	0	commit:0b8f1466-ec62-4173-890e-a7200a73e4f7	\N	\N	2026-10-15 05:25:28.220228+00	5
+ea8969a6-1da1-45d7-877d-b09fadc215bf	94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	3277f21c-4d02-4b8b-9406-f195c488486d	commit	0	chat	0	commit:3277f21c-4d02-4b8b-9406-f195c488486d	\N	\N	2026-10-15 05:25:28.197213+00	5
+1d3dc066-a36c-4b5a-bf97-a2226ffdb713	07c82bf7-7361-4eb6-b958-12318080e445	1bf62495-8743-47ff-ba5a-386ed14a2dac	\N	adjust	250	admin	0	64bb2403-a535-431f-bb8d-dfc52da7aa8a	\N	e2e top-up	2026-10-15 05:25:56.21781+00	0
+20899b84-a8e6-47aa-88cd-7bde79d45ad9	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	20899b84-a8e6-47aa-88cd-7bde79d45ad9	reserve	1	chat	0	chat-reserve:vu-19-1792041987311849500	\N	\N	2026-10-15 05:26:27.367761+00	1
+fbbf3b10-a05c-499e-b5b4-bd58e7197d6f	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	fbbf3b10-a05c-499e-b5b4-bd58e7197d6f	reserve	1	chat	0	chat-reserve:vu-7-1792041987321074200	\N	\N	2026-10-15 05:26:27.474345+00	1
+6bd8b108-a843-4b15-87ed-379fb880ce13	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	6bd8b108-a843-4b15-87ed-379fb880ce13	reserve	1	chat	0	chat-reserve:vu-9-1792041987314923100	\N	\N	2026-10-15 05:26:27.521056+00	1
+796ef78b-dda2-4304-a951-0b4d797c7198	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	796ef78b-dda2-4304-a951-0b4d797c7198	reserve	1	chat	0	chat-reserve:vu-12-1792041987322695300	\N	\N	2026-10-15 05:26:27.525737+00	1
+fe2f7e70-4358-494e-b1df-471a534a70a1	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	fe2f7e70-4358-494e-b1df-471a534a70a1	reserve	1	chat	0	chat-reserve:vu-2-1792041987317928900	\N	\N	2026-10-15 05:26:27.543527+00	1
+25cc9b6f-13eb-4fcd-a4fb-8fa5edd4bfad	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	20899b84-a8e6-47aa-88cd-7bde79d45ad9	commit	5	chat	0	commit:20899b84-a8e6-47aa-88cd-7bde79d45ad9	\N	\N	2026-10-15 05:26:27.790418+00	5
+f6142c47-18fd-43b3-bdfd-266defdf8f88	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	fbbf3b10-a05c-499e-b5b4-bd58e7197d6f	commit	0	chat	0	commit:fbbf3b10-a05c-499e-b5b4-bd58e7197d6f	\N	\N	2026-10-15 05:26:27.823882+00	5
+03027368-17e5-4808-8453-a6c6cdeb4976	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	6bd8b108-a843-4b15-87ed-379fb880ce13	commit	0	chat	0	commit:6bd8b108-a843-4b15-87ed-379fb880ce13	\N	\N	2026-10-15 05:26:27.843098+00	5
+3933f236-33a5-4d84-849e-e4816d419fb9	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	fe2f7e70-4358-494e-b1df-471a534a70a1	commit	0	chat	0	commit:fe2f7e70-4358-494e-b1df-471a534a70a1	\N	\N	2026-10-15 05:26:27.847567+00	5
+9abbc522-ac2e-4b2e-bbc6-26cabf9fa87d	59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	796ef78b-dda2-4304-a951-0b4d797c7198	commit	0	chat	0	commit:796ef78b-dda2-4304-a951-0b4d797c7198	\N	\N	2026-10-15 05:26:27.89331+00	5
+4c572cf6-11a9-410c-8ceb-37139dbd72ad	e3587e87-1c6e-4c26-95b4-162752d41e28	5f57ff92-4280-4ee1-9bd5-780e982cfdda	\N	adjust	250	admin	0	9032897c-3fb5-456d-9833-e666706b163f	\N	e2e top-up	2026-10-15 05:27:24.934362+00	0
+99f5242d-da39-4478-9834-31acdaf5e809	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	99f5242d-da39-4478-9834-31acdaf5e809	reserve	1	chat	0	chat-reserve:vu-6-1792042055705481000	\N	\N	2026-10-15 05:27:35.773808+00	1
+b46c5962-6089-45a0-a8b6-da6887d8ba4b	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	b46c5962-6089-45a0-a8b6-da6887d8ba4b	reserve	1	chat	0	chat-reserve:vu-8-1792042055706597000	\N	\N	2026-10-15 05:27:35.790974+00	1
+4c93b53d-b94d-4e84-9b94-808093ed17ed	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	4c93b53d-b94d-4e84-9b94-808093ed17ed	reserve	1	chat	0	chat-reserve:vu-18-1792042055706597000	\N	\N	2026-10-15 05:27:35.799084+00	1
+00cd2c54-d6ce-404e-a821-f3011b5257d0	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	00cd2c54-d6ce-404e-a821-f3011b5257d0	reserve	1	chat	0	chat-reserve:vu-11-1792042055707274900	\N	\N	2026-10-15 05:27:35.803157+00	1
+39cb5699-75e2-4b27-8140-d1b1fe0ab338	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	39cb5699-75e2-4b27-8140-d1b1fe0ab338	reserve	1	chat	0	chat-reserve:vu-10-1792042055707274900	\N	\N	2026-10-15 05:27:35.805163+00	1
+61a1ab9d-b71d-48e7-a726-cd5084b446c9	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	99f5242d-da39-4478-9834-31acdaf5e809	commit	5	chat	0	commit:99f5242d-da39-4478-9834-31acdaf5e809	\N	\N	2026-10-15 05:27:35.882996+00	5
+755dbcf2-bcb4-437e-8677-ba0ffcc5d56a	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	4c93b53d-b94d-4e84-9b94-808093ed17ed	commit	0	chat	0	commit:4c93b53d-b94d-4e84-9b94-808093ed17ed	\N	\N	2026-10-15 05:27:35.885853+00	5
+8105a0dc-22db-4722-9067-d290a4cb36b5	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	b46c5962-6089-45a0-a8b6-da6887d8ba4b	commit	0	chat	0	commit:b46c5962-6089-45a0-a8b6-da6887d8ba4b	\N	\N	2026-10-15 05:27:35.88665+00	5
+152b855f-64aa-4f8b-a310-26c64837e542	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	00cd2c54-d6ce-404e-a821-f3011b5257d0	commit	0	chat	0	commit:00cd2c54-d6ce-404e-a821-f3011b5257d0	\N	\N	2026-10-15 05:27:35.89263+00	5
+c797b8a1-1a66-452f-9951-233131fec155	43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	39cb5699-75e2-4b27-8140-d1b1fe0ab338	commit	0	chat	0	commit:39cb5699-75e2-4b27-8140-d1b1fe0ab338	\N	\N	2026-10-15 05:27:35.894178+00	5
+8421ded3-328e-4e82-82ca-1aa7fadb8bbe	754a9e74-4b3a-4216-a06a-7c7321ebb479	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	8421ded3-328e-4e82-82ca-1aa7fadb8bbe	reserve	1	chat	0	chat-reserve:refund-92ad1f5e-7df1-4add-9bd9-16d1d95150e1	\N	\N	2026-10-15 05:28:12.518297+00	1
+ab03b5a7-3187-4d5e-90d3-51a486388c41	754a9e74-4b3a-4216-a06a-7c7321ebb479	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	8421ded3-328e-4e82-82ca-1aa7fadb8bbe	release	-1	chat	0	release:8421ded3-328e-4e82-82ca-1aa7fadb8bbe	\N	\N	2026-10-15 05:28:12.563332+00	0
 \.
 
 
@@ -4012,31 +5084,86 @@ cb86c58c-e775-4676-9621-0987844ebd6a	58af872e-a089-4801-9f7a-8e0aa3c7c3d7	000000
 -- Data for Name: token_periods; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.token_periods (id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at) FROM stdin;
-2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:15:13.973281+00	2026-10-11 09:15:14.043306+00
-16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:22:40.227525+00	2026-10-11 09:22:40.401119+00
-e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:16:18.341555+00	2026-10-11 09:16:18.394909+00
-aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:15:14.192422+00	2026-10-11 09:16:18.562392+00
-5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:16:18.523369+00	2026-10-11 09:16:18.582509+00
-262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:20:33.974717+00	2026-10-11 09:20:34.019018+00
-e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:22:40.012881+00	2026-10-11 09:23:39.261173+00
-50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:20:34.129819+00	2026-10-11 09:20:34.166346+00
-fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:47:27.202302+00	2026-10-11 09:47:27.380569+00
-a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:47:27.527764+00	2026-10-11 09:47:27.574584+00
-7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:38.212052+00	2026-10-11 09:23:39.382393+00
-7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:39.048647+00	2026-10-11 09:23:39.42263+00
-f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2026-10-13 16:05:58+00	2026-11-12 16:05:58+00	150000	56404	0	2026-10-13 16:32:02.835667+00	2026-10-14 02:40:44.965805+00
-0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:23:38.466216+00	2026-10-11 09:23:38.662151+00
-c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.000612+00	2026-10-11 09:47:27.850866+00
-835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.686057+00	2026-10-11 09:47:27.873382+00
-f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	2026-10-11 09:09:53.985961+00	2026-11-10 09:09:53.985961+00	150000	0	0	2026-10-11 09:09:53.985961+00	2026-10-11 09:09:53.985961+00
-ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:23:38.803404+00	2026-10-11 09:23:38.853368+00
-2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	2026-10-11 09:11:55+00	2026-11-10 09:11:55+00	150000	0	100	2026-10-11 09:11:55.687113+00	2026-10-11 09:11:55.708329+00
-6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	2026-10-11 09:23:36+00	2026-11-10 09:23:36+00	150000	0	0	2026-10-11 09:23:36.81847+00	2026-10-11 09:23:39.118342+00
-5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	2026-10-11 09:15:13+00	2026-11-10 09:15:13+00	150000	0	0	2026-10-11 09:15:13.88794+00	2026-10-11 09:15:14.218358+00
-7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	2026-10-11 09:16:18+00	2026-11-10 09:16:18+00	150000	0	0	2026-10-11 09:16:18.276053+00	2026-10-11 09:16:18.551242+00
-a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	2026-10-11 09:20:32+00	2026-11-10 09:20:32+00	150000	0	0	2026-10-11 09:20:32.844535+00	2026-10-11 09:20:34.151061+00
-58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	2026-10-11 09:47:25+00	2026-11-10 09:47:25+00	150000	10279	0	2026-10-11 09:47:25.817333+00	2026-10-14 02:53:56.002284+00
+COPY public.token_periods (id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at, quota_ratio) FROM stdin;
+76e0489f-66ab-4fb5-b4d0-66ae81729ca2	00000000-0000-0000-0000-000000000002	2026-10-14 11:15:00+00	2026-11-13 11:15:00+00	1000	0	0	2026-10-14 11:15:00.011776+00	2026-10-14 11:15:02.201543+00	1
+76914c3b-0c44-4f70-a60f-9b4fd8e800dc	552f6195-ea07-4ac2-a0aa-90944079ce45	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 04:22:16.733319+00	2026-10-14 04:22:16.766854+00	1
+2161be56-2e66-4792-92f7-ff84862a5252	cc5a957b-2117-4e53-afb0-a3252cf96b1f	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:15:13.973281+00	2026-10-11 09:15:14.043306+00	1
+58af872e-a089-4801-9f7a-8e0aa3c7c3d7	00000000-0000-0000-0000-000000000002	2026-10-11 09:47:25+00	2026-11-10 09:47:25+00	150000	15620	0	2026-10-11 09:47:25.817333+00	2026-10-14 03:42:06.285175+00	1
+16a4184d-acd4-435f-ac60-f1fd43134b90	3ab3c38c-06b7-4956-a376-7eaa52ccc710	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:22:40.227525+00	2026-10-11 09:22:40.401119+00	1
+12eb8362-1deb-4924-9e35-7f96fa732acf	00000000-0000-0000-0000-000000000002	2026-10-14 04:22:13+00	2026-11-13 04:22:13+00	1000	0	0	2026-10-14 04:22:13.947138+00	2026-10-14 04:22:17.000999+00	1
+e06b12f8-3efd-4225-9dbe-40c1fd72bc0c	2ffdcecc-b2af-4cf1-abfd-0bb182784422	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:16:18.341555+00	2026-10-11 09:16:18.394909+00	1
+cc18ba11-af91-4748-8476-85f144be19d2	00000000-0000-0000-0000-000000000003	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	5000	0	2026-10-15 02:42:57.382029+00	2026-10-15 02:43:10.128627+00	1
+aebadcad-8474-40a7-b4e2-780f1a62abf0	93237f05-47f6-450b-8018-3ab9b433a1c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:15:14.192422+00	2026-10-11 09:16:18.562392+00	1
+5e828626-c4fb-412f-962f-b44bd72fe427	e51250cd-facf-4bd7-a23d-27b8bfc0864a	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:16:18.523369+00	2026-10-11 09:16:18.582509+00	1
+e05c06b6-6df2-483a-a535-17a19f3a65ab	807563ee-0d8c-4b53-8673-f2b4ae1c28ef	2026-10-14 03:22:17+00	2026-10-15 04:22:17+00	1000	0	0	2026-10-14 04:22:17.40973+00	2026-10-14 04:22:17.40973+00	1
+c3a4c3df-a4dd-4a3a-9dc1-a1101cb4f923	34834ebb-945d-46da-b447-84dc23602beb	2026-10-13 04:22:18.573109+00	2026-11-12 04:22:18.573109+00	1250	100	0	2026-10-14 04:22:18.573109+00	2026-10-14 04:22:18.573109+00	1
+262af7ba-7580-4caa-a92a-44a31a980752	e43afc50-295e-4941-9626-524b1f10f573	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:20:33.974717+00	2026-10-11 09:20:34.019018+00	1
+ca00b212-0a6d-40a6-bd12-5ae475d66791	34d2caed-3dac-4bb4-8f5d-11739b84390e	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	1989	0	2026-10-15 05:19:58.777739+00	2026-10-15 05:19:58.812089+00	5
+e3103c11-c4c6-4302-abe9-1cb90ef4227a	fea2a34a-d77e-4cec-a0ea-3970f58a1f23	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:22:40.012881+00	2026-10-11 09:23:39.261173+00	1
+50f0c850-b68b-4b25-b871-4f70241fb5ac	c539a480-fbc6-4cf3-bea3-839807c7e8ad	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:20:34.129819+00	2026-10-11 09:20:34.166346+00	1
+fb523cda-f09b-420b-8986-5551afaca2db	d5bf7c6b-b84e-4fcb-b844-67998fe4bdd5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:47:27.202302+00	2026-10-11 09:47:27.380569+00	1
+f6ead3d8-6e14-4129-873e-6a5fa70dca4a	0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	2026-10-13 16:05:58+00	2026-11-12 16:05:58+00	150000	61004	0	2026-10-13 16:32:02.835667+00	2026-10-14 03:50:35.071491+00	1
+c04e76ee-276e-4499-ac79-4e002b881f68	63f00dfc-8f95-4d9d-b83b-7b06fd077454	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	0	0	2026-10-15 05:19:59.041925+00	2026-10-15 05:19:59.081118+00	5
+a86827b8-e1ab-4768-96a3-ad665dc8c465	a7a19023-9a67-4c09-a8e3-a9383c3b18a9	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:47:27.527764+00	2026-10-11 09:47:27.574584+00	1
+c910ed98-e9ab-4cf6-a20b-b525ec05d3c5	019634a7-fa42-4a80-8942-02203c874d26	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 04:19:22.32191+00	2026-10-14 04:19:22.40749+00	1
+7786ba41-cfcc-4273-a3f6-117cb2d51a94	861425c0-8837-4d6a-b203-7b1ca3f9cd4c	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:38.212052+00	2026-10-11 09:23:39.382393+00	1
+7463842b-ffac-4db4-bcf1-224e535bb604	d6f9ce93-83cb-4a3e-bd28-154e82dc35c5	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:23:39.048647+00	2026-10-11 09:23:39.42263+00	1
+5753708b-ec15-4d38-89f3-5221355608d5	2676caea-6fc1-4af1-9f12-b143a392fea8	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	0	0	2026-10-15 05:25:10.450848+00	2026-10-15 05:25:10.479905+00	5
+ecf1c52d-36fd-40d6-bd44-b51b457e569b	7c963f48-6540-4f8a-b6d2-dde681602eff	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	10000	1000	0	2026-10-15 05:20:08.950722+00	2026-10-15 05:20:09.336197+00	1
+eed02a88-c464-4165-84d6-1ef0748496ca	2ef6367b-792f-4952-9033-fe21c6b36b92	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 04:19:22.579611+00	2026-10-14 04:19:22.635105+00	1
+df424d01-e9e4-43cc-a119-44466c5e1746	3eff48b3-13fb-42d0-ad2b-436d27614964	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	10000	1000	0	2026-10-14 04:22:15.894317+00	2026-10-14 04:22:16.174291+00	1
+a549dc00-5104-45d2-906c-5433a3af606a	55aa6578-903d-446e-9a71-984a64c8c867	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	1989	0	2026-10-15 05:20:09.638044+00	2026-10-15 05:20:09.668737+00	5
+0a295434-82e6-4f77-8bed-9cc859f877e2	88bb36fb-014c-44b9-a4e9-aaf56629d826	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	10000	1000	0	2026-10-11 09:23:38.466216+00	2026-10-11 09:23:38.662151+00	1
+c84d44b2-ff9d-47e2-9e96-3383e4a1f063	7c74a854-3f1e-4259-8a21-7020ebfc375b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.000612+00	2026-10-11 09:47:27.850866+00	1
+835003a1-e7a4-469e-8dce-e5b58cf5da7f	7cd26518-df13-4981-a5af-d7442f09f44b	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	0	0	2026-10-11 09:47:27.686057+00	2026-10-11 09:47:27.873382+00	1
+f4847fac-2230-41e1-aa15-c59d0870af36	00000000-0000-0000-0000-000000000002	2026-10-11 09:09:53.985961+00	2026-11-10 09:09:53.985961+00	150000	0	0	2026-10-11 09:09:53.985961+00	2026-10-11 09:09:53.985961+00	1
+ce33ff6d-957b-473e-8fc8-2c5a273760cc	275360a9-652b-4224-afdb-c01b6aaa3211	2026-10-11 00:00:00+00	2026-11-10 00:00:00+00	1000	120	0	2026-10-11 09:23:38.803404+00	2026-10-11 09:23:38.853368+00	1
+6c160849-8ee6-4723-8d39-154bd1fd5b90	a43baa1e-a753-4669-b509-4d7fe570d367	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	100	100	0	2026-10-14 04:22:16.346283+00	2026-10-14 04:22:16.375466+00	1
+2d095794-5232-406a-96ca-8b068bd5b77f	00000000-0000-0000-0000-000000000002	2026-10-11 09:11:55+00	2026-11-10 09:11:55+00	150000	0	100	2026-10-11 09:11:55.687113+00	2026-10-11 09:11:55.708329+00	1
+6221055c-f0b6-408c-a62a-6d209c393b96	00000000-0000-0000-0000-000000000002	2026-10-11 09:23:36+00	2026-11-10 09:23:36+00	150000	0	0	2026-10-11 09:23:36.81847+00	2026-10-11 09:23:39.118342+00	1
+5c5db3f5-614d-42af-a44c-3c9a9ac72248	00000000-0000-0000-0000-000000000002	2026-10-11 09:15:13+00	2026-11-10 09:15:13+00	150000	0	0	2026-10-11 09:15:13.88794+00	2026-10-11 09:15:14.218358+00	1
+7667adb7-ea63-4ba0-88f1-572d878e15cc	00000000-0000-0000-0000-000000000002	2026-10-11 09:16:18+00	2026-11-10 09:16:18+00	150000	0	0	2026-10-11 09:16:18.276053+00	2026-10-11 09:16:18.551242+00	1
+a6e0fb42-d387-4ab0-9046-918d411fbc8f	00000000-0000-0000-0000-000000000002	2026-10-11 09:20:32+00	2026-11-10 09:20:32+00	150000	0	0	2026-10-11 09:20:32.844535+00	2026-10-11 09:20:34.151061+00	1
+15b45abd-590a-408f-8e99-3fe79806ef39	280ceee9-b343-4621-b667-6821db35d520	2026-10-13 05:25:11+00	2026-11-14 05:25:11+00	1000	0	100	2026-10-15 05:25:11.177842+00	2026-10-15 05:25:11.538353+00	1
+28fa7747-f004-4906-89f3-e0c4a19a35fb	2e3e8650-c07b-4f5c-b471-3a3707534b0f	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 04:22:15.606927+00	2026-10-14 04:59:18.64126+00	1
+271e33da-c8fd-43e5-a532-3e50199da183	96aaaf73-7451-428c-b932-c297eaaff4f4	2026-10-12 04:22:16+00	2026-11-13 04:22:16+00	1000	0	0	2026-10-14 04:22:16.913139+00	2026-10-14 04:59:18.661618+00	1
+6769c748-0b6d-4c5e-87b0-390c26322a02	9a753792-beba-49af-b046-e141591603e3	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	120	0	2026-10-14 04:22:16.433441+00	2026-10-14 04:22:16.535114+00	1
+7e317d1e-777d-4cb7-8d03-babfbea05b78	739b1bba-1806-46d5-9a2a-2a575584083d	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	0	0	2026-10-15 05:20:09.86753+00	2026-10-15 05:20:09.90556+00	5
+e8d20beb-8a27-4381-b7ea-7d0fecea3120	87a6770e-e1f6-4185-a6b1-2a2974445c6b	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 04:22:16.616607+00	2026-10-14 04:22:16.65772+00	1
+e67debec-f7dc-4704-81ca-774a4b0b9155	f9deb63c-b791-4769-b643-63155d8a1e70	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	0	2026-10-15 05:25:10.830847+00	2026-10-15 05:25:10.871989+00	1
+8d1b9267-72cb-4d96-9c7f-49d1d71eb731	e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	2026-10-15 04:24:37.052926+00	2026-11-14 05:24:37.052926+00	5	5	0	2026-10-15 05:24:37.061339+00	2026-10-15 05:24:37.362302+00	1
+f787a1d4-21cd-4fe0-8c6a-7f0d22cbab1c	0afee2d1-06fb-4276-8255-7e4c3ee9afd4	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	0	2026-10-15 05:20:10.188362+00	2026-10-15 05:20:10.233411+00	1
+07c82bf7-7361-4eb6-b958-12318080e445	1bf62495-8743-47ff-ba5a-386ed14a2dac	2026-10-14 05:25:56.194277+00	2026-11-13 05:25:56.194277+00	1250	100	0	2026-10-15 05:25:56.194277+00	2026-10-15 05:25:56.194277+00	1
+bdd46a86-15fb-44db-8443-a112423df836	5918a0ff-91fb-4a94-865f-0d6e8913f243	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	0	2026-10-15 05:25:10.963723+00	2026-10-15 05:25:11.004111+00	1
+e660952a-6a96-4cb8-b4ee-613012f49590	7d9cf17c-1815-49f6-b0bf-63d49f297a14	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	10000	1000	0	2026-10-15 05:25:09.606754+00	2026-10-15 05:25:09.902179+00	1
+b2fc662f-60e1-4aa1-8286-6cb34b5871a0	74939948-7333-4603-90e9-af8cbd63fa02	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	5000	1989	0	2026-10-15 05:25:10.194165+00	2026-10-15 05:25:10.224242+00	5
+59e9b966-437f-4284-9b62-73199050524c	29e9fbc8-dd38-4d42-8871-649e2562b1ae	2026-10-15 04:26:27.283367+00	2026-11-14 05:26:27.283367+00	5	5	0	2026-10-15 05:26:27.303359+00	2026-10-15 05:26:27.89331+00	1
+f1555eea-81f3-40d3-b836-da88cdba5c51	de60d3ee-b019-4a3d-865a-f64835f54d51	2026-10-14 05:25:10.874732+00	2026-11-13 05:25:10.874732+00	1250	100	0	2026-10-15 05:25:10.874732+00	2026-10-15 05:25:10.874732+00	1
+d8ac01bc-36aa-4243-bdfa-973af57dea03	59c9ac03-61a5-4ea9-8b59-d411896e8ec2	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	100000	500	0	2026-10-15 05:19:58.92353+00	2026-10-15 05:19:58.960996+00	1
+0c26ef69-b3f4-4d2c-999e-ec562ed0e2fd	00000000-0000-0000-0000-000000000002	2026-10-15 05:25:07+00	2026-11-14 05:25:07+00	1000	0	0	2026-10-15 05:25:07.715867+00	2026-10-15 05:25:11.401471+00	1
+44380fc5-18c6-4c74-94e7-8fb36eaa57bb	207ce1ff-74d5-466e-aa01-2905ac136123	2026-10-15 04:25:12+00	2026-10-16 05:25:12+00	1000	0	0	2026-10-15 05:25:12.43659+00	2026-10-15 05:25:12.43659+00	1
+569b0892-89dd-4a31-a2e9-f4d5f8ff20a5	1e9064b3-98a6-4dc0-988e-406824fb5693	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	1000	2026-10-15 05:20:08.642668+00	2026-10-15 05:20:08.762552+00	1
+1294d23f-4ccc-47ce-bd2c-5fdd8aa3a491	7725c576-dd57-4a2e-a86d-f28ac3ba2452	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	100	100	0	2026-10-15 05:20:09.527603+00	2026-10-15 05:20:09.557756+00	1
+af47edd1-ca9f-4d83-9e6a-6b5a5e2e1c1b	4b45b698-2b46-42be-a539-26a7d3f98513	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	10000	1000	0	2026-10-14 11:15:01.358409+00	2026-10-14 11:15:01.517116+00	1
+a2dc53cb-39fc-4990-aef2-6322a2270f07	4ac0e217-5d5c-4839-8275-af09aa798d8b	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	100000	500	0	2026-10-15 05:20:09.750808+00	2026-10-15 05:20:09.781424+00	1
+9b935e6b-10d1-40a3-bfce-f392aef61561	f8a65829-0e7e-43e4-abe7-51885c185bf4	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	100	100	0	2026-10-14 11:15:01.670224+00	2026-10-14 11:15:01.693821+00	1
+c47be232-b2b4-4da3-af28-e107b40e636a	667d35dd-8f50-4588-8843-c361988ee14d	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	120	0	2026-10-14 11:15:01.748089+00	2026-10-14 11:15:01.815183+00	1
+94f41dd3-67f9-4923-afa6-4e93cd4b654b	728d78c0-84ad-4026-a91e-76fc60619a5a	2026-10-15 04:25:27.744372+00	2026-11-14 05:25:27.744372+00	5	5	0	2026-10-15 05:25:27.75411+00	2026-10-15 05:25:28.197213+00	1
+2e3663d2-9bf4-4930-a8e9-f2f4f2d9563d	1b78121a-0335-4a3d-94ba-a5d15e4d58f2	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	120	0	2026-10-15 05:20:10.018549+00	2026-10-15 05:20:10.108232+00	1
+6f745b7c-042b-4245-a5a3-482a3ed3e50d	dc6a1bc9-9495-444e-a660-df2e766dfc46	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 11:15:01.868229+00	2026-10-14 11:15:01.908704+00	1
+8009c0b3-e1b4-40e1-928a-5cb5e87d6a93	a15d92c1-2526-4d83-ad62-ee91711ed90d	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 11:15:01.966084+00	2026-10-14 11:15:01.998885+00	1
+4b95f226-0c73-471d-840a-623a14d9cac0	34e260a7-20b6-4f08-b53d-9bcb9889fc94	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	0	2026-10-15 05:20:10.318221+00	2026-10-15 05:20:10.357385+00	1
+e3587e87-1c6e-4c26-95b4-162752d41e28	5f57ff92-4280-4ee1-9bd5-780e982cfdda	2026-10-14 05:27:24.925391+00	2026-11-13 05:27:24.925391+00	1250	100	0	2026-10-15 05:27:24.925391+00	2026-10-15 05:27:24.925391+00	1
+3852a572-5256-468d-ada8-452854b8b1a9	4f00a93d-0b45-4509-97ea-cbdede2782cf	2026-10-14 10:15:02+00	2026-10-15 11:15:02+00	1000	0	0	2026-10-14 11:15:02.540765+00	2026-10-14 11:15:02.540765+00	1
+ef643af1-38b0-47c6-a97c-43d72dafa865	7619c5a3-92cb-42a6-bccf-c16bbbb67b13	2026-10-13 05:20:06+00	2026-11-14 05:20:06+00	1000	0	100	2026-10-15 05:20:10.518465+00	2026-10-15 05:20:10.744813+00	1
+dd51014e-4cd2-4668-8633-3d511bce1c37	4a944bec-4e80-460c-9170-f3e8b9e638c0	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	0	1000	2026-10-15 05:25:09.315599+00	2026-10-15 05:25:09.404612+00	1
+110e4c36-85a6-4656-8b2a-66e7c155cddd	89de0400-a885-4574-9f7c-3409e726a0bf	2026-10-14 00:00:00+00	2026-11-13 00:00:00+00	1000	0	0	2026-10-14 11:15:01.114808+00	2026-10-14 11:57:25.850752+00	1
+3edd66a5-2718-4f8b-9c95-caa3cda7f3dc	53b28e80-4726-49d8-a977-65a15f3dae9f	2026-10-12 11:15:02+00	2026-11-13 11:15:02+00	1000	0	0	2026-10-14 11:15:02.102999+00	2026-10-14 11:57:25.880762+00	1
+2ed236fb-bd8a-4b9f-9a3b-6613344a0fef	d4f5f7f5-77cc-4502-887c-3b1748e527ff	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	100	100	0	2026-10-15 05:25:10.048689+00	2026-10-15 05:25:10.089276+00	1
+2b90450a-d003-4c5c-b62e-42de33fa59e0	2e366086-a71b-437d-9bd8-8d29d247f301	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	100000	500	0	2026-10-15 05:25:10.336487+00	2026-10-15 05:25:10.371359+00	1
+a4df8881-0892-43a1-98c3-cd086c49c67d	5b29b8ed-ab3c-416a-a427-5eae1742b4c2	2026-10-15 00:00:00+00	2026-11-14 00:00:00+00	1000	120	0	2026-10-15 05:25:10.674287+00	2026-10-15 05:25:10.739813+00	1
+43fa48ee-9ed0-4a59-8994-79adc17bef95	016a7dbb-d448-4b16-825d-f871a51ec4b3	2026-10-15 04:27:35.695761+00	2026-11-14 05:27:35.695761+00	5	5	0	2026-10-15 05:27:35.70194+00	2026-10-15 05:27:35.894178+00	1
+754a9e74-4b3a-4216-a06a-7c7321ebb479	92ad1f5e-7df1-4add-9bd9-16d1d95150e1	2026-10-15 04:28:12.489146+00	2026-11-14 05:28:12.489146+00	1000	100	0	2026-10-15 05:28:12.498355+00	2026-10-15 05:28:12.563332+00	1
 \.
 
 
@@ -4066,6 +5193,7 @@ d6ba31bd-f655-4118-87ae-4019f2081bb8	00000000-0000-0000-0000-000000000002	income
 8db37f0e-f949-43af-a24e-656a6ecc9094	00000000-0000-0000-0000-000000000002	income	2712000.00	c0010001-0000-0000-0000-000000000002	\N	\N	\N	Design graphic	\N	{}	2026-04-24	f	\N	voice	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
 4a2e4585-460b-41ed-bbbc-be0bcb2f580d	00000000-0000-0000-0000-000000000002	income	133000.00	c0010001-0000-0000-0000-000000000006	\N	\N	\N	Uang ultah	\N	{penting,bulanan}	2026-04-08	f	\N	ai	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
 1a1db16a-1f58-488f-ac3e-93a1af8664e9	00000000-0000-0000-0000-000000000002	income	5000000.00	c0010001-0000-0000-0000-000000000004	\N	\N	\N	Bunga deposito	\N	{}	2026-04-08	f	\N	manual	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
+fb856812-d517-4b48-8e13-fed69c9cf177	556125ac-4164-4775-9b29-181670af47d8	income	5000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-03-06	f	\N	manual	f	\N	2026-10-14 04:26:04.30284+00	2026-10-14 04:26:04.30284+00
 ec203bd8-eb0b-4d6e-9411-5f66c31722c1	00000000-0000-0000-0000-000000000002	income	1089000.00	c0010001-0000-0000-0000-000000000005	\N	\N	\N	Jualan online	\N	{}	2026-05-22	f	\N	receipt	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
 19cdc631-34a1-4951-aeb1-d2a207bf0edf	00000000-0000-0000-0000-000000000002	income	748000.00	c0010001-0000-0000-0000-000000000006	\N	\N	\N	Katering	\N	{penting,bulanan}	2026-05-02	f	\N	manual	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
 4e6be6a0-3f71-4cc8-bf53-9a1ff3049f10	00000000-0000-0000-0000-000000000002	income	1320000.00	c0010001-0000-0000-0000-000000000002	\N	\N	\N	Design graphic	\N	{}	2026-05-20	f	\N	ai	f	\N	2026-06-16 09:33:42.503236+00	2026-06-16 09:33:42.503236+00
@@ -4565,6 +5693,8 @@ a036f54d-e7c0-4ea4-aeae-462b210aab22	6118d78b-7009-4895-a343-face014428d5	income
 3b5e8402-195d-45b3-b753-1f931e42209d	6118d78b-7009-4895-a343-face014428d5	income	10004.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.431954+00	2026-10-11 08:56:51.431954+00
 55a790f7-bb46-4a49-8534-ea9d33142f78	6118d78b-7009-4895-a343-face014428d5	income	10006.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.435623+00	2026-10-11 08:56:51.435623+00
 33489fb2-a430-4c08-a2d1-5960bc5e6502	6118d78b-7009-4895-a343-face014428d5	income	10001.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.454876+00	2026-10-11 08:56:51.454876+00
+cfbc9827-e5f3-4aa7-be88-e88efc0950d0	556125ac-4164-4775-9b29-181670af47d8	expense	2400000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-03-11	f	\N	manual	f	\N	2026-10-14 04:26:04.30284+00	2026-10-14 04:26:04.30284+00
+843fccb5-8a3e-47cf-ba9a-3657b61df0ab	556125ac-4164-4775-9b29-181670af47d8	income	6000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-10-04	f	\N	manual	f	\N	2026-10-14 04:26:19.379669+00	2026-10-14 04:26:19.379669+00
 e3bb7052-0f5a-4ab3-a934-b5e600506299	6118d78b-7009-4895-a343-face014428d5	income	10002.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.462968+00	2026-10-11 08:56:51.462968+00
 a9a56728-d2a5-42e0-9dc8-4f6fa0d41d08	6118d78b-7009-4895-a343-face014428d5	income	10007.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.469301+00	2026-10-11 08:56:51.469301+00
 ce58e95d-26af-43b7-8375-c63bddabd744	6118d78b-7009-4895-a343-face014428d5	income	10019.00	1eae6ae9-07dd-4dce-846e-42a706676de4	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 08:56:51.472512+00	2026-10-11 08:56:51.472512+00
@@ -4617,6 +5747,8 @@ b2c5e0cf-d9e7-480c-a920-34af50ce8831	e54c6948-ac57-46ef-8202-a6828c84c454	income
 af841a7d-984e-4804-b936-064ac416b248	e54c6948-ac57-46ef-8202-a6828c84c454	income	10001.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.021981+00	2026-10-11 09:23:38.021981+00
 0827d8b9-7fdb-4f90-936d-2947c67c78a2	e54c6948-ac57-46ef-8202-a6828c84c454	income	10012.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.024985+00	2026-10-11 09:23:38.024985+00
 64fd33b5-4178-4f47-8537-888b0950cdec	e54c6948-ac57-46ef-8202-a6828c84c454	income	10006.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.026728+00	2026-10-11 09:23:38.026728+00
+997a8869-9a68-4639-9c80-1b5d448823d0	556125ac-4164-4775-9b29-181670af47d8	income	5000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-02-06	f	\N	manual	f	\N	2026-10-14 04:26:04.714099+00	2026-10-14 04:26:04.714099+00
+2fc65860-4824-47f2-afbc-6f281148fb18	556125ac-4164-4775-9b29-181670af47d8	expense	2700000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-02-11	f	\N	manual	f	\N	2026-10-14 04:26:04.714099+00	2026-10-14 04:26:04.714099+00
 1d068dee-f4c9-430d-aaa4-00780d4ddbcc	e54c6948-ac57-46ef-8202-a6828c84c454	income	10017.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.031327+00	2026-10-11 09:23:38.031327+00
 258f5d95-9be1-4ab3-819f-df60334f212c	e54c6948-ac57-46ef-8202-a6828c84c454	income	10016.00	e9b0e23c-43d1-460d-b09a-d19d401c9c21	\N	\N	\N	\N	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:23:38.032743+00	2026-10-11 09:23:38.032743+00
 bb3fb1dc-ac23-4fe2-8a8e-22980439cecc	67492f17-4f88-48c1-8c50-1964bf8eed22	income	100000.00	38d65284-a424-4340-a215-cb72ee86958f	\N	\N	\N	A's transaction	\N	{}	2026-10-11	f	\N	manual	f	\N	2026-10-11 09:47:26.68203+00	2026-10-11 09:47:26.68203+00
@@ -4648,6 +5780,88 @@ dc0ea684-3173-4949-8aba-aa3213baad2f	7a5eac40-9951-4b8f-9649-5a294028dc94	income
 16f01dcb-295f-4e58-864c-159cb96a3589	00000000-0000-0000-0000-000000000002	income	200000.00	0cd74c94-bb74-4f34-acf6-bcf402299a98	\N	\N	\N	konten	\N	{}	2026-10-13	f	\N	ai	f	\N	2026-10-13 14:02:58.285555+00	2026-10-13 14:02:58.285555+00
 4c6bc59f-7bf0-4e5c-ac5b-5d525dfd5f32	00000000-0000-0000-0000-000000000002	expense	25000.00	\N	4c9befbc-095f-4aeb-a281-dc519c8ac1b4	\N	\N	kopi	\N	{}	2026-10-13	f	\N	ai	f	\N	2026-10-13 16:05:22.811311+00	2026-10-13 16:05:22.811311+00
 63dc1953-06e1-4153-a975-3565a3d39d60	00000000-0000-0000-0000-000000000002	savings	500000.00	\N	\N	a2bf7053-cd83-489c-bae5-766fc3a56106	\N	hasil freelance	\N	{}	2026-10-13	f	\N	ai	f	\N	2026-10-13 16:05:55.557429+00	2026-10-13 16:05:55.557429+00
+26a587da-8572-42d3-bb2a-d5e973f69e9f	00000000-0000-0000-0000-000000000002	income	300000.00	ca2dc472-8b4a-437d-b2ea-413d99715b53	\N	\N	\N	bonus lembur	\N	{}	2026-10-14	f	\N	ai	f	\N	2026-10-14 03:42:06.233149+00	2026-10-14 03:42:06.233149+00
+d6385fe2-02cf-46c1-82ae-d7c6568840cb	8d516926-b537-4466-b32b-5ca4dd7db842	income	100000.00	ef4e53f7-5ad0-4f98-a23c-476fe775969c	\N	\N	\N	A's transaction	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.196598+00	2026-10-14 04:22:15.196598+00
+2e22941e-fbf7-4de1-bbe8-d1124bec76f7	60a52501-5fb0-42fa-b144-f849fa78a53a	income	2000.00	90c80aae-82bf-4619-a225-e15cf461fe8e	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.289315+00	2026-10-14 04:22:15.306277+00
+3fe73860-fabc-48ce-b99f-f03365b45d2b	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10000.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.36929+00	2026-10-14 04:22:15.36929+00
+6452c78c-12bb-4433-a36a-70ec4d6364ab	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10013.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.377605+00	2026-10-14 04:22:15.377605+00
+a51cda84-85fc-436c-b05f-5049b2b9bbf8	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10009.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.383778+00	2026-10-14 04:22:15.383778+00
+2ec09b74-78af-4f1a-9086-2cb9f485d8d4	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10010.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.391921+00	2026-10-14 04:22:15.391921+00
+45789630-53fc-45c2-b778-dc61fbf1bdaf	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10003.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.395368+00	2026-10-14 04:22:15.395368+00
+d73f5d17-9d10-458e-9c33-7f14ef1b9ff0	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10002.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.396386+00	2026-10-14 04:22:15.396386+00
+2a0f6780-191c-4c01-95a6-d9af268bdd44	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10015.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.398088+00	2026-10-14 04:22:15.398088+00
+69d3b65b-847e-48e0-a162-c4facba7beba	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10004.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.401043+00	2026-10-14 04:22:15.401043+00
+5d4070b5-b805-4204-bb51-06a32974177f	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10017.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.406252+00	2026-10-14 04:22:15.406252+00
+c8a401e9-2817-4857-9923-8f3b7088d30e	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10001.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.406222+00	2026-10-14 04:22:15.406222+00
+e92be782-4231-49d2-9906-dd8909d9a6dd	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10006.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.4099+00	2026-10-14 04:22:15.4099+00
+cac49c44-125f-46b3-a5f0-ee6754ce6a41	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10016.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.411923+00	2026-10-14 04:22:15.411923+00
+6f893b86-6ca7-4bb9-bc26-86dcce0cfa6f	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10018.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.41184+00	2026-10-14 04:22:15.41184+00
+f5ebe470-cb5e-4e0f-b2ff-206e5e507e7a	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10008.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.414489+00	2026-10-14 04:22:15.414489+00
+7563a1d9-7de4-45cd-886d-1e477171d720	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10012.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.422111+00	2026-10-14 04:22:15.422111+00
+2d796679-b61c-40f4-9e6b-3164efe9ddda	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10007.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.421046+00	2026-10-14 04:22:15.421046+00
+e493d532-89cd-43e8-adbe-2828f8227dd2	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10019.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.434189+00	2026-10-14 04:22:15.434189+00
+5b7d57f0-4460-488d-959d-e17ddd409bee	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10005.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.437895+00	2026-10-14 04:22:15.437895+00
+f552bc83-1b04-44c2-a998-5960cbb456ba	556125ac-4164-4775-9b29-181670af47d8	income	5000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-01-06	f	\N	manual	f	\N	2026-10-14 04:26:05.115215+00	2026-10-14 04:26:05.115215+00
+0e52b118-c2f7-4b7a-9fdd-ae4aa48d491a	556125ac-4164-4775-9b29-181670af47d8	expense	3000000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-01-11	f	\N	manual	f	\N	2026-10-14 04:26:05.115215+00	2026-10-14 04:26:05.115215+00
+e2ad6001-f692-4bf3-ab7f-c005cfc2d688	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10011.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.44299+00	2026-10-14 04:22:15.44299+00
+c4c5fd58-1bf9-4d36-8527-c20fe81873fb	9c8254db-b9c6-4e42-946e-03507a11da2e	income	10014.00	af379478-a4ea-4e52-828c-4a30e78e107d	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 04:22:15.450127+00	2026-10-14 04:22:15.450127+00
+d1575f2e-438c-445e-90bf-5ac98f06bac6	556125ac-4164-4775-9b29-181670af47d8	income	5000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2025-12-06	f	\N	manual	f	\N	2026-10-14 04:26:05.481324+00	2026-10-14 04:26:05.481324+00
+823aa774-42e8-42d1-8a23-1be095a276b0	556125ac-4164-4775-9b29-181670af47d8	expense	3300000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2025-12-11	f	\N	manual	f	\N	2026-10-14 04:26:05.481324+00	2026-10-14 04:26:05.481324+00
+2d8d7a2e-0a05-49d3-85bb-6a723c0af00b	556125ac-4164-4775-9b29-181670af47d8	expense	1600000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-10-09	f	\N	manual	f	\N	2026-10-14 04:26:19.379669+00	2026-10-14 04:26:19.379669+00
+c8fef901-38c3-4efb-a9d4-a01a335a7661	556125ac-4164-4775-9b29-181670af47d8	expense	500000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Transport	\N	{}	2026-10-13	f	\N	manual	f	\N	2026-10-14 04:26:19.379669+00	2026-10-14 04:26:19.379669+00
+be8619b7-6973-4cf9-9f01-aae34ab4aef8	556125ac-4164-4775-9b29-181670af47d8	income	6000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-09-04	f	\N	manual	f	\N	2026-10-14 04:26:19.864147+00	2026-10-14 04:26:19.864147+00
+d12e8c0b-5b74-40ba-b13b-4f9dbe2d3215	556125ac-4164-4775-9b29-181670af47d8	expense	1200000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-09-09	f	\N	manual	f	\N	2026-10-14 04:26:19.864147+00	2026-10-14 04:26:19.864147+00
+4c84acea-697e-4145-92c4-b7344b935e90	556125ac-4164-4775-9b29-181670af47d8	expense	500000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Transport	\N	{}	2026-09-13	f	\N	manual	f	\N	2026-10-14 04:26:19.864147+00	2026-10-14 04:26:19.864147+00
+28c0d7b5-9404-4f79-9f43-6917800e37cf	556125ac-4164-4775-9b29-181670af47d8	income	6000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-08-04	f	\N	manual	f	\N	2026-10-14 04:26:20.24861+00	2026-10-14 04:26:20.24861+00
+7d7c4af4-7feb-45dc-a19e-570588ce89d0	556125ac-4164-4775-9b29-181670af47d8	expense	800000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-08-09	f	\N	manual	f	\N	2026-10-14 04:26:20.24861+00	2026-10-14 04:26:20.24861+00
+7d69a4be-41fa-4d9c-a10a-696f66d3963f	556125ac-4164-4775-9b29-181670af47d8	expense	500000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Transport	\N	{}	2026-08-13	f	\N	manual	f	\N	2026-10-14 04:26:20.24861+00	2026-10-14 04:26:20.24861+00
+202903e8-3676-4d2d-bdd7-db8dbbba5b4e	556125ac-4164-4775-9b29-181670af47d8	income	6000000.00	c0010001-0000-0000-0000-000000000001	\N	\N	\N	Gaji	\N	{}	2026-07-04	f	\N	manual	f	\N	2026-10-14 04:26:20.955452+00	2026-10-14 04:26:20.955452+00
+45f5b780-590f-41f3-a34b-45245e28a26f	556125ac-4164-4775-9b29-181670af47d8	expense	400000.00	\N	c0020001-0000-0000-0000-000000000001	\N	\N	Makan	\N	{}	2026-07-09	f	\N	manual	f	\N	2026-10-14 04:26:20.955452+00	2026-10-14 04:26:20.955452+00
+1a56e312-c959-4717-9d38-74f38676ff34	556125ac-4164-4775-9b29-181670af47d8	expense	500000.00	\N	c0020001-0000-0000-0000-000000000002	\N	\N	Transport	\N	{}	2026-07-13	f	\N	manual	f	\N	2026-10-14 04:26:20.955452+00	2026-10-14 04:26:20.955452+00
+21df9697-cca1-487d-9b16-d44fc2722a5b	7ef87953-0baa-4e82-bd4b-ea23951f55cc	income	100000.00	6b33cc82-c967-4eba-b5e7-0347fa6a532c	\N	\N	\N	A's transaction	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.851936+00	2026-10-14 11:15:00.851936+00
+4f634509-0ac0-4b41-ab9c-a07826888ad1	5435e367-037d-4ac9-bf39-b46c5e69e02f	income	2000.00	2500400f-ce4c-414b-a162-6b813b1a8250	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.901551+00	2026-10-14 11:15:00.912543+00
+640d1f4a-94b3-433b-8a60-46efd3a27e77	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10000.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.955612+00	2026-10-14 11:15:00.955612+00
+001e09ee-1f82-4169-8a30-4040e1637227	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10005.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.965119+00	2026-10-14 11:15:00.965119+00
+195f03f4-07ce-45f2-a82c-aefa83efa244	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10015.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.971384+00	2026-10-14 11:15:00.971384+00
+914b148e-dcf8-406f-b454-f1a9885002bf	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10006.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.973176+00	2026-10-14 11:15:00.973176+00
+aab06e84-cf95-41ea-b2c6-624d8acaa728	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10019.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.977002+00	2026-10-14 11:15:00.977002+00
+e4b6f5dc-a44a-415f-a1e9-995d62557734	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10012.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.978601+00	2026-10-14 11:15:00.978601+00
+aa9ee51b-7021-436b-bd30-97ba3c1229c0	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10011.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.9778+00	2026-10-14 11:15:00.9778+00
+2db68e1a-688a-4059-86f2-f673ac0e4164	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10009.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.983317+00	2026-10-14 11:15:00.983317+00
+cabf4f7a-415a-4a6b-88c2-6cd8249d9613	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10013.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.984471+00	2026-10-14 11:15:00.984471+00
+64f6f6b4-f3af-4b28-8b0d-bdb153663963	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10002.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.98402+00	2026-10-14 11:15:00.98402+00
+d8f921bf-936a-4248-aa49-218f1b141a40	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10004.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.985114+00	2026-10-14 11:15:00.985114+00
+fa85310f-8237-4919-bf97-24b1d35e6226	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10008.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.985834+00	2026-10-14 11:15:00.985834+00
+4103297d-60fd-4b99-9175-ab1b5390cc62	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10014.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.989632+00	2026-10-14 11:15:00.989632+00
+7addc37b-b992-47be-86ca-a710f811abd1	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10017.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.989656+00	2026-10-14 11:15:00.989656+00
+392fad2d-0319-4746-a1fb-2dd5ed615f6d	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10016.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.989656+00	2026-10-14 11:15:00.989656+00
+38540673-2389-4376-bef1-50273edb7a0f	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10010.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.991055+00	2026-10-14 11:15:00.991055+00
+61067246-e0fa-478f-84f3-2dfb3a374cf2	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10003.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.991218+00	2026-10-14 11:15:00.991218+00
+81da1242-cf33-432a-8e5e-158b75e5283a	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10018.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.994837+00	2026-10-14 11:15:00.994837+00
+f976ed3d-ced8-4913-9aab-22e735162c70	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10001.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:00.998026+00	2026-10-14 11:15:00.998026+00
+cff2c898-7979-4644-8114-5b7a6c0a99dd	8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	income	10007.00	4a431b9c-9a3b-42d4-b1ec-b97fbc8c4ae2	\N	\N	\N	\N	\N	{}	2026-10-14	f	\N	manual	f	\N	2026-10-14 11:15:01.013436+00	2026-10-14 11:15:01.013436+00
+86d13550-c729-4c26-9196-4b833003b794	38858e0b-02d5-467f-a9ac-979a9eb18e51	income	100000.00	d61f968a-cc5e-4e5a-b6bf-597ea1642d23	\N	\N	\N	A's transaction	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.785757+00	2026-10-15 05:25:08.785757+00
+b0ccbe82-2500-43ff-8925-22c7f8a73726	5fd79c64-7610-42d1-82ac-611dacd448f8	income	2000.00	8116c5c3-e38a-4d45-9621-51287a932b64	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.874507+00	2026-10-15 05:25:08.883835+00
+0f85a844-2a69-4b45-9fc9-3d414bd88b12	840da61a-cb01-4458-a2d4-af610231c81f	income	10000.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.951551+00	2026-10-15 05:25:08.951551+00
+d9280552-b952-4859-83dd-981087b71995	840da61a-cb01-4458-a2d4-af610231c81f	income	10008.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.961025+00	2026-10-15 05:25:08.961025+00
+d4ff8cb4-51de-417d-9b78-2dac8d1756fa	840da61a-cb01-4458-a2d4-af610231c81f	income	10016.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.972465+00	2026-10-15 05:25:08.972465+00
+10ed81ca-c3f9-42f8-bc15-dc2d96370206	840da61a-cb01-4458-a2d4-af610231c81f	income	10014.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.991548+00	2026-10-15 05:25:08.991548+00
+ccc170bc-fbaf-4d3d-addf-ae7097e901c5	840da61a-cb01-4458-a2d4-af610231c81f	income	10015.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:08.996775+00	2026-10-15 05:25:08.996775+00
+53bed5b8-6d8e-4ae7-b3b9-0524beba9407	840da61a-cb01-4458-a2d4-af610231c81f	income	10017.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.001657+00	2026-10-15 05:25:09.001657+00
+78406d3e-ce06-4bd6-9181-dbcc0f7c64a8	840da61a-cb01-4458-a2d4-af610231c81f	income	10010.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.006112+00	2026-10-15 05:25:09.006112+00
+0d1dd050-7a40-421f-bbfd-254b75a4123e	840da61a-cb01-4458-a2d4-af610231c81f	income	10011.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.012998+00	2026-10-15 05:25:09.012998+00
+415f9a0f-8cba-463e-80b7-1a5d94c25cda	840da61a-cb01-4458-a2d4-af610231c81f	income	10018.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.01858+00	2026-10-15 05:25:09.01858+00
+33a039ab-ec1b-4798-985b-7a07ec0656bf	840da61a-cb01-4458-a2d4-af610231c81f	income	10004.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.044407+00	2026-10-15 05:25:09.044407+00
+050f2b24-1169-4fbb-afef-d184070406df	840da61a-cb01-4458-a2d4-af610231c81f	income	10019.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.058716+00	2026-10-15 05:25:09.058716+00
+f08fc110-3d40-4e37-ba33-d033daeb76f2	840da61a-cb01-4458-a2d4-af610231c81f	income	10006.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.063121+00	2026-10-15 05:25:09.063121+00
+706b585f-224a-4550-aa50-3c2c81799be4	840da61a-cb01-4458-a2d4-af610231c81f	income	10003.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.081969+00	2026-10-15 05:25:09.081969+00
+c8b91f05-ba93-4848-a636-45a73d39a3a8	840da61a-cb01-4458-a2d4-af610231c81f	income	10012.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.090323+00	2026-10-15 05:25:09.090323+00
+67c3048c-e740-4f1b-b7a1-a30deb5edb81	840da61a-cb01-4458-a2d4-af610231c81f	income	10002.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.097805+00	2026-10-15 05:25:09.097805+00
+21366ad0-acfc-40c6-88e9-b9ed74dc23e0	840da61a-cb01-4458-a2d4-af610231c81f	income	10001.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.098099+00	2026-10-15 05:25:09.098099+00
+71c9af0f-2491-4cfe-b2d4-e4a41ae77f3f	840da61a-cb01-4458-a2d4-af610231c81f	income	10005.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.100577+00	2026-10-15 05:25:09.100577+00
+a1ce1cfc-657d-41f8-8ff3-6c8a0bd86206	840da61a-cb01-4458-a2d4-af610231c81f	income	10013.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.100953+00	2026-10-15 05:25:09.100953+00
+1720e970-45ae-4539-a934-9aa24b0c544b	840da61a-cb01-4458-a2d4-af610231c81f	income	10007.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.101814+00	2026-10-15 05:25:09.101814+00
+049e9d0f-9f19-427a-8b58-482f435de6c5	840da61a-cb01-4458-a2d4-af610231c81f	income	10009.00	44998d9a-6472-4765-b8d8-58a4348838aa	\N	\N	\N	\N	\N	{}	2026-10-15	f	\N	manual	f	\N	2026-10-15 05:25:09.114986+00	2026-10-15 05:25:09.114986+00
 \.
 
 
@@ -4657,7 +5871,6 @@ dc0ea684-3173-4949-8aba-aa3213baad2f	7a5eac40-9951-4b8f-9649-5a294028dc94	income
 
 COPY public.users (id, email, password_hash, full_name, role, avatar_url, is_active, created_at, updated_at, phone) FROM stdin;
 00000000-0000-0000-0000-000000000001	admin@fintrack.id	$2a$10$7SdcrwkiJBaIWTxoe5xKwODGgJ9lDeR5asEXcFwzcXwd4oLXZ9gR2	Admin FinTrack	admin	\N	t	2026-06-16 09:33:42.503236+00	2026-10-10 19:02:59.854495+00	\N
-00000000-0000-0000-0000-000000000004	andi@example.com	$2a$10$WFkMqW3I1HK322GWsgojEe323SH/dsLy3zegYUnfAJDbmkz4CnqbG	Andi Wijaya	user	\N	t	2026-06-16 09:33:42.503236+00	2026-10-10 19:02:59.854495+00	\N
 00000000-0000-0000-0000-000000000003	siti@example.com	$2a$10$b9IZsGR2uI3ERVgnZFNaS.lBkNxmz2E8jJlSgtz9M1PAgDgbmtha2	Siti Rahayu	user	\N	t	2026-06-16 09:33:42.503236+00	2026-10-10 19:02:59.854495+00	\N
 c2224ae5-d2c1-4c07-867f-f2cbe5a20ac5	tester_ai_new@fintrack.com	$2a$10$p5YYZwbR5Qxo1nUM3guBounF4ylWh46PvqWUu9RnDAw5xzKInb1VW	tester_ai_new@fintrack.com	user	\N	t	2026-06-24 12:22:13.929727+00	2026-10-10 19:02:59.854495+00	\N
 b1b66fa0-13d9-4937-a4b4-09e3e2060f86	tester_ai@fintrack.com	$2a$10$79ZxEUkoSDSz6ZRiDSJbGessBeU7xVSb76nrTOQcJHgB7yC1WcjT.	tester_ai@fintrack.com	user	\N	t	2026-06-24 12:13:41.246799+00	2026-10-10 19:02:59.854495+00	\N
@@ -4709,14 +5922,145 @@ c5d4f372-d0b9-43de-9cbc-c4003d704101	smoke-user@fintrack.test	$2a$12$WMURhS8H3px
 661ae48b-19ed-476e-8fd3-4968fa105c28	smoke-admin@fintrack.test	$2a$12$GqKY8B9R8Jr6PbpmIYZI1OCmvTh/0FoJR70uPTEwshlrc6Q8lztsG	Smoke Admin	super_admin	\N	t	2026-10-11 10:23:50.186043+00	2026-10-11 10:28:59.62324+00	\N
 5793635b-7f82-4324-b314-bcf86eed2f0d	probe-user@fintrack.test	$2a$12$HXwFC1iO0q0zr4lYV8r9KeYEkYBHcIwlfSKST7X8pP/rfCDM5Pg..	Probe User	user	\N	t	2026-10-13 13:34:11.619677+00	2026-10-13 13:34:11.619677+00	\N
 243215bb-e1eb-4071-b5cd-0b7c292d8638	audit-user@fintrack.test	$2a$12$RKz8xn8TpRBH3.qmqlDniuRgfBbV8dNcDR6h8/h45EnhhXY.NtGmq	Audit User	user	\N	t	2026-10-13 13:48:08.75871+00	2026-10-13 13:48:08.75871+00	\N
+00000000-0000-0000-0000-000000000004	andi@example.com	$2a$12$GQmBEPTJjSbRdjb0puiumOP9ED.8aSXHlSLcmHDseWCD47RToydSG	Andi Wijaya	user	\N	t	2026-06-16 09:33:42.503236+00	2026-10-14 05:44:31.21105+00	\N
 5abd3878-94a0-4fd6-875c-7dec161bc107	p0-user@fintrack.test	$2a$12$j/0JFgbKvtuv36t2qCFOh.17chYgq3aR.MCz1aLuyYLPO0d8w/N4.	P0 User	user	\N	t	2026-10-13 14:15:47.040008+00	2026-10-13 14:15:47.040008+00	\N
 a2933b3b-b878-418d-b345-13ada67e2c56	p0-user2@fintrack.test	$2a$12$sk.njRX/Mjlz6dRt06eJqOW/uxz7cnyvJgFOb25EKfpGuxGl.LAZu	P0 User2	user	\N	t	2026-10-13 14:16:58.277224+00	2026-10-13 14:16:58.277224+00	\N
 8aed13eb-62ae-48aa-a3d7-6f73bdc6cfaf	e2e-p1@fintrack.test	$2a$12$EM1hTXdVrjOFdkeCMBAY7.xw4NgVdU3fWg9yZMG9zYVBiKVc6QPVW	E2E P1	user	\N	t	2026-10-13 14:28:17.439751+00	2026-10-13 14:28:17.439751+00	\N
 2d2f1f27-4d1f-451c-be4a-0a5bfe74e79e	fe-e2e@fintrack.test	$2a$12$Zl4xa6ORAaIhfs04giJox.nZkMxj7zRb5N0FfP2TwkPRAEtv/ftYy	FE E2E	user	\N	t	2026-10-13 14:32:46.56681+00	2026-10-13 14:32:46.56681+00	\N
 57046e28-960a-4e46-9de0-21b4ac1a599d	fe-e2e2@fintrack.test	$2a$12$2J6V6aHHZXD6jgfv9Z00fu8.t3dtmrS9nZXKeOsOlu4uqqXbi5pDG	FE E2E 2	user	\N	t	2026-10-13 14:32:54.918143+00	2026-10-13 14:32:54.918143+00	\N
 0b17b7f8-eabf-4b12-aee5-f47eaedf3b74	p2-verify@fintrack.test	$2a$12$Ygq6./PFEdmwFvKMuf9Yuu2MwjIU/BXcG3GD7wZpWOcc1eYdA8Hl6	P2 Verify	user	\N	t	2026-10-13 15:27:58.913916+00	2026-10-13 15:27:58.913916+00	\N
-00000000-0000-0000-0000-000000000002	budi@example.com	$2a$10$/0YrgERWAhXj2/K0dwY7V.vRhM88Db5W9GeXLylDdmH/Squ2cAFPO	Anggi Maulana	user		t	2026-06-16 09:33:42.503236+00	2026-10-14 02:48:32.91535+00	087711447242
-0eb40d2c-9262-4130-8a99-963cae88e54b	e2e-header-1791946863@fintrack.test	$2a$12$NP.T.cpR6qZFW.o9sTBW.udE0Z9nJrhCiav7r99MqWuWtdM1Yo2CW	E2E Header	user	\N	t	2026-10-14 03:01:03.958645+00	2026-10-14 03:01:03.958645+00	\N
+262ba01c-416a-486b-8c1b-9a89b9868477	e2e-5fcc264d-cebf-475c-8c7c-234ff10f0d3a@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-14 04:22:18.702348+00	2026-10-14 04:22:18.702348+00	\N
+f8a65829-0e7e-43e4-abe7-51885c185bf4	f8a65829-0e7e-43e4-abe7-51885c185bf4@itest.local	\N	Clamp	user	\N	t	2026-10-14 11:15:01.662114+00	2026-10-14 11:15:01.662114+00	\N
+6bb6d175-edcf-4cea-a352-291875ec6588	f4-free@fintrack.test	$2a$12$h88tJmiS4QBo81i9gXiTmeRuE2OyVE0fcxnhKCk2eGGVkaDWv42xm	Free User	user	\N	t	2026-10-14 03:54:22.060642+00	2026-10-14 03:54:22.060642+00	\N
+019634a7-fa42-4a80-8942-02203c874d26	019634a7-fa42-4a80-8942-02203c874d26@itest.local	\N	ITest	user	\N	t	2026-10-14 04:19:22.271171+00	2026-10-14 04:19:22.271171+00	\N
+2ef6367b-792f-4952-9033-fe21c6b36b92	2ef6367b-792f-4952-9033-fe21c6b36b92@itest.local	\N	ITest	user	\N	t	2026-10-14 04:19:22.561687+00	2026-10-14 04:19:22.561687+00	\N
+029d85b2-fc96-46fd-abd2-ca83d99405cf	it-6d04afba-efdd-40c6-bfe0-9052223dbd74@example.com	$2a$12$uX2kBJCw/BsV9e9dGmKrvO.jyPKiixl0yh8BXmA/zAe4NQyfLl6yy	IT User	user	\N	t	2026-10-14 04:22:14.600308+00	2026-10-14 04:22:14.600308+00	\N
+8d516926-b537-4466-b32b-5ca4dd7db842	it-3254f965-4033-499e-a51f-4e2220fcdb60@example.com	x	A	user	\N	t	2026-10-14 04:22:15.169819+00	2026-10-14 04:22:15.169819+00	\N
+6f9b3200-798a-40c8-bc0a-7a7caa79e69e	it-9eff252d-7a4d-49d2-9122-6276681eed11@example.com	x	B	user	\N	t	2026-10-14 04:22:15.174448+00	2026-10-14 04:22:15.174448+00	\N
+60a52501-5fb0-42fa-b144-f849fa78a53a	it-3aad3d3e-c569-4c38-a55a-c4542f2b1a14@example.com	x	L	user	\N	t	2026-10-14 04:22:15.263224+00	2026-10-14 04:22:15.263224+00	\N
+9c8254db-b9c6-4e42-946e-03507a11da2e	it-4afa7b13-a266-4032-9aea-50c8cbe87298@example.com	x	R	user	\N	t	2026-10-14 04:22:15.346857+00	2026-10-14 04:22:15.346857+00	\N
+2e3e8650-c07b-4f5c-b471-3a3707534b0f	2e3e8650-c07b-4f5c-b471-3a3707534b0f@itest.local	\N	Concurrency	user	\N	t	2026-10-14 04:22:15.564409+00	2026-10-14 04:22:15.564409+00	\N
+3eff48b3-13fb-42d0-ad2b-436d27614964	3eff48b3-13fb-42d0-ad2b-436d27614964@itest.local	\N	Concurrency	user	\N	t	2026-10-14 04:22:15.886085+00	2026-10-14 04:22:15.886085+00	\N
+a43baa1e-a753-4669-b509-4d7fe570d367	a43baa1e-a753-4669-b509-4d7fe570d367@itest.local	\N	Clamp	user	\N	t	2026-10-14 04:22:16.337815+00	2026-10-14 04:22:16.337815+00	\N
+9a753792-beba-49af-b046-e141591603e3	9a753792-beba-49af-b046-e141591603e3@itest.local	\N	ITest	user	\N	t	2026-10-14 04:22:16.423273+00	2026-10-14 04:22:16.423273+00	\N
+87a6770e-e1f6-4185-a6b1-2a2974445c6b	87a6770e-e1f6-4185-a6b1-2a2974445c6b@itest.local	\N	ITest	user	\N	t	2026-10-14 04:22:16.607871+00	2026-10-14 04:22:16.607871+00	\N
+552f6195-ea07-4ac2-a0aa-90944079ce45	552f6195-ea07-4ac2-a0aa-90944079ce45@itest.local	\N	ITest	user	\N	t	2026-10-14 04:22:16.709906+00	2026-10-14 04:22:16.709906+00	\N
+96aaaf73-7451-428c-b932-c297eaaff4f4	96aaaf73-7451-428c-b932-c297eaaff4f4@itest.local	\N	ITest	user	\N	t	2026-10-14 04:22:16.903534+00	2026-10-14 04:22:16.903534+00	\N
+807563ee-0d8c-4b53-8673-f2b4ae1c28ef	counter-807563ee-0d8c-4b53-8673-f2b4ae1c28ef@test.local	x	Counter Test	user	\N	t	2026-10-14 04:22:17.403912+00	2026-10-14 04:22:17.403912+00	\N
+b6a87545-1423-4f86-9781-b26c65957818	e2e-dd153649-1d2e-4176-8330-2cdc3ffbfa2e@fintrack.test	\N	E2E User	user	\N	t	2026-10-14 04:22:18.207669+00	2026-10-14 04:22:18.207669+00	\N
+b1701156-50de-4e5b-93fd-6bbbf59c199c	e2e-a77d8ead-f0b3-4aca-a908-9af6834ec4d9@fintrack.test	\N	E2E User	user	\N	t	2026-10-14 04:22:18.215881+00	2026-10-14 04:22:18.230325+00	\N
+53fd4b9f-fe85-4bb4-a840-852517e95bcb	e2e-23930d1d-7ce2-4a95-a749-3558126dd71a@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-14 04:22:18.257835+00	2026-10-14 04:22:18.257835+00	\N
+60d4a5d5-db9c-460c-b57c-1f8f0d41d5fe	e2e-a86843f6-d041-475b-b45d-0d362e83beb0@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-14 04:22:18.366242+00	2026-10-14 04:22:18.366242+00	\N
+c28de695-b0bd-43ef-ad32-49b651f079ea	e2e-81af1a0f-bbc4-4bab-976d-046d76065b50@fintrack.test	\N	E2E User	user	\N	t	2026-10-14 04:22:18.370028+00	2026-10-14 04:22:18.370028+00	\N
+437ab084-723a-41b4-b392-4523fe966c41	e2e-8e03ae40-b714-4c52-adf9-e7d4a8b17626@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-14 04:22:18.564292+00	2026-10-14 04:22:18.564292+00	\N
+34834ebb-945d-46da-b447-84dc23602beb	e2e-2e59eed2-aa3f-4281-b181-9027156244a7@fintrack.test	\N	E2E User	user	\N	t	2026-10-14 04:22:18.567634+00	2026-10-14 04:22:18.567634+00	\N
+99258ca7-0a34-4bf7-b83c-64a3a00734da	e2e-df5d4a45-588c-4147-b803-1fc5cc26b153@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-14 04:22:18.637981+00	2026-10-14 04:22:18.637981+00	\N
+d645db19-2ab5-4c3e-a2a3-f429104aa1f2	anon-d645db19-2ab5-4c3e-a2a3-f429104aa1f2@x	DELETED	x	user	\N	f	2026-10-14 04:25:47.247564+00	2026-10-14 04:25:47.277403+00	\N
+556125ac-4164-4775-9b29-181670af47d8	spk-test-1791951945@fintrack.test	$2a$12$OcfX4TDvorBWhlyRvXvok.qDs/R9QfoIoN4GiRyWzr4kIbrMdmntO	SPK Tester	user	\N	t	2026-10-14 04:25:46.213102+00	2026-10-14 04:27:57.561353+00	\N
+00000000-0000-0000-0000-000000000002	budi@example.com	$2a$12$qLsyCGrn7EJLBoyDcMQ1EutqnK7WZUELdj62e4d39m266MZzD1CyC	Anggi Maulana	user		t	2026-06-16 09:33:42.503236+00	2026-10-14 05:52:11.00312+00	087711447242
+0eb40d2c-9262-4130-8a99-963cae88e54b	e2e-header-1791946863@fintrack.test	$2a$12$NP.T.cpR6qZFW.o9sTBW.udE0Z9nJrhCiav7r99MqWuWtdM1Yo2CW	E2E Header	user	\N	t	2026-10-14 03:01:03.958645+00	2026-10-14 10:03:15.414897+00	\N
+93844cb5-7b06-4a85-b225-ab34108d3c87	h-1791975680@fintrack.test	$2a$12$xNSXtalYjl9WhRtau26YY.Ah0bOXGRnbtkiXy/3qavsyLWTvwF28y	H Tester	user	\N	t	2026-10-14 11:01:21.081311+00	2026-10-14 11:01:21.081311+00	\N
+b7c5041b-e56b-4db3-b028-ce3e08327273	it-6b1c6b1e-e1cc-4e34-9d56-11e3574f9017@example.com	$2a$12$.F5JyLS5hJZBEr/haPCAsem7buT0lUe3oUFI0H7M9rdfKPhOjg5ty	IT User	user	\N	t	2026-10-14 11:15:00.407968+00	2026-10-14 11:15:00.407968+00	\N
+7ef87953-0baa-4e82-bd4b-ea23951f55cc	it-6bf357e5-2bca-4378-a81f-c2ced803c397@example.com	x	A	user	\N	t	2026-10-14 11:15:00.826802+00	2026-10-14 11:15:00.826802+00	\N
+7a1956ae-d2f7-4977-94c6-a5e711499f12	it-ad2b4ef2-0b1f-4f99-b853-db327a2cb97d@example.com	x	B	user	\N	t	2026-10-14 11:15:00.833527+00	2026-10-14 11:15:00.833527+00	\N
+5435e367-037d-4ac9-bf39-b46c5e69e02f	it-eda84a53-164b-4f8e-bbea-06de8cdbf4da@example.com	x	L	user	\N	t	2026-10-14 11:15:00.885671+00	2026-10-14 11:15:00.885671+00	\N
+8ce7ae5c-ce4c-4a3c-ad3c-ecae6e554bbb	it-84add627-b375-4a51-ba7c-ea7499925a9e@example.com	x	R	user	\N	t	2026-10-14 11:15:00.937927+00	2026-10-14 11:15:00.937927+00	\N
+89de0400-a885-4574-9f7c-3409e726a0bf	89de0400-a885-4574-9f7c-3409e726a0bf@itest.local	\N	Concurrency	user	\N	t	2026-10-14 11:15:01.080479+00	2026-10-14 11:15:01.080479+00	\N
+4b45b698-2b46-42be-a539-26a7d3f98513	4b45b698-2b46-42be-a539-26a7d3f98513@itest.local	\N	Concurrency	user	\N	t	2026-10-14 11:15:01.3483+00	2026-10-14 11:15:01.3483+00	\N
+667d35dd-8f50-4588-8843-c361988ee14d	667d35dd-8f50-4588-8843-c361988ee14d@itest.local	\N	ITest	user	\N	t	2026-10-14 11:15:01.738815+00	2026-10-14 11:15:01.738815+00	\N
+dc6a1bc9-9495-444e-a660-df2e766dfc46	dc6a1bc9-9495-444e-a660-df2e766dfc46@itest.local	\N	ITest	user	\N	t	2026-10-14 11:15:01.85927+00	2026-10-14 11:15:01.85927+00	\N
+a15d92c1-2526-4d83-ad62-ee91711ed90d	a15d92c1-2526-4d83-ad62-ee91711ed90d@itest.local	\N	ITest	user	\N	t	2026-10-14 11:15:01.956906+00	2026-10-14 11:15:01.956906+00	\N
+53b28e80-4726-49d8-a977-65a15f3dae9f	53b28e80-4726-49d8-a977-65a15f3dae9f@itest.local	\N	ITest	user	\N	t	2026-10-14 11:15:02.095341+00	2026-10-14 11:15:02.095341+00	\N
+4f00a93d-0b45-4509-97ea-cbdede2782cf	counter-4f00a93d-0b45-4509-97ea-cbdede2782cf@test.local	x	Counter Test	user	\N	t	2026-10-14 11:15:02.53648+00	2026-10-14 11:15:02.53648+00	\N
+34d2caed-3dac-4bb4-8f5d-11739b84390e	34d2caed-3dac-4bb4-8f5d-11739b84390e@ratio.local	\N	Ratio	user	\N	t	2026-10-15 05:19:58.75537+00	2026-10-15 05:19:58.75537+00	\N
+59c9ac03-61a5-4ea9-8b59-d411896e8ec2	59c9ac03-61a5-4ea9-8b59-d411896e8ec2@id1.local	\N	Identity	user	\N	t	2026-10-15 05:19:58.912036+00	2026-10-15 05:19:58.912036+00	\N
+63f00dfc-8f95-4d9d-b83b-7b06fd077454	63f00dfc-8f95-4d9d-b83b-7b06fd077454@rel.local	\N	Release	user	\N	t	2026-10-15 05:19:59.031219+00	2026-10-15 05:19:59.031219+00	\N
+1e9064b3-98a6-4dc0-988e-406824fb5693	1e9064b3-98a6-4dc0-988e-406824fb5693@itest.local	\N	Concurrency	user	\N	t	2026-10-15 05:20:08.556073+00	2026-10-15 05:20:08.556073+00	\N
+7c963f48-6540-4f8a-b6d2-dde681602eff	7c963f48-6540-4f8a-b6d2-dde681602eff@itest.local	\N	Concurrency	user	\N	t	2026-10-15 05:20:08.939124+00	2026-10-15 05:20:08.939124+00	\N
+7725c576-dd57-4a2e-a86d-f28ac3ba2452	7725c576-dd57-4a2e-a86d-f28ac3ba2452@itest.local	\N	Clamp	user	\N	t	2026-10-15 05:20:09.514546+00	2026-10-15 05:20:09.514546+00	\N
+55aa6578-903d-446e-9a71-984a64c8c867	55aa6578-903d-446e-9a71-984a64c8c867@ratio.local	\N	Ratio	user	\N	t	2026-10-15 05:20:09.625193+00	2026-10-15 05:20:09.625193+00	\N
+4ac0e217-5d5c-4839-8275-af09aa798d8b	4ac0e217-5d5c-4839-8275-af09aa798d8b@id1.local	\N	Identity	user	\N	t	2026-10-15 05:20:09.738901+00	2026-10-15 05:20:09.738901+00	\N
+739b1bba-1806-46d5-9a2a-2a575584083d	739b1bba-1806-46d5-9a2a-2a575584083d@rel.local	\N	Release	user	\N	t	2026-10-15 05:20:09.855007+00	2026-10-15 05:20:09.855007+00	\N
+1b78121a-0335-4a3d-94ba-a5d15e4d58f2	1b78121a-0335-4a3d-94ba-a5d15e4d58f2@itest.local	\N	ITest	user	\N	t	2026-10-15 05:20:10.004796+00	2026-10-15 05:20:10.004796+00	\N
+0afee2d1-06fb-4276-8255-7e4c3ee9afd4	0afee2d1-06fb-4276-8255-7e4c3ee9afd4@itest.local	\N	ITest	user	\N	t	2026-10-15 05:20:10.175376+00	2026-10-15 05:20:10.175376+00	\N
+34e260a7-20b6-4f08-b53d-9bcb9889fc94	34e260a7-20b6-4f08-b53d-9bcb9889fc94@itest.local	\N	ITest	user	\N	t	2026-10-15 05:20:10.304914+00	2026-10-15 05:20:10.304914+00	\N
+7619c5a3-92cb-42a6-bccf-c16bbbb67b13	7619c5a3-92cb-42a6-bccf-c16bbbb67b13@itest.local	\N	ITest	user	\N	t	2026-10-15 05:20:10.509202+00	2026-10-15 05:20:10.509202+00	\N
+e9dfe5d6-5f06-4e41-91a0-4f5d03254bb4	race-e9dfe5d6@fintrack.test	dummy	Race Test User	user	\N	t	2026-10-15 05:24:37.05014+00	2026-10-15 05:24:37.05014+00	\N
+acfe4ad1-9dba-4b57-8e69-3e09e45856f0	it-704d6d88-1df6-46e7-90e5-cc5b1fc3962f@example.com	$2a$12$dv.JwHXVuTCICakeY4P4ruNdsr6dhh/yMRHwiU1Nuh3/g4kwsAz6G	IT User	user	\N	t	2026-10-15 05:25:08.25382+00	2026-10-15 05:25:08.25382+00	\N
+38858e0b-02d5-467f-a9ac-979a9eb18e51	it-1a48790d-56a9-4eb0-a2d6-95acea73d8e9@example.com	x	A	user	\N	t	2026-10-15 05:25:08.765852+00	2026-10-15 05:25:08.765852+00	\N
+d27bcbc9-91dd-4aa3-b9e5-6eaa284eab13	it-2a2594cc-7d0a-43f4-bd2a-2910b5673c2d@example.com	x	B	user	\N	t	2026-10-15 05:25:08.770149+00	2026-10-15 05:25:08.770149+00	\N
+5fd79c64-7610-42d1-82ac-611dacd448f8	it-8d5a8674-66ab-4440-84d6-5c67eb99b049@example.com	x	L	user	\N	t	2026-10-15 05:25:08.858625+00	2026-10-15 05:25:08.858625+00	\N
+840da61a-cb01-4458-a2d4-af610231c81f	it-219bfd1d-418b-40d5-a9de-0a1730e33264@example.com	x	R	user	\N	t	2026-10-15 05:25:08.932637+00	2026-10-15 05:25:08.932637+00	\N
+4a944bec-4e80-460c-9170-f3e8b9e638c0	4a944bec-4e80-460c-9170-f3e8b9e638c0@itest.local	\N	Concurrency	user	\N	t	2026-10-15 05:25:09.221615+00	2026-10-15 05:25:09.221615+00	\N
+7d9cf17c-1815-49f6-b0bf-63d49f297a14	7d9cf17c-1815-49f6-b0bf-63d49f297a14@itest.local	\N	Concurrency	user	\N	t	2026-10-15 05:25:09.597541+00	2026-10-15 05:25:09.597541+00	\N
+d4f5f7f5-77cc-4502-887c-3b1748e527ff	d4f5f7f5-77cc-4502-887c-3b1748e527ff@itest.local	\N	Clamp	user	\N	t	2026-10-15 05:25:10.032096+00	2026-10-15 05:25:10.032096+00	\N
+74939948-7333-4603-90e9-af8cbd63fa02	74939948-7333-4603-90e9-af8cbd63fa02@ratio.local	\N	Ratio	user	\N	t	2026-10-15 05:25:10.184441+00	2026-10-15 05:25:10.184441+00	\N
+8bd2d141-a68a-4616-8f4f-261cbe0636fe	e2e-5909e097-c7a9-4cea-9699-ccc61c99d27e@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:10.219279+00	2026-10-15 05:25:10.219279+00	\N
+9f06df93-e503-407d-8e50-455dca39e616	e2e-580aec1b-1097-41d3-8cf3-e8a19d8870fc@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:10.229682+00	2026-10-15 05:25:10.246724+00	\N
+f3d5977b-8b85-44af-8de3-09d3d9406462	e2e-e21a24c0-a837-4e90-a974-d32a51106942@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:10.311777+00	2026-10-15 05:25:10.311777+00	\N
+2e366086-a71b-437d-9bd8-8d29d247f301	2e366086-a71b-437d-9bd8-8d29d247f301@id1.local	\N	Identity	user	\N	t	2026-10-15 05:25:10.327634+00	2026-10-15 05:25:10.327634+00	\N
+2676caea-6fc1-4af1-9f12-b143a392fea8	2676caea-6fc1-4af1-9f12-b143a392fea8@rel.local	\N	Release	user	\N	t	2026-10-15 05:25:10.439148+00	2026-10-15 05:25:10.439148+00	\N
+2cfe128e-4ef3-4101-ba23-882616044eca	e2e-8f676fde-3b11-4b49-9552-261db1f0d25d@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:10.466426+00	2026-10-15 05:25:10.466426+00	\N
+2527c68d-65f7-4a74-b036-71208fe65f76	e2e-873afdfc-5997-4248-9f79-cbf68ce9bf6e@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:10.472136+00	2026-10-15 05:25:10.472136+00	\N
+5b29b8ed-ab3c-416a-a427-5eae1742b4c2	5b29b8ed-ab3c-416a-a427-5eae1742b4c2@itest.local	\N	ITest	user	\N	t	2026-10-15 05:25:10.666408+00	2026-10-15 05:25:10.666408+00	\N
+f9deb63c-b791-4769-b643-63155d8a1e70	f9deb63c-b791-4769-b643-63155d8a1e70@itest.local	\N	ITest	user	\N	t	2026-10-15 05:25:10.822638+00	2026-10-15 05:25:10.822638+00	\N
+409905a4-2d8a-4975-9379-86ae89ce8081	e2e-3dc77d6a-bc27-47bd-92c5-61856f7229fe@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:10.864187+00	2026-10-15 05:25:10.864187+00	\N
+de60d3ee-b019-4a3d-865a-f64835f54d51	e2e-8b167deb-d457-4bbc-849d-07b7efcb7023@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:10.869829+00	2026-10-15 05:25:10.869829+00	\N
+5918a0ff-91fb-4a94-865f-0d6e8913f243	5918a0ff-91fb-4a94-865f-0d6e8913f243@itest.local	\N	ITest	user	\N	t	2026-10-15 05:25:10.952169+00	2026-10-15 05:25:10.952169+00	\N
+2a9ab3df-2977-4758-ac81-5a4f65aad023	e2e-e2f7d1bf-1c8c-41bf-827c-39d2462149cf@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.007473+00	2026-10-15 05:25:11.007473+00	\N
+68f366f4-7a89-41b5-a415-1ac53c3266b0	e2e-557dbd31-c2d6-41a5-a277-4cd0a8da2640@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.121189+00	2026-10-15 05:25:11.121189+00	\N
+280ceee9-b343-4621-b667-6821db35d520	280ceee9-b343-4621-b667-6821db35d520@itest.local	\N	ITest	user	\N	t	2026-10-15 05:25:11.171162+00	2026-10-15 05:25:11.171162+00	\N
+ad006311-7284-46ff-8a52-e9c33b2e2ffe	e2e-4ff0a88f-c2a3-4cf1-8143-284c4113c1aa@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.266659+00	2026-10-15 05:25:11.266659+00	\N
+7db2a211-0e47-4b4f-bd71-24c69e52c459	e2e-3292833a-f7dc-4264-ab1f-ecfc3ff33d1f@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.394842+00	2026-10-15 05:25:11.394842+00	\N
+aa9744bf-783f-4fce-8a0a-85a5d2c4dccf	e2e-72e6e0d0-cd0d-4719-abe3-8dfc412ee1e8@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.55415+00	2026-10-15 05:25:11.55415+00	\N
+0e5a176f-d533-479d-b43a-a923edbe6f69	e2e-30a9d8a4-cd7c-4cdb-84ce-e8630abf5534@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:11.926425+00	2026-10-15 05:25:11.926425+00	\N
+207ce1ff-74d5-466e-aa01-2905ac136123	counter-207ce1ff-74d5-466e-aa01-2905ac136123@test.local	x	Counter Test	user	\N	t	2026-10-15 05:25:12.430681+00	2026-10-15 05:25:12.430681+00	\N
+728d78c0-84ad-4026-a91e-76fc60619a5a	race-728d78c0@fintrack.test	dummy	Race Test User	user	\N	t	2026-10-15 05:25:27.74345+00	2026-10-15 05:25:27.74345+00	\N
+64506b2f-02d3-4602-a34f-4876ebd433a1	e2e-c44c8915-be0e-41a8-b2c3-0f8972c43bf2@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:55.09121+00	2026-10-15 05:25:55.09121+00	\N
+7b1e4a0e-a065-4865-9aa8-62b0c2eb6280	e2e-198b91d9-7d03-4d2b-9142-8cb10d35fbd8@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:55.105184+00	2026-10-15 05:25:55.132975+00	\N
+6bd8a593-fd4a-4410-99a4-4a21ac01ff44	e2e-48f2ce74-0aa4-4fe6-bfbd-2a42b182b777@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:55.225143+00	2026-10-15 05:25:55.225143+00	\N
+490f8bef-bb38-4246-8b08-1666e734309a	e2e-f4dbabab-289d-46af-a641-66e2a9e11390@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:55.430612+00	2026-10-15 05:25:55.430612+00	\N
+e170b104-2013-4280-a40f-ef4cfb101e4f	e2e-452b73dd-8b85-4f58-99fd-755309bde1b6@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:55.461686+00	2026-10-15 05:25:55.461686+00	\N
+df21ebc1-a3bb-4dc1-b66c-40e73a913e05	e2e-3b12c4c8-dc76-419b-8a17-944092866414@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:56.174921+00	2026-10-15 05:25:56.174921+00	\N
+1bf62495-8743-47ff-ba5a-386ed14a2dac	e2e-4636d673-8fff-48a8-ad68-65ac2b227e95@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:25:56.184784+00	2026-10-15 05:25:56.184784+00	\N
+5f4e53c7-29fc-4e03-9c78-64cb24e1a75f	e2e-df52b9dd-2718-4e88-996e-6c89c9a9b346@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:56.435712+00	2026-10-15 05:25:56.435712+00	\N
+a2fd5b19-03ee-4f88-ab08-64f98326e4f5	e2e-f8eee409-1380-4740-b82b-2d65ebe5a525@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:56.645819+00	2026-10-15 05:25:56.645819+00	\N
+bbdfe97c-fe21-4f7a-8424-5bd4046643ef	e2e-b4202c80-ad5f-47ee-984b-c1bbffa46f18@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:57.004319+00	2026-10-15 05:25:57.004319+00	\N
+9ac44053-9b0e-45e4-abea-e5fb07a57bcc	e2e-24313f3e-5ee5-4013-81ef-dbf523f364dc@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:57.272447+00	2026-10-15 05:25:57.272447+00	\N
+5388113e-b7ad-45b5-ac60-32b753bcd90a	e2e-5a6d442c-1d0a-44b2-9ddd-0d9b7688d7d2@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:57.57359+00	2026-10-15 05:25:57.57359+00	\N
+db03935b-30fc-40e3-bc47-b747f1baacd9	e2e-8a633ad0-b181-4ba5-b043-649dbd6a6a8e@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:25:57.782084+00	2026-10-15 05:25:57.782084+00	\N
+29e9fbc8-dd38-4d42-8871-649e2562b1ae	race-29e9fbc8@fintrack.test	dummy	Race Test User	user	\N	t	2026-10-15 05:26:27.272925+00	2026-10-15 05:26:27.272925+00	\N
+292dc7d2-1835-4490-a0e8-3e719f8ca0cd	e2e-43469d4c-3517-4f81-942f-55765c14a276@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:27:24.422031+00	2026-10-15 05:27:24.422031+00	\N
+c3330961-29af-43e9-8419-8e5e09897f14	e2e-f48a3a10-e706-4e9d-a5d5-649814579245@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:27:24.435521+00	2026-10-15 05:27:24.457634+00	\N
+ee5fbfa7-b6ef-448a-b31a-8dcfdc74937b	e2e-318b3d38-7462-4f26-b82b-ec4b03c38bb7@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:24.504316+00	2026-10-15 05:27:24.504316+00	\N
+07422900-a5fd-4ed4-949c-1b7e5b4cf226	e2e-14956c51-cb1d-4fbb-ae66-97583c09a851@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:24.635961+00	2026-10-15 05:27:24.635961+00	\N
+b0d2a641-553a-4b5a-8d09-3e4eea4f3470	e2e-1bdf701b-f7aa-43d4-b316-c43a289add75@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:27:24.64081+00	2026-10-15 05:27:24.64081+00	\N
+3ef61801-925c-45f9-8e56-6ef92e87a8cd	e2e-581c5b15-05a6-4bbc-af26-9a68146efd98@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:24.915502+00	2026-10-15 05:27:24.915502+00	\N
+5f57ff92-4280-4ee1-9bd5-780e982cfdda	e2e-bc942a70-87b0-4eb0-b944-c92b06cf6401@fintrack.test	\N	E2E User	user	\N	t	2026-10-15 05:27:24.919375+00	2026-10-15 05:27:24.919375+00	\N
+1810aa4d-64c4-4847-a02d-78b3624de906	e2e-e20bc390-2295-471a-8378-e84d230f57c6@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.029953+00	2026-10-15 05:27:25.029953+00	\N
+2cbfbbf5-0a16-4040-b51f-f106f7ebdfa1	e2e-21490890-9dfc-4154-9e00-d7f6ef632065@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.132649+00	2026-10-15 05:27:25.132649+00	\N
+5cfa2269-62fd-4e8c-aadd-c88afb4a1d78	e2e-11cab0cb-a16e-4270-a0a8-12d1b1b1cc85@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.245459+00	2026-10-15 05:27:25.245459+00	\N
+c49e44b4-406e-4dcd-94d0-edae68c6a195	e2e-501a67f3-b756-4985-884f-7ff5421228fe@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.347642+00	2026-10-15 05:27:25.347642+00	\N
+d0fb1788-223e-4ef3-b721-ff0651e36556	e2e-69b3696e-cf45-4f19-8c9d-9fd2cbd3eca1@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.445912+00	2026-10-15 05:27:25.445912+00	\N
+1f4f366e-1813-42b6-80e4-f7b01d047a17	e2e-f98401ec-cf85-4080-9ee4-efc6bd54a49f@fintrack.test	\N	E2E User	super_admin	\N	t	2026-10-15 05:27:25.578127+00	2026-10-15 05:27:25.578127+00	\N
+016a7dbb-d448-4b16-825d-f871a51ec4b3	race-016a7dbb@fintrack.test	dummy	Race Test User	user	\N	t	2026-10-15 05:27:35.692385+00	2026-10-15 05:27:35.692385+00	\N
+92ad1f5e-7df1-4add-9bd9-16d1d95150e1	refund-92ad1f5e@fintrack.test	x	Refund User	user	\N	t	2026-10-15 05:28:12.48808+00	2026-10-15 05:28:12.48808+00	\N
+\.
+
+
+--
+-- Data for Name: voice_daily_usage; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.voice_daily_usage (user_id, usage_day, used, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: voice_transcriptions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.voice_transcriptions (id, user_id, transcript, language, mode, duration_ms, tokens_used, created_at) FROM stdin;
 \.
 
 
@@ -4769,6 +6113,22 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: budgets budgets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.budgets
+    ADD CONSTRAINT budgets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: budgets budgets_user_id_category_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.budgets
+    ADD CONSTRAINT budgets_user_id_category_id_key UNIQUE (user_id, category_id);
+
+
+--
 -- Name: chat_messages chat_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -4814,6 +6174,14 @@ ALTER TABLE ONLY public.expense_subcategories
 
 ALTER TABLE ONLY public.expense_subcategories
     ADD CONSTRAINT expense_subcategories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: feature_definitions feature_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.feature_definitions
+    ADD CONSTRAINT feature_definitions_pkey PRIMARY KEY (key);
 
 
 --
@@ -4870,6 +6238,38 @@ ALTER TABLE ONLY public.invoices
 
 ALTER TABLE ONLY public.invoices
     ADD CONSTRAINT invoices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: metric_definitions metric_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.metric_definitions
+    ADD CONSTRAINT metric_definitions_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: notification_preferences notification_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.notification_preferences
+    ADD CONSTRAINT notification_preferences_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payment_accounts payment_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.payment_accounts
+    ADD CONSTRAINT payment_accounts_pkey PRIMARY KEY (id);
 
 
 --
@@ -4969,11 +6369,35 @@ ALTER TABLE ONLY public.savings_categories
 
 
 --
+-- Name: setting_definitions setting_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.setting_definitions
+    ADD CONSTRAINT setting_definitions_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.settings
     ADD CONSTRAINT settings_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: spk_metric_defaults spk_metric_defaults_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.spk_metric_defaults
+    ADD CONSTRAINT spk_metric_defaults_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: spk_metric_overrides spk_metric_overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.spk_metric_overrides
+    ADD CONSTRAINT spk_metric_overrides_pkey PRIMARY KEY (user_id);
 
 
 --
@@ -5097,6 +6521,22 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: voice_daily_usage voice_daily_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.voice_daily_usage
+    ADD CONSTRAINT voice_daily_usage_pkey PRIMARY KEY (user_id, usage_day);
+
+
+--
+-- Name: voice_transcriptions voice_transcriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.voice_transcriptions
+    ADD CONSTRAINT voice_transcriptions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: idx_ai_endpoints_status_priority; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -5136,6 +6576,13 @@ CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created
 --
 
 CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity, entity_id, created_at DESC);
+
+
+--
+-- Name: idx_budgets_user; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_budgets_user ON public.budgets USING btree (user_id);
 
 
 --
@@ -5188,6 +6635,13 @@ CREATE INDEX idx_invoices_due_at ON public.invoices USING btree (due_at);
 
 
 --
+-- Name: idx_invoices_open_due; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_invoices_open_due ON public.invoices USING btree (due_at) WHERE ((status)::text = ANY ((ARRAY['issued'::character varying, 'past_due'::character varying])::text[]));
+
+
+--
 -- Name: idx_invoices_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -5199,6 +6653,34 @@ CREATE INDEX idx_invoices_status ON public.invoices USING btree (status);
 --
 
 CREATE INDEX idx_invoices_user_id ON public.invoices USING btree (user_id);
+
+
+--
+-- Name: idx_metric_definitions_group; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_metric_definitions_group ON public.metric_definitions USING btree (group_key, sort_order);
+
+
+--
+-- Name: idx_notifications_user_created; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_notifications_user_created ON public.notifications USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_notifications_user_unread; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_notifications_user_unread ON public.notifications USING btree (user_id) WHERE (read_at IS NULL);
+
+
+--
+-- Name: idx_payment_accounts_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_payment_accounts_active ON public.payment_accounts USING btree (is_active, sort_order);
 
 
 --
@@ -5255,6 +6737,13 @@ CREATE INDEX idx_refresh_tokens_user_id ON public.refresh_tokens USING btree (us
 --
 
 CREATE INDEX idx_savings_categories_active ON public.savings_categories USING btree (is_active, sort_order);
+
+
+--
+-- Name: idx_setting_definitions_group; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_setting_definitions_group ON public.setting_definitions USING btree (group_key, sort_order);
 
 
 --
@@ -5349,6 +6838,41 @@ CREATE INDEX idx_users_role_active ON public.users USING btree (role, is_active)
 
 
 --
+-- Name: idx_voice_daily_usage_day; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_voice_daily_usage_day ON public.voice_daily_usage USING btree (usage_day);
+
+
+--
+-- Name: idx_voice_tx_created; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_voice_tx_created ON public.voice_transcriptions USING btree (created_at);
+
+
+--
+-- Name: idx_voice_tx_user_created; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_voice_tx_user_created ON public.voice_transcriptions USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: invoices_one_open_per_user; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX invoices_one_open_per_user ON public.invoices USING btree (user_id) WHERE ((status)::text = ANY ((ARRAY['issued'::character varying, 'past_due'::character varying])::text[]));
+
+
+--
+-- Name: spk_metric_defaults_one_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX spk_metric_defaults_one_active ON public.spk_metric_defaults USING btree (is_active) WHERE is_active;
+
+
+--
 -- Name: audit_logs audit_logs_no_delete; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -5398,6 +6922,13 @@ CREATE TRIGGER on_expense_subcategory_updated BEFORE UPDATE ON public.expense_su
 
 
 --
+-- Name: feature_definitions on_feature_definition_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_feature_definition_updated BEFORE UPDATE ON public.feature_definitions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
 -- Name: feature_flags on_feature_flag_updated; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -5416,6 +6947,13 @@ CREATE TRIGGER on_income_category_updated BEFORE UPDATE ON public.income_categor
 --
 
 CREATE TRIGGER on_invoice_updated BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: metric_definitions on_metric_definition_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_metric_definition_updated BEFORE UPDATE ON public.metric_definitions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 
 --
@@ -5444,6 +6982,13 @@ CREATE TRIGGER on_pricing_rule_updated BEFORE UPDATE ON public.pricing_rules FOR
 --
 
 CREATE TRIGGER on_savings_category_updated BEFORE UPDATE ON public.savings_categories FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+--
+-- Name: setting_definitions on_setting_definition_updated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER on_setting_definition_updated BEFORE UPDATE ON public.setting_definitions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 
 --
@@ -5502,6 +7047,22 @@ ALTER TABLE ONLY public.ai_routes
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT audit_logs_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: budgets budgets_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.budgets
+    ADD CONSTRAINT budgets_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.expense_categories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: budgets budgets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.budgets
+    ADD CONSTRAINT budgets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -5574,6 +7135,22 @@ ALTER TABLE ONLY public.invoices
 
 ALTER TABLE ONLY public.invoices
     ADD CONSTRAINT invoices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_preferences notification_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.notification_preferences
+    ADD CONSTRAINT notification_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -5662,6 +7239,22 @@ ALTER TABLE ONLY public.savings_categories
 
 ALTER TABLE ONLY public.settings
     ADD CONSTRAINT settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: spk_metric_defaults spk_metric_defaults_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.spk_metric_defaults
+    ADD CONSTRAINT spk_metric_defaults_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: spk_metric_overrides spk_metric_overrides_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.spk_metric_overrides
+    ADD CONSTRAINT spk_metric_overrides_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -5793,6 +7386,22 @@ ALTER TABLE ONLY public.transactions
 
 
 --
+-- Name: voice_daily_usage voice_daily_usage_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.voice_daily_usage
+    ADD CONSTRAINT voice_daily_usage_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_transcriptions voice_transcriptions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.voice_transcriptions
+    ADD CONSTRAINT voice_transcriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
 --
 
@@ -5828,6 +7437,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.audit_logs TO fintrack_app;
 
 
 --
+-- Name: TABLE budgets; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.budgets TO fintrack_app;
+
+
+--
 -- Name: TABLE chat_messages; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -5856,6 +7472,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.expense_subcategories TO fintr
 
 
 --
+-- Name: TABLE feature_definitions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.feature_definitions TO fintrack_app;
+
+
+--
 -- Name: TABLE feature_flags; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -5881,6 +7504,34 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.invoice_counters TO fintrack_a
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.invoices TO fintrack_app;
+
+
+--
+-- Name: TABLE metric_definitions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metric_definitions TO fintrack_app;
+
+
+--
+-- Name: TABLE notification_preferences; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.notification_preferences TO fintrack_app;
+
+
+--
+-- Name: TABLE notifications; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.notifications TO fintrack_app;
+
+
+--
+-- Name: TABLE payment_accounts; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.payment_accounts TO fintrack_app;
 
 
 --
@@ -5940,10 +7591,31 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.savings_categories TO fintrack
 
 
 --
+-- Name: TABLE setting_definitions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.setting_definitions TO fintrack_app;
+
+
+--
 -- Name: TABLE settings; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.settings TO fintrack_app;
+
+
+--
+-- Name: TABLE spk_metric_defaults; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.spk_metric_defaults TO fintrack_app;
+
+
+--
+-- Name: TABLE spk_metric_overrides; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.spk_metric_overrides TO fintrack_app;
 
 
 --
@@ -6003,6 +7675,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.users TO fintrack_app;
 
 
 --
+-- Name: TABLE voice_daily_usage; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.voice_daily_usage TO fintrack_app;
+
+
+--
+-- Name: TABLE voice_transcriptions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.voice_transcriptions TO fintrack_app;
+
+
+--
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
@@ -6020,5 +7706,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Mn4rTXOmnDmo9zroV5gcvLlfHo1g7eTC8cOCzkalzTSYbyMQh3BiCj9H9Wn1ioG
+\unrestrict 4ufMweI5g0ho3bSoeoGWc7e7Hbbk8AhgaL5tqzFdcngrPVVeoid14p0eXwpDdK4
 
