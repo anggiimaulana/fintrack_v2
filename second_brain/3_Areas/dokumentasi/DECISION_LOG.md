@@ -92,5 +92,55 @@ Setiap entri mencakup: keputusan, alasan, alternatif yang ditolak, dan konsekuen
 
 ---
 
+## ADR-011 — Border radius aktif (revisi arah visual dari sudut lancip)
+
+- **Tanggal:** 2026-10-15
+- **Konteks:** sistem desain awal menonaktifkan seluruh token radius (`--radius-*: 0px`) dan
+  mengandalkan sudut lancip sebagai ciri neo-brutalist. Namun 23 file memakai `rounded-md/lg/xl`
+  secara sporadis, menghasilkan UI yang tidak konsisten (sebagian lancip, sebagian tumpul).
+- **Keputusan:** aktifkan border radius di seluruh UI.
+  - Token `@theme` di `app/globals.css`: `--radius-sm: 4px`, `-md: 6px`, `-lg: 8px`, `-xl: 12px`,
+    `-2xl: 16px`, `-3xl: 24px`, `-4xl: 32px`; `--radius: 6px`.
+  - Skala pakai: `rounded-sm` (badge, chip kecil), `rounded-md` (tombol, input, select, item, kotak kecil),
+    `rounded-lg` (card, dialog, panel), `rounded-full` (avatar, dot, progress).
+  - Elemen persegi serba-guna di kode konsumen dibulatkan `rounded-md` (default) / `rounded-lg` (padding ≥ 16px).
+  - **Garis pembatas** (`border-b-2`, `border-t-2`, `divide-y`, `<hr>`) tetap **tidak** dibulatkan.
+  - Shadow keras `Npx Npx 0` (ciri brutalist) **dipertahankan**.
+- **Alternatif ditolak:** kembali ke 0px dan membersihkan 23 file bocor (user memilih radius);
+  radius hanya pada komponen terpilih.
+- **Konsekuensi:** radius kini bagian resmi sistem desain → komponen baru **wajib** pakai `rounded-*`.
+  Dokumen/referensi yang menyebut "sudut lancip" sebagai ciri desain harus dibaca dengan ADR ini.
+
+---
+
+## ADR-012 — Rasio token per plan + lapisan konfigurasi dinamis
+
+- **Tanggal:** 2026-10-15
+- **Konteks:** kuota plan diukur dalam token mentah, padahal satu percakapan AI nyata
+  memakai ~5.000–10.000 token. Kuota Free 5.000 habis dalam satu chat. Selain itu
+  sejumlah kebijakan masih di-hardcode di Go (allowlist setting, pemetaan limit→resolver,
+  katalog fitur/limit, mode pembulatan, overhead estimasi, sentinel unlimited).
+- **Keputusan:**
+  1. **Rasio token per plan** (`plans.token_quota_ratio`): token provider dibagi rasio
+     sebelum ditagih ke kuota; **biaya Rupiah tetap dari token nyata**. Rasio di-snapshot
+     per siklus (`token_periods.quota_ratio`) sehingga perubahan tidak retroaktif.
+  2. **Ledger menyimpan keduanya**: `amount` = unit kuota, `raw_tokens` = token provider.
+     Baris lama dibaca via `RawTokensOrEntry()` (tanpa UPDATE — ledger append-only).
+  3. **Tiga tabel katalog menjadi DATA**: `setting_definitions`, `metric_definitions`,
+     `feature_definitions` menggantikan konstanta kode. Menambah setting/metrik/fitur
+     tidak perlu deploy.
+  4. **Pembulatan dinamis** (`quota_rounding_mode`) + lantai tagih (`quota_min_charge_units`).
+  5. **Invalidasi event-driven** (SSE `config_changed` + `BumpVersion`), bukan TTL.
+     TTL 5 menit hanya jaring terakhir.
+  6. **Fallback konstanta permanen**: tabel katalog kosong tidak mematikan sistem.
+- **Alternatif ditolak:** naikkan kuota saja (angka membengkak, biaya tak terkendali);
+  kuota chat terpisah (tidak mengontrol model mahal); cache TTL (tidak segar, beban berulang).
+- **Seam yang diakui:** cara menghitung usage (resolver), struktur rute, dan config
+  bootstrap tetap di kode. Kode menyediakan **kemampuan**; database menyimpan **kebijakan**.
+- **Konsekuensi:** kuota Free kini bertahan ~2 chat (sebelumnya 0). Operator dapat
+  mengubah seluruh kebijakan tanpa deploy. Migrasi: `0028` (rasio) + `0029` (katalog).
+
+---
+
 > Keputusan fase-spesifik dicatat di `../../2_Projects/PXX_*/analisis/hasil-analisis-teknis.md`
 > dengan format `K-PXX-NN`.

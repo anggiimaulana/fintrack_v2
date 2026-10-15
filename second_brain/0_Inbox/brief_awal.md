@@ -29,6 +29,8 @@ fintrack_v2/
 4. Migrasi semua data: user, profil, transaksi, kategori, SPK, chat, API key terenkripsi — `ENCRYPTION_KEY` lama dipertahankan.
 5. RAG: key embedding global server + Gemini `text-embedding-004` (768d) + backfill.
 6. UI/UX: audit & perbaikan menyeluruh, neo-brutalist konsisten, Inter + JetBrains Mono.
+   > **Revisi 2026-10-15 (ADR-011):** border radius kini **aktif** (`--radius-*` ≠ 0).
+   > Ciri brutalist yang dipertahankan: border tebal 2px + hard shadow `Npx Npx 0`.
 7. Deploy: lokal dulu (docker compose), struktur siap jalur prod.
 
 ## Pointer

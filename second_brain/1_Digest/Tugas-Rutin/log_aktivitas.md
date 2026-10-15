@@ -4,6 +4,69 @@
 
 ---
 
+## 2026-10-15 — Migrasi Dijalankan + Bug Replay `ai_routes` Ditemukan & Diperbaiki
+- **Aksi**: menjalankan `database/scripts/migrate.sh` (seluruh rantai) setelah Docker Desktop pulih. Target: seed key `ai_timeout_*` ke tabel `settings`.
+- **Hasil target**: ✅ 5 key ter-seed sebagai JSON **number** (`chat` 60000, `vision` 120000, `voice` 120000, `embedding` 60000, `reasoning` 120000) + 6 key terdaftar di katalog `setting_definitions` (grup `ai_timeout`).
+- **🔴 BUG SERIUS DITEMUKAN (pre-existing, bukan dari pekerjaan ini)**: menjalankan `migrate.sh` **merusak tabel `ai_routes`** — 8 → 10 baris, model `flash-lite` hilang, prefix `gemini/` pada embedding hilang. Penyebab: migrasi committed `0011`/`0012`/`0017` **tidak idempoten** dan seluruh rantai di-replay tiap kali:
+  - `0011` menulis ulang **semua** chat route jadi `deepseek-r1`.
+  - `0012` INSERT 2 route chat dengan guard `NOT EXISTS(model='gemini-2.5-flash')` — guard tak pernah cocok karena `0017` sudah me-rename model itu → **+2 duplikat tiap run**.
+  - `0017` me-rename `deepseek-r1`→`flash`, sehingga route `flash-lite` cepat hilang.
+- **Perbaikan**: migrasi baru `0030_ai_routes_normalize.sql` (berjalan **terakhir** tiap replay) yang (1) meng-upsert 8 route kanonik berdasarkan id, dan (2) menghapus duplikat chat yang dibuat `0012`. Ditambah (3) registrasi key `ai_timeout_*` ke `setting_definitions` (dijaga `to_regclass`).
+- **Verifikasi idempotensi**: `migrate.sh` dijalankan **3×** berturut-turut → tetap `ai_routes=8`, `setting_definitions=6`, `settings=5`. State akhir **identik dengan dump kanonik** (id/model/combo/priority sama; hanya `timeout_ms` naik sesuai maksud migrasi 0024).
+- **🧹 Kesalahan saya sendiri (dicatat untuk transparansi)**: percobaan dedupe pertama saya menghapus 1 baris kanonik (`cc2835b9`) karena saya salah membaca kolom dump. Sudah dipulihkan lewat restore eksplisit ke state kanonik, lalu diverifikasi ulang dengan `diff` terhadap dump.
+- **Uji end-to-end (backend lokal di :8080, bukan container)**:
+  - `GET /me/ai-config` → `request_timeout_ms=135000`, `vision=120000` (auto = 120s + 15s margin). ✅
+  - Ubah `ai_timeout_vision_ms` → 200000 + `PUBLISH settings:changed` → `GET /me/ai-config` **langsung** jadi `vision=200000`, `request_timeout_ms=215000` **tanpa restart**. ✅
+  - Ubah `ai_timeout_voice_ms` → 999000 + publish → endpoint langsung melaporkan `voice=999000`. ✅ (rantai `settings` → Pub/Sub → invalidate resolver → `aiTuner.Apply` → gateway + middleware terbukti.)
+  - Nilai dikembalikan ke default; backend verifikasi dihentikan; port 8080 bebas.
+- **Gerbang**: `go build`/`go vet` bersih; `go test ./internal/...` hijau.
+- **Catatan operasional**: migrasi 0024 (`ai_routes.timeout_ms`) & 0027 (`settings` timeout) sudah diterapkan ke DB live. Dump `database/dump/` sudah mencerminkan state ini (diregenerasi oleh pekerjaan paralel; saya verifikasi dump == live untuk `ai_routes`, `settings`, dan `transactions`).
+
+---
+
+## 2026-10-15 — Timeout AI Dinamis dari Super Admin (Zero Downtime)
+- **Permintaan user**: semua konfigurasi timeout AI harus bisa diatur dari sisi Super Admin dan langsung diterapkan secara realtime tanpa restart (zero downtime).
+- **Desain**: mengikuti pola yang sudah ada di repo (`runtimeconfig` DB-over-env + reload callback + Pub/Sub kill-switch), bukan mekanisme baru.
+  - **Precedence**: `settings row` > env (`AI_TIMEOUT_*_MS`) > `ai_routes.timeout_ms` > default gateway.
+  - **Penerapan**: perubahan disimpan ke tabel `settings`, diterapkan di pod yang melayani request, lalu di-fan-out lewat Redis Pub/Sub (`settings:changed`) sehingga **semua pod** menerapkan dalam milidetik — tanpa restart.
+- **Backend**:
+  - `internal/timeouts` (baru): resolver budget per use case + `Client` + `HTTPDeadline()`. `HTTPDeadline` menjaga invariant berlapis `gateway < HTTP write deadline < client axios < proxy Next.js`, sehingga saat panggilan upstream timeout, handler masih bisa menulis error yang ramah.
+  - `gateway.SetUseCaseTimeouts` (atomic.Pointer) — override per use case menang atas `timeout_ms` rute; dibaca tanpa lock di hot path.
+  - `middleware.AIDeadline()` (baru) menerapkan deadline tulis dinamis; route SSE chat & `/realtime/stream` tetap `NoWriteTimeout()` (tanpa batas).
+  - `internal/aituning` (baru): satu tempat yang membaca settings lalu mendorong ke gateway + middleware; dipakai boot, reload callback, dan watcher Pub/Sub.
+  - `admin`: 6 key baru di allowlist (`ai_timeout_{chat,vision,voice,embedding,reasoning,client}_ms`), masuk snapshot, validator 0–1.800.000, `WithTimeoutsReload`, `WithSettingsBroadcaster`.
+  - `GET /me/ai-config`: budget yang harus dipakai browser (agar klien tidak menyerah lebih dulu).
+  - **Bug ditemukan & diperbaiki**: pod peer menerima hint Pub/Sub lalu membaca cache resolver yang **basi** (perubahan baru terlihat setelah TTL). Fix: `runtimeResolver.Invalidate()` dijalankan lebih dulu di watcher.
+  - Migrasi `0027_ai_timeout_settings.sql` (idempoten; nilai disimpan sebagai JSON number). `ai_timeout_client_ms` sengaja **tidak** di-seed agar tetap terhitung otomatis (use case terlama + margin). (Nomor 0027 dipakai karena 0025/0026 sudah terpakai pekerjaan paralel.)
+- **Frontend**: tab baru **Super Admin → Pengaturan → "Batas Waktu AI"** (`AITimeoutSettingsTab`) dengan validasi + dialog konfirmasi diff; `lib/api.ts` memakai budget runtime (`aiRequestTimeout.ms`) yang diisi `useAIConfig()` (dipasang di `RealtimeProvider`), fallback 180s bila endpoint tak tersedia.
+- **Verifikasi**: `go vet`/`go build` bersih; `go test ./internal/...` hijau; test baru: `timeouts` (12, termasuk rantai DB-over-env lewat `runtimeconfig.Resolver` sungguhan + ordering invariant), `gateway` precedence, `admin` allowlist/validator, `middleware` deadline. Migrasi diuji di cluster Postgres lokal: nilai tersimpan sebagai JSON number, idempoten, dan nilai operator tidak tertimpa saat re-run. `pnpm test` 250 hijau, `pnpm build` sukses, lint bersih.
+- **Catatan operasional**: `next.config.ts` `proxyTimeout` (`API_PROXY_TIMEOUT_MS`) adalah plafon **statis** (dievaluasi saat start), jadi budget klien dari UI tidak boleh melebihi nilai itu; ini ditulis di hint UI.
+
+---
+
+## 2026-10-15 — Scan Struk: Timeout 30s & Ekstraksi AI Lebih Pintar
+- **Laporan user**: analisis struk di `/user/transactions` sering timeout (>30s); ingin AI langsung mengisi tipe/kategori/nominal/deskripsi/tanggal/waktu seperti tabel & popup Detail Transaksi; minta timeout diperpanjang.
+- **Akar masalah (rantai 4 lapis, semuanya 30s kecuali satu 15s)**:
+  1. **Next rewrite proxy** (`experimental.proxyTimeout`) default **30000ms** → pemutus yang paling sering kena.
+  2. **axios** `timeout: 30000` di 3 komponen scan.
+  3. **Go `http.Server.WriteTimeout: 15s`** (whole-request budget) → memutus balasan lambat.
+  4. **Gateway** `DefaultTimeout 30s` + `ai_routes.timeout_ms 30000` (kecuali reasoning 120s).
+- **Perbaikan backend**:
+  - `middleware.NoWriteTimeout()` (baru) memakai `http.NewResponseController(...).SetWriteDeadline(time.Time{})`; dipasang di grup `/ai` (chat/vision/voice) & `/realtime/stream` sehingga deadline per-request dibersihkan, sementara timeout per-route gateway tetap membatasi panggilan upstream.
+  - `cmd/server/main.go`: `ReadTimeout/WriteTimeout/IdleTimeout` kini env-configurable (`HTTP_READ_TIMEOUT=60`, `HTTP_WRITE_TIMEOUT=120`, `HTTP_IDLE_TIMEOUT=60`).
+  - `gateway.Config.DefaultTimeout` default 30s → **90s** + env `AI_GATEWAY_TIMEOUT`.
+  - `bootstrap`: seed `timeout_ms` per use-case (chat 60s, vision/voice/reasoning 120s) via `AI_GATEWAY_TIMEOUT_*_MS`.
+  - Migrasi baru `0024_ai_route_timeouts.sql` (naikkan timeout chat≥60s, vision/voice≥120s; idempoten). Dump final di-regenerate dari restore dump lama + migrasi ini saja (paritas: 29 tabel, 595 transaksi, 8 route) agar tidak menarik data test lokal.
+- **AI lebih pintar** (`ai_gateway_vision_voice.go`):
+  - Prompt dinamis: daftar kategori **asli dari DB** (expense/income/savings) + tanggal & hari ini → model memilih nama yang benar-benar ada (berhenti menebak "Makanan" vs "Makanan & Minuman") dan bisa menafsirkan tanggal relatif.
+  - Field baru: `description` (nama/judul), `time`, `success` dihormati (bukan dipaksa true) untuk kasus "bukan struk".
+  - `normalizeReceiptResult`/`snapCategory`: menempelkan kategori balikan model ke nama DB (exact → substring → bucket "lain"), mengisi `description` dari merchant bila kosong. Nil-safe bila repo kategori tidak terpasang.
+- **Frontend**: `next.config.ts` `experimental.proxyTimeout=180000` (`API_PROXY_TIMEOUT_MS`); konstanta `AI_REQUEST_TIMEOUT_MS=180000` di `lib/api.ts`; helper bersama `lib/receipt.ts` (matcher kategori + builder payload `source:"receipt"` + deskripsi) dipakai `ReceiptScanner`, `ReceiptUpload`, `InlineAiAssistant`, `ChatWindow` (kini mendukung `savings` & mengirim `description`); popup sukses scan menampilkan Deskripsi/Nama + Waktu.
+- **Verifikasi**: `go vet`/`go build`/`go test ./...` bersih (kecuali `TestP08_003_GatewaySustainedLoad` — perf test flaky p95<60ms yang juga gagal di baseline tanpa perubahan); `pnpm test` 204 unit + 82 dom hijau (13 test baru `lib/receipt.test.ts`, 8 test baru `receipt_extract_test.go`); `pnpm build` sukses; migrasi 0024 idempoten & terverifikasi di DB live.
+- **Belum dikerjakan**: timeout per-route di UI Super Admin sudah ada (kolom `timeout_ms`) — nilai seed baru hanya berlaku untuk install baru; jalankan migrasi 0024 untuk yang sudah ada.
+
+---
+
 ## 2026-10-14 — Audit Kontrak & Response API: Koreksi Status Code (404/409/500/429)
 
 Audit menyeluruh seluruh endpoint `/api/v1` terhadap pemetaan status code
@@ -1367,3 +1430,204 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - `go test ./internal/...`: 27 packages ok.
   - `pnpm test`: 234 passed (31 test files).
   - `pnpm build`: Berhasil tanpa error (`32/32` pages).
+
+## 2026-10-15 — Migrasi Sudut Lancip → Border Radius (Revisi Design System)
+- **Konteks**: User melaporkan semua border (tabel, card, input, dll) lancip. Investigasi menemukan itu memang keputusan neo-brutalist yang dikunci (`--radius-*: 0px` di `app/globals.css`), TAPI 23 file memakai `rounded-md/lg/xl` sporadis → UI tidak konsisten.
+- **Keputusan**: User memilih mengaktifkan border radius di seluruh UI (dicatat sebagai **ADR-011**).
+- **Perubahan**:
+  - `app/globals.css`: token `--radius-sm..4xl` = 4/6/8/12/16/24/32px, `--radius` = 6px; class `.neo-*` ikut dibulatkan.
+  - `components/ui/*`: tambah radius ke button, input, badge, card, dialog, select, accordion, tabs, skeleton, table, sheet (dropdown/sidebar/tooltip sudah punya).
+  - 93 file konsumen: **403 sisipan** `rounded-*` (342 `md`, 58 `lg`, 4 `sm`) hanya pada border kotak; border pembatas (`border-b-2`/`border-t-2`/`divide-*`) sengaja dilewati.
+  - Bersih-bersih: 4 `rounded-none` dihapus, `rounded` telanjang → `rounded-md`, sisipan `rounded-none` redundan dihapus.
+- **Verifikasi**: `pnpm test` → 271 passed (36 files); `pnpm build` → Compiled successfully. `pnpm lint` & `tsc` tetap sama dengan baseline (error pre-existing di file `*.test.tsx` & `useCallback` deps, bukan regresi).
+- **Catatan**: shadow keras `Npx Npx 0` (ciri brutalist) dipertahankan.
+
+## 2026-10-15 — Navigasi Bawah Mobile + Perbaikan Responsif AI Chat
+- **Konteks**: User melaporkan (1) halaman `/user/ai` jelek saat responsif (header chat meluber, teks terpotong), (2) daftar sesi chat langsung terbuka penuh di mobile sehingga tampak "double sidebar" bersama Sheet navigasi global, (3) ingin pola app mobile: semua navigasi di bawah, bukan hamburger/sidebar.
+- **Keputusan** (dikonfirmasi user): FAB AI Chat di kanan bawah (FAB klasik), hamburger/Sheet global **dihapus total** di mobile, daftar sesi chat tetap overlay penuh tapi **default tertutup**.
+- **Perubahan**:
+  - `components/layout/MobileBottomNav.tsx` (baru): bar tetap 5 item (`md:hidden`) + FAB AI Chat melayang; `pb-[env(safe-area-inset-bottom)]`, target sentuh `h-16`, `aria-current` per item, FAB disembunyikan saat sudah di route chat.
+  - `lib/nav.ts`: `MOBILE_FAB_HREF` + `MOBILE_BOTTOM_NAV_ITEMS` (6 item dipecah 5 bar + 1 FAB).
+  - `app/layout.tsx`: `export const viewport` dengan `viewportFit: "cover"` agar bar mengisi area home-indicator.
+  - `app/(dashboard)/user/layout.tsx`: render `<MobileBottomNav />`; `main` diberi `pb-[calc(5rem+env(safe-area-inset-bottom))]`.
+  - `components/layout/Header.tsx`: hapus `Sheet`/hamburger mobile + import mati; navigasi mobile kini sepenuhnya dari bottom bar.
+  - `components/ai/ChatWindow.tsx`: `min-w-0` pada panel kanan & container scroll (fix overflow horizontal), header kompak (judul & label mode jadi ikon-saja di `<sm`), empty state `w-full`+`text-pretty`; state sidebar dipisah `desktopSidebarOpen`/`mobileSidebarOpen` (mobile default tertutup, tanpa flash overlay); rail sesi desktop di-gate CSS (`hidden md:flex`) agar tidak flash di mobile saat SSR.
+- **Verifikasi**: `pnpm test` → 302 passed (39 files; 1 kegagalan awal di `lib/chat-sanitize.test.ts` **untracked** yang flaky antar-urutan, hijau saat dijalankan ulang & lulus saat isolasi); `pnpm build` → Compiled successfully; `tsc`/`eslint` tetap baseline. Cek browser 360/390/414/442px: tanpa scroll horizontal, bar 66px, FAB aktif, overlay sesi opt-in. Desktop 1568px tidak berubah (sidebar 240px, kartu chat 1280px, bar `display:none`).
+
+## 2026-10-15 — AI Chat: Kuota Token, Kebocoran Payload, Sesi Ganda, & Layout
+- **Laporan user**: chat sekali di akun Free langsung habis 5k token & tidak bisa lanjut; 1 chat jadi 2 sesi; response menampilkan JSON/toolcalls mentah; pesan `limit_exceeded` bocor; sidebar chat terpotong.
+- **Temuan & perbaikan** (dokumen: `second_brain/0_Inbox/ide/2026-10-15_AI-Chat-Kuota-Render-Sesi/00-audit-ai-chat.md`):
+  - **AI-TOK-01 (kritis)** — Reserve token **flat 2000** (`billing/estimate.go`) padahal 1 chat nyata ±5.000–10.000 token (system prompt + tools + RAG + riwayat 20 pesan); commit meng-clamp ke sisa kuota → 1 chat menguras seluruh kuota Free 5.000. **Fix**: estimasi proporsional `EstimateStore.ForChat(ctx, modality, promptChars)` (overhead 3.000 + prompt/4 + headroom 800, `ai_estimate_chat` tetap jadi lantai) + test.
+  - **AI-TOK-02** — Commit ter-clamp senyap. **Fix (UI)**: badge sisa token + banner "kuota habis" di ChatWindow (dari `GET /me/entitlements`).
+  - **AI-LEAK-01** — Model meng-echo payload internal (`{"chart":…}`, ```json) → tampil mentah. **Fix**: modul baru `frontend/lib/chat-sanitize.ts` + 8 unit test; dipakai di ChatMessage (assistant saja).
+  - **AI-ERR-01** — `limit_exceeded` (402) tidak ditangani UI → bubble "…limit_exceeded". **Fix**: semua kode gate ke `notifyEntitlementError`; pesan kini spesifik per limit + angka pemakaian; `InlineAiAssistant` yang `catch {}` diberi toast.
+  - **AI-SES-01** — Dua jalur pembuatan sesi (handleSend + efek `?q=` dgn `setTimeout 300ms`) tanpa guard → 2 sesi. **Fix**: `ensureSession()` dengan in-flight guard + hapus `setTimeout` + early-return `handleNewSession`.
+  - **AI-UI-01** — Sidebar terpotong & scroll horizontal (`min-width:auto` + `truncate`). **Fix**: `min-w-0` + `overflow-x-hidden` + rail `w-60→w-64`.
+- **Verifikasi**: `go vet`/`go build` bersih; `go test ./internal/billing/... ./internal/delivery/... ./internal/usecase/...` ok; `pnpm test` **289 passed (38 files)** naik dari 271; `pnpm lint` sama dengan baseline (tanpa regresi); `pnpm build` sukses.
+- **Rekomendasi belum dikerjakan**: naikkan kuota Free / kuota chat terpisah; event `quota_clamped`; idempotency key `POST /ai/sessions`; satukan kode "token habis" (402 vs 429).
+
+## 2026-10-15 — Dokumen Desain: Dinamisasi Kuota, Matriks Fitur, & Rasio Token per Plan
+- **Permintaan user**: (1) kuota + matriks fitur per plan dinamis penuh dari Super Admin tanpa hardcode; (2) kalkulasi biaya/pemakaian token di Super Admin, dengan ide **rasio konversi** (mis. "per 5k token = 1k pemakaian plan") agar kuota tidak terkesan boros.
+- **Keputusan user**: mekanisme = rasio token (biaya tetap dari token nyata); cakupan = per-plan; tampilan user = unit kuota saja; pengerjaan = **dokumen desain dulu**.
+- **Hasil**: folder baru `second_brain/0_Inbox/ide/2026-10-15_Dinamisasi-Kuota-Rasio-Token/` berisi 10 file:
+  `README.md`, `00-ringkasan-eksekutif.md`, `01-desain-teknis.md`, `02-skema-database-dan-migrasi.md`, `03-spesifikasi-api.md`, `04-desain-ui.md`, `05-model-biaya-dan-margin.md`, `06-rencana-implementasi.md`, `07-rencana-testing.md`, `08-risiko-dan-rollback.md`.
+- **Temuan audit penting**:
+  - Sudah ada fondasi dinamis: tabel `plan_limits`, `plan_entitlements`, `pricing_rules`, katalog entitlement, editor plan. Yang kurang: **rasio token** + editor berbasis dropdown katalog.
+  - `token_ledger` punya trigger **append-only** (`token_ledger_no_update`) → backfill `raw_tokens` harus tanpa UPDATE (Pilihan B: helper `RawTokensOrAmount()`).
+  - `pricing_rules.provider_cost_per_1k_idr` = **0** di rule `default` → margin belum terukur (kalkulator akan menampilkan 100%, menyesatkan).
+  - `database/dump/fintrack_v2.sql` **belum memuat** kolom migrasi 0018 (`provider_cost_per_1k_idr`, `price_unit`) → wajib regenerate.
+  - Dengan asumsi biaya provider Rp 150/1k token, plan **Pro & Business berpotensi rugi** bila user memakai 100% kuota → perlu evaluasi harga/kuota.
+- **Angka kunci** (terverifikasi dengan rumus `PricingEngine` nyata): chat 9.945 token → jual Rp 3.729, provider Rp 1.491, margin Rp 2.238 (60%). Rasio 5 → 1.989 unit/chat → kuota Free 5.000 memberi ~2 chat (sebelumnya 0).
+- **Status**: 📋 Proposal. Belum ada kode/skema yang diubah. Menunggu persetujuan 11 keputusan (P-1…P-11) sebelum implementasi.
+
+## 2026-10-15 — Revisi Dokumen: Semua Kebijakan Jadi Dinamis (Tanpa Hardcode)
+- **Permintaan user (revisi)**: *"saya ingin semuanya itu dinamis tanpa ada yang hardcode atau ditulis pada kode. semua keputusan, logic, flow, dan kalkulasi itu dari super admin dan dinamis. metrix juga harus dinamis."*
+- **Jawaban keputusan user**: P-1 ceil; P-2 dinamis per plan; P-3 "kuota"; P-4 tetap dibagi; P-5 default 1; P-6 Pilihan B; P-7 NOT VALID >10jt; P-8 serahkan operator; P-9 default 10k dinamis; P-10 dinamis; P-11 default dinamis.
+- **Audit hardcode baru** (temuan penting):
+  - `admin/settings.go` → `writableSettings` (allowlist + validator) = **hardcode**.
+  - `middleware/usage_resolvers.go` → `UsageFor()` switch limit_key→resolver = **hardcode**.
+  - `entitlement/catalog.go` → `FeatureCatalog`/`LimitCatalog` = **hardcode**.
+  - `billing/ledger.go` → mode pembulatan tetap; `billing/estimate.go` → overhead/chars konstan; `cmd/server/main.go` → sentinel `1e9`.
+- **Solusi desain (dokumen baru `09-lapisan-konfigurasi-dinamis.md`)**: 3 tabel katalog jadi **data**, bukan kode:
+  - `setting_definitions` (kind/min/max/enum/default/label/group) → ganti `writableSettings`.
+  - `metric_definitions` (label/unit/resolver_key/enforced/ratio_adjusted) → ganti `LimitCatalog` + switch `UsageFor`.
+  - `feature_definitions` → ganti `FeatureCatalog`.
+  - Setting baru: `quota_rounding_mode`, `quota_default_ratio`, `quota_default_tokens_per_cycle`, `quota_unit_label`, `quota_unlimited_sentinel`, `quota_min_charge_units`, `ai_estimate_overhead_tokens`, `ai_estimate_output_headroom`, `ai_estimate_chars_per_token`, `pricing_default_provider_cost_per_1k_idr`.
+  - **Seam diakui**: resolver usage (kemampuan), struktur rute, config bootstrap tetap di kode; kebijakan di DB.
+  - **Fallback konstanta permanen** (P-12) → tabel kosong tidak mematikan sistem.
+- **Dokumen diperbarui**: README (index + keputusan P-1..P-16 + tabel "sudah ada vs hardcode"), 00 (jawaban keputusan + prinsip no-hardcode), 01 (`ceilDiv`→`RoundUnits` dinamis + §12 lapisan konfigurasi), 02 (migrasi 0026 tabel katalog, seed rasio ditiadakan, backfill dihapus sesuai P-6), 03 (endpoint katalog + resolvers), 04 (editor settings/metrik/fitur + alur operator tanpa deploy), 05 (default biaya provider dinamis), 06 (fase F4 baru + renumber + DoD), 07 (test konfigurasi dinamis §8b), 08 (risiko R-11..R-16 + fail-safe + safety nets).
+- **Verifikasi dokumen**: 11 file, semua code fence seimbang, tidak ada link internal rusak.
+- **Status**: 📋 Proposal revisi. Belum ada kode/skema diubah. Estimasi naik 6–10 → **8–13 hari kerja**.
+
+## 2026-10-15 — Revisi Dokumen: Invalidasi Cache Event-Driven (SSE) Gantikan TTL
+- **Keputusan user**: P-12 fallback; **P-13 pakai SSE (bukan TTL)** — "biar lebih terjamin, murah, dan tidak memberatkan server/resources"; P-14 seam diakui; P-15 ada (default 1); P-16 soft delete.
+- **Temuan penting**: infrastruktur SSE + Redis pub/sub + cache ber-versi **sudah lengkap** (dibangun untuk P07):
+  - `realtime/hub.go` (SSE hub, heartbeat, resume `Last-Event-ID`, batas koneksi per user)
+  - `realtime/publisher.go` (fan-out Redis lintas-instance + fallback hub lokal)
+  - `realtime/buffer.go` (replay event terlewat)
+  - `infrastructure/redis/cache.go` (`BumpVersion(scope)` = invalidasi O(1) lintas-instance)
+  - `frontend/lib/realtime-dispatcher.ts` (event → invalidasi query TanStack, sudah pola `plan_updated`)
+- **Desain P-13** (bagian baru `09 §12`): **cache ber-versi + invalidasi event-driven**, bukan TTL.
+  - Alur: simpan → `BumpVersion("cfg")` + publish `config_changed` → Redis fan-out → semua instance drop cache lokal + klien muat ulang segera.
+  - Event baru `config_changed` dengan payload `{scope, keys}` (scope: settings|metrics|features|plans|pricing).
+  - Endpoint baru `POST /admin/config/reload` untuk perubahan di luar API.
+  - **Jaring berlapis** (bukan hanya SSE): versi cache (tanpa pub/sub tetap terbaca) + buffer replay + **TTL 5 menit** sebagai jaring terakhir (bukan mekanisme utama).
+  - Alasan lebih baik dari TTL: kesegaran ≈ milidetik, beban DB 1× saat berubah (bukan berulang tiap TTL), konsisten lintas-instance, tidak bergantung traffic.
+- **Dokumen diperbarui**: 09 (§12 baru + §13/14/15/16 renumber + cache ber-versi), 00 (P-13), 01 (referensi cache), 03 (§5.0.3b event + §5.0.3c reload), 04 (U-8 + catatan kesegaran), 06 (tugas 4.3/4.4b), 07 (§8b.5 test invalidasi realtime + fail-safe SSE), 08 (R-17 + S-17/S-18 + P-13), README.
+- **Verifikasi dokumen**: 11 file, code fence seimbang, tidak ada link rusak, tidak ada heading duplikat.
+- **Status**: 📋 Proposal. Belum ada kode diubah.
+
+## 2026-10-15 — Implementasi: Rasio Token per Plan + Konfigurasi Dinamis (ADR-012)
+- **Keputusan user**: P-12 fallback permanen; **P-13 invalidasi event-driven (SSE + Redis)**; P-14 seam diakui; P-15 lantai tagih; P-16 soft delete.
+- **Migrasi** (dijalankan + diuji idempoten pada DB):
+  - `0028_plan_token_quota_ratio.sql`: `plans.token_quota_ratio`, `token_periods.quota_ratio`, `token_ledger.raw_tokens` (+ CHECK). Tanpa backfill (append-only, P-6).
+  - `0029_config_catalog.sql`: 3 tabel katalog + seed (60 setting, 6 metrik, 8 fitur, 4 secret).
+  - **Bentrok nomor ditemukan**: fitur voice (uncommitted) sudah memakai `0025`; migrasi saya di-renumber `0025→0028`, `0026→0029`.
+- **Backend**:
+  - `billing/rounding.go`: `RoundUnits` (ceil/floor/round dinamis) + `ApplyMinCharge` + 8 unit test.
+  - `billing/ledger.go`: `Reserve`/`Commit`/`Refund` menerima **RAW**, konversi ke unit via rasio snapshot; `cost_idr` dari raw; `raw_tokens` tercatat. `QuotaResolver` mengembalikan rasio.
+  - `billing/quotaconfig.go`: `SettingsQuotaConfig` (mode pembulatan, lantai, sentinel dari setting).
+  - `configcatalog/catalog.go`: **BARU** — cache ber-versi (invalidasi event-driven) untuk setting/metrik/fitur + `ResolverKeyFor`.
+  - `middleware/usage_resolvers.go`: `UsageFor` data-driven (`resolverRegistry` + `metric_definitions`), fallback konstanta.
+  - `admin/config_catalog.go`: **BARU** — endpoint katalog, `/admin/resolvers`, `/admin/config/reload`, `POST /admin/plans/estimate` (kalkulator).
+  - `contracts/events.go` + `realtime/publisher.go`: event `config_changed`.
+  - `entitlement`: `Resolved.QuotaRatio` + `UsageEntry.Unit` dari katalog.
+  - Test: 7 test invarian ledger (fake repo, tanpa DB) + 4 test handler + 8 test rounding — **semua PASS**.
+- **Frontend**:
+  - `hooks/useConfigCatalog.ts` + `hooks/useQuotaEstimate.ts`: **BARU**.
+  - Halaman `/super-admin/kuota` (kalkulator) + `/super-admin/metrics` (katalog metrik).
+  - `QuotaSettingsTab` render setting grup "kuota" **dari katalog DB** (bukan hardcoded).
+  - `PlanFormDialog`: input rasio + payload; `PlanFormDialog` dropdown katalog.
+  - Dispatcher SSE `config_changed` + cache-keys baru; label user "Token AI" → "Kuota AI"; catatan satuan.
+  - `lib/api-error.ts`: **BARU** (narrowing, tanpa inline cast).
+- **Verifikasi**:
+  - Backend: `go vet ./...` bersih; `go build ./...` bersih; `go test ./internal/...` **semua ok**.
+  - Frontend: `pnpm test` **338 passed (43 files)** (naik dari 289); `npx tsc --noEmit` bersih untuk file baru.
+  - `pnpm lint`: 10 error, **semuanya di file fitur voice yang belum di-commit sebelum sesi ini** (bukan pekerjaan ini) — dibuktikan file tidak memuat kata kunci fitur ini.
+- **Tidak dapat diverifikasi**: test integrasi DB (`TEST_DATABASE_URL`) — Docker Desktop mati (`Docker Desktop is unable to start`), port 5435/6379 tertutup. Test unit ledger menggantikan pembuktian konversi.
+
+## 2026-10-15 (lanjutan) — Verifikasi End-to-End dengan DB Hidup
+- **Docker Desktop berhasil dinyalakan** → verifikasi lengkap dapat dijalankan (sebelumnya diblokir).
+- **Koreksi konfigurasi test**: Redis FinTrack ada di port **6380** (6379 milik project lain/dagangbot) → NOAUTH. Test e2e memakai DB **`fintrack_test`** (bukan `fintrack`).
+- **Bug nyata ditemukan & diperbaiki** (bukti nyata, bukan klaim):
+  1. `EstimateStore.settingInt` memperlakukan nilai `0` sebagai "unset" → overhead estimasi 0 diabaikan, reserve selalu 3800. Ditemukan test e2e `TestP08_001_TokenQuotaConcurrency` (0 sukses dari 20). Diperbaiki: baca nilai mentah via `GetString` agar membedakan "absen" dari "0". Setelah fix: **5 sukses / 15 ditolak** (sesuai harapan).
+  2. Migrasi `0028`/`0029` belum dijalankan di DB `fintrack_test` → 3 test e2e gagal (404 "paket tidak ditemukan"). Setelah migrasi dijalankan di sana: **semua e2e PASS**.
+  3. Fixture test (`oneTokenSettings`, `oneTokenEstimateSettings`) disesuaikan untuk overhead dinamis.
+- **Hasil verifikasi final**:
+  - `go vet ./...` bersih; `go build ./...` bersih; `go test ./internal/...` semua ok.
+  - `go test ./internal/repository/postgres/ -run TestLedger` → **11/11 PASS** (concurrency + regresi).
+  - `go test ./tests/` (e2e) → **PASS**.
+  - `pnpm test` → **338 passed (43 files)**; `pnpm build` → **36/36 halaman** (termasuk halaman baru).
+  - `pg_dump` → dump di-regenerate (kini memuat kolom migrasi 0018 yang tadinya hilang + 33 referensi fitur baru). Tidak ada secret bocor.
+- **Sisa kegagalan (di luar pekerjaan ini)**: `TestVoiceRepo_*` gagal karena tabel `voice_daily_usage` belum ada — bagian fitur voice yang belum selesai (uncommitted). `pnpm lint` 10 error juga semuanya di file voice tersebut.
+- **Renumber migrasi**: `0025→0028`, `0026→0029` (hindari bentrok dengan `0025_voice_transcriptions`).
+
+## 2026-10-15 (Audit Paska-Implementasi) — Perbaikan Temuan Backend & Desain
+- **Desain UI**: Pertanyaan pengguna mengenai border radius ditinjau. Konsep desain resmi adalah **neo-brutalist** (`--radius: 0px`, border 2px, hard offset shadow `4px 4px 0 0`) yang disepakati sejak brief awal.
+- **Perbaikan Bug Kritis Hasil Reviewer (`agent://BackendAudit`)**:
+  1. **Double Conversion AI Reserve Fallback**: `ai_handler.go` (`Chat`, `settleVision`, `settleVoice`) saat provider tidak melaporkan usage sebelumnya memakai `reservation.Amount` (units), yang ketika dikirim ke `Commit()` dibagi rasio untuk kedua kalinya. Ditambahkan field `RawTokens` ke struct `Reservation`; fallback kini memakai `RawTokens` mentah.
+  2. **Cross-Period Quota Leak/Corruption**: `Commit` & `Release` di `ledger.go` sebelumnya mencari periode aktif saat ini via `s.now()`. Jika periode berganti di antara reserve dan commit, `reserved_tokens` periode baru menjadi negatif dan periode lama bocor. Diperbaiki: `GetPeriodByIDForUpdate(reserve.PeriodID)` dan `AdjustPeriod` diberi pengaman `GREATEST(0, ...)`.
+  3. **Pengaturan Quota Tak Bisa Disimpan**: `admin/settings.go` menolak update setting kuota/estimasi dengan error `setting_not_writable`. Diperbaiki: `writableSettings` dilengkapi key kuota + resolusi dinamis via `catalog.SettingDefinition`.
+  4. **Invalidasi & Event Plan**: `UpdatePlan` dan `DeactivatePlan` di `admin/plans.go` kini memanggil `publishConfigChanged` dan `invalidatePlan`.
+  5. **Invalidasi Subscription Scope Entitlement**: `admin/subscriptions.go` sebelumnya hanya mem-bump scope `"u:"` bukan `"ent:"`. Diperbaiki dengan memanggil `h.svc.entInvalidator.InvalidateUser(ctx, userID)`.
+  6. **Fallback Resolver Catalog**: `usage_resolvers.go` `UsageFor` tidak lagi menimpa deaktivasi metrik dari katalog dengan default hardcoded.
+  7. **Missing Metric Seed**: `voice_requests_per_day` ditambahkan ke `0029_config_catalog.sql` dan dieksekusi di database `fintrack` & `fintrack_test`.
+  8. **Error Handling Commit/Release**: Penanganan error `Commit` dan `Release` di `ai_handler.go` kini dicatat via logger (bukan `_ =`).
+  9. **Timeseries Token Reporting**: `usage_repo.go` `KindAIToken` menggunakan `GREATEST(raw_tokens, ABS(amount))` agar konsisten dengan `admin/metrics.go`.
+- **Verifikasi**:
+  - `go build ./...` & `go vet ./...` lolos 100%.
+  - `go test -count=1 ./internal/billing/... ./internal/admin/... ./internal/delivery/http/handler/... ./internal/delivery/http/middleware/...` semua PASS.
+  - Frontend: `pnpm test` **347 passed (44 files)**, `pnpm build` sukses seluruh halaman prerender & dynamic.
+
+## 2026-10-15 (Audit Voice & Vision) — Analisis Kalkulasi, Logika, & Desain Dinamis Super Admin
+- **Audit Logika Voice & Vision**:
+  - Voice: Logika kuota harian (`voice_requests_per_day`) via atomic conditional increment `ConsumeDailyUsage` pada tabel terpisah `voice_daily_usage` sudah aman dari race condition dan bypass penghapusan riwayat.
+  - Vision: Logika pengkategorian baru (`loadReceiptCategories`, `receiptPrompt`, `normalizeReceiptResult`, `snapCategory`) sudah akurat mencocokkan kategori DB live (exact match -> substring -> fallback) dan menangani refusal model.
+  - Temuan kalkulasi token: Reservasi kuota untuk Voice dan Vision saat ini masih flat/konstan (`def.Voice = 2000`, `def.Vision = 5000`), tidak adaptif terhadap panjang audio maupun ukuran file gambar struk.
+- **Solusi Kalkulasi Dinamis (ADR & Desain)**:
+  - Voice: `ForVoice(audioBytes)` mengestimasi durasi audio dari byte (`bytes_per_sec`), dikalikan `tokens_per_sec` + overhead + output headroom. Audio 2 detik tidak lagi memotong 2000 token.
+  - Vision: `ForVision(imageBytes, promptChars)` mengestimasi token dari panjang prompt kategori + base image tokens (scaled jika > 500KB) + output headroom.
+  - Konfigurasi Super Admin: 8 kunci konfigurasi baru dirancang untuk `setting_definitions`, tabel `settings`, serta integrasi simulasi pada panel `/super-admin/kuota`.
+- **Dokumen Temuan Lengkap**: Dicatat di `second_brain/0_Inbox/ide/2026-10-15_Voice-Input-Smart-Routing/08-audit-kalkulasi-voice-vision-dinamis.md`.
+
+## 2026-10-15 (Implementasi Voice & Vision Dinamis) — Estimasi Token Adaptif & Kontrol Super Admin
+- **Migrasi 0031 (`0031_voice_vision_dynamic_estimation.sql`)**:
+  - Mendaftarkan 8 setting ke `setting_definitions` dan `settings` (`ai_estimate_voice_bytes_per_sec`, `ai_estimate_voice_tokens_per_sec`, `ai_estimate_voice_overhead`, `ai_estimate_voice_output_headroom`, `ai_estimate_vision_image_tokens`, `ai_estimate_vision_output_headroom`, `ai_estimate_vision_large_file_bytes`, `ai_estimate_vision_large_file_extra`).
+  - Diterapkan ke DB `fintrack` dan `fintrack_test`.
+- **Backend (`billing/estimate.go`, `ai_handler.go`, `metering/estimator.go`)**:
+  - `EstimateStore`: `ForVoice(audioBytes)` dan `ForVision(imageBytes, promptChars)` menghitung token dinamis berdasarkan muatan dan parameter DB (bukan nilai konstan).
+  - `AIHandler`: `visionEstimate` dan `voiceEstimate` menghubungkan payload riil (`header.Size` dan byte audio hasil dekode) ke `Reserve`.
+  - `metering`: `EstimateAudioFromBytes` menghitung fallback lokal adaptif; `applyMeteringSettings` dihubungkan ke `runtimeInvalidator` sehingga perubahan setting di Super Admin langsung hot-reload tanpa restart server.
+  - `admin/config_catalog.go`: `PlanEstimate` menghitung simulasi Voice dan Vision serta mengembalikan biaya dan unit per panggilan.
+- **Frontend (`useQuotaEstimate.ts`, `kuota/page.tsx`, `QuotaSettingsTab.tsx`)**:
+  - `QuotaSettingsTab`: grup `ai_estimate` dirender otomatis berdampingan dengan `kuota`.
+  - `QuotaCalculatorPage`: kalkulator menampilkan simulasi Voice (input slider durasi detik) dan Vision (scan struk).
+- **Database Dump**:
+  - `database/scripts/dump.sh` dijalankan ulang; dump ter-update memuat migrasi 0031.
+- **Verifikasi**:
+  - Unit tests `billing` (8/8 PASS termasuk `TestForVoice_*` dan `TestForVision_*`).
+  - Backend `go build ./...` & `go vet ./...` exit 0; handler/admin/usecase tests PASS.
+  - Frontend: `pnpm test` 347 passed (44 files), `pnpm build` sukses seluruh 36 routes.
+
+## 2026-10-15 (Audit Bug Lanjutan & Perbaikan) — 6 Bug Nyata Ditemukan & Diperbaiki
+- **Metode**: audit reviewer (`agent://DeepCodeAudit`) + audit manual, dengan pembuktian reproduksi (bukan klaim).
+- **Bug #1 — PANIC nil-map (`usecase/ai_gateway_vision_voice.go`)**:
+  - `json.Unmarshal("null", &map)` mengembalikan map **nil TANPA error**; penulisan `result["type"]=...` berikutnya memicu **panic: assignment to entry in nil map** → worker chat/vision crash.
+  - Dibuktikan dengan repro `go run`. Diperbaiki: guard `if result == nil` → fallback shape aman. Regression test `TestParseReceiptResponse_JSONNullDoesNotPanic`.
+- **Bug #2 — SetConfig menjatuhkan `AudioBytesPerSecond` (`aigateway/metering/estimator.go`)**:
+  - `New`/`SetConfig` tidak menyalin field `AudioBytesPerSecond`, sehingga perubahan Super Admin atas `ai_estimate_voice_bytes_per_sec` **tidak pernah diterapkan** (selalu 4000). Regression test `TestSetConfig_AppliesAudioBytesPerSecond`.
+- **Bug #3 — Gate hot-reload tidak mengenali key baru (`admin/settings.go`)**:
+  - `hasMeteringKey` hanya memuat key `metering_*`; perubahan `ai_estimate_voice_*`/`ai_estimate_vision_*` **tidak memicu** `meteringReload`. Diperbaiki dengan menambahkan key terkait.
+- **Bug #4 — Fitur dinamis inert karena floor flat (`billing/estimate.go` + migrasi 0031)**:
+  - `ForVoice`/`ForVision` awalnya mengabaikan `ai_estimate_voice`/`ai_estimate_vision` sebagai floor (beda dari `ForChat`), sehingga kontrak "operator bisa menaikkan lantai" hilang.
+  - Sebaliknya, seed lama (voice=2000, vision=5000) + `DefaultQuotaEstimate` (2000/5000) akan **mendominasi** kalkulasi dinamis → fitur praktis mati. Diperbaiki: floor dihormati + default diturunkan (Voice 200→, Vision 500→) di kode & migrasi 0031.
+- **Bug #5 — Alokasi ganda base64 (`handler/ai_handler.go`)**:
+  - `ProcessVoice` men-decode base64 hanya untuk mengukur panjang (5 MB → alokasi kedua penuh) padahal usecase men-decode lagi. Diganti hitung aritmetika `len*3/4`.
+- **Bug #6 — Parameter mati & potensi crash UI**:
+  - `VisionScans` tak terpakai di backend & `vision_scans` di frontend dihapus.
+  - Guard `data.modalities?.voice && data.modalities?.vision` mencegah crash saat payload parsial/ter-cache.
+- **Verifikasi**:
+  - `go build ./...`, `go vet ./...` bersih.
+  - `go test -count=1 ./internal/...` **semua ok** (30 paket); `go test ./tests/` (e2e) ok.
+  - Frontend: `pnpm test` 347 passed (44 files); `pnpm build` sukses 36 route.
+  - Dump DB di-regenerate (memuat setting baru).
