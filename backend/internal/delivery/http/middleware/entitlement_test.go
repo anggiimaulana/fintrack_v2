@@ -205,7 +205,7 @@ func TestUsageFor_MapsLimitKeys(t *testing.T) {
 		"ai_tokens_per_cycle": 42,
 		"ocr_scans_per_cycle": 3,
 	} {
-		fn := p.UsageFor(key)
+		fn := p.UsageFor(context.Background(), key)
 		if fn == nil {
 			t.Fatalf("%s: expected a resolver", key)
 		}
@@ -217,7 +217,7 @@ func TestUsageFor_MapsLimitKeys(t *testing.T) {
 			t.Fatalf("%s: got %d, want %d", key, got, want)
 		}
 	}
-	if p.UsageFor("unknown_key") != nil {
+	if p.UsageFor(context.Background(), "unknown_key") != nil {
 		t.Fatal("unknown limit key must have no resolver")
 	}
 }

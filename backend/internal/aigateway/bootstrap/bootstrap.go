@@ -19,6 +19,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -42,6 +43,11 @@ type Config struct {
 	Modalities []string
 	// Models maps a gateway use case to the default upstream model.
 	Models map[domain.UseCase]string
+	// TimeoutsMS maps a gateway use case to the per-route timeout seeded on a
+	// fresh install. Slow modalities (vision/voice) need a generous ceiling so a
+	// healthy-but-slow provider is not aborted mid-answer. Missing keys fall
+	// back to the column default.
+	TimeoutsMS map[domain.UseCase]int
 	// EnableFlag seeds the feature_ai_gateway_centralized flag when it is absent.
 	EnableFlag bool
 }
@@ -71,6 +77,15 @@ func ConfigFromEnv(getenv func(string) string) Config {
 			domain.UseCaseVoice:     envOr(getenv, "AI_GATEWAY_MODEL_VOICE", "whisper-1"),
 			domain.UseCaseEmbedding: envOr(getenv, "AI_GATEWAY_MODEL_EMBEDDING", "gemini/gemini-embedding-001"),
 		},
+		TimeoutsMS: map[domain.UseCase]int{
+			// Chat streams token-by-token, so a minute is plenty; vision (receipt
+			// OCR) and voice transcription need room for the model to read the
+			// media and answer, hence the 2-minute ceiling.
+			domain.UseCaseChat:      envIntOr(getenv, "AI_GATEWAY_TIMEOUT_CHAT_MS", 60000),
+			domain.UseCaseVision:    envIntOr(getenv, "AI_GATEWAY_TIMEOUT_VISION_MS", 120000),
+			domain.UseCaseVoice:     envIntOr(getenv, "AI_GATEWAY_TIMEOUT_VOICE_MS", 120000),
+			domain.UseCaseReasoning: envIntOr(getenv, "AI_GATEWAY_TIMEOUT_REASONING_MS", 120000),
+		},
 		EnableFlag: isTruthy(getenv("AI_GATEWAY_ENABLED")),
 	}
 }
@@ -78,6 +93,16 @@ func ConfigFromEnv(getenv func(string) string) Config {
 func envOr(getenv func(string) string, key, def string) string {
 	if v := strings.TrimSpace(getenv(key)); v != "" {
 		return v
+	}
+	return def
+}
+
+// envIntOr reads a positive integer from the environment, falling back to def.
+func envIntOr(getenv func(string) string, key string, def int) int {
+	if v := strings.TrimSpace(getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
 	return def
 }
@@ -151,10 +176,15 @@ func EnsureSeeded(ctx context.Context, pool *pgxpool.Pool, encryptionKey []byte,
 			if model == "" {
 				continue
 			}
+			// Use the configured per-use-case timeout when present; otherwise
+			// fall back to the column default (30000ms) by passing 0 and letting
+			// COALESCE pick the column default. Vision/voice get a generous
+			// ceiling so a slow-but-healthy OCR/transcription is not aborted.
+			timeoutMS := cfg.TimeoutsMS[useCase]
 			if _, err := pool.Exec(ctx, `
-				INSERT INTO ai_routes (use_case, endpoint_id, model, combo, priority, is_active)
-				VALUES ($1, $2, $3, 'default', 1, true)`,
-				string(useCase), endpointID, model,
+				INSERT INTO ai_routes (use_case, endpoint_id, model, combo, priority, is_active, timeout_ms)
+				VALUES ($1, $2, $3, 'default', 1, true, COALESCE(NULLIF($4, 0), 30000))`,
+				string(useCase), endpointID, model, timeoutMS,
 			); err != nil {
 				return res, fmt.Errorf("seed ai_route %s: %w", useCase, err)
 			}

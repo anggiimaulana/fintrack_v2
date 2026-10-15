@@ -47,10 +47,22 @@ func (noChargeGateway) AnalyzeVision(context.Context, *domain.AIVisionRequest) (
 	return "", domain.TokenUsage{}, nil
 }
 
-// oneTokenEstimateSettings pins every reserve estimate to 1 token.
+// oneTokenEstimateSettings pins every reserve estimate to 1 token. The
+// overhead keys return 0 and chars-per-token a very large value, because
+// ForChat adds a configurable fixed overhead PLUS a prompt-length component.
 type oneTokenEstimateSettings struct{}
 
 func (oneTokenEstimateSettings) GetInt(context.Context, string) (int64, error) { return 1, nil }
+
+func (oneTokenEstimateSettings) GetString(_ context.Context, key string) (string, error) {
+	switch key {
+	case "ai_estimate_overhead_tokens", "ai_estimate_output_headroom":
+		return "0", nil
+	case "ai_estimate_chars_per_token":
+		return "1000000", nil
+	}
+	return "", nil
+}
 
 // TestBilling_UnservedChatTurnIsNotCharged proves the refund-on-failure contract:
 // when the AI gateway cannot serve a turn (no content produced), the reserved
@@ -84,21 +96,22 @@ func TestBilling_UnservedChatTurnIsNotCharged(t *testing.T) {
 		},
 	}
 
-	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, int64, error) {
 		res, err := entResolver.Resolve(ctx, userID)
 		if err != nil {
-			return time.Time{}, time.Time{}, 0, err
+			return time.Time{}, time.Time{}, 0, 0, err
 		}
 		quota := res.Limit("ai_tokens_per_cycle")
 		if quota < 0 {
 			quota = 1_000_000_000
 		}
+		ratio := res.QuotaRatioValue()
 		sub, _ := billingRepo.GetByUserID(ctx, userID)
 		if sub != nil && sub.CurrentPeriodEnd != nil {
-			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, nil
+			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, ratio, nil
 		}
 		start := at.Truncate(24 * time.Hour)
-		return start, start.AddDate(0, 0, 30), quota, nil
+		return start, start.AddDate(0, 0, 30), quota, ratio, nil
 	})
 	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, nil)
 

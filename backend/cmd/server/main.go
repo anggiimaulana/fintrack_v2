@@ -19,8 +19,10 @@ import (
 	"github.com/fintrack/backend/internal/aigateway/breaker"
 	"github.com/fintrack/backend/internal/aigateway/gateway"
 	"github.com/fintrack/backend/internal/aigateway/metering"
+	"github.com/fintrack/backend/internal/aituning"
 	"github.com/fintrack/backend/internal/audit"
 	"github.com/fintrack/backend/internal/billing"
+	"github.com/fintrack/backend/internal/configcatalog"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
@@ -38,6 +40,8 @@ import (
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/runtimeconfig"
 	"github.com/fintrack/backend/internal/storage"
+	"github.com/fintrack/backend/internal/voice"
+	"github.com/fintrack/backend/internal/usage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/pkg/contracts"
 	"github.com/fintrack/backend/pkg/logger"
@@ -52,6 +56,17 @@ func shutdownTimeout() time.Duration {
 		}
 	}
 	return 30 * time.Second
+}
+
+// envSeconds reads a duration in seconds from an env var, falling back to def
+// when the value is missing or not a positive integer.
+func envSeconds(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return def
 }
 
 // startPricingRefresh keeps the pricing engine's active rule in sync with the
@@ -206,7 +221,13 @@ func main() {
 	var aiGateway *gateway.Service
 	aiGateway = gateway.New(aiGatewayRepo, gateway.Config{
 		EncryptionKey: encryptionKey,
-		KillSwitch:    func(uc domain.UseCase) bool { return killSwitch.Enabled(string(uc)) },
+		// DefaultTimeout bounds a single upstream call when a route does not set
+		// its own timeout_ms. Vision/receipt and voice calls routinely exceed the
+		// old 30s ceiling on a loaded provider, so the default is raised and can
+		// be tuned per-deployment with AI_GATEWAY_TIMEOUT (seconds). A route's
+		// timeout_ms (Super Admin → AI Gateway) still overrides this.
+		DefaultTimeout: envSeconds("AI_GATEWAY_TIMEOUT", 90*time.Second),
+		KillSwitch:     func(uc domain.UseCase) bool { return killSwitch.Enabled(string(uc)) },
 		Breaker: breaker.Config{
 			OnStateChange: func(endpointID string, from, to breaker.State) {
 				if to != breaker.StateOpen {
@@ -438,6 +459,22 @@ func main() {
 	entResolver := entitlement.NewResolver(entSource, cacheEngine)
 	aiUC.WithEntitlements(entResolver)
 	entHandler := handler.NewEntitlementHandler(entResolver)
+	// User usage: a chart time series + a paginated consumption ledger, derived
+	// from token_ledger and transactions (no new producer required).
+	usageRepo := postgres.NewUsageRepo(pool)
+	usageHandler := handler.NewUsageHandler(usage.NewService(usageRepo), usageRepo)
+
+	// Voice input: durable per-user transcription history, the dynamic voice
+	// config, and the retention worker. The config reader resolves DB-over-env so
+	// every knob is tunable from the Super Admin UI (K-VOI-19).
+	voiceRepo := postgres.NewVoiceTranscriptionRepo(pool)
+	voiceHandler := handler.NewVoiceHandler(voiceRepo, entResolver, runtimeResolver)
+	voiceRetention := voice.NewRetentionWorker(voiceRepo, func(ctx context.Context) int {
+		return voice.Load(ctx, runtimeResolver).HistoryRetentionDay
+	}, voice.RetentionConfig{})
+	voiceRetention.Start(bgCtx)
+	defer voiceRetention.Stop()
+
 	entBroadcaster := entitlement.NewBroadcaster(infraRedis.NewPubSub(redisClient), entResolver)
 	stopEntSubscriber := entBroadcaster.StartSubscriber(bgCtx)
 	defer stopEntSubscriber()
@@ -451,6 +488,29 @@ func main() {
 
 	// Apply any Super-Admin-tuned token metering heuristics (local estimator).
 	applyMeteringSettings(bgCtx, settingsRepo)
+
+	// AI timeout budget: apply the Super-Admin-configured per-use-case budgets to
+	// the running gateway (and the HTTP write-deadline) at boot, then keep every
+	// pod in sync via Pub/Sub so a change applies fleet-wide without a restart.
+	// The applier re-reads the database on each notification, so a missed message
+	// self-heals on the next change.
+	settingsPubSub := infraRedis.NewPubSub(redisClient)
+	aiTuner := aituning.New(aiGateway, runtimeResolver)
+	aiTuner.Apply(bgCtx)
+	stopSettingsWatch := settingsPubSub.Subscribe(bgCtx, infraRedis.ChannelSettingsChanged, func(group string) {
+		// Drop the resolver's short-lived cache FIRST: otherwise the apply below
+		// would re-read the stale value on this pod and the change would only
+		// land after the TTL — defeating the point of the broadcast.
+		if runtimeResolver != nil {
+			runtimeResolver.Invalidate()
+		}
+		// Only the AI group touches the gateway/HTTP budgets; other settings
+		// changes (mail, payment, …) are handled by their own resolvers.
+		if group == "ai" || group == "settings" {
+			aiTuner.Apply(bgCtx)
+		}
+	})
+	defer stopSettingsWatch()
 
 	// Notifications: durable in-app inbox + email that honours per-user
 	// preferences. Mail config resolves DB setting -> env default, so an operator
@@ -567,7 +627,12 @@ func main() {
 	// was never constructed, so plan checks never ran. Wire it now, with usage
 	// resolvers backed by the transaction and token-period repositories.
 	entMiddleware := middleware.NewEntitlementMiddleware(entResolver)
+	// Config catalog (P-13): the limit→resolver mapping, setting validators, and
+	// feature/metric catalogs are DATA, not code. Version-stamped so a Super
+	// Admin change is visible on the next read without a deploy or a TTL wait.
+	catalogStore := configcatalog.NewCatalogStore(pool, cacheEngine)
 	entUsage := &middleware.UsageProviders{
+		Catalog:           catalogStore,
 		CountTransactions: txRepo.CountActiveByUser,
 		CurrentTokens:     middleware.TokenPeriodUsage(billingRepo),
 		CountAIRequests: func(ctx context.Context, userID uuid.UUID) (int64, error) {
@@ -575,6 +640,10 @@ func main() {
 		},
 		CountVisionScans: func(ctx context.Context, userID uuid.UUID) (int64, error) {
 			return billingRepo.CountVisionScansInPeriod(ctx, userID, time.Now().UTC().Unix())
+		},
+		CountVoiceToday: func(ctx context.Context, userID uuid.UUID) (int64, error) {
+			day, _ := voice.DayWindow(time.Now().UTC(), voice.Load(ctx, runtimeResolver).ResetTimezone)
+			return voiceRepo.DailyUsage(ctx, userID, day)
 		},
 	}
 
@@ -590,6 +659,16 @@ func main() {
 			"ai_requests_per_cycle": func(ctx context.Context, userID uuid.UUID) (int64, error) {
 				return billingRepo.CountAIRequestsInPeriod(ctx, userID, time.Now().UTC().Unix())
 			},
+			"voice_requests_per_day": func(ctx context.Context, userID uuid.UUID) (int64, error) {
+				day, _ := voice.DayWindow(time.Now().UTC(), voice.Load(ctx, runtimeResolver).ResetTimezone)
+				return voiceRepo.DailyUsage(ctx, userID, day)
+			},
+		},
+		UnitFor: func(ctx context.Context, limitKey string) string {
+			if m, ok := catalogStore.Metric(ctx, limitKey); ok {
+				return m.Unit
+			}
+			return ""
 		},
 		Period: func(ctx context.Context, userID uuid.UUID) (*entitlement.Period, error) {
 			p, err := billingRepo.GetCurrentPeriod(ctx, userID, time.Now().UTC().Unix())
@@ -603,21 +682,30 @@ func main() {
 		},
 	})
 
-	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+	// Settings-backed rounding policy + dynamic sentinel. Both read from the
+	// settings store so an operator can change them without a deploy.
+	quotaCfg := billing.NewSettingsQuotaConfig(settingsRepo)
+
+	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, int64, error) {
 		res, err := entResolver.Resolve(ctx, userID)
 		if err != nil {
-			return time.Time{}, time.Time{}, 0, err
+			return time.Time{}, time.Time{}, 0, 0, err
 		}
 		quota := res.Limit("ai_tokens_per_cycle")
 		if quota < 0 {
-			quota = 1000000000 // unlimited
+			// Dynamic sentinel (setting quota_unlimited_sentinel), not a constant.
+			quota = quotaCfg.UnlimitedSentinel(ctx)
+		}
+		ratio := res.QuotaRatioValue()
+		if ratio < 1 {
+			ratio = 1
 		}
 		sub, _ := billingRepo.GetByUserID(ctx, userID)
 		if sub != nil && sub.CurrentPeriodEnd != nil {
-			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, nil
+			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, ratio, nil
 		}
 		start := at.Truncate(24 * time.Hour)
-		return start, start.AddDate(0, 0, 30), quota, nil
+		return start, start.AddDate(0, 0, 30), quota, ratio, nil
 	})
 	// Pricing engine (F2): converts committed tokens to integer Rupiah. The
 	// active rule lives in `pricing_rules`; the engine starts from the current
@@ -629,7 +717,7 @@ func main() {
 	} else {
 		pricingEngine.SetRule(rule)
 	}
-	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, pricingEngine)
+	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, pricingEngine).WithRounding(quotaCfg)
 	stopPricingRefresh := startPricingRefresh(bgCtx, billingRepo, pricingEngine)
 	defer stopPricingRefresh()
 
@@ -669,9 +757,20 @@ func main() {
 		Redis:         redisClient,
 		Storage:      storageProvider,
 		Ledger:       ledgerService,
+		Realtime:     realtimePublisher,
 		Audit:        auditSvc,
 		Estimates:     billing.NewEstimateStore(settingsRepo),
 		Notifications: notifHandler,
+		Voice:         voiceHandler,
+		VoiceRepo:     voiceRepo,
+		VoiceConfig:   runtimeResolver,
+		VoiceDaily: func(ctx context.Context, userID uuid.UUID, limit int64) (bool, int64, error) {
+			day, _ := voice.DayWindow(time.Now().UTC(), voice.Load(ctx, runtimeResolver).ResetTimezone)
+			return voiceRepo.ConsumeDailyUsage(ctx, userID, day, limit)
+		},
+		EntitlementResolver: entResolver,
+		UsageHandler:  usageHandler,
+		AIConfig:      handler.NewAIConfigHandler(runtimeResolver),
 	}
 
 	// Super Admin portal (P06): one service + handler shared by every route.
@@ -684,11 +783,13 @@ func main() {
 		admin.WithCache(cacheEngine),
 		admin.WithEntitlementInvalidator(entBroadcaster),
 		admin.WithRealtimeEmitter(realtimePublisher),
+		admin.WithCatalog(admin.NewCatalogAdapter(catalogStore)),
 		admin.WithStorage(storageProvider, storageProvider),
 		admin.WithRuntimeResolver(runtimeResolver),
 		admin.WithRuntimeConfig(runtimeInvalidator{
-			resolver: runtimeResolver,
-			r2:       r2Resolver,
+			resolver:     runtimeResolver,
+			r2:           r2Resolver,
+			settingsRepo: settingsRepo,
 		}),
 		admin.WithPricingReload(func(ctx context.Context) {
 			if rule, err := billingRepo.GetActiveRule(ctx); err == nil {
@@ -703,6 +804,12 @@ func main() {
 		admin.WithMeteringReload(func(ctx context.Context) {
 			applyMeteringSettings(ctx, settingsRepo)
 		}),
+		// AI timeout budget: re-apply on the pod that served the change, then
+		// fan the hint out so peers converge too (zero-downtime).
+		admin.WithTimeoutsReload(func(ctx context.Context) {
+			aiTuner.Apply(ctx)
+		}),
+		admin.WithSettingsBroadcaster(settingsPubSub),
 	)
 	superAdminH := admin.NewHandler(adminSvc)
 	adminRoleResolver := admin.NewRoleResolver(pool, cacheEngine)
@@ -737,11 +844,21 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:    ":" + port,
+		Handler: r,
+		// ReadTimeout bounds how long the client may take to send the request
+		// (headers + body). It must stay comfortably above the largest upload we
+		// accept: the receipt endpoint allows a 2 MB image, so 15s is too tight
+		// on a slow mobile uplink.
+		ReadTimeout: envSeconds("HTTP_READ_TIMEOUT", 60*time.Second),
+		// WriteTimeout is the *whole-response* budget and is the trap that made
+		// receipt analysis look like it "timed out at 30s": it silently aborted
+		// any AI call that ran longer than this. It is raised to a generous
+		// default here, and the long-lived AI/SSE routes additionally clear the
+		// deadline per-request via middleware.NoWriteTimeout so they are never
+		// cut off mid-answer.
+		WriteTimeout: envSeconds("HTTP_WRITE_TIMEOUT", 120*time.Second),
+		IdleTimeout:  envSeconds("HTTP_IDLE_TIMEOUT", 60*time.Second),
 	}
 
 	go func() {
@@ -840,6 +957,9 @@ func applyMeteringSettings(ctx context.Context, settingsRepo *postgres.SettingsR
 	if v, ok := read("metering_chars_per_token"); ok {
 		cfg.CharsPerToken = v
 		changed = true
+	} else if v, ok := read("ai_estimate_chars_per_token"); ok {
+		cfg.CharsPerToken = v
+		changed = true
 	}
 	if v, err := settingsRepo.GetInt(ctx, "metering_safety_buffer_pct"); err == nil && v >= 0 {
 		cfg.SafetyBufferPct = int(v)
@@ -848,9 +968,19 @@ func applyMeteringSettings(ctx context.Context, settingsRepo *postgres.SettingsR
 	if v, ok := read("metering_image_tokens"); ok {
 		cfg.ImageTokens = v
 		changed = true
+	} else if v, ok := read("ai_estimate_vision_image_tokens"); ok {
+		cfg.ImageTokens = v
+		changed = true
 	}
 	if v, ok := read("metering_audio_tokens_per_sec"); ok {
 		cfg.TokensPerSecond = v
+		changed = true
+	} else if v, ok := read("ai_estimate_voice_tokens_per_sec"); ok {
+		cfg.TokensPerSecond = v
+		changed = true
+	}
+	if v, ok := read("ai_estimate_voice_bytes_per_sec"); ok {
+		cfg.AudioBytesPerSecond = v
 		changed = true
 	}
 	if changed {
@@ -862,8 +992,9 @@ func applyMeteringSettings(ctx context.Context, settingsRepo *postgres.SettingsR
 // cache after a Super Admin settings change, so the new values apply immediately
 // rather than after the cache TTL.
 type runtimeInvalidator struct {
-	resolver *runtimeconfig.Resolver
-	r2       *storage.DynamicR2Resolver
+	resolver     *runtimeconfig.Resolver
+	r2           *storage.DynamicR2Resolver
+	settingsRepo *postgres.SettingsRepo
 }
 
 func (r runtimeInvalidator) Invalidate() {
@@ -872,5 +1003,8 @@ func (r runtimeInvalidator) Invalidate() {
 	}
 	if r.r2 != nil {
 		r.r2.Invalidate()
+	}
+	if r.settingsRepo != nil {
+		applyMeteringSettings(context.Background(), r.settingsRepo)
 	}
 }

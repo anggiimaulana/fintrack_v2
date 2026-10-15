@@ -20,7 +20,7 @@ import (
 type UsageResolver func(ctx context.Context, userID uuid.UUID, limitKey string) (int64, error)
 
 // UpgradeURL is where the frontend should send users who hit a plan gate.
-const UpgradeURL = "/user/settings/subscription"
+const UpgradeURL = "/user/subscription"
 
 // EntitlementMiddleware enforces feature flags and numeric limits at the
 // backend (the authoritative layer). super_admin bypasses all checks.

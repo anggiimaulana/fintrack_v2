@@ -96,8 +96,12 @@ type Plan struct {
 	IsPublic          bool      `json:"is_public"`
 	FallbackGateway   string    `json:"fallback_gateway"`
 	SortOrder         int       `json:"sort_order"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	// TokenQuotaRatio divides provider tokens before charging plan quota:
+	// units = ceil(raw_tokens / TokenQuotaRatio). 1 means 1 token = 1 unit.
+	// Configurable per plan by a Super Admin; >= 1.
+	TokenQuotaRatio int64     `json:"token_quota_ratio"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // PlanEntitlement is a boolean feature switch for a plan.
@@ -142,11 +146,15 @@ type Subscription struct {
 
 // TokenPeriod tracks quota and usage for one subscription cycle.
 type TokenPeriod struct {
-	ID             uuid.UUID `json:"id"`
-	UserID         uuid.UUID `json:"user_id"`
-	PeriodStart    time.Time `json:"period_start"`
-	PeriodEnd      time.Time `json:"period_end"`
-	QuotaTokens    int64     `json:"quota_tokens"`
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	QuotaTokens int64     `json:"quota_tokens"`
+	// QuotaRatio is the plan's token→unit ratio SNAPSHOTTED when this cycle was
+	// created. It is immutable for the life of the period: changing the plan's
+	// ratio does not retroactively alter accounting for a running cycle.
+	QuotaRatio     int64     `json:"quota_ratio"`
 	UsedTokens     int64     `json:"used_tokens"`
 	ReservedTokens int64     `json:"reserved_tokens"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -160,18 +168,39 @@ func (p *TokenPeriod) Available() int64 {
 
 // TokenLedgerEntry is an append-only token mutation.
 type TokenLedgerEntry struct {
-	ID             uuid.UUID       `json:"id"`
-	PeriodID       uuid.UUID       `json:"period_id"`
-	UserID         uuid.UUID       `json:"user_id"`
-	ReservationID  *uuid.UUID      `json:"reservation_id,omitempty"`
-	EntryType      LedgerEntryType `json:"entry_type"`
-	Amount         int64           `json:"amount"`
-	Modality       string          `json:"modality"`
-	CostIDR        int64           `json:"cost_idr"`
-	IdempotencyKey string          `json:"idempotency_key"`
-	ReferenceID    *string         `json:"reference_id,omitempty"`
-	Notes          *string         `json:"notes,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
+	ID            uuid.UUID       `json:"id"`
+	PeriodID      uuid.UUID       `json:"period_id"`
+	UserID        uuid.UUID       `json:"user_id"`
+	ReservationID *uuid.UUID      `json:"reservation_id,omitempty"`
+	EntryType     LedgerEntryType `json:"entry_type"`
+	// Amount is the plan-quota UNIT delta (raw / QuotaRatio), compared against
+	// the plan's quota. For release entries it is the held unit being returned.
+	Amount int64 `json:"amount"`
+	// RawTokens is the provider-reported token count that produced this entry.
+	// It is the basis for CostIDR; it is 0 for reserve/release (no charge).
+	RawTokens      int64  `json:"raw_tokens"`
+	Modality       string `json:"modality"`
+	CostIDR        int64  `json:"cost_idr"`
+	IdempotencyKey string `json:"idempotency_key"`
+	ReferenceID    *string `json:"reference_id,omitempty"`
+	Notes          *string `json:"notes,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// RawTokensOrAmount returns the real provider token count for this entry.
+//
+// Rows written before the quota-ratio migration have raw_tokens = 0 because the
+// ratio was 1 at the time (units == tokens), so falling back to |Amount| is
+// exact. This lets older rows be read without a (forbidden) UPDATE on the
+// append-only ledger.
+func (e *TokenLedgerEntry) RawTokensOrAmount() int64 {
+	if e.RawTokens > 0 {
+		return e.RawTokens
+	}
+	if e.Amount < 0 {
+		return -e.Amount
+	}
+	return e.Amount
 }
 
 // PricingRule converts tokens to integer Rupiah.

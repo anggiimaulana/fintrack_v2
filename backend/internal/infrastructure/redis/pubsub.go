@@ -15,6 +15,15 @@ const (
 	// ChannelCacheInvalidate broadcasts cache invalidation events so each
 	// instance can drop its local (L1) lookups.
 	ChannelCacheInvalidate = "cache:invalidate"
+
+	// ChannelSettingsChanged broadcasts "a settings row changed" so every
+	// instance re-applies the runtime knobs it holds in memory (AI gateway
+	// timeouts, circuit breaker tuning, token metering). The payload is a hint,
+	// not the values: each instance re-reads the authoritative row from the
+	// database, which keeps multi-instance state convergent even if a message is
+	// missed. This is what makes a Super Admin change apply to the whole fleet
+	// within milliseconds without a restart.
+	ChannelSettingsChanged = "settings:changed"
 )
 
 // PubSub is a thin wrapper around Redis pub/sub. When Redis is disabled, Publish

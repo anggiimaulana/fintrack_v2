@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/billing"
+	"github.com/fintrack/backend/pkg/pagination"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -117,4 +118,30 @@ func (h *PaymentHandler) CancelSubscription(c *gin.Context) {
 		return
 	}
 	response.OK(c, "Langganan akan berakhir pada akhir periode", nil)
+}
+
+// subscriptionEventSortWhitelist are the columns the history table may sort by.
+var subscriptionEventSortWhitelist = []string{"created_at", "event_type"}
+
+// MySubscriptionEvents handles GET /api/v1/subscriptions/me/events. It returns
+// one page of the user's subscription lifecycle events (created, upgraded,
+// downgraded, renewed, canceled, …) for the "Riwayat" tab.
+func (h *PaymentHandler) MySubscriptionEvents(c *gin.Context) {
+	if h.subRepo == nil {
+		response.Paginated(c, "Riwayat langganan berhasil dimuat", []any{}, 0, 1, 20)
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	pq := pagination.Parse(c, pagination.Options{
+		AllowedSort:  subscriptionEventSortWhitelist,
+		DefaultSort:  "created_at",
+		DefaultOrder: "desc",
+	})
+	events, total, err := h.subRepo.ListEventsPaged(c.Request.Context(), userID, &pq)
+	if err != nil {
+		response.InternalError(c, "Gagal memuat riwayat langganan")
+		return
+	}
+	response.Paginated(c, "Riwayat langganan berhasil dimuat", events, total, pq.Page, pq.PerPage)
 }

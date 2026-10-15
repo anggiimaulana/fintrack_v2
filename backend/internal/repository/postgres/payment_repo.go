@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // PaymentRepo implements payment.Repository over PostgreSQL.
@@ -288,6 +290,97 @@ const userPaymentSelect = `SELECT p.id, p.invoice_id, p.user_id, p.gateway, p.ga
     LEFT JOIN invoices i ON i.id = p.invoice_id
     LEFT JOIN plans pl ON pl.code = i.notes`
 
+// userPaymentSorts whitelists the sortable columns of the user payment history.
+var userPaymentSorts = map[string]string{
+	"created_at": "p.created_at",
+	"amount_idr": "p.amount_idr",
+	"status":     "p.status",
+	"total_idr":  "COALESCE(i.total_idr,0)",
+}
+
+// buildUserOrderBy turns a validated sort list into an ORDER BY fragment for the
+// payments query, always ending in `p.created_at DESC` for a stable order.
+func buildUserOrderBy(sorts []pagination.SortSpec, whitelist map[string]string) string {
+	parts := make([]string, 0, len(sorts)+1)
+	for _, s := range sorts {
+		col, ok := whitelist[strings.ToLower(s.Column)]
+		if !ok {
+			continue
+		}
+		dir := "DESC"
+		if strings.EqualFold(s.Order, "asc") {
+			dir = "ASC"
+		}
+		parts = append(parts, col+" "+dir)
+	}
+	parts = append(parts, "p.created_at DESC")
+	return strings.Join(parts, ", ")
+}
+
+// ListPaymentsByUser returns one page of the user's payment attempts plus the
+// total count. `q` matches the invoice number or plan code; `status` filters on
+// the payment status.
+func (r *PaymentRepo) ListPaymentsByUser(ctx context.Context, userID uuid.UUID, pq *pagination.Query) ([]*payment.UserPayment, int, error) {
+	limit := 50
+	if pq != nil && pq.PerPage > 0 {
+		limit = pq.PerPage
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := 0
+	search := ""
+	status := ""
+	if pq != nil {
+		offset = pq.Offset()
+		search = pq.Search
+		status = pq.Filters["status"]
+	}
+
+	where := "WHERE p.user_id = $1"
+	args := []any{userID}
+	idx := 2
+	if status != "" {
+		where += fmt.Sprintf(" AND p.status = $%d", idx)
+		args = append(args, status)
+		idx++
+	}
+	if search != "" {
+		where += fmt.Sprintf(" AND (COALESCE(i.invoice_number,'') ILIKE $%d OR COALESCE(pl.code,'') ILIKE $%d OR COALESCE(pl.name,'') ILIKE $%d)", idx, idx, idx)
+		args = append(args, "%"+search+"%")
+		idx++
+	}
+
+	var total int
+	if err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT COUNT(*) FROM payments p LEFT JOIN invoices i ON i.id = p.invoice_id LEFT JOIN plans pl ON pl.code = i.notes `+where,
+		args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	orderBy := "p.created_at DESC"
+	if pq != nil && len(pq.Sorts) > 0 {
+		orderBy = buildUserOrderBy(pq.Sorts, userPaymentSorts)
+	}
+
+	rows, err := q(ctx, r.pool).Query(ctx,
+		userPaymentSelect+` `+where+` ORDER BY `+orderBy+fmt.Sprintf(` LIMIT $%d OFFSET $%d`, idx, idx+1),
+		append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []*payment.UserPayment
+	for rows.Next() {
+		up, err := scanUserPayment(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, up)
+	}
+	return out, total, rows.Err()
+}
+
 func scanUserPayment(row rowScanner) (*payment.UserPayment, error) {
 	var (
 		up            payment.UserPayment
@@ -317,28 +410,6 @@ func scanUserPayment(row rowScanner) (*payment.UserPayment, error) {
 	return &up, nil
 }
 
-// ListPaymentsByUser returns the user's payment attempts, newest first.
-func (r *PaymentRepo) ListPaymentsByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*payment.UserPayment, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	rows, err := q(ctx, r.pool).Query(ctx,
-		userPaymentSelect+` WHERE p.user_id = $1 ORDER BY p.created_at DESC LIMIT $2`, userID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*payment.UserPayment
-	for rows.Next() {
-		up, err := scanUserPayment(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, up)
-	}
-	return out, rows.Err()
-}
-
 // GetPaymentForUser returns one payment (with invoice details) scoped to its
 // owner. Returns (nil, nil) when the payment does not exist or belongs to
 // someone else, so callers can answer 404 without leaking existence.
@@ -354,26 +425,88 @@ func (r *PaymentRepo) GetPaymentForUser(ctx context.Context, userID, paymentID u
 	return up, nil
 }
 
-// ListInvoicesByUser returns the user's invoices, newest first.
-func (r *PaymentRepo) ListInvoicesByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*payment.Invoice, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
+// userInvoiceSorts whitelists the sortable columns of the user invoice list.
+var userInvoiceSorts = map[string]string{
+	"created_at":  "created_at",
+	"issued_at":   "issued_at",
+	"due_at":      "due_at",
+	"total_idr":   "total_idr",
+	"status":      "status",
+	"invoice_number": "invoice_number",
+}
+
+// ListInvoicesByUser returns one page of the user's invoices plus the total
+// count. `q` matches the invoice number; `status` filters on invoice status.
+func (r *PaymentRepo) ListInvoicesByUser(ctx context.Context, userID uuid.UUID, pq *pagination.Query) ([]*payment.Invoice, int, error) {
+	limit := 50
+	if pq != nil && pq.PerPage > 0 {
+		limit = pq.PerPage
 	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := 0
+	search := ""
+	status := ""
+	if pq != nil {
+		offset = pq.Offset()
+		search = pq.Search
+		status = pq.Filters["status"]
+	}
+
+	where := "WHERE user_id = $1"
+	args := []any{userID}
+	idx := 2
+	if status != "" {
+		where += fmt.Sprintf(" AND status = $%d", idx)
+		args = append(args, status)
+		idx++
+	}
+	if search != "" {
+		where += fmt.Sprintf(" AND invoice_number ILIKE $%d", idx)
+		args = append(args, "%"+search+"%")
+		idx++
+	}
+
+	var total int
+	if err := q(ctx, r.pool).QueryRow(ctx, `SELECT COUNT(*) FROM invoices `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	orderBy := "created_at DESC"
+	if pq != nil && len(pq.Sorts) > 0 {
+		parts := make([]string, 0, len(pq.Sorts)+1)
+		for _, s := range pq.Sorts {
+			col, ok := userInvoiceSorts[strings.ToLower(s.Column)]
+			if !ok {
+				continue
+			}
+			dir := "DESC"
+			if strings.EqualFold(s.Order, "asc") {
+				dir = "ASC"
+			}
+			parts = append(parts, col+" "+dir)
+		}
+		parts = append(parts, "created_at DESC")
+		orderBy = strings.Join(parts, ", ")
+	}
+
 	rows, err := q(ctx, r.pool).Query(ctx,
-		invoiceSelect+` WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, userID, limit)
+		invoiceSelect+` `+where+` ORDER BY `+orderBy+fmt.Sprintf(` LIMIT $%d OFFSET $%d`, idx, idx+1),
+		append(args, limit, offset)...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []*payment.Invoice
 	for rows.Next() {
 		inv, err := r.scanInvoice(rows)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, inv)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // compile-time assertion.

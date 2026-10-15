@@ -32,9 +32,31 @@ import (
 // quota admits exactly 5 concurrent reservations. Without this the realistic
 // default estimate (2000) would reject every request up front — correct
 // behaviour, but it would not exercise the reservation race this test targets.
+//
+// The estimate-overhead keys must return 0 here, and chars-per-token a very
+// large value, because ForChat adds a configurable fixed overhead PLUS a
+// prompt-length component. This test needs the reserve to be exactly 1 token.
 type oneTokenSettings struct{}
 
-func (oneTokenSettings) GetInt(_ context.Context, _ string) (int64, error) { return 1, nil }
+func (oneTokenSettings) GetInt(_ context.Context, key string) (int64, error) {
+	switch key {
+	case "ai_estimate_overhead_tokens", "ai_estimate_output_headroom":
+		return 0, nil
+	case "ai_estimate_chars_per_token":
+		return 1_000_000, nil // prompt length rounds to 0
+	}
+	return 1, nil
+}
+
+func (oneTokenSettings) GetString(_ context.Context, key string) (string, error) {
+	switch key {
+	case "ai_estimate_overhead_tokens", "ai_estimate_output_headroom":
+		return "0", nil
+	case "ai_estimate_chars_per_token":
+		return "1000000", nil
+	}
+	return "", nil
+}
 
 // quotaTestGateway is a minimal AIGatewayService that always answers with a
 // single content chunk plus provider-reported usage, so each admitted turn
@@ -98,21 +120,22 @@ func TestP08_001_TokenQuotaConcurrency(t *testing.T) {
 		},
 	}
 
-	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+	quotaResolver := billing.QuotaResolverFunc(func(ctx context.Context, userID uuid.UUID, at time.Time) (time.Time, time.Time, int64, int64, error) {
 		res, err := entResolver.Resolve(ctx, userID)
 		if err != nil {
-			return time.Time{}, time.Time{}, 0, err
+			return time.Time{}, time.Time{}, 0, 0, err
 		}
 		quota := res.Limit("ai_tokens_per_cycle")
 		if quota < 0 {
 			quota = 1000000000
 		}
+		ratio := res.QuotaRatioValue()
 		sub, _ := billingRepo.GetByUserID(ctx, userID)
 		if sub != nil && sub.CurrentPeriodEnd != nil {
-			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, nil
+			return sub.CurrentPeriodStart, *sub.CurrentPeriodEnd, quota, ratio, nil
 		}
 		start := at.Truncate(24 * time.Hour)
-		return start, start.AddDate(0, 0, 30), quota, nil
+		return start, start.AddDate(0, 0, 30), quota, ratio, nil
 	})
 	ledgerService := billing.NewLedgerService(billingRepo, txManager, quotaResolver, nil)
 

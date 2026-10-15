@@ -109,6 +109,47 @@ func TestOrderByClause(t *testing.T) {
 	}
 }
 
+// TestParse_MultiSort asserts comma-separated sort/order parse into Sorts and
+// that unknown columns are dropped.
+func TestParse_MultiSort(t *testing.T) {
+	q := Parse(newCtx("sort=amount,name&order=asc,desc"), Options{AllowedSort: sortWhitelist, DefaultSort: "created_at"})
+	if len(q.Sorts) != 2 {
+		t.Fatalf("expected 2 sorts, got %d (%+v)", len(q.Sorts), q.Sorts)
+	}
+	if q.Sorts[0].Column != "amount" || q.Sorts[0].Order != "asc" {
+		t.Fatalf("unexpected first sort: %+v", q.Sorts[0])
+	}
+	if q.Sorts[1].Column != "name" || q.Sorts[1].Order != "desc" {
+		t.Fatalf("unexpected second sort: %+v", q.Sorts[1])
+	}
+
+	// A non-whitelisted column is silently dropped, the valid one survives.
+	q = Parse(newCtx("sort=amount,evil&order=asc,desc"), Options{AllowedSort: sortWhitelist})
+	if len(q.Sorts) != 1 || q.Sorts[0].Column != "amount" {
+		t.Fatalf("expected only amount to survive, got %+v", q.Sorts)
+	}
+
+	// Single column still yields exactly one entry (superset of old behaviour).
+	q = Parse(newCtx("sort=amount&order=asc"), Options{AllowedSort: sortWhitelist})
+	if len(q.Sorts) != 1 || q.Sorts[0].Column != "amount" || q.Sorts[0].Order != "asc" {
+		t.Fatalf("unexpected single sort: %+v", q.Sorts)
+	}
+}
+
+// TestOrderByClauses asserts the multi-column fragment and its fallback.
+func TestOrderByClauses(t *testing.T) {
+	q := Parse(newCtx("sort=amount,name&order=asc,desc"), Options{AllowedSort: sortWhitelist})
+	if got := OrderByClauses(q, sortWhitelist); got != "amount ASC, name DESC" {
+		t.Fatalf("expected 'amount ASC, name DESC', got %q", got)
+	}
+
+	// No Sorts falls back to the single-column clause.
+	fallback := Query{Sort: "amount", Order: "desc"}
+	if got := OrderByClauses(fallback, sortWhitelist); got != "amount DESC" {
+		t.Fatalf("expected fallback 'amount DESC', got %q", got)
+	}
+}
+
 // TestNewMeta asserts total-page math.
 func TestNewMeta(t *testing.T) {
 	q := Query{Page: 2, PerPage: 20}

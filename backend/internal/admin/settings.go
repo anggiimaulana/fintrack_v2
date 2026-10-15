@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/fintrack/backend/internal/featureflag"
+	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/runtimeconfig"
 	"github.com/fintrack/backend/pkg/response"
 )
@@ -148,6 +150,71 @@ var writableSettings = map[string]settingSpec{
 	// AI knobs.
 	"ai_reasoning_effort":      {kind: "enum", enum: []string{"", "low", "medium", "high"}},
 	"gemini_embedding_api_key": {kind: "secret"},
+
+	// ─── AI timeout budget (dynamic, zero-downtime) ───────────────
+	// How long an AI call may run before it is aborted, per use case. These are
+	// applied to the running gateway immediately (no restart): a slow vision
+	// (receipt OCR) or voice call can be given more room when a provider is
+	// under load, and tightened again afterwards.
+	//
+	// `ai_timeout_client_ms` is the budget handed to the browser; when left at 0
+	// it is derived automatically from the slowest use case plus a margin, so
+	// the client never aborts before the server would.
+	"ai_timeout_chat_ms":      {kind: "int", min: 0, max: 1_800_000},
+	"ai_timeout_vision_ms":    {kind: "int", min: 0, max: 1_800_000},
+	"ai_timeout_voice_ms":     {kind: "int", min: 0, max: 1_800_000},
+	"ai_timeout_embedding_ms": {kind: "int", min: 0, max: 1_800_000},
+	"ai_timeout_reasoning_ms": {kind: "int", min: 0, max: 1_800_000},
+	"ai_timeout_client_ms":    {kind: "int", min: 0, max: 1_800_000},
+
+	// ─── Voice input (K-VOI-08..19) ───────────────────────────────
+	// Every voice knob is dynamic: an operator tunes the feature from the Super
+	// Admin UI without a redeploy. Defaults live in the resolver (env fallback).
+	//
+	// Recording duration ceiling (seconds). The client reads it from
+	// GET /me/voice-config; the recorder auto-stops at this bound.
+	"voice_max_duration_seconds": {kind: "int", min: 1, max: 600},
+	// Language behaviour: id_only forces the default language; multi lets the
+	// user pick per recording.
+	"voice_language_mode": {kind: "enum", enum: []string{"id_only", "multi"}},
+	// Default language when the user has not chosen one.
+	"voice_default_language": {kind: "string", maxLen: 16},
+	// Comma-separated list of selectable languages (used when mode = multi).
+	"voice_languages": {kind: "string", maxLen: 64},
+	// How many days of history to keep; the retention worker prunes older rows.
+	"voice_history_retention_days": {kind: "int", min: 1, max: 3650},
+	// IANA timezone that defines the daily-limit "day" boundary.
+	"voice_daily_reset_timezone": {kind: "string", maxLen: 64},
+	// Let the user review/edit a transcript before it is sent to chat.
+	"voice_allow_edit_before_send": {kind: "bool"},
+	// Show the microphone level meter while recording (Q-05 makes it mandatory;
+	// this toggle exists for support/diagnosis, default on).
+	"voice_vu_meter_enabled": {kind: "bool"},
+	// Allow graceful downgrade to on-device transcription when the server path
+	// is unavailable (Q-08 makes this mandatory; default on).
+	"voice_fallback_to_browser": {kind: "bool"},
+	// Kill switch for the server transcription path (SRE incident valve).
+	"voice_server_enabled": {kind: "bool"},
+	// Quota metering and ratio configuration (0029_config_catalog).
+	"quota_rounding_mode":                       {kind: "enum", enum: []string{"ceil", "floor", "round"}},
+	"quota_default_ratio":                       {kind: "int", min: 1, max: 1000},
+	"quota_default_tokens_per_cycle":            {kind: "int", min: 1, max: 1_000_000_000},
+	"quota_unit_label":                          {kind: "string", maxLen: 24},
+	"quota_unlimited_sentinel":                  {kind: "int", min: 1, max: 1_000_000_000_000},
+	"quota_min_charge_units":                    {kind: "int", min: 0, max: 1_000_000},
+	"ai_estimate_overhead_tokens":               {kind: "int", min: 0, max: 1_000_000},
+	"ai_estimate_output_headroom":               {kind: "int", min: 0, max: 1_000_000},
+	"ai_estimate_chars_per_token":               {kind: "int", min: 1, max: 100},
+	"pricing_default_provider_cost_per_1k_idr": {kind: "int", min: 0, max: 100_000_000},
+	// Dynamic estimation for voice and vision (0031_voice_vision_dynamic_estimation).
+	"ai_estimate_voice_bytes_per_sec":     {kind: "int", min: 1000, max: 64000},
+	"ai_estimate_voice_tokens_per_sec":    {kind: "int", min: 1, max: 200},
+	"ai_estimate_voice_overhead":          {kind: "int", min: 0, max: 5000},
+	"ai_estimate_voice_output_headroom":   {kind: "int", min: 0, max: 5000},
+	"ai_estimate_vision_image_tokens":     {kind: "int", min: 50, max: 10000},
+	"ai_estimate_vision_output_headroom":  {kind: "int", min: 50, max: 5000},
+	"ai_estimate_vision_large_file_bytes": {kind: "int", min: 100000, max: 5000000},
+	"ai_estimate_vision_large_file_extra": {kind: "int", min: 0, max: 5000},
 }
 
 type updateSettingsRequest struct {
@@ -161,8 +228,26 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Payload tidak valid", "invalid_payload")
 		return
 	}
+	ctx := c.Request.Context()
+	resolvedSpecs := make(map[string]settingSpec, len(req.Settings))
 	for key, raw := range req.Settings {
 		spec, ok := writableSettings[key]
+		if !ok && h.svc.catalog != nil {
+			if def, found := h.svc.catalog.SettingDefinition(ctx, key); found && def.IsWritable && def.IsActive {
+				spec = settingSpec{
+					kind:   def.Kind,
+					maxLen: def.MaxLen,
+					enum:   def.EnumValues,
+				}
+				if def.MinValue != nil {
+					spec.min = *def.MinValue
+				}
+				if def.MaxValue != nil {
+					spec.max = *def.MaxValue
+				}
+				ok = true
+			}
+		}
 		if !ok {
 			response.BadRequest(c, "Pengaturan tidak dapat diubah: "+key, "setting_not_writable")
 			return
@@ -171,9 +256,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			response.BadRequest(c, key+": "+err.Error(), "validation")
 			return
 		}
+		resolvedSpecs[key] = spec
 	}
 
-	ctx := c.Request.Context()
+
 	actor := actorFrom(c)
 	before, _ := h.settingsSnapshot(ctx)
 	after := map[string]json.RawMessage{}
@@ -195,7 +281,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	// exposes a credential. An empty value means "leave unchanged", which lets
 	// the UI submit the rest of the form without re-sending the secret.
 	for key, raw := range req.Settings {
-		if writableSettings[key].kind != "secret" {
+		if resolvedSpecs[key].kind != "secret" {
 			continue
 		}
 		var plain string
@@ -257,8 +343,60 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		h.svc.meteringReload(ctx)
 	}
 
+	// AI timeout budget changes must apply to the running gateway (and the HTTP
+	// write deadline) immediately.
+	if h.svc.timeoutsReload != nil && hasTimeoutsKey(req.Settings) {
+		h.svc.timeoutsReload(ctx)
+	}
+
+	// Notify peer instances so every pod re-applies its in-memory knobs. The
+	// payload is a hint (which key group changed); each instance re-reads the
+	// authoritative rows, so a missed message self-heals on the next change.
+	h.broadcastSettingsChange(ctx, req.Settings)
+
+	// Dynamic config (P-13): bump the catalog version so every instance reloads
+	// the setting definitions, and notify clients so their UI refreshes at once
+	// instead of waiting for the fallback TTL.
+	if h.svc.catalog != nil {
+		h.svc.catalog.Invalidate(ctx)
+	}
+	h.publishConfigChanged(ctx, "settings", settingKeys(req.Settings))
+
 	h.audit(c, "update", "settings", "bulk", rawMapToAny(before), rawMapToAny(req.Settings))
 	response.OK(c, "Pengaturan disimpan", nil)
+}
+
+// broadcastSettingsChange fans a "settings changed" hint out to peer instances.
+// It never blocks the response on a Pub/Sub failure: the pod that served the
+// request has already applied the change locally, and peers re-read on the next
+// change (or their next TTL expiry) if the message is lost.
+func (h *Handler) broadcastSettingsChange(ctx context.Context, changed map[string]json.RawMessage) {
+	if h.svc.settingsBroadcaster == nil {
+		return
+	}
+	group := "settings"
+	switch {
+	case hasTimeoutsKey(changed), hasBreakerKey(changed), hasMeteringKey(changed):
+		group = "ai"
+	}
+	if err := h.svc.settingsBroadcaster.Publish(ctx, infraRedis.ChannelSettingsChanged, group); err != nil {
+		// ErrDisabled simply means single-instance mode; nothing to do.
+		_ = err
+	}
+}
+
+// hasTimeoutsKey reports whether any AI timeout budget key is present in the
+// update payload.
+func hasTimeoutsKey(settings map[string]json.RawMessage) bool {
+	for _, k := range []string{
+		"ai_timeout_chat_ms", "ai_timeout_vision_ms", "ai_timeout_voice_ms",
+		"ai_timeout_embedding_ms", "ai_timeout_reasoning_ms", "ai_timeout_client_ms",
+	} {
+		if _, ok := settings[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hasBreakerKey reports whether any AI gateway breaker tuning key is present in
@@ -280,6 +418,10 @@ func hasMeteringKey(settings map[string]json.RawMessage) bool {
 	for _, k := range []string{
 		"metering_chars_per_token", "metering_safety_buffer_pct",
 		"metering_image_tokens", "metering_audio_tokens_per_sec",
+		// Dynamic voice/vision estimation (0031) feeds the same estimator, so a
+		// change must retune the running process too.
+		"ai_estimate_voice_bytes_per_sec", "ai_estimate_voice_tokens_per_sec",
+		"ai_estimate_vision_image_tokens", "ai_estimate_chars_per_token",
 	} {
 		if _, ok := settings[k]; ok {
 			return true
@@ -326,6 +468,12 @@ func (h *Handler) settingsSnapshot(ctx contextT) (map[string]json.RawMessage, er
 		"r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket",
 		"r2_region", "r2_endpoint", "r2_prefix", "r2_public_base_url",
 		"ai_reasoning_effort", "gemini_embedding_api_key",
+		"ai_timeout_chat_ms", "ai_timeout_vision_ms", "ai_timeout_voice_ms",
+		"ai_timeout_embedding_ms", "ai_timeout_reasoning_ms", "ai_timeout_client_ms",
+		"voice_max_duration_seconds", "voice_language_mode", "voice_default_language",
+		"voice_languages", "voice_history_retention_days", "voice_daily_reset_timezone",
+		"voice_allow_edit_before_send", "voice_vu_meter_enabled",
+		"voice_fallback_to_browser", "voice_server_enabled",
 	})
 	if err != nil {
 		return map[string]json.RawMessage{}, err

@@ -66,7 +66,99 @@ type Service struct {
 	// after a settings change so the new parameters take effect immediately.
 	meteringReload func(ctx context.Context)
 
+	// timeoutsReload, when set, re-applies the AI timeout budget (gateway
+	// per-use-case timeouts + HTTP write deadline) after a settings change, so a
+	// Super Admin retune applies to in-flight routing within seconds.
+	timeoutsReload func(ctx context.Context)
+
+	// settingsBroadcaster, when set, notifies peer instances that a settings row
+	// changed so they re-apply their in-memory knobs (zero-downtime fan-out).
+	settingsBroadcaster SettingsBroadcaster
+
+	// catalog is the data-driven configuration catalog (settings/metrics/
+	// features). When set, validators and key lists come from the DB instead of
+	// hardcoded maps. Nil falls back to the built-in defaults.
+	catalog CatalogProvider
+
 	now func() time.Time
+}
+
+// CatalogProvider exposes the dynamic configuration catalog to admin handlers.
+// Declared here (not imported) so the admin package stays decoupled from the
+// configcatalog implementation and is easy to fake in tests.
+type CatalogProvider interface {
+	// IntSetting reads a setting DEFINITION's default as an int (does not see
+	// operator overrides; use LiveInt when the current value matters).
+	IntSetting(ctx context.Context, key string, fallback int64) int64
+	// LiveInt reads the operator's CURRENT value for an integer setting,
+	// falling back to the definition default, then to `fallback`.
+	LiveInt(ctx context.Context, key string, fallback int64) int64
+	// LiveString reads the operator's CURRENT value for a string setting.
+	LiveString(ctx context.Context, key, fallback string) string
+	// SettingDefinition returns a definition (ok=false when unknown).
+	SettingDefinition(ctx context.Context, key string) (SettingDef, bool)
+	// Definitions returns the ordered setting catalog.
+	Definitions(ctx context.Context) []SettingDef
+	// Invalidate bumps the catalog version so peers reload.
+	Invalidate(ctx context.Context)
+	// MetricDefinitions / FeatureDefinitions return the ordered catalogs.
+	MetricDefinitions(ctx context.Context) []MetricDef
+	FeatureDefinitions(ctx context.Context) []FeatureDef
+	// UpsertMetric / DeactivateMetric add or soft-delete a metric. The write
+	// invalidates the cache so the change applies without a deploy.
+	UpsertMetric(ctx context.Context, m MetricDef) error
+	DeactivateMetric(ctx context.Context, key string) error
+	// UpsertFeature / DeactivateFeature add or soft-delete a feature.
+	UpsertFeature(ctx context.Context, f FeatureDef) error
+	DeactivateFeature(ctx context.Context, key string) error
+}
+
+// SettingDef is the admin-facing view of a setting definition.
+type SettingDef struct {
+	Key          string          `json:"key"`
+	Kind         string          `json:"kind"`
+	MinValue     *int64          `json:"min_value,omitempty"`
+	MaxValue     *int64          `json:"max_value,omitempty"`
+	EnumValues   []string        `json:"enum_values,omitempty"`
+	MaxLen       int             `json:"max_len"`
+	DefaultValue json.RawMessage `json:"default_value,omitempty"`
+	GroupKey     string          `json:"group_key"`
+	Label        string          `json:"label"`
+	Description  string          `json:"description"`
+	IsWritable   bool            `json:"is_writable"`
+	IsSecret     bool            `json:"is_secret"`
+	SortOrder    int             `json:"sort_order"`
+	IsActive     bool            `json:"is_active"`
+}
+
+// MetricDef is the admin-facing view of a metric definition.
+type MetricDef struct {
+	Key           string `json:"key"`
+	Label         string `json:"label"`
+	Unit          string `json:"unit"`
+	Description   string `json:"description"`
+	IsEnforced    bool   `json:"is_enforced"`
+	ResolverKey   string `json:"resolver_key,omitempty"`
+	RatioAdjusted bool   `json:"ratio_adjusted"`
+	PerCycle      bool   `json:"per_cycle"`
+	GroupKey      string `json:"group_key"`
+	SortOrder     int    `json:"sort_order"`
+	IsActive      bool   `json:"is_active"`
+}
+
+// FeatureDef is the admin-facing view of a feature definition.
+type FeatureDef struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	GroupKey    string `json:"group_key"`
+	SortOrder   int    `json:"sort_order"`
+	IsActive    bool   `json:"is_active"`
+}
+
+// WithCatalog installs the dynamic configuration catalog.
+func WithCatalog(c CatalogProvider) Option {
+	return func(s *Service) { s.catalog = c }
 }
 
 // AuditWriter records administrative actions. *audit.Service satisfies this
@@ -142,6 +234,24 @@ func WithMeteringReload(fn func(ctx context.Context)) Option {
 	return func(s *Service) { s.meteringReload = fn }
 }
 
+// WithTimeoutsReload installs a callback invoked after a settings update so the
+// AI timeout budget (gateway per-use-case timeouts + HTTP write deadline) is
+// re-applied immediately, without a restart.
+func WithTimeoutsReload(fn func(ctx context.Context)) Option {
+	return func(s *Service) { s.timeoutsReload = fn }
+}
+
+// SettingsBroadcaster fans a "settings changed" hint out to peer instances so
+// they re-apply their in-memory knobs. *infraRedis.PubSub satisfies it.
+type SettingsBroadcaster interface {
+	Publish(ctx context.Context, channel, msg string) error
+}
+
+// WithSettingsBroadcaster installs the cross-instance settings notifier.
+func WithSettingsBroadcaster(b SettingsBroadcaster) Option {
+	return func(s *Service) { s.settingsBroadcaster = b }
+}
+
 // EntitlementInvalidator invalidates cached entitlements. *entitlement.Broadcaster
 // satisfies it; a narrow interface keeps the admin package free of a hard
 // dependency on the entitlement transport.
@@ -163,6 +273,10 @@ func WithEntitlementInvalidator(inv EntitlementInvalidator) Option {
 type RealtimeEmitter interface {
 	PublishUser(ctx context.Context, userID uuid.UUID, ev contracts.Event)
 	PublishAdmins(ctx context.Context, ev contracts.Event)
+	// PublishConfigChanged announces that the configuration catalog changed, so
+	// clients reload immediately (P-13). Scope names the area (settings/metrics/
+	// features/plans/pricing); keys lists the specific entries when known.
+	PublishConfigChanged(ctx context.Context, scope string, keys []string)
 }
 
 // WithRealtimeEmitter installs the realtime emitter (plan_updated broadcasts).

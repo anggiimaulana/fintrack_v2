@@ -22,6 +22,9 @@ type UsageProvidersFn struct {
 	Counters map[string]func(ctx context.Context, userID uuid.UUID) (int64, error)
 	// Period returns the active quota cycle, or nil when none is tracked.
 	Period func(ctx context.Context, userID uuid.UUID) (*entitlement.Period, error)
+	// UnitFor returns the display unit for a limit key (from the metric
+	// catalog), so the UI never hardcodes a unit. Nil means "no unit label".
+	UnitFor func(ctx context.Context, limitKey string) string
 }
 
 // Usage implements entitlement.UsageSource.
@@ -37,6 +40,9 @@ func (u *UsageProvidersFn) Usage(ctx context.Context, userID uuid.UUID, limits m
 			continue
 		}
 		entry := entitlement.UsageEntry{Limit: limit}
+		if u.UnitFor != nil {
+			entry.Unit = u.UnitFor(ctx, key)
+		}
 		if billing.IsUnlimited(limit) {
 			entry.Unlimited = true
 			entry.Used = used

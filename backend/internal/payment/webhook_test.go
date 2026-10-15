@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // memRepo is an in-memory Repository for webhook tests.
@@ -146,7 +148,7 @@ func (m *memRepo) ListPaymentsPendingReview(context.Context, int) ([]*Payment, e
 	return nil, nil
 }
 
-func (m *memRepo) ListPaymentsByUser(_ context.Context, userID uuid.UUID, _ int) ([]*UserPayment, error) {
+func (m *memRepo) ListPaymentsByUser(_ context.Context, userID uuid.UUID, _ *pagination.Query) ([]*UserPayment, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*UserPayment
@@ -155,7 +157,7 @@ func (m *memRepo) ListPaymentsByUser(_ context.Context, userID uuid.UUID, _ int)
 			out = append(out, &UserPayment{Payment: *p})
 		}
 	}
-	return out, nil
+	return out, len(out), nil
 }
 
 func (m *memRepo) GetPaymentForUser(_ context.Context, userID, paymentID uuid.UUID) (*UserPayment, error) {
@@ -168,7 +170,7 @@ func (m *memRepo) GetPaymentForUser(_ context.Context, userID, paymentID uuid.UU
 	return &UserPayment{Payment: *p}, nil
 }
 
-func (m *memRepo) ListInvoicesByUser(_ context.Context, userID uuid.UUID, _ int) ([]*Invoice, error) {
+func (m *memRepo) ListInvoicesByUser(_ context.Context, userID uuid.UUID, _ *pagination.Query) ([]*Invoice, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*Invoice
@@ -177,7 +179,7 @@ func (m *memRepo) ListInvoicesByUser(_ context.Context, userID uuid.UUID, _ int)
 			out = append(out, inv)
 		}
 	}
-	return out, nil
+	return out, len(out), nil
 }
 func (m *memRepo) ListInvoicesDueBefore(_ context.Context, beforeUnix int64) ([]*Invoice, error) {
 	m.mu.Lock()

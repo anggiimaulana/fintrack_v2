@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/fintrack/backend/internal/billing"
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // BillingRepo implements the billing repositories over PostgreSQL. Write
@@ -54,7 +56,7 @@ func (r *BillingRepo) ListActivePlans(ctx context.Context) ([]*billing.Plan, err
 }
 
 const planSelect = `SELECT id, code, name, COALESCE(description,''), price_monthly_idr, price_yearly_idr,
-    billing_period_days, is_active, is_public, fallback_gateway, sort_order, created_at, updated_at
+    billing_period_days, is_active, is_public, fallback_gateway, sort_order, token_quota_ratio, created_at, updated_at
     FROM plans`
 
 type rowScanner interface{ Scan(dest ...any) error }
@@ -62,7 +64,7 @@ type rowScanner interface{ Scan(dest ...any) error }
 func (r *BillingRepo) scanPlan(row rowScanner) (*billing.Plan, error) {
 	p := &billing.Plan{}
 	err := row.Scan(&p.ID, &p.Code, &p.Name, &p.Description, &p.PriceMonthlyIDR, &p.PriceYearlyIDR,
-		&p.BillingPeriodDays, &p.IsActive, &p.IsPublic, &p.FallbackGateway, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt)
+		&p.BillingPeriodDays, &p.IsActive, &p.IsPublic, &p.FallbackGateway, &p.SortOrder, &p.TokenQuotaRatio, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, billing.ErrPlanNotFound
 	}
@@ -207,15 +209,76 @@ func (r *BillingRepo) ListEvents(ctx context.Context, userID uuid.UUID, limit in
 	return out, rows.Err()
 }
 
+// subscriptionEventSortColumns whitelists the sortable columns of the
+// subscription-events history table.
+var subscriptionEventSortColumns = map[string]string{
+	"created_at": "created_at",
+	"event_type": "event_type",
+}
+
+// ListEventsPaged returns one page of a user's lifecycle events plus the total
+// row count. Sort columns are validated against a whitelist; a stable
+// `created_at DESC` tiebreaker keeps pagination deterministic.
+func (r *BillingRepo) ListEventsPaged(ctx context.Context, userID uuid.UUID, pq *pagination.Query) ([]*billing.SubscriptionEvent, int, error) {
+	if pq == nil {
+		pq = &pagination.Query{Page: 1, PerPage: pagination.DefaultPerPage, Sorts: []pagination.SortSpec{{Column: "created_at", Order: "desc"}}}
+	}
+
+	var total int
+	if err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT COUNT(*) FROM subscription_events WHERE user_id=$1`, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Build a safe ORDER BY from the whitelist.
+	parts := make([]string, 0, len(pq.Sorts)+1)
+	for _, s := range pq.Sorts {
+		col, ok := subscriptionEventSortColumns[s.Column]
+		if !ok {
+			continue
+		}
+		dir := "DESC"
+		if s.Order == "asc" {
+			dir = "ASC"
+		}
+		parts = append(parts, col+" "+dir)
+	}
+	parts = append(parts, "created_at DESC")
+	orderClause := strings.Join(parts, ", ")
+
+	rows, err := q(ctx, r.pool).Query(ctx,
+		`SELECT id, subscription_id, user_id, event_type, previous_state, new_state, reason, actor_id, created_at
+         FROM subscription_events WHERE user_id=$1 ORDER BY `+orderClause+` LIMIT $2 OFFSET $3`,
+		userID, pq.PerPage, pq.Offset())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := make([]*billing.SubscriptionEvent, 0, pq.PerPage)
+	for rows.Next() {
+		e := &billing.SubscriptionEvent{}
+		var created time.Time
+		if err := rows.Scan(&e.ID, &e.SubscriptionID, &e.UserID, &e.EventType, &e.PreviousState, &e.NewState, &e.Reason, &e.ActorID, &created); err != nil {
+			return nil, 0, err
+		}
+		e.CreatedAt = created.Format(time.RFC3339)
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
+}
+
 // ─── TokenRepository ──────────────────────────────────────────
 
-func (r *BillingRepo) GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, periodStart, periodEnd int64, quota int64) (*billing.TokenPeriod, error) {
+func (r *BillingRepo) GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, periodStart, periodEnd int64, quota int64, ratio int64) (*billing.TokenPeriod, error) {
 	ps := time.Unix(periodStart, 0).UTC()
 	pe := time.Unix(periodEnd, 0).UTC()
+	if ratio < 1 {
+		ratio = 1
+	}
 	_, err := q(ctx, r.pool).Exec(ctx,
-		`INSERT INTO token_periods (user_id, period_start, period_end, quota_tokens)
-         VALUES ($1,$2,$3,$4) ON CONFLICT (user_id, period_start) DO NOTHING`,
-		userID, ps, pe, quota)
+		`INSERT INTO token_periods (user_id, period_start, period_end, quota_tokens, quota_ratio)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id, period_start) DO NOTHING`,
+		userID, ps, pe, quota, ratio)
 	if err != nil {
 		return nil, err
 	}
@@ -225,9 +288,9 @@ func (r *BillingRepo) GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, p
 func (r *BillingRepo) getPeriodByStart(ctx context.Context, userID uuid.UUID, ps time.Time) (*billing.TokenPeriod, error) {
 	p := &billing.TokenPeriod{}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`SELECT id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at
+		`SELECT id, user_id, period_start, period_end, quota_tokens, quota_ratio, used_tokens, reserved_tokens, created_at, updated_at
          FROM token_periods WHERE user_id=$1 AND period_start=$2`, userID, ps).
-		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
+		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.QuotaRatio, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +300,24 @@ func (r *BillingRepo) getPeriodByStart(ctx context.Context, userID uuid.UUID, ps
 func (r *BillingRepo) GetPeriodForUpdate(ctx context.Context, userID uuid.UUID, nowUnix int64) (*billing.TokenPeriod, error) {
 	return r.currentPeriod(ctx, userID, nowUnix, true)
 }
+// GetPeriodByIDForUpdate locks a period row by its primary key.
+func (r *BillingRepo) GetPeriodByIDForUpdate(ctx context.Context, id uuid.UUID) (*billing.TokenPeriod, error) {
+	query := `SELECT id, user_id, period_start, period_end, quota_tokens, quota_ratio, used_tokens, reserved_tokens, created_at, updated_at
+         FROM token_periods
+         WHERE id = $1
+         FOR UPDATE`
+	p := &billing.TokenPeriod{}
+	err := q(ctx, r.pool).QueryRow(ctx, query, id).
+		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.QuotaRatio, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 
 // GetCurrentPeriod reads the current period without locking. Used for
 // pre-flight checks (entitlement usage) where a row lock is inappropriate.
@@ -248,7 +329,7 @@ func (r *BillingRepo) GetCurrentPeriod(ctx context.Context, userID uuid.UUID, no
 // Returns (nil, nil) when no period covers the instant.
 func (r *BillingRepo) currentPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64, forUpdate bool) (*billing.TokenPeriod, error) {
 	now := time.Unix(nowUnix, 0).UTC()
-	query := `SELECT id, user_id, period_start, period_end, quota_tokens, used_tokens, reserved_tokens, created_at, updated_at
+	query := `SELECT id, user_id, period_start, period_end, quota_tokens, quota_ratio, used_tokens, reserved_tokens, created_at, updated_at
          FROM token_periods
          WHERE user_id=$1 AND period_start <= $2 AND period_end >= $2
          ORDER BY period_start DESC LIMIT 1`
@@ -257,7 +338,7 @@ func (r *BillingRepo) currentPeriod(ctx context.Context, userID uuid.UUID, nowUn
 	}
 	p := &billing.TokenPeriod{}
 	err := q(ctx, r.pool).QueryRow(ctx, query, userID, now).
-		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
+		Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.QuotaTokens, &p.QuotaRatio, &p.UsedTokens, &p.ReservedTokens, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil // caller creates the period / treats as zero usage
 	}
@@ -269,7 +350,7 @@ func (r *BillingRepo) currentPeriod(ctx context.Context, userID uuid.UUID, nowUn
 
 func (r *BillingRepo) AdjustPeriod(ctx context.Context, periodID uuid.UUID, usedDelta, reservedDelta int64) error {
 	_, err := q(ctx, r.pool).Exec(ctx,
-		`UPDATE token_periods SET used_tokens = used_tokens + $2, reserved_tokens = reserved_tokens + $3, updated_at = now()
+		`UPDATE token_periods SET used_tokens = GREATEST(0, used_tokens + $2), reserved_tokens = GREATEST(0, reserved_tokens + $3), updated_at = now()
          WHERE id = $1`, periodID, usedDelta, reservedDelta)
 	return err
 }
@@ -325,9 +406,9 @@ func (r *BillingRepo) InsertLedger(ctx context.Context, e *billing.TokenLedgerEn
 		e.ID = uuid.New()
 	}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`INSERT INTO token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING created_at`,
-		e.ID, e.PeriodID, e.UserID, e.ReservationID, e.EntryType, e.Amount, e.Modality, e.CostIDR, e.IdempotencyKey, e.ReferenceID, e.Notes).
+		`INSERT INTO token_ledger (id, period_id, user_id, reservation_id, entry_type, amount, raw_tokens, modality, cost_idr, idempotency_key, reference_id, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at`,
+		e.ID, e.PeriodID, e.UserID, e.ReservationID, e.EntryType, e.Amount, e.RawTokens, e.Modality, e.CostIDR, e.IdempotencyKey, e.ReferenceID, e.Notes).
 		Scan(&e.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -342,9 +423,9 @@ func (r *BillingRepo) InsertLedger(ctx context.Context, e *billing.TokenLedgerEn
 func (r *BillingRepo) GetLedgerByIdempotencyKey(ctx context.Context, key string) (*billing.TokenLedgerEntry, error) {
 	e := &billing.TokenLedgerEntry{}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`SELECT id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at
+		`SELECT id, period_id, user_id, reservation_id, entry_type, amount, raw_tokens, modality, cost_idr, idempotency_key, reference_id, notes, created_at
          FROM token_ledger WHERE idempotency_key = $1`, key).
-		Scan(&e.ID, &e.PeriodID, &e.UserID, &e.ReservationID, &e.EntryType, &e.Amount, &e.Modality, &e.CostIDR, &e.IdempotencyKey, &e.ReferenceID, &e.Notes, &e.CreatedAt)
+		Scan(&e.ID, &e.PeriodID, &e.UserID, &e.ReservationID, &e.EntryType, &e.Amount, &e.RawTokens, &e.Modality, &e.CostIDR, &e.IdempotencyKey, &e.ReferenceID, &e.Notes, &e.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -358,9 +439,9 @@ func (r *BillingRepo) GetLedgerByIdempotencyKey(ctx context.Context, key string)
 func (r *BillingRepo) GetLedgerByID(ctx context.Context, id uuid.UUID) (*billing.TokenLedgerEntry, error) {
 	e := &billing.TokenLedgerEntry{}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`SELECT id, period_id, user_id, reservation_id, entry_type, amount, modality, cost_idr, idempotency_key, reference_id, notes, created_at
+		`SELECT id, period_id, user_id, reservation_id, entry_type, amount, raw_tokens, modality, cost_idr, idempotency_key, reference_id, notes, created_at
          FROM token_ledger WHERE id = $1`, id).
-		Scan(&e.ID, &e.PeriodID, &e.UserID, &e.ReservationID, &e.EntryType, &e.Amount, &e.Modality, &e.CostIDR, &e.IdempotencyKey, &e.ReferenceID, &e.Notes, &e.CreatedAt)
+		Scan(&e.ID, &e.PeriodID, &e.UserID, &e.ReservationID, &e.EntryType, &e.Amount, &e.RawTokens, &e.Modality, &e.CostIDR, &e.IdempotencyKey, &e.ReferenceID, &e.Notes, &e.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

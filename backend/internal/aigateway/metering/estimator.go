@@ -17,11 +17,11 @@ const (
 
 // Default heuristic constants.
 const (
-	DefaultCharsPerToken   = 4
-	DefaultSafetyBufferPct = 10
-	DefaultImageTokens     = 85
-	DefaultTokensPerSecond = 25
-
+	DefaultCharsPerToken       = 4
+	DefaultSafetyBufferPct     = 10
+	DefaultImageTokens         = 800
+	DefaultTokensPerSecond     = 25
+	DefaultAudioBytesPerSecond = 4000
 	// Deprecated aliases kept for backwards compatibility.
 	CharsPerToken   = DefaultCharsPerToken
 	SafetyBufferPct = DefaultSafetyBufferPct
@@ -29,19 +29,21 @@ const (
 
 // Config tunes the local heuristic token estimation.
 type Config struct {
-	CharsPerToken   int `json:"chars_per_token"`
-	SafetyBufferPct int `json:"safety_buffer_pct"`
-	ImageTokens     int `json:"image_tokens"`
-	TokensPerSecond int `json:"tokens_per_second"`
+	CharsPerToken       int `json:"chars_per_token"`
+	SafetyBufferPct     int `json:"safety_buffer_pct"`
+	ImageTokens         int `json:"image_tokens"`
+	TokensPerSecond     int `json:"tokens_per_second"`
+	AudioBytesPerSecond int `json:"audio_bytes_per_second"`
 }
 
 // DefaultConfig returns the standard heuristic parameters.
 func DefaultConfig() Config {
 	return Config{
-		CharsPerToken:   DefaultCharsPerToken,
-		SafetyBufferPct: DefaultSafetyBufferPct,
-		ImageTokens:     DefaultImageTokens,
-		TokensPerSecond: DefaultTokensPerSecond,
+		CharsPerToken:       DefaultCharsPerToken,
+		SafetyBufferPct:     DefaultSafetyBufferPct,
+		ImageTokens:         DefaultImageTokens,
+		TokensPerSecond:     DefaultTokensPerSecond,
+		AudioBytesPerSecond: DefaultAudioBytesPerSecond,
 	}
 }
 
@@ -65,6 +67,9 @@ func New(cfg Config) *Estimator {
 	if cfg.TokensPerSecond <= 0 {
 		cfg.TokensPerSecond = DefaultTokensPerSecond
 	}
+	if cfg.AudioBytesPerSecond <= 0 {
+		cfg.AudioBytesPerSecond = DefaultAudioBytesPerSecond
+	}
 	return &Estimator{cfg: cfg}
 }
 
@@ -83,6 +88,9 @@ func (e *Estimator) SetConfig(cfg Config) {
 	}
 	if cfg.TokensPerSecond > 0 {
 		e.cfg.TokensPerSecond = cfg.TokensPerSecond
+	}
+	if cfg.AudioBytesPerSecond > 0 {
+		e.cfg.AudioBytesPerSecond = cfg.AudioBytesPerSecond
 	}
 }
 
@@ -163,6 +171,18 @@ func (e *Estimator) EstimateAudio(seconds float64, responseText string) domain.T
 	}
 }
 
+// EstimateAudioFromBytes converts raw audio bytes into seconds using AudioBytesPerSecond,
+// then computes token usage.
+func (e *Estimator) EstimateAudioFromBytes(audioBytes int, responseText string) domain.TokenUsage {
+	cfg := e.Config()
+	bps := float64(cfg.AudioBytesPerSecond)
+	if bps <= 0 {
+		bps = float64(DefaultAudioBytesPerSecond)
+	}
+	seconds := float64(audioBytes) / bps
+	return e.EstimateAudio(seconds, responseText)
+}
+
 // estimateText applies ceil(len/charsPerToken) with a safety buffer.
 func (e *Estimator) estimateText(s string) int {
 	if s == "" {
@@ -202,4 +222,9 @@ func EstimateVision(promptText, responseText string) domain.TokenUsage {
 // EstimateAudio estimates usage for audio: duration * tokensPerSecond.
 func EstimateAudio(seconds float64, responseText string) domain.TokenUsage {
 	return defaultEstimator.EstimateAudio(seconds, responseText)
+}
+
+// EstimateAudioFromBytes converts raw audio bytes into seconds using the default estimator.
+func EstimateAudioFromBytes(audioBytes int, responseText string) domain.TokenUsage {
+	return defaultEstimator.EstimateAudioFromBytes(audioBytes, responseText)
 }

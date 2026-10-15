@@ -64,7 +64,7 @@ func messageForUser(userID uuid.UUID, ev contracts.Event) (Message, bool) {
 			Event:   ev.Event,
 			Title:   "Pembayaran diterima",
 			Body:    "Pembayaran Anda sebesar " + formatIDR(p.AmountIDR) + " telah kami terima.",
-			Href:    "/user/settings/subscription?tab=payments",
+			Href:    "/user/subscription?tab=payment",
 			Channel: ChannelTransaction,
 		}, true
 
@@ -80,7 +80,7 @@ func messageForUser(userID uuid.UUID, ev contracts.Event) (Message, bool) {
 			Event:   ev.Event,
 			Title:   "Paket diperbarui",
 			Body:    body,
-			Href:    "/user/settings/subscription",
+			Href:    "/user/subscription",
 			Channel: ChannelTransaction,
 		}, true
 
@@ -92,7 +92,7 @@ func messageForUser(userID uuid.UUID, ev contracts.Event) (Message, bool) {
 			Event:   ev.Event,
 			Title:   "Kuota direset",
 			Body:    "Siklus baru dimulai. Kuota Anda telah diperbarui.",
-			Href:    "/user/settings/subscription",
+			Href:    "/user/usage",
 			Channel: ChannelTransaction,
 		}, true
 

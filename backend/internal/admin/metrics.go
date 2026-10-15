@@ -98,12 +98,12 @@ func (h *Handler) Overview(c *gin.Context) {
 	}
 	if err == nil {
 		err = h.svc.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount), 0)::bigint FROM token_ledger
+			SELECT COALESCE(SUM(GREATEST(raw_tokens, ABS(amount))), 0)::bigint FROM token_ledger
 			 WHERE entry_type = 'commit' AND created_at >= now() - interval '24 hours'`).Scan(&tokens24h)
 	}
 	if err == nil {
 		err = h.svc.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount), 0)::bigint FROM token_ledger
+			SELECT COALESCE(SUM(GREATEST(raw_tokens, ABS(amount))), 0)::bigint FROM token_ledger
 			 WHERE entry_type = 'commit'
 			   AND created_at >= now() - interval '48 hours'
 			   AND created_at <  now() - interval '24 hours'`).Scan(&prevTokens24h)
@@ -219,7 +219,7 @@ func (h *Handler) Timeseries(c *gin.Context) {
 	}
 
 	trows, err := h.svc.pool.Query(ctx, `
-		SELECT to_char(d.day, 'YYYY-MM-DD'), COALESCE(l.modality, ''), COALESCE(SUM(l.amount), 0)::bigint
+		SELECT to_char(d.day, 'YYYY-MM-DD'), COALESCE(l.modality, ''), COALESCE(SUM(GREATEST(l.raw_tokens, ABS(l.amount))), 0)::bigint
 		FROM generate_series(now()::date - ($1::int - 1), now()::date, '1 day') AS d(day)
 		LEFT JOIN token_ledger l
 		  ON l.created_at::date = d.day AND l.entry_type = 'commit'

@@ -1,11 +1,13 @@
 package http
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ulule/limiter/v3"
@@ -14,12 +16,15 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
+	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/infrastructure/metrics"
 	infraRedis "github.com/fintrack/backend/internal/infrastructure/redis"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/user"
+	"github.com/fintrack/backend/internal/voice"
 	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 	"go.uber.org/zap"
@@ -47,14 +52,36 @@ type RouterConfig struct {
 	Storage *storage.Provider
 	// Ledger, when non-nil, enables two-phase token reservations on AI routes.
 	Ledger *billing.LedgerService
+	// Realtime, when non-nil, enables per-user domain events (usage_changed after
+	// a transaction or AI consumption) so quota bars update live. Nil disables
+	// emission — tests that predate realtime rely on that.
+	Realtime handler.UsageEmitter
 	// Estimates, when non-nil, supplies per-modality reserve amounts (P3).
 	Estimates *billing.EstimateStore
 	// Notifications, when non-nil, exposes the user's notification inbox and
 	// preferences. Nil omits those routes (tests that predate them).
 	Notifications *handler.NotificationHandler
+	// Voice, when non-nil, exposes the voice-input config and history routes.
+	// Nil omits them (tests that predate the feature).
+	Voice *handler.VoiceHandler
+	// VoiceRepo/VoiceConfig let the AI handler record server-mode transcriptions
+	// and resolve the default language. Nil disables recording.
+	VoiceRepo   domain.VoiceTranscriptionRepository
+	VoiceConfig voice.ConfigReader
+	// VoiceDaily bumps the append-only daily voice counter (server mode).
+	VoiceDaily func(ctx context.Context, userID uuid.UUID, limit int64) (bool, int64, error)
+	// EntitlementResolver reads the plan's daily voice limit for the conditional
+	// slot claim on /ai/voice. Nil skips that claim.
+	EntitlementResolver *entitlement.Resolver
 	// Audit records administrative mutations (payment accounts, etc.). Nil
 	// disables auditing, which tests that do not exercise the trail rely on.
 	Audit handler.AuditWriter
+	// UsageHandler exposes the signed-in user's own consumption (time series +
+	// history ledger). Nil omits those routes.
+	UsageHandler *handler.UsageHandler
+	// AIConfig exposes the effective AI timeout budget to the client so the
+	// browser waits as long as the server allows. Nil omits the route.
+	AIConfig *handler.AIConfigHandler
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -79,11 +106,25 @@ func limitGate(cfg RouterConfig, limitKey string) []gin.HandlerFunc {
 	if cfg.Entitlement == nil {
 		return nil
 	}
-	var usage middleware.UsageResolver
-	if cfg.Usage != nil {
-		usage = cfg.Usage.UsageFor(limitKey)
+	// The usage resolver is resolved per-request (not at route build time) so
+	// the mapping can come from the config catalog, which may change at runtime.
+	return []gin.HandlerFunc{cfg.Entitlement.WithinLimit(limitKey, usageResolverFor(cfg, limitKey))}
+}
+
+// usageResolverFor returns a UsageResolver that looks up the configured resolver
+// for `limitKey` on each call. This keeps the middleware wiring static while the
+// limit→resolver mapping stays data-driven.
+func usageResolverFor(cfg RouterConfig, limitKey string) middleware.UsageResolver {
+	if cfg.Usage == nil {
+		return nil
 	}
-	return []gin.HandlerFunc{cfg.Entitlement.WithinLimit(limitKey, usage)}
+	return func(ctx context.Context, userID uuid.UUID, key string) (int64, error) {
+		r := cfg.Usage.UsageFor(ctx, key)
+		if r == nil {
+			return 0, nil
+		}
+		return r(ctx, userID, key)
+	}
 }
 
 // gated returns the middleware chain (dropping nil groups) followed by the
@@ -143,6 +184,25 @@ func SetupRouter(
 	bh := handler.NewBudgetHandler(budgetUC)
 	pah := handler.NewPaymentAccountHandler(paymentAccountUC).WithAudit(config.Audit)
 	aiH := handler.NewAIHandler(aiUC, transactionUC)
+	if config.VoiceRepo != nil {
+		aiH.WithVoice(config.VoiceRepo, config.VoiceConfig)
+	}
+	if config.VoiceDaily != nil {
+		aiH.WithVoiceDailyCounter(config.VoiceDaily)
+	}
+	if config.EntitlementResolver != nil {
+		aiH.WithEntitlementsResolver(config.EntitlementResolver)
+	}
+	// Quota bars must move live: announce usage_changed after every consumption
+	// (transaction create/delete, AI chat/OCR/voice). Emitting only when the
+	// realtime publisher is configured keeps tests that predate realtime working.
+	if config.Realtime != nil {
+		th.WithUsageEmitter(config.Realtime)
+		aiH.WithUsageEmitter(config.Realtime)
+		if config.Voice != nil {
+			config.Voice.WithUsageEmitter(config.Realtime)
+		}
+	}
 	if config.Ledger != nil {
 		aiH.WithLedger(config.Ledger)
 	}
@@ -176,6 +236,10 @@ func SetupRouter(
 		"/api/v1/payments/checkout":     {Period: 1 * time.Minute, Limit: 5},
 		"/api/v1/invoices/:id/cancel":   {Period: 1 * time.Minute, Limit: 10},
 		"/api/v1/payments/:id/proof":    {Period: 1 * time.Minute, Limit: 10},
+		// Browser-mode voice history is a cheap write, but it also increments the
+		// daily counter, so a tight per-user budget stops a retry loop (or a
+		// scripted client) from inflating the counter faster than a human speaks.
+		"/api/v1/me/voice-history": {Period: 1 * time.Minute, Limit: 30},
 	}
 
 	rateLimitMw := middleware.RateLimitMiddlewareByPath(rateLimitMap)
@@ -228,11 +292,25 @@ func SetupRouter(
 			}
 			// Realtime SSE stream. Registered outside the cached group: a
 			// long-lived stream must never be wrapped in the 30s response cache.
+			// NoWriteTimeout clears the server's whole-request write deadline so
+			// the stream is not severed mid-flight.
 			if realtimeH != nil {
-				protected.GET("/realtime/stream", realtimeH.Stream)
+				protected.GET("/realtime/stream", middleware.NoWriteTimeout(), realtimeH.Stream)
 			}
 			if entitlementH != nil {
 				protected.GET("/me/entitlements", entitlementH.Me)
+			}
+			// The client reads its AI request budget from here so the browser
+			// never aborts before the server would. Unauthenticated-agnostic:
+			// the value is the same for every user, but it lives behind auth so
+			// it is not part of the public surface.
+			if config.AIConfig != nil {
+				protected.GET("/me/ai-config", config.AIConfig.Get)
+			}
+			if config.UsageHandler != nil {
+				uh := config.UsageHandler
+				protected.GET("/me/usage/timeseries", uh.Timeseries)
+				protected.GET("/me/usage/history", uh.History)
 			}
 
 			userRoutes := protected.Group("")
@@ -288,6 +366,7 @@ func SetupRouter(
 					userRoutes.POST("/invoices/:id/cancel", paymentH.CancelMyInvoice)
 
 					userRoutes.GET("/subscriptions/me", paymentH.MySubscription)
+					userRoutes.GET("/subscriptions/me/events", paymentH.MySubscriptionEvents)
 					userRoutes.POST("/subscriptions/me/downgrade", paymentH.ScheduleDowngrade)
 					userRoutes.DELETE("/subscriptions/me/downgrade", paymentH.CancelDowngrade)
 					userRoutes.POST("/subscriptions/me/cancel", paymentH.CancelSubscription)
@@ -297,10 +376,24 @@ func SetupRouter(
 				userRoutes.GET("/payment-accounts", pah.ListActive)
 				ai := userRoutes.Group("/ai")
 				{
+					// AI endpoints are long-lived, so each gets a per-route write
+					// deadline instead of the server's global budget:
+					//
+					//   - chat streams via SSE and must never be severed, so it
+					//     clears the deadline entirely (NoWriteTimeout);
+					//   - vision (receipt) and voice wait on an upstream model that
+					//     can legitimately take tens of seconds, so they extend the
+					//     deadline to the Super-Admin-configured AI budget
+					//     (AIDeadline). That budget is retunable at runtime, so an
+					//     operator can widen it without a redeploy.
+					//
+					// In both cases the AI gateway's per-use-case timeout still
+					// bounds the upstream call itself.
 					// ai_chat is in every plan; the token quota is the real gate.
 					// ai_requests_per_cycle bounds the number of AI calls per cycle
 					// across chat, OCR, and voice.
 					ai.POST("/chat", gated(aiH.Chat,
+						[]gin.HandlerFunc{middleware.NoWriteTimeout()},
 						featureGate(config, "ai_chat"),
 						limitGate(config, "ai_requests_per_cycle"),
 						limitGate(config, "ai_tokens_per_cycle"))...)
@@ -313,6 +406,7 @@ func SetupRouter(
 					// shared token quota — a scan consumes vision tokens, so it must
 					// respect ai_tokens_per_cycle exactly like chat does.
 					ai.POST("/receipt", gated(aiH.AnalyzeReceipt,
+						[]gin.HandlerFunc{middleware.AIDeadline()},
 						featureGate(config, "ocr_receipt"),
 						limitGate(config, "ai_requests_per_cycle"),
 						limitGate(config, "ocr_scans_per_cycle"),
@@ -320,11 +414,31 @@ func SetupRouter(
 					ai.POST("/receipt/transaction", gated(aiH.CreateTransactionFromReceipt,
 						featureGate(config, "ocr_receipt"))...)
 					// Voice input: Pro/Business only. Voice consumes audio tokens,
-					// so it is gated by the shared token quota too (P1).
+					// so it is gated by the shared token quota too (P1). The daily
+					// cap (voice_requests_per_day) bounds both server and browser
+					// usage, so it is checked here as well as on the history route.
 					ai.POST("/voice", gated(aiH.ProcessVoice,
+						[]gin.HandlerFunc{middleware.AIDeadline()},
 						featureGate(config, "voice_input"),
+						limitGate(config, "voice_requests_per_day"),
 						limitGate(config, "ai_requests_per_cycle"),
 						limitGate(config, "ai_tokens_per_cycle"))...)
+				}
+
+				// Voice input config + history. Registered on the user-gated
+				// router (RequireUser) like every other user-facing route, and
+				// outside the cached group because the config carries the live
+				// daily counter and the history is paged.
+				if config.Voice != nil {
+					vh := config.Voice
+					userRoutes.GET("/me/voice-config", vh.Config)
+					userRoutes.GET("/me/voice-history", vh.ListHistory)
+					// Recording a browser transcription counts against the daily
+					// limit, so it shares the gate (plus the per-path rate limit).
+					userRoutes.POST("/me/voice-history",
+						gated(vh.Record, limitGate(config, "voice_requests_per_day"))...)
+					userRoutes.DELETE("/me/voice-history/:id", vh.DeleteOne)
+					userRoutes.DELETE("/me/voice-history", vh.Clear)
 				}
 
 				userRoutes.POST("/spk/calculate", sh.Calculate)

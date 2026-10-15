@@ -32,6 +32,14 @@ type Options struct {
 	MaxPerPage int
 }
 
+// SortSpec is one column and its direction within a (possibly multi-column)
+// sort. `Query.Sort`/`Query.Order` mirror the first entry for callers that only
+// understand a single column.
+type SortSpec struct {
+	Column string
+	Order  string // "asc" | "desc"
+}
+
 // Query is the parsed, validated table query.
 type Query struct {
 	Page    int
@@ -40,6 +48,11 @@ type Query struct {
 	Order   string // "asc" | "desc"
 	Search  string
 	Filters map[string]string
+	// Sorts is the full ordered sort list, parsed from
+	// `sort=a,b&order=desc,asc`. Empty when sorting is disabled or no column is
+	// valid. Callers that support multi-column sort should prefer
+	// OrderByClauses over OrderByClause.
+	Sorts []SortSpec
 }
 
 // Offset returns the SQL OFFSET for the current page.
@@ -86,6 +99,10 @@ func Parse(c *gin.Context, opts Options) Query {
 		q.Order = normalizeOrder(order)
 	}
 
+	// Multi-column sort (additive to the single-column fields above so existing
+	// callers keep working unchanged).
+	q.Sorts = parseSorts(c, opts)
+
 	q.Search = strings.TrimSpace(c.Query("q"))
 
 	// Filter parameters: filter_<key>=value
@@ -106,6 +123,67 @@ func OrderByClause(q Query, whitelist []string) string {
 		return ""
 	}
 	return q.Sort + " " + strings.ToUpper(q.Order)
+}
+
+// parseSorts reads a comma-separated sort list (`sort=a,b&order=desc,asc`),
+// keeping only whitelisted columns and normalising every direction. When no
+// valid column is supplied it falls back to the endpoint's DefaultSort. A
+// single `sort=a` yields exactly one entry, so this is a superset of the
+// single-column behaviour.
+func parseSorts(c *gin.Context, opts Options) []SortSpec {
+	raw := strings.TrimSpace(c.Query("sort"))
+	def := normalizeOrder(opts.DefaultOrder)
+	if raw == "" {
+		if opts.DefaultSort != "" && allowed(opts.AllowedSort, opts.DefaultSort) {
+			return []SortSpec{{Column: opts.DefaultSort, Order: def}}
+		}
+		return nil
+	}
+
+	cols := strings.Split(raw, ",")
+	ords := strings.Split(strings.TrimSpace(c.Query("order")), ",")
+	out := make([]SortSpec, 0, len(cols))
+	for i, col := range cols {
+		col = strings.TrimSpace(col)
+		if col == "" || !allowed(opts.AllowedSort, col) {
+			continue
+		}
+		order := def
+		if i < len(ords) {
+			if o := strings.TrimSpace(ords[i]); o != "" {
+				order = normalizeOrder(o)
+			}
+		} else if n := len(ords); n > 0 {
+			// Fewer directions than columns: reuse the last explicit one.
+			if o := strings.TrimSpace(ords[n-1]); o != "" {
+				order = normalizeOrder(o)
+			}
+		}
+		out = append(out, SortSpec{Column: col, Order: order})
+	}
+
+	if len(out) == 0 && opts.DefaultSort != "" && allowed(opts.AllowedSort, opts.DefaultSort) {
+		out = append(out, SortSpec{Column: opts.DefaultSort, Order: def})
+	}
+	return out
+}
+
+// OrderByClauses returns a safe, comma-joined "col ORDER, col ORDER" fragment
+// built from Query.Sorts (each column validated against the whitelist). It
+// degrades to OrderByClause when no multi-sort was parsed, so it is a drop-in
+// replacement.
+func OrderByClauses(q Query, whitelist []string) string {
+	if len(q.Sorts) == 0 {
+		return OrderByClause(q, whitelist)
+	}
+	parts := make([]string, 0, len(q.Sorts))
+	for _, s := range q.Sorts {
+		if !allowed(whitelist, s.Column) {
+			continue
+		}
+		parts = append(parts, s.Column+" "+strings.ToUpper(normalizeOrder(s.Order)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func normalizeOrder(order string) string {

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/billing"
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // ─── stubs ────────────────────────────────────────────────────
@@ -95,6 +96,9 @@ func (f *fakeSubRepo) RecordEvent(_ context.Context, ev *billing.SubscriptionEve
 func (f *fakeSubRepo) ListEvents(context.Context, uuid.UUID, int) ([]*billing.SubscriptionEvent, error) {
 	return f.events, nil
 }
+func (f *fakeSubRepo) ListEventsPaged(_ context.Context, _ uuid.UUID, _ *pagination.Query) ([]*billing.SubscriptionEvent, int, error) {
+	return f.events, len(f.events), nil
+}
 
 // ─── tests ────────────────────────────────────────────────────
 
@@ -112,7 +116,7 @@ func TestUserService_ListAndGetScopedByOwner(t *testing.T) {
 
 	svc := NewUserService(repo, &fakeSettings{}, nil, nil)
 
-	list, err := svc.ListPayments(ctx, userID, 10)
+	list, _, err := svc.ListPayments(ctx, userID, nil)
 	if err != nil {
 		t.Fatalf("ListPayments: %v", err)
 	}

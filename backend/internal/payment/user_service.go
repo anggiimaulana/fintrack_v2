@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // ─── User self-service (P0/P1) ────────────────────────────────
@@ -54,9 +56,9 @@ func (s *UserService) WithPaymentAccounts(src PaymentAccountSource) *UserService
 	return s
 }
 
-// ListPayments returns the user's payment attempts (newest first).
-func (s *UserService) ListPayments(ctx context.Context, userID uuid.UUID, limit int) ([]*UserPayment, error) {
-	return s.repo.ListPaymentsByUser(ctx, userID, limit)
+// ListPayments returns one page of the user's payment attempts plus the total.
+func (s *UserService) ListPayments(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*UserPayment, int, error) {
+	return s.repo.ListPaymentsByUser(ctx, userID, q)
 }
 
 // GetPayment returns one payment scoped to its owner (nil when not found).
@@ -124,9 +126,9 @@ func (s *UserService) CancelInvoice(ctx context.Context, userID, invoiceID uuid.
 	return s.repo.GetInvoiceByID(ctx, inv.ID)
 }
 
-// ListInvoices returns the user's invoices (newest first).
-func (s *UserService) ListInvoices(ctx context.Context, userID uuid.UUID, limit int) ([]*Invoice, error) {
-	return s.repo.ListInvoicesByUser(ctx, userID, limit)
+// ListInvoices returns one page of the user's invoices plus the total.
+func (s *UserService) ListInvoices(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*Invoice, int, error) {
+	return s.repo.ListInvoicesByUser(ctx, userID, q)
 }
 
 // UploadProof validates and stores a proof for the user's own manual payment,

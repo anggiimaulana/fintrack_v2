@@ -42,6 +42,7 @@ var LimitCatalog = []LimitKey{
 	{Key: "ai_requests_per_cycle", Label: "Permintaan AI / siklus", Unit: "permintaan", Enforced: true},
 	{Key: "max_transactions", Label: "Transaksi", Unit: "transaksi", Enforced: true},
 	{Key: "ocr_scans_per_cycle", Label: "Pindai struk / siklus", Unit: "scan", Enforced: true},
+	{Key: "voice_requests_per_day", Label: "Permintaan suara / hari", Unit: "permintaan", Enforced: true},
 	// Not enforced: categories are admin-managed and there is no per-user wallet
 	// entity yet, so these are informational until those features exist.
 	{Key: "max_categories", Label: "Kategori", Unit: "kategori", Enforced: false},

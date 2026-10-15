@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // Repository persists invoices and payments.
@@ -42,11 +44,11 @@ type Repository interface {
 
 	// User-scoped reads (self-service history). Payments are joined with their
 	// invoice so the UI can render one row per attempt without extra queries.
-	ListPaymentsByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*UserPayment, error)
+	ListPaymentsByUser(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*UserPayment, int, error)
 	// GetPaymentForUser returns one payment with invoice details, scoped to the
 	// owner so a user can never read another user's payment.
 	GetPaymentForUser(ctx context.Context, userID, paymentID uuid.UUID) (*UserPayment, error)
-	ListInvoicesByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*Invoice, error)
+	ListInvoicesByUser(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*Invoice, int, error)
 }
 
 // UserPayment is a payment attempt joined with its invoice, for the user-facing

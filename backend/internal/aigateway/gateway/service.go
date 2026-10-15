@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,6 +72,12 @@ type Service struct {
 	// while its healthy siblings on the same endpoint keep serving.
 	routeHealth *routeHealth
 
+	// useCaseTimeout holds Super-Admin-configured per-use-case budgets. When a
+	// use case is present, its value is authoritative and overrides the route's
+	// timeout_ms; otherwise the route value (then the default) applies. Stored
+	// behind an atomic pointer so the hot path reads it without a lock.
+	useCaseTimeout atomic.Pointer[map[domain.UseCase]time.Duration]
+
 	rrMu    sync.Mutex
 	rrState map[domain.UseCase]map[string]int64 // use_case -> combo -> currentWeight
 }
@@ -79,7 +86,10 @@ type Service struct {
 // New builds a gateway service.
 func New(repo domain.AIEndpointRepository, cfg Config) *Service {
 	if cfg.DefaultTimeout <= 0 {
-		cfg.DefaultTimeout = 30 * time.Second
+		// Vision (receipt) and voice calls routinely exceed 30s on a loaded
+		// provider; keep the built-in default generous so a zero-valued config
+		// (tests, direct construction) does not reintroduce the timeout bug.
+		cfg.DefaultTimeout = 90 * time.Second
 	}
 	bc := cfg.Breaker
 	if bc.FailureThreshold == 0 && bc.Cooldown == 0 {
@@ -129,6 +139,43 @@ func (s *Service) BreakerConfig() breaker.Config { return s.breaker.Config() }
 
 // RouteBreakerConfig returns the route breaker's current tuning.
 func (s *Service) RouteBreakerConfig() (int, time.Duration) { return s.routeHealth.thresholds() }
+
+// SetUseCaseTimeouts installs Super-Admin-configured per-use-case budgets. A use
+// case present in the map overrides its routes' timeout_ms; absent use cases
+// keep the per-route value. Passing nil clears all overrides. The swap is
+// atomic, so it is safe to call while requests are in flight (zero downtime).
+func (s *Service) SetUseCaseTimeouts(m map[domain.UseCase]time.Duration) {
+	if len(m) == 0 {
+		s.useCaseTimeout.Store(nil)
+		return
+	}
+	cp := make(map[domain.UseCase]time.Duration, len(m))
+	for uc, d := range m {
+		if d > 0 {
+			cp[uc] = d
+		}
+	}
+	s.useCaseTimeout.Store(&cp)
+}
+
+// UseCaseTimeout returns the configured override for a use case (0 when none).
+func (s *Service) UseCaseTimeout(uc domain.UseCase) time.Duration {
+	m := s.useCaseTimeout.Load()
+	if m == nil {
+		return 0
+	}
+	return (*m)[uc]
+}
+
+// timeoutFor resolves the effective timeout for a route: an explicit Super
+// Admin override for the use case wins, then the route's timeout_ms, then the
+// gateway default.
+func (s *Service) timeoutFor(rt *domain.AIRoute) time.Duration {
+	if d := s.UseCaseTimeout(rt.UseCase); d > 0 {
+		return d
+	}
+	return routeTimeout(rt, s.cfg.DefaultTimeout)
+}
 
 // killed reports whether the emergency kill switch disables a use case.
 func (s *Service) killed(uc domain.UseCase) bool {
@@ -316,7 +363,7 @@ func (s *Service) ChatStream(ctx context.Context, req *domain.AIChatRequest) (<-
 		if model == "" {
 			model = rt.Endpoint.Provider
 		}
-		ch, serr := c.ChatStream(ctx, model, req, routeTimeout(rt, s.cfg.DefaultTimeout))
+		ch, serr := c.ChatStream(ctx, model, req, s.timeoutFor(rt))
 		if serr != nil {
 			s.recordFailure(rt, serr)
 			lastErr = serr
@@ -358,7 +405,7 @@ func (s *Service) ChatSync(ctx context.Context, req *domain.AIChatRequest) (stri
 		if model == "" {
 			model = rt.Endpoint.Provider
 		}
-		content, usage, serr := c.ChatSync(ctx, model, req, routeTimeout(rt, s.cfg.DefaultTimeout))
+		content, usage, serr := c.ChatSync(ctx, model, req, s.timeoutFor(rt))
 		if serr != nil {
 			s.recordFailure(rt, serr)
 			lastErr = serr
@@ -397,7 +444,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, req *domain.AIEmbeddingRe
 		if req.Model != "" {
 			model = req.Model
 		}
-		vec, usage, eerr := c.Embedding(ctx, model, req.Text, 768, routeTimeout(rt, s.cfg.DefaultTimeout))
+		vec, usage, eerr := c.Embedding(ctx, model, req.Text, 768, s.timeoutFor(rt))
 		if eerr != nil {
 			s.recordFailure(rt, eerr)
 			lastErr = eerr
@@ -442,7 +489,7 @@ func (s *Service) TranscribeAudio(ctx context.Context, req *domain.AIAudioTransc
 		if req.Model != "" {
 			model = req.Model
 		}
-		text, terr := c.Transcribe(ctx, model, req.Filename, req.Audio, routeTimeout(rt, s.cfg.DefaultTimeout))
+		text, terr := c.Transcribe(ctx, model, req.Filename, req.Audio, s.timeoutFor(rt))
 		if terr != nil {
 			s.recordFailure(rt, terr)
 			lastErr = terr

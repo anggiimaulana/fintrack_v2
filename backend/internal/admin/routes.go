@@ -20,6 +20,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 		plans.POST("", h.CreatePlan)
 		plans.PUT("/:id", h.UpdatePlan)
 		plans.DELETE("/:id", h.DeactivatePlan)
+		// Quota estimator (P-9): read-only "how many chats / what cost" preview.
+		plans.POST("/estimate", h.PlanEstimate)
 	}
 
 	// Subscriptions
@@ -83,6 +85,18 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 
 	// Entitlement key catalog (F5): powers the plan-editor dropdowns.
 	rg.GET("/entitlement-catalog", h.EntitlementCatalog)
+
+	// Dynamic configuration catalog (P-13): the settings/metrics/features
+	// catalogs are DATA, so the UI renders them instead of a hardcoded list.
+	rg.GET("/setting-definitions", h.SettingDefinitions)
+	rg.GET("/metric-definitions", h.MetricDefinitions)
+	rg.POST("/metric-definitions", h.UpsertMetricDefinition)
+	rg.DELETE("/metric-definitions/:key", h.DeleteMetricDefinition)
+	rg.GET("/feature-definitions", h.FeatureDefinitions)
+	rg.POST("/feature-definitions", h.UpsertFeatureDefinition)
+	rg.DELETE("/feature-definitions/:key", h.DeleteFeatureDefinition)
+	rg.GET("/resolvers", h.Resolvers)
+	rg.POST("/config/reload", h.ConfigReload)
 
 	// Quota monitoring (F6): users running low on a plan limit.
 	rg.GET("/quota-monitor", h.QuotaMonitor)

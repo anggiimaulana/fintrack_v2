@@ -85,11 +85,16 @@ func (h *Handler) ListTokenBalances(c *gin.Context) {
 }
 
 type ledgerRow struct {
-	ID             string         `json:"id"`
-	UserID         string         `json:"user_id"`
-	UserEmail      string         `json:"user_email"`
-	EntryType      string         `json:"entry_type"`
-	Amount         int64          `json:"amount"`
+	ID        string `json:"id"`
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email"`
+	EntryType string `json:"entry_type"`
+	// Amount is the plan-quota UNIT delta (raw / token_quota_ratio).
+	Amount int64 `json:"amount"`
+	// RawTokens is the provider token count (the cost basis). It is 0 for
+	// reserve/release; rows written before the ratio migration also carry 0 and
+	// should be read as |Amount| (see billing.TokenLedgerEntry.RawTokensOrAmount).
+	RawTokens      int64          `json:"raw_tokens"`
 	Modality       string         `json:"modality"`
 	CostIDR        int64          `json:"cost_idr"`
 	IdempotencyKey string         `json:"idempotency_key"`
@@ -128,13 +133,14 @@ func (h *Handler) ListTokenLedger(c *gin.Context) {
 	}
 
 	rows, err := h.svc.pool.Query(ctx, `
-		SELECT l.id, l.user_id, u.email, l.entry_type, l.amount, l.modality, l.cost_idr,
+		SELECT l.id, l.user_id, u.email, l.entry_type, l.amount, l.raw_tokens, l.modality, l.cost_idr,
 		       l.idempotency_key, l.reference_id, l.notes, l.created_at
 		FROM token_ledger l
 		JOIN users u ON u.id = l.user_id`+where+`
 		ORDER BY `+orderBy(c, map[string]string{
 		"created_at": "l.created_at",
 		"amount":     "l.amount",
+		"raw_tokens": "l.raw_tokens",
 		"cost":       "l.cost_idr",
 		"user":       "u.email",
 		"type":       "l.entry_type",
@@ -150,7 +156,7 @@ func (h *Handler) ListTokenLedger(c *gin.Context) {
 	for rows.Next() {
 		var l ledgerRow
 		var created time.Time
-		if err := rows.Scan(&l.ID, &l.UserID, &l.UserEmail, &l.EntryType, &l.Amount, &l.Modality,
+		if err := rows.Scan(&l.ID, &l.UserID, &l.UserEmail, &l.EntryType, &l.Amount, &l.RawTokens, &l.Modality,
 			&l.CostIDR, &l.IdempotencyKey, &l.ReferenceID, &l.Notes, &created); err != nil {
 			response.InternalError(c, "Gagal memuat ledger token")
 			return

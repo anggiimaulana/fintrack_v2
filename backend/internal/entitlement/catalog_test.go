@@ -11,6 +11,7 @@ func TestCatalog_KeysMatchResolvers(t *testing.T) {
 		"ai_requests_per_cycle",
 		"max_transactions",
 		"ocr_scans_per_cycle",
+		"voice_requests_per_day",
 	}
 	for _, key := range enforced {
 		if !IsKnownLimit(key) {

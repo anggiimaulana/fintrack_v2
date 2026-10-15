@@ -17,10 +17,19 @@ import (
 
 type TransactionHandler struct {
 	usecase *usecase.TransactionUsecase
+	// usageEmitter publishes usage_changed after a mutation so the quota bars
+	// refresh live. Nil disables emission (tests that do not exercise realtime).
+	usageEmitter UsageEmitter
 }
 
 func NewTransactionHandler(usecase *usecase.TransactionUsecase) *TransactionHandler {
 	return &TransactionHandler{usecase: usecase}
+}
+
+// WithUsageEmitter installs the realtime emitter used to announce quota changes.
+func (h *TransactionHandler) WithUsageEmitter(e UsageEmitter) *TransactionHandler {
+	h.usageEmitter = e
+	return h
 }
 
 func (h *TransactionHandler) List(c *gin.Context) {
@@ -137,6 +146,9 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 	}
 
 	middleware.InvalidateUserCache(c.Request.Context(), userID)
+	// A new row moves the `max_transactions` counter, so tell the client to
+	// refresh its quota bars (entitlements only — not the lists).
+	emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "transaction_created", UsageKeyMaxTransactions)
 	response.Created(c, "Transaction created successfully", tx)
 }
 
@@ -190,6 +202,8 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	}
 
 	middleware.InvalidateUserCache(c.Request.Context(), userID)
+	// Soft-delete frees a `max_transactions` slot.
+	emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "transaction_deleted", UsageKeyMaxTransactions)
 	response.OK(c, "Transaction deleted successfully", nil)
 }
 

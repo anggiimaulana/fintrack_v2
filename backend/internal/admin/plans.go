@@ -26,6 +26,7 @@ type planDTO struct {
 	IsPublic          bool             `json:"is_public"`
 	FallbackGateway   string           `json:"fallback_gateway"`
 	SortOrder         int              `json:"sort_order"`
+	TokenQuotaRatio   int64            `json:"token_quota_ratio"`
 	Entitlements      map[string]bool  `json:"entitlements"`
 	Limits            map[string]int64 `json:"limits"`
 }
@@ -41,6 +42,7 @@ type planRequest struct {
 	IsPublic          *bool             `json:"is_public"`
 	FallbackGateway   *string           `json:"fallback_gateway"`
 	SortOrder         *int              `json:"sort_order"`
+	TokenQuotaRatio   *int64            `json:"token_quota_ratio"`
 	Entitlements      *map[string]bool  `json:"entitlements"`
 	Limits            *map[string]int64 `json:"limits"`
 }
@@ -59,7 +61,7 @@ func (h *Handler) ListPlans(c *gin.Context) {
 func (h *Handler) loadPlans(ctx contextT) ([]planDTO, error) {
 	rows, err := h.svc.pool.Query(ctx, `
 		SELECT id, code, name, description, price_monthly_idr, price_yearly_idr,
-		       billing_period_days, is_active, is_public, fallback_gateway, sort_order
+		       billing_period_days, is_active, is_public, fallback_gateway, sort_order, token_quota_ratio
 		FROM plans ORDER BY sort_order ASC, price_monthly_idr ASC`)
 	if err != nil {
 		return nil, err
@@ -71,7 +73,7 @@ func (h *Handler) loadPlans(ctx contextT) ([]planDTO, error) {
 		var p planDTO
 		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.Description, &p.PriceMonthlyIDR,
 			&p.PriceYearlyIDR, &p.BillingPeriodDays, &p.IsActive, &p.IsPublic,
-			&p.FallbackGateway, &p.SortOrder); err != nil {
+			&p.FallbackGateway, &p.SortOrder, &p.TokenQuotaRatio); err != nil {
 			return nil, err
 		}
 		p.Entitlements = map[string]bool{}
@@ -164,13 +166,31 @@ func (h *Handler) CreatePlan(c *gin.Context) {
 	}
 	sortOrder := derefInt(req.SortOrder)
 
+	// Ratio default comes from the operator's CURRENT setting (LiveInt), not a
+	// constant and not merely the definition default — otherwise changing the
+	// value in the settings UI would have no effect here.
+	ratio := int64(1)
+	if req.TokenQuotaRatio != nil {
+		ratio = *req.TokenQuotaRatio
+	} else if h.svc.catalog != nil {
+		ratio = h.svc.catalog.LiveInt(ctx, "quota_default_ratio", 1)
+	}
+	if ratio < 1 {
+		response.BadRequest(c, "rasio kuota harus antara 1 dan 1000", "validation")
+		return
+	}
+	if ratio > 1000 {
+		response.BadRequest(c, "rasio kuota harus antara 1 dan 1000", "validation")
+		return
+	}
+
 	var id uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO plans (code, name, description, price_monthly_idr, price_yearly_idr,
-		                   billing_period_days, is_active, is_public, fallback_gateway, sort_order)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+		                   billing_period_days, is_active, is_public, fallback_gateway, sort_order, token_quota_ratio)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
 		req.Code, req.Name, req.Description, monthly, yearly, periodDays,
-		isActive, isPublic, gateway, sortOrder).Scan(&id)
+		isActive, isPublic, gateway, sortOrder, ratio).Scan(&id)
 	if err != nil {
 		if isUniqueViolation(err) {
 			response.Conflict(c, "Kode paket sudah dipakai")
@@ -195,6 +215,7 @@ func (h *Handler) CreatePlan(c *gin.Context) {
 	// A new plan may be assigned to users immediately; clear any cached
 	// entitlement state keyed to it.
 	h.invalidatePlan(ctx, id)
+	h.publishConfigChanged(ctx, "plans", []string{req.Code})
 
 	h.audit(c, "create", "plan", id.String(), nil,
 		map[string]any{"code": req.Code, "name": req.Name, "price_monthly_idr": monthly})
@@ -215,6 +236,10 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 	if (req.PriceMonthlyIDR != nil && *req.PriceMonthlyIDR < 0) ||
 		(req.PriceYearlyIDR != nil && *req.PriceYearlyIDR < 0) {
 		response.BadRequest(c, "harga tidak boleh negatif", "validation")
+		return
+	}
+	if req.TokenQuotaRatio != nil && (*req.TokenQuotaRatio < 1 || *req.TokenQuotaRatio > 1000) {
+		response.BadRequest(c, "rasio kuota harus antara 1 dan 1000", "validation")
 		return
 	}
 
@@ -246,11 +271,12 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 			is_active           = COALESCE($7, is_active),
 			is_public           = COALESCE($8, is_public),
 			fallback_gateway    = COALESCE($9, fallback_gateway),
-			sort_order          = COALESCE($10, sort_order)
+			sort_order          = COALESCE($10, sort_order),
+			token_quota_ratio   = COALESCE($11, token_quota_ratio)
 		WHERE id = $1`,
 		id, nullableStr(req.Code), nullableStr(req.Name), req.PriceMonthlyIDR,
 		req.PriceYearlyIDR, req.BillingPeriodDays, req.IsActive, req.IsPublic,
-		req.FallbackGateway, req.SortOrder)
+		req.FallbackGateway, req.SortOrder, req.TokenQuotaRatio)
 	if err != nil {
 		if isUniqueViolation(err) {
 			response.Conflict(c, "Kode paket sudah dipakai")
@@ -284,6 +310,11 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 	// A single O(1) version bump invalidates them all, instead of leaving every
 	// user on stale entitlements until the 24h TTL lapses.
 	h.invalidatePlan(ctx, id)
+	var changedCodes []string
+	if req.Code != "" {
+		changedCodes = []string{req.Code}
+	}
+	h.publishConfigChanged(ctx, "plans", changedCodes)
 
 	after, _ := h.planSnapshot(ctx, h.svc.pool, id)
 	h.audit(c, "update", "plan", id.String(), before, after)
@@ -320,6 +351,8 @@ func (h *Handler) DeactivatePlan(c *gin.Context) {
 		response.NotFound(c, "Paket tidak ditemukan")
 		return
 	}
+	h.invalidatePlan(ctx, id)
+	h.publishConfigChanged(ctx, "plans", nil)
 	h.audit(c, "deactivate", "plan", id.String(), nil, map[string]any{"is_active": false})
 	response.OK(c, "Paket dinonaktifkan", nil)
 }

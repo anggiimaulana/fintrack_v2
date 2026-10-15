@@ -110,6 +110,30 @@ func (p *Publisher) PublishAdmins(ctx context.Context, ev contracts.Event) {
 	}
 }
 
+// PublishConfigChanged announces a configuration-catalog change to EVERY
+// connected client so the UI reloads immediately instead of waiting for a TTL.
+//
+// It is deliberately broadcast to all streams, not just admins: a regular user
+// viewing their quota/subscription page must see an operator's change (a new
+// ratio or quota) without a manual refresh. Best-effort, like every other
+// realtime emit — the catalog version is the authoritative signal.
+func (p *Publisher) PublishConfigChanged(ctx context.Context, scope string, keys []string) {
+	ev := contracts.NewEvent(contracts.EventConfigChanged, time.Now().Unix(),
+		contracts.ConfigChangedPayload{Scope: scope, Keys: keys})
+	if !p.enabled {
+		return
+	}
+	if ev.ID == "" {
+		ev.ID = p.nextID()
+	}
+	// A global event has no single user channel, so Redis pub/sub cannot target
+	// every subscriber: deliver through the hub, which reaches every locally
+	// connected stream. Peers receive the change via the catalog version bump.
+	if p.hub != nil {
+		p.hub.SendToAll(ev)
+	}
+}
+
 // publish sends to Redis, reporting whether it succeeded.
 func (p *Publisher) publish(ctx context.Context, channel string, ev contracts.Event) bool {
 	if p.ps == nil || !p.ps.Enabled() {

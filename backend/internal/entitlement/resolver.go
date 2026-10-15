@@ -117,6 +117,7 @@ func (r *Resolver) resolveFromSource(ctx context.Context, userID uuid.UUID) (*Re
 	res.PlanID = plan.ID.String()
 	res.PlanCode = plan.Code
 	res.PlanName = plan.Name
+	res.QuotaRatio = plan.TokenQuotaRatio
 
 	features, err := r.src.GetEntitlements(ctx, plan.ID)
 	if err != nil {

@@ -329,11 +329,13 @@ func recordSubscriptionEvent(ctx contextT, tx pgx.Tx, subID, userID uuid.UUID, e
 // invalidateUser bumps the user's cache version so entitlement/limit reads
 // reflect the change immediately (K-14) and drops the cached role.
 func (h *Handler) invalidateUser(ctx contextT, userID uuid.UUID) {
-	if h.svc.cache == nil {
-		return
+	if h.svc.entInvalidator != nil {
+		h.svc.entInvalidator.InvalidateUser(ctx, userID)
 	}
-	h.svc.cache.BumpUserVersion(ctx, userID)
-	h.svc.cache.DeletePattern(ctx, roleKey(userID.String()))
+	if h.svc.cache != nil {
+		h.svc.cache.BumpUserVersion(ctx, userID)
+		h.svc.cache.DeletePattern(ctx, roleKey(userID.String()))
+	}
 }
 
 // actorIDOrNil extracts the authenticated admin id from the request context.

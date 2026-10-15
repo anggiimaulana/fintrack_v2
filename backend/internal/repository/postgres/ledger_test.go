@@ -14,11 +14,18 @@ import (
 type fixedQuota struct {
 	quota int64
 	days  int
+	// ratio is the token→unit ratio; 0 means 1 (identity), so pre-existing
+	// tests keep working unchanged.
+	ratio int64
 }
 
-func (f fixedQuota) ResolveQuota(_ context.Context, _ uuid.UUID, at time.Time) (time.Time, time.Time, int64, error) {
+func (f fixedQuota) ResolveQuota(_ context.Context, _ uuid.UUID, at time.Time) (time.Time, time.Time, int64, int64, error) {
 	start := at.Truncate(24 * time.Hour)
-	return start, start.AddDate(0, 0, f.days), f.quota, nil
+	r := f.ratio
+	if r < 1 {
+		r = 1
+	}
+	return start, start.AddDate(0, 0, f.days), f.quota, r, nil
 }
 
 // TestLedger_ReserveCommitRelease is env-gated. It exercises the full 2-phase
@@ -236,7 +243,7 @@ func TestLedger_CleanerReleasesStale(t *testing.T) {
 	// explicit created_at is allowed. Insert a reserve dated well in the past so
 	// it is unambiguously stale, then reserve a fresh one to prove the cleaner
 	// only touches the old entry.
-	period, err := repo.GetOrCreatePeriod(ctx, userID, time.Now().Add(-48*time.Hour).Unix(), time.Now().Add(30*24*time.Hour).Unix(), 1000)
+	period, err := repo.GetOrCreatePeriod(ctx, userID, time.Now().Add(-48*time.Hour).Unix(), time.Now().Add(30*24*time.Hour).Unix(), 1000, 1)
 	if err != nil {
 		t.Fatalf("create period: %v", err)
 	}

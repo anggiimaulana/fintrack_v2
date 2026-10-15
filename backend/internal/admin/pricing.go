@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -327,9 +328,27 @@ func (h *Handler) activatePricingRule(c *gin.Context, id uuid.UUID) {
 }
 
 // pricingChanged notifies the pricing engine to reload the active rule so the
-// new cost applies to the very next commit, without a restart.
+// new cost applies to the very next commit, without a restart. It also
+// broadcasts config_changed so clients (the quota calculator, the pricing page)
+// refresh immediately rather than showing a stale rule.
 func (h *Handler) pricingChanged(c *gin.Context) {
 	if h.svc.pricingChanged != nil {
 		h.svc.pricingChanged(c.Request.Context())
 	}
+	h.publishConfigChanged(c.Request.Context(), "pricing", nil)
+}
+
+// scanPricingRuleModel scans a pricing row into the billing domain model. Used
+// by the quota estimator, which needs the engine's own type rather than the
+// admin DTO.
+func scanPricingRuleModel(row pgx.Row) (*billing.PricingRule, error) {
+	r := &billing.PricingRule{}
+	var createdAt, updatedAt time.Time
+	if err := row.Scan(&r.ID, &r.RuleName, &r.BasePer1kIDR, &r.PriceUnit, &r.ProviderCostPer1kIDR,
+		&r.MarkupMultiplier, &r.MarkupPercent, &r.ModalityMultipliers, &r.IsActive,
+		&createdAt, &updatedAt); err != nil {
+		return nil, err
+	}
+	r.CreatedAt, r.UpdatedAt = createdAt, updatedAt
+	return r, nil
 }

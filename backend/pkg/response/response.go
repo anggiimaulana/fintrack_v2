@@ -170,6 +170,6 @@ func QuotaExceeded(c *gin.Context, msg string) {
 		"error":        "insufficient_quota",
 		"message":      msg,
 		"upgrade_hint": true,
-		"upgrade_url":  "/user/settings/subscription",
+		"upgrade_url":  "/user/subscription",
 	})
 }

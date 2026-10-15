@@ -16,11 +16,22 @@ const (
 	EventAIRouteQuarantined   = "ai_route_quarantined"
 	EventManualApprovalNeeded = "manual_approval_needed"
 	EventQuotaReset           = "quota_reset"
+	// UsageChanged is emitted per-user whenever real-time quota consumption
+	// moves (a transaction was created/deleted, or AI tokens/requests were
+	// consumed). The client refreshes ONLY its entitlements query — never the
+	// transaction/dashboard/report lists — so the quota bars stay live without a
+	// cache storm.
+	EventUsageChanged = "usage_changed"
 	// Notification-inbox lifecycle events. Emitted per-user so the notifications
 	// page can patch a single row instead of refetching the whole list.
 	EventNotificationCreated = "notification_created"
 	EventNotificationRead    = "notification_read"
 	EventNotificationDeleted = "notification_deleted"
+	// ConfigChanged is emitted when the configuration catalog changes (a
+	// setting, metric, feature, plan, or pricing rule). Clients reload the
+	// affected queries immediately instead of waiting for a TTL, so an operator
+	// sees their change take effect at once (P-13).
+	EventConfigChanged = "config_changed"
 )
 
 // Event is the envelope every domain event shares. Field order and names are
@@ -99,6 +110,30 @@ type QuotaResetPayload struct {
 	PeriodStart     int64  `json:"new_cycle_start"`
 	PeriodEnd       int64  `json:"new_cycle_end"`
 	AllocatedTokens int64  `json:"allocated_tokens"`
+}
+
+// ConfigChangedPayload accompanies EventConfigChanged. It names WHAT changed so
+// the client reloads only the affected queries (never a blanket refetch).
+type ConfigChangedPayload struct {
+	// Scope is the configuration area: "settings" | "metrics" | "features" |
+	// "plans" | "pricing" | "all".
+	Scope string `json:"scope"`
+	// Keys lists the specific entries that changed (empty = the whole scope).
+	Keys []string `json:"keys,omitempty"`
+}
+
+// UsageChangedPayload accompanies EventUsageChanged. It is a lightweight hint,
+// not a full snapshot: the client reacts by refetching GET /me/entitlements
+// (the authoritative, already-existing usage source), so the payload only needs
+// to say *what* moved — not the new totals.
+type UsageChangedPayload struct {
+	// LimitKeys lists the limit keys whose consumption changed (e.g.
+	// "max_transactions", "ai_tokens_per_cycle"). Clients that patch in place
+	// can use it to decide which bars to touch; clients that refetch ignore it.
+	LimitKeys []string `json:"limit_keys"`
+	// Reason is a short, human-readable origin tag for observability
+	// (e.g. "transaction_created", "ai_chat").
+	Reason string `json:"reason,omitempty"`
 }
 
 // NotificationChangedPayload accompanies the notification-inbox lifecycle events

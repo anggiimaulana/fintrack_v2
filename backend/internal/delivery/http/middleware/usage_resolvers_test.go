@@ -26,7 +26,7 @@ func TestUsageFor_AllKeysHaveResolvers(t *testing.T) {
 		"ocr_scans_per_cycle",
 		"ai_requests_per_cycle",
 	} {
-		if p.UsageFor(key) == nil {
+		if p.UsageFor(context.Background(), key) == nil {
 			t.Errorf("UsageFor(%q) = nil; limit would be bypassed", key)
 		}
 	}
@@ -34,7 +34,7 @@ func TestUsageFor_AllKeysHaveResolvers(t *testing.T) {
 
 func TestUsageFor_UnknownKeyReturnsNil(t *testing.T) {
 	p := &UsageProviders{}
-	if p.UsageFor("max_wallets") != nil {
+	if p.UsageFor(context.Background(), "max_wallets") != nil {
 		t.Error("max_wallets has no resolver yet; expected nil (documented gap)")
 	}
 }
@@ -47,7 +47,7 @@ func TestUsageFor_AIRequestsResolves(t *testing.T) {
 			return 7, nil
 		},
 	}
-	resolver := p.UsageFor("ai_requests_per_cycle")
+	resolver := p.UsageFor(context.Background(), "ai_requests_per_cycle")
 	if resolver == nil {
 		t.Fatal("ai_requests_per_cycle resolver is nil")
 	}
@@ -67,7 +67,7 @@ func TestUsageFor_AIRequestsResolves(t *testing.T) {
 // than panicking (the middleware still enforces the limit).
 func TestUsageFor_NilProviderIsSafe(t *testing.T) {
 	p := &UsageProviders{}
-	resolver := p.UsageFor("ai_requests_per_cycle")
+	resolver := p.UsageFor(context.Background(), "ai_requests_per_cycle")
 	if resolver == nil {
 		t.Fatal("resolver should be non-nil even when the provider is nil")
 	}

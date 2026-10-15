@@ -104,7 +104,7 @@ func (s *Service) verifyRoute(ctx context.Context, rt *domain.AIRoute) RouteVeri
 		return res
 	}
 
-	timeout := routeTimeout(rt, s.cfg.DefaultTimeout)
+	timeout := s.timeoutFor(rt)
 	if timeout <= 0 || timeout > verifyProbeCap {
 		timeout = verifyProbeCap
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/domain"
+	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/usecase"
+	"github.com/fintrack/backend/internal/voice"
 	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 )
@@ -25,14 +28,57 @@ type AIHandler struct {
 	// estimates supplies per-modality reserve amounts (P3), editable by a Super
 	// Admin. Nil falls back to a built-in default.
 	estimates *billing.EstimateStore
+	// usageEmitter publishes usage_changed after AI consumption so the quota
+	// bars refresh live. Nil disables emission (tests).
+	usageEmitter UsageEmitter
+	// voiceRepo records server-mode transcriptions (history + daily counter).
+	// Nil disables recording (tests that predate the feature).
+	voiceRepo domain.VoiceTranscriptionRepository
+	// voiceCfg resolves the default language for a voice request. Nil falls back
+	// to the package default.
+	voiceCfg voice.ConfigReader
+	// voiceDaily atomically claims a daily slot for a server-mode transcription
+	// given the plan limit, returning (granted, newValue). Nil disables it.
+	voiceDaily func(ctx context.Context, userID uuid.UUID, limit int64) (bool, int64, error)
+	// entResolver resolves the plan limit for the daily-slot claim. Nil skips the
+	// conditional claim (the middleware gate still applies).
+	entResolver *entitlement.Resolver
 }
 
 func NewAIHandler(aiUC *usecase.AIUsecase, transactionUC *usecase.TransactionUsecase) *AIHandler {
 	return &AIHandler{aiUC: aiUC, transactionUC: transactionUC}
 }
 
+// WithVoice installs the voice-history repository and config reader so
+// /ai/voice records transcriptions and resolves the default language.
+func (h *AIHandler) WithVoice(repo domain.VoiceTranscriptionRepository, cfg voice.ConfigReader) *AIHandler {
+	h.voiceRepo = repo
+	h.voiceCfg = cfg
+	return h
+}
+
+// WithVoiceDailyCounter installs the atomic daily-slot claim used after a
+// successful server-mode transcription (R-14 + concurrency safety).
+func (h *AIHandler) WithVoiceDailyCounter(fn func(ctx context.Context, userID uuid.UUID, limit int64) (bool, int64, error)) *AIHandler {
+	h.voiceDaily = fn
+	return h
+}
+
+// WithEntitlementsResolver installs the resolver used to read the daily voice
+// limit for the conditional slot claim.
+func (h *AIHandler) WithEntitlementsResolver(r *entitlement.Resolver) *AIHandler {
+	h.entResolver = r
+	return h
+}
+
 func (h *AIHandler) WithLedger(l *billing.LedgerService) *AIHandler {
 	h.ledger = l
+	return h
+}
+
+// WithUsageEmitter installs the realtime emitter used to announce quota changes.
+func (h *AIHandler) WithUsageEmitter(e UsageEmitter) *AIHandler {
+	h.usageEmitter = e
 	return h
 }
 
@@ -64,6 +110,38 @@ func (h *AIHandler) estimateFor(ctx context.Context, modality billing.Modality) 
 	default:
 		return def.Chat
 	}
+}
+
+// chatEstimate returns the reserve for one chat turn. It scales with the
+// request so a long conversation is not under-reserved (which would clamp the
+// commit and silently drain the cycle) and a short one is not over-reserved
+// (which would refuse a request that actually fits).
+func (h *AIHandler) chatEstimate(ctx context.Context, modality billing.Modality, message string) int64 {
+	if h.estimates != nil {
+		if v := h.estimates.ForChat(ctx, modality, int64(len(message))); v > 0 {
+			return v
+		}
+	}
+	return h.estimateFor(ctx, modality)
+}
+
+func (h *AIHandler) visionEstimate(ctx context.Context, imageBytes int64) int64 {
+	if h.estimates != nil {
+		const approxReceiptPromptChars = 800
+		if v := h.estimates.ForVision(ctx, imageBytes, approxReceiptPromptChars); v > 0 {
+			return v
+		}
+	}
+	return h.estimateFor(ctx, billing.ModalityVision)
+}
+
+func (h *AIHandler) voiceEstimate(ctx context.Context, audioBytes int64) int64 {
+	if h.estimates != nil {
+		if v := h.estimates.ForVoice(ctx, audioBytes); v > 0 {
+			return v
+		}
+	}
+	return h.estimateFor(ctx, billing.ModalityVoice)
 }
 
 // resultSucceeded reports whether a vision/voice result map represents success.
@@ -106,7 +184,7 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		if req.Mode == domain.LLMReasoning {
 			modality = billing.ModalityReasoning
 		}
-		res, err := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), modality), modality, idempotencyKey)
+		res, err := h.ledger.Reserve(c.Request.Context(), userID, h.chatEstimate(c.Request.Context(), modality, req.Message), modality, idempotencyKey)
 		if err != nil {
 			if errors.Is(err, billing.ErrInsufficientQuota) {
 				response.QuotaExceeded(c, "Sisa kuota token Anda tidak mencukupi untuk melakukan permintaan ini.")
@@ -155,7 +233,9 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	// event. It defaults to the reserved estimate so the ledger always settles
 	// with a sane value even if the provider omits usage.
 	actualTokens := int64(1)
-	if reservation != nil && reservation.Amount > 0 {
+	if reservation != nil && reservation.RawTokens > 0 {
+		actualTokens = reservation.RawTokens
+	} else if reservation != nil && reservation.Amount > 0 {
 		actualTokens = reservation.Amount
 	}
 	defer func() {
@@ -166,13 +246,23 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		switch {
 		case noCharge:
 			// Nothing billable happened: return the held quota untouched.
-			_ = h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String())
+			if err := h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String()); err != nil {
+				logger.Error("chat release failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+			}
 		case gotContent:
-			_ = h.ledger.Commit(ctx, userID, reservation.ID, actualTokens, "commit:"+reservation.ID.String())
+			if err := h.ledger.Commit(ctx, userID, reservation.ID, actualTokens, "commit:"+reservation.ID.String()); err != nil {
+				logger.Error("chat commit failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+			}
 		default:
 			// No content and not explicitly flagged: treat as unserved.
-			_ = h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String())
+			if err := h.ledger.Release(ctx, userID, reservation.ID, "release:"+reservation.ID.String()); err != nil {
+				logger.Error("chat unserved release failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+			}
 		}
+		// A reservation was made, so the request counter moved and the token
+		// bucket settled. Announce the change for live quota bars.
+		emitUsageChanged(ctx, h.usageEmitter, userID, "ai_chat",
+			UsageKeyAITokens, UsageKeyAIRequests)
 	}()
 
 	c.Stream(func(w io.Writer) bool {
@@ -358,7 +448,7 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		if reqID == "" {
 			reqID = uuid.New().String()
 		}
-		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVision), billing.ModalityVision, "vision-reserve:"+reqID)
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.visionEstimate(c.Request.Context(), header.Size), billing.ModalityVision, "vision-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
 				response.QuotaExceeded(c, "Sisa kuota Anda tidak mencukupi untuk memindai struk ini.")
@@ -376,6 +466,10 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 	// produced a usable result; any other outcome returns the held quota.
 	if reservation != nil {
 		settleVision(h.ledger, userID, reservation, result, usage, err)
+		// The scan attempt is counted either way (the reserve entry is what
+		// `ocr_scans_per_cycle` measures), so announce the change regardless.
+		emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "ai_ocr",
+			UsageKeyAITokens, UsageKeyAIRequests, UsageKeyOCRScans)
 	}
 
 	if err != nil {
@@ -400,17 +494,24 @@ func settleVision(
 	ctx := context.Background()
 	if callErr == nil && resultSucceeded(result) {
 		actual := int64(usage.TotalTokens)
-		if actual <= 0 {
-			actual = reservation.Amount
+		if actual <= 0 && reservation != nil {
+			actual = reservation.RawTokens
+			if actual <= 0 {
+				actual = reservation.Amount
+			}
 		}
 		if actual <= 0 {
 			actual = 1
 		}
-		_ = ledger.Commit(ctx, userID, reservation.ID, actual, "vision-commit:"+reservation.ID.String())
+		if err := ledger.Commit(ctx, userID, reservation.ID, actual, "vision-commit:"+reservation.ID.String()); err != nil {
+			logger.Error("vision commit failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+		}
 		return
 	}
 	// Unusable result or error: return the reserved quota untouched.
-	_ = ledger.Release(ctx, userID, reservation.ID, "vision-release:"+reservation.ID.String())
+	if err := ledger.Release(ctx, userID, reservation.ID, "vision-release:"+reservation.ID.String()); err != nil {
+		logger.Error("vision release failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+	}
 }
 
 func (h *AIHandler) CreateTransactionFromReceipt(c *gin.Context) {
@@ -443,6 +544,8 @@ func (h *AIHandler) CreateTransactionFromReceipt(c *gin.Context) {
 		return
 	}
 
+	// Creating from a receipt also adds a row, moving `max_transactions`.
+	emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "transaction_from_receipt", UsageKeyMaxTransactions)
 	response.Created(c, "Transaction created from receipt", tx)
 }
 
@@ -453,6 +556,9 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 
 	var req struct {
 		Audio string `json:"audio" binding:"required"`
+		// Language is the per-recording language (N-02); empty falls back to the
+		// configured default.
+		Language string `json:"language"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Audio data is required", err.Error())
@@ -464,6 +570,20 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		return
 	}
 
+	lang := strings.TrimSpace(req.Language)
+	if lang == "" && h.voiceCfg != nil {
+		lang = voice.Load(c.Request.Context(), h.voiceCfg).DefaultLanguage
+	}
+	if lang == "" {
+		lang = voice.DefaultLanguage
+	}
+
+	// Estimate the DECODED audio size without allocating a second full buffer:
+	// base64 expands 3 bytes into 4 chars, so length*3/4 is the exact decoded
+	// size for a well-formed payload (padding only shrinks it). Decoding here
+	// would double peak memory for a 5 MB request for no benefit — the usecase
+	// decodes it anyway.
+	audioBytes := int64(len(req.Audio) * 3 / 4)
 	// Charge voice to the ledger (reserve → call → commit/release).
 	var reservation *billing.Reservation
 	if h.ledger != nil {
@@ -471,7 +591,7 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		if reqID == "" {
 			reqID = uuid.New().String()
 		}
-		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.estimateFor(c.Request.Context(), billing.ModalityVoice), billing.ModalityVoice, "voice-reserve:"+reqID)
+		res, rerr := h.ledger.Reserve(c.Request.Context(), userID, h.voiceEstimate(c.Request.Context(), audioBytes), billing.ModalityVoice, "voice-reserve:"+reqID)
 		if rerr != nil {
 			if errors.Is(rerr, billing.ErrInsufficientQuota) {
 				response.QuotaExceeded(c, "Sisa kuota Anda tidak mencukupi untuk memproses suara ini.")
@@ -495,7 +615,61 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 		return
 	}
 
+	// Resolve the daily limit so the claim is conditional (never exceed the cap).
+	dailyLimit := int64(0)
+	if h.entResolver != nil {
+		if res, rerr := h.entResolver.Resolve(c.Request.Context(), userID); rerr == nil {
+			dailyLimit = res.Limit("voice_requests_per_day")
+		}
+	}
+
+	// Record the server-mode transcription (durable history) AND claim the daily
+	// slot BEFORE announcing usage. Ordering matters: the client refetches the
+	// voice config on `usage_changed`, so the counter must already be
+	// incremented or the UI shows a stale daily count (off-by-one).
+	h.recordVoiceHistory(c.Request.Context(), userID, result, lang, int64(usage.TotalTokens), dailyLimit)
+
+	// Announce the consumption (tokens + request + daily cap) for live quota bars.
+	emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "ai_voice",
+		UsageKeyAITokens, UsageKeyAIRequests, UsageKeyVoicePerDay)
+
 	response.OK(c, "Voice processed", result)
+}
+
+// recordVoiceHistory stores a successful server-mode transcription and claims a
+// daily slot. Best-effort: failures are logged, never surfaced (the
+// transcription already succeeded).
+func (h *AIHandler) recordVoiceHistory(ctx context.Context, userID uuid.UUID, result map[string]interface{}, lang string, tokens int64, dailyLimit int64) {
+	if h.voiceRepo == nil || result == nil {
+		return
+	}
+	ok, _ := result["success"].(bool)
+	if !ok {
+		return
+	}
+	transcript, _ := result["transcript"].(string)
+	if strings.TrimSpace(transcript) == "" {
+		return
+	}
+
+	// Claim the daily slot FIRST (atomic; closes the check-then-increment race).
+	// A non-positive limit is unlimited / not-in-plan and bypasses the claim.
+	if dailyLimit > 0 && h.voiceDaily != nil {
+		if _, _, err := h.voiceDaily(ctx, userID, dailyLimit); err != nil {
+			logger.Warn("failed to claim voice daily slot", zap.Error(err), zap.String("user_id", userID.String()))
+		}
+	}
+
+	entry := &domain.VoiceTranscription{
+		UserID:     userID,
+		Transcript: transcript,
+		Language:   lang,
+		Mode:       domain.VoiceModeServer,
+		TokensUsed: tokens,
+	}
+	if err := h.voiceRepo.Create(ctx, entry); err != nil {
+		logger.Warn("failed to record voice history", zap.Error(err), zap.String("user_id", userID.String()))
+	}
 }
 
 // settleVoice commits the real audio token usage on success and releases the
@@ -511,14 +685,21 @@ func settleVoice(
 	ctx := context.Background()
 	if callErr == nil && resultSucceeded(result) {
 		actual := int64(usage.TotalTokens)
-		if actual <= 0 {
-			actual = reservation.Amount
+		if actual <= 0 && reservation != nil {
+			actual = reservation.RawTokens
+			if actual <= 0 {
+				actual = reservation.Amount
+			}
 		}
 		if actual <= 0 {
 			actual = 1
 		}
-		_ = ledger.Commit(ctx, userID, reservation.ID, actual, "voice-commit:"+reservation.ID.String())
+		if err := ledger.Commit(ctx, userID, reservation.ID, actual, "voice-commit:"+reservation.ID.String()); err != nil {
+			logger.Error("voice commit failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+		}
 		return
 	}
-	_ = ledger.Release(ctx, userID, reservation.ID, "voice-release:"+reservation.ID.String())
+	if err := ledger.Release(ctx, userID, reservation.ID, "voice-release:"+reservation.ID.String()); err != nil {
+		logger.Error("voice release failed", zap.Error(err), zap.String("user_id", userID.String()), zap.String("reservation_id", reservation.ID.String()))
+	}
 }

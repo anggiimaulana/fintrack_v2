@@ -18,6 +18,9 @@ type UsageEntry struct {
 	Remaining int64 `json:"remaining"`
 	// Unlimited is true when the limit is the unlimited sentinel (-1).
 	Unlimited bool `json:"unlimited"`
+	// Unit is the display unit for this limit (e.g. "kuota"), sourced from the
+	// metric catalog so the UI never hardcodes a unit that could change.
+	Unit string `json:"unit,omitempty"`
 }
 
 // Period describes the active quota cycle (nil when none is tracked).
@@ -45,6 +48,19 @@ type Resolved struct {
 	// PlanVersion is the plan's version this payload was built against; a
 	// mismatch on read means the plan was edited and the payload is stale.
 	PlanVersion int64 `json:"plan_version,omitempty"`
+	// QuotaRatio is the plan's token→unit ratio (>= 1). Snapshotted into the
+	// token period when a new cycle starts, so a change here never affects a
+	// cycle already in progress.
+	QuotaRatio int64 `json:"quota_ratio,omitempty"`
+}
+
+// QuotaRatioValue returns the plan's token→unit ratio, defaulting to 1 when the
+// payload predates the ratio feature or carries an invalid value.
+func (r *Resolved) QuotaRatioValue() int64 {
+	if r == nil || r.QuotaRatio < 1 {
+		return 1
+	}
+	return r.QuotaRatio
 }
 
 // Feature reports whether a feature is enabled.

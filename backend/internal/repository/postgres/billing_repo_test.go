@@ -78,7 +78,7 @@ func TestBillingRepo_TokenPeriodAndLedger(t *testing.T) {
 	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	now := time.Now().UTC().Truncate(time.Second)
 
-	period, err := repo.GetOrCreatePeriod(ctx, userID, now.Unix(), now.Add(30*24*time.Hour).Unix(), 1000)
+	period, err := repo.GetOrCreatePeriod(ctx, userID, now.Unix(), now.Add(30*24*time.Hour).Unix(), 1000, 1)
 	if err != nil {
 		t.Fatalf("get/create period: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestBillingRepo_TokenPeriodAndLedger(t *testing.T) {
 	}
 
 	// Idempotent re-get returns the same period id.
-	again, err := repo.GetOrCreatePeriod(ctx, userID, now.Unix(), now.Add(30*24*time.Hour).Unix(), 1000)
+	again, err := repo.GetOrCreatePeriod(ctx, userID, now.Unix(), now.Add(30*24*time.Hour).Unix(), 1000, 1)
 	if err != nil {
 		t.Fatalf("re-get period: %v", err)
 	}

@@ -140,6 +140,39 @@ func TestEstimator_DynamicConfig(t *testing.T) {
 	if aud.PromptTokens != 100 {
 		t.Fatalf("expected 2s * 50 = 100 prompt tokens, got %d", aud.PromptTokens)
 	}
+
+	// Retune AudioBytesPerSecond from 4000 to 8000: 8000 bytes should now be 1s
+	cfg.AudioBytesPerSecond = 8000
+	est.SetConfig(cfg)
+	fromBytes := est.EstimateAudioFromBytes(8000, "")
+	// 1s * 50 tokens/s = 50 prompt tokens
+	if fromBytes.PromptTokens != 50 {
+		t.Fatalf("expected 8000 bytes @8000 B/s = 1s -> 50 tokens, got %d", fromBytes.PromptTokens)
+	}
+	if est.Config().AudioBytesPerSecond != 8000 {
+		t.Fatalf("SetConfig dropped AudioBytesPerSecond: got %d", est.Config().AudioBytesPerSecond)
+	}
+}
+
+// TestSetConfig_AppliesAudioBytesPerSecond guards the regression where
+// SetConfig silently dropped the field, so a Super Admin change never applied.
+func TestSetConfig_AppliesAudioBytesPerSecond(t *testing.T) {
+	est := New(DefaultConfig())
+	if est.Config().AudioBytesPerSecond != DefaultAudioBytesPerSecond {
+		t.Fatalf("default not seeded: got %d", est.Config().AudioBytesPerSecond)
+	}
+	cfg := est.Config()
+	cfg.AudioBytesPerSecond = 16000
+	est.SetConfig(cfg)
+	if got := est.Config().AudioBytesPerSecond; got != 16000 {
+		t.Fatalf("SetConfig must apply AudioBytesPerSecond: got %d want 16000", got)
+	}
+	// A zero value must not clobber the current setting (guard semantics).
+	cfg.AudioBytesPerSecond = 0
+	est.SetConfig(cfg)
+	if got := est.Config().AudioBytesPerSecond; got != 16000 {
+		t.Fatalf("zero must be ignored, not applied: got %d", got)
+	}
 }
 
 // TestPackage_SetConfig asserts process-wide package functions reflect SetConfig.

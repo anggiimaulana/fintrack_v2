@@ -150,6 +150,34 @@ func (h *Hub) SendToAdmins(ev contracts.Event) int {
 	return h.deliver(targets, ev)
 }
 
+// SendToAll delivers an event to EVERY connected stream (users and admins).
+// Used for global configuration changes: a user viewing their quota page must
+// see an operator's change without a manual refresh.
+func (h *Hub) SendToAll(ev contracts.Event) int {
+	h.mu.RLock()
+	targets := make([]*Client, 0, len(h.admins)+8)
+	seen := make(map[*Client]struct{})
+	for _, set := range h.byUser {
+		for c := range set {
+			if _, dup := seen[c]; dup {
+				continue
+			}
+			seen[c] = struct{}{}
+			targets = append(targets, c)
+		}
+	}
+	for c := range h.admins {
+		if _, dup := seen[c]; dup {
+			continue
+		}
+		seen[c] = struct{}{}
+		targets = append(targets, c)
+	}
+	h.mu.RUnlock()
+
+	return h.deliver(targets, ev)
+}
+
 // deliver pushes to each target without blocking. A full buffer means the client
 // is too slow: the event is dropped for that client rather than stalling the
 // broadcaster (the client re-syncs on its next fetch).

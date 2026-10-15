@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // PlanRepository reads plans, entitlements, and limits.
@@ -23,6 +25,9 @@ type SubscriptionRepository interface {
 	Update(ctx context.Context, sub *Subscription) error
 	RecordEvent(ctx context.Context, ev *SubscriptionEvent) error
 	ListEvents(ctx context.Context, userID uuid.UUID, limit int) ([]*SubscriptionEvent, error)
+	// ListEventsPaged returns one page of a user's lifecycle events plus the
+	// total row count, for the paginated subscription-history table.
+	ListEventsPaged(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*SubscriptionEvent, int, error)
 }
 
 // SubscriptionEvent is an append-only lifecycle audit row.
@@ -43,10 +48,16 @@ type SubscriptionEvent struct {
 // hold a short row lock around reserve/commit/release.
 type TokenRepository interface {
 	// GetOrCreatePeriod returns the token period for the user's current cycle,
-	// creating it with the given quota when absent.
-	GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, periodStart, periodEnd int64, quota int64) (*TokenPeriod, error)
+	// creating it with the given quota and token→unit ratio when absent. The
+	// ratio is snapshotted into the period and is immutable for its lifetime.
+	GetOrCreatePeriod(ctx context.Context, userID uuid.UUID, periodStart, periodEnd int64, quota int64, ratio int64) (*TokenPeriod, error)
 	// GetPeriodForUpdate locks the current period row (SELECT ... FOR UPDATE).
 	GetPeriodForUpdate(ctx context.Context, userID uuid.UUID, nowUnix int64) (*TokenPeriod, error)
+	// GetPeriodByIDForUpdate locks a period row by its primary key.
+	// Used by Commit and Release so the transaction acts on the exact period
+	// whose quota was reserved, preventing cross-cycle corruption when a billing
+	// window rolls over between Reserve and Commit.
+	GetPeriodByIDForUpdate(ctx context.Context, id uuid.UUID) (*TokenPeriod, error)
 	// GetCurrentPeriod reads the current period WITHOUT taking a row lock, for
 	// pre-flight checks (e.g. entitlement usage). Returns (nil, nil) when the
 	// user has no period yet — callers treat that as zero usage.

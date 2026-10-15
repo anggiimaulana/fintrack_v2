@@ -12,6 +12,7 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/payment"
 	"github.com/fintrack/backend/internal/storage"
+	"github.com/fintrack/backend/pkg/pagination"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -64,22 +65,20 @@ func (h *PaymentHandler) ListPublicPlans(c *gin.Context) {
 
 // ─── User payment history & invoices ──────────────────────────
 
-func userLimit(c *gin.Context) int {
-	n, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	if n <= 0 || n > 200 {
-		n = 50
-	}
-	return n
-}
-
-// ListMyPayments handles GET /api/v1/payments (authenticated user).
+// ListMyPayments handles GET /api/v1/payments (authenticated user). Supports
+// table params (page, per_page, sort, order, q, filter_status).
 func (h *PaymentHandler) ListMyPayments(c *gin.Context) {
 	if h.userSvc == nil {
 		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
 		return
 	}
 	userID := c.MustGet("user_id").(uuid.UUID)
-	list, err := h.userSvc.ListPayments(c.Request.Context(), userID, userLimit(c))
+	pq := pagination.Parse(c, pagination.Options{
+		AllowedSort:  []string{"created_at", "amount_idr", "status", "total_idr"},
+		DefaultSort:  "created_at",
+		DefaultOrder: "desc",
+	})
+	list, total, err := h.userSvc.ListPayments(c.Request.Context(), userID, &pq)
 	if err != nil {
 		response.InternalError(c, "Gagal memuat riwayat pembayaran")
 		return
@@ -87,7 +86,7 @@ func (h *PaymentHandler) ListMyPayments(c *gin.Context) {
 	if list == nil {
 		list = []*payment.UserPayment{}
 	}
-	response.OK(c, "Riwayat pembayaran berhasil dimuat", list)
+	response.Paginated(c, "Riwayat pembayaran berhasil dimuat", list, total, pq.Page, pq.PerPage)
 }
 
 // GetMyPayment handles GET /api/v1/payments/:id (owner only).
@@ -138,14 +137,20 @@ func (h *PaymentHandler) GetMyPaymentInstructions(c *gin.Context) {
 	response.OK(c, "Instruksi pembayaran berhasil dimuat", instr)
 }
 
-// ListMyInvoices handles GET /api/v1/invoices (authenticated user).
+// ListMyInvoices handles GET /api/v1/invoices (authenticated user). Supports
+// table params (page, per_page, sort, order, q, filter_status).
 func (h *PaymentHandler) ListMyInvoices(c *gin.Context) {
 	if h.userSvc == nil {
 		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
 		return
 	}
 	userID := c.MustGet("user_id").(uuid.UUID)
-	list, err := h.userSvc.ListInvoices(c.Request.Context(), userID, userLimit(c))
+	pq := pagination.Parse(c, pagination.Options{
+		AllowedSort:  []string{"created_at", "issued_at", "due_at", "total_idr", "status", "invoice_number"},
+		DefaultSort:  "created_at",
+		DefaultOrder: "desc",
+	})
+	list, total, err := h.userSvc.ListInvoices(c.Request.Context(), userID, &pq)
 	if err != nil {
 		response.InternalError(c, "Gagal memuat daftar tagihan")
 		return
@@ -153,7 +158,7 @@ func (h *PaymentHandler) ListMyInvoices(c *gin.Context) {
 	if list == nil {
 		list = []*payment.Invoice{}
 	}
-	response.OK(c, "Daftar tagihan berhasil dimuat", list)
+	response.Paginated(c, "Daftar tagihan berhasil dimuat", list, total, pq.Page, pq.PerPage)
 }
 
 // CancelMyInvoice handles POST /api/v1/invoices/:id/cancel. It lets a user

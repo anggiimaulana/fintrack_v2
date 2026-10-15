@@ -36,7 +36,7 @@ func TestBillingRepo_CountAIRequestsAndVisionScans(t *testing.T) {
 	})
 
 	now := time.Now().UTC()
-	period, err := repo.GetOrCreatePeriod(ctx, userID, now.Add(-time.Hour).Unix(), now.Add(24*time.Hour).Unix(), 1000)
+	period, err := repo.GetOrCreatePeriod(ctx, userID, now.Add(-time.Hour).Unix(), now.Add(24*time.Hour).Unix(), 1000, 1)
 	if err != nil {
 		t.Fatalf("create period: %v", err)
 	}
