@@ -81,10 +81,18 @@ export function DataTablePagination({
   onPerPageChange,
   showNumbering = true,
 }: DataTablePaginationProps) {
-  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
-  const to = Math.min(page * perPage, total);
-  const last = Math.max(totalPages, 1);
-  const current = Math.min(Math.max(page, 1), last);
+  // Defensive coercion: an older API may omit total_pages (or send a string),
+  // and an undefined/NaN page count previously rendered `NaN` as a page number.
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePerPage = Number.isFinite(perPage) && perPage > 0 ? Math.floor(perPage) : 20;
+  const safeTotal = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  const derivedPages = safePerPage > 0 ? Math.ceil(safeTotal / safePerPage) : 1;
+  const safeTotalPages = Number.isFinite(totalPages) && totalPages > 0 ? Math.floor(totalPages) : derivedPages;
+
+  const from = safeTotal === 0 ? 0 : (safePage - 1) * safePerPage + 1;
+  const to = Math.min(safePage * safePerPage, safeTotal);
+  const last = Math.max(safeTotalPages, 1);
+  const current = Math.min(Math.max(safePage, 1), last);
   const canPrev = current > 1;
   const canNext = current < last;
   const pageItems = getPageItems(current, last);
@@ -93,14 +101,14 @@ export function DataTablePagination({
     <div className="flex flex-col items-center gap-3">
       {showNumbering && (
         <p className="text-xs font-bold text-muted-foreground text-center">
-          Menampilkan {from}–{to} dari {total} data
+          Menampilkan {from}–{to} dari {safeTotal} data
         </p>
       )}
 
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-muted-foreground">Baris</span>
-          <Select value={String(perPage)} onValueChange={(v) => onPerPageChange(Number(v))}>
+          <Select value={String(safePerPage)} onValueChange={(v) => onPerPageChange(Number(v))}>
             <SelectTrigger className="h-8 w-[72px] cursor-pointer" aria-label="Baris per halaman">
               <SelectValue />
             </SelectTrigger>

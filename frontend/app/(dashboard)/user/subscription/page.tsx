@@ -89,12 +89,21 @@ function SubscriptionContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const tab = normalizeTab(searchParams.get("tab"));
-  const setTab = (next: TabKey) => {
-    const params = new URLSearchParams(searchParams.toString());
+  const tabFromUrl = normalizeTab(searchParams.get("tab"));
+  const [tab, setTabState] = React.useState<TabKey>(tabFromUrl);
+
+  React.useEffect(() => {
+    setTabState(normalizeTab(searchParams.get("tab")));
+  }, [searchParams]);
+
+  const setTab = React.useCallback((next: TabKey) => {
+    setTabState(next);
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     params.set("tab", next);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
+    const qs = params.toString();
+    const target = qs ? `${pathname}?${qs}` : pathname;
+    window.history.replaceState(null, "", target);
+  }, [pathname]);
 
   const { planCode, planName, status, isLoading: entLoading, isError: entError } = useEntitlements();
   const { plans, isLoading: plansLoading, isError: plansError } = usePublicPlans();

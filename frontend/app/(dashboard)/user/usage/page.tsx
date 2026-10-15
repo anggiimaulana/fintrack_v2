@@ -42,11 +42,48 @@ function UsageContent() {
 
   // The chart range keeps its own params (range/start/end) so it does not
   // collide with the history table's page/sort/filter namespace.
-  const rawRange = searchParams.get("range") ?? "";
-  const range: UsageRange = (RANGE_KEYS as string[]).includes(rawRange) ? (rawRange as UsageRange) : "7d";
-  const chartStart = searchParams.get("start") ?? "";
-  const chartEnd = searchParams.get("end") ?? "";
+  const rangeFromUrl = React.useMemo(() => {
+    const raw = searchParams.get("range") ?? "";
+    return (RANGE_KEYS as string[]).includes(raw) ? (raw as UsageRange) : "7d";
+  }, [searchParams]);
 
+  const [range, setRange] = React.useState<UsageRange>(rangeFromUrl);
+  const [chartStart, setChartStart] = React.useState<string>(() => searchParams.get("start") ?? "");
+  const [chartEnd, setChartEnd] = React.useState<string>(() => searchParams.get("end") ?? "");
+
+  React.useEffect(() => {
+    setRange(rangeFromUrl);
+    setChartStart(searchParams.get("start") ?? "");
+    setChartEnd(searchParams.get("end") ?? "");
+  }, [rangeFromUrl, searchParams]);
+
+  // Persist the chart range in the URL (replace, no scroll) so it is shareable.
+  const setChartParams = (next: URLSearchParams) => {
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    for (const k of ["range", "start", "end"]) params.delete(k);
+    next.forEach((v, k) => params.set(k, v));
+    const qs = params.toString();
+    const target = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState(null, "", target);
+  };
+
+  const handleRangeChange = (r: UsageRange) => {
+    setRange(r);
+    const next = new URLSearchParams();
+    next.set("range", r);
+    setChartParams(next);
+  };
+
+  const handleCustomChange = (start: string, end: string) => {
+    setRange("custom");
+    setChartStart(start);
+    setChartEnd(end);
+    const next = new URLSearchParams();
+    next.set("range", "custom");
+    if (start) next.set("start", start);
+    if (end) next.set("end", end);
+    setChartParams(next);
+  };
   const table = useDataTableUrlState({ perPage: 20 });
   const filterKind = table.filters.kind || "";
 
@@ -69,29 +106,6 @@ function UsageContent() {
     setSelectionKey(currentKey);
     setRowSelection({});
   }
-
-  // Persist the chart range in the URL (replace, no scroll) so it is shareable.
-  const setChartParams = (next: URLSearchParams) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const k of ["range", "start", "end"]) params.delete(k);
-    next.forEach((v, k) => params.set(k, v));
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
-  };
-
-  const handleRangeChange = (r: UsageRange) => {
-    const next = new URLSearchParams();
-    next.set("range", r);
-    setChartParams(next);
-  };
-
-  const handleCustomChange = (start: string, end: string) => {
-    const next = new URLSearchParams();
-    next.set("range", "custom");
-    if (start) next.set("start", start);
-    if (end) next.set("end", end);
-    setChartParams(next);
-  };
 
   const columns = React.useMemo<ColumnDef<UsageEvent, unknown>[]>(() => {
     const selectColumn: ColumnDef<UsageEvent, unknown> = {

@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Settings, Flag, Mail, CreditCard, HardDrive, Mic, Timer, Gauge } from 'lucide-react'
 import { useSuperAdminSettings } from '@/hooks/useSuperAdminSettings'
 import { useSuperAdminStorage } from '@/hooks/useSuperAdminStorage'
+import { useHash } from '@/hooks/use-hash'
 import { GlobalSettingsTab } from '@/components/super-admin/settings/GlobalSettingsTab'
 import { QuotaSettingsTab } from '@/components/super-admin/settings/QuotaSettingsTab'
 import { AITimeoutSettingsTab } from '@/components/super-admin/settings/AITimeoutSettingsTab'
@@ -13,6 +14,19 @@ import { MailSettingsTab } from '@/components/super-admin/settings/MailSettingsT
 import { PaymentSettingsTab } from '@/components/super-admin/settings/PaymentSettingsTab'
 import { StorageSettingsTab } from '@/components/super-admin/settings/StorageSettingsTab'
 import { VoiceSettingsTab } from '@/components/super-admin/settings/VoiceSettingsTab'
+
+// Valid tab ids, in display order. A deep link such as
+// /super-admin/settings#kuota opens the matching tab directly.
+const SETTINGS_TABS = [
+  'settings',
+  'kuota',
+  'ai-timeout',
+  'voice',
+  'payment',
+  'storage',
+  'mail',
+  'flags',
+] as const
 
 export default function SuperAdminSettingsPage() {
   const {
@@ -35,6 +49,31 @@ export default function SuperAdminSettingsPage() {
 
   const { storageStatus } = useSuperAdminStorage()
 
+  // Deep-link support: /super-admin/settings#kuota opens the "Kuota" tab. The
+  // tab is controlled state so the hash drives it, and switching a tab writes
+  // the hash back (so the URL is shareable and the back button works).
+  const hash = useHash()
+  const [tab, setTab] = React.useState<string>(
+    (SETTINGS_TABS as readonly string[]).includes(hash) ? hash : 'settings',
+  )
+  React.useEffect(() => {
+    // A valid hash opens that tab; an empty/invalid hash falls back to the
+    // default tab so clicking the bare "Pengaturan" entry (which clears the
+    // hash) returns the user to the Global tab.
+    if (hash && (SETTINGS_TABS as readonly string[]).includes(hash)) {
+      setTab(hash)
+    } else if (!hash) {
+      setTab('settings')
+    }
+  }, [hash])
+
+  const onTabChange = (value: string) => {
+    setTab(value)
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `#${value}`)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="border-b border-border pb-5">
@@ -46,7 +85,7 @@ export default function SuperAdminSettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="settings" className="space-y-6">
+      <Tabs value={tab} onValueChange={onTabChange} className="space-y-6">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 max-w-5xl">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="size-4" />

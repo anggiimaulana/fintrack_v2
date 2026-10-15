@@ -3,6 +3,7 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
+import { staleTimeConfig } from "@/lib/cache-invalidation";
 import type { SortSpec } from "@/lib/table-params";
 
 /**
@@ -100,7 +101,7 @@ export function useUsageTimeseries(
       return res.data?.data as UsageTimeseries;
     },
     enabled: opts?.enabled ?? true,
-    staleTime: 1000 * 60,
+    staleTime: staleTimeConfig.usage,
     placeholderData: keepPreviousData,
   });
 
@@ -127,7 +128,7 @@ export function useUsageHistory(p: UsageHistoryParams, opts?: { enabled?: boolea
       };
     },
     enabled: opts?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.usage,
     placeholderData: keepPreviousData,
   });
 

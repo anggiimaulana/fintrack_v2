@@ -4,6 +4,7 @@ import {
   isNavItemActive,
   USER_NAV_ITEMS,
   MOBILE_FAB_HREF,
+  MOBILE_BAR_EXCLUDED_HREFS,
   MOBILE_BOTTOM_NAV_ITEMS,
 } from "./nav";
 
@@ -67,6 +68,11 @@ describe("mobile bottom navigation split", () => {
     expect(MOBILE_BOTTOM_NAV_ITEMS.some((i) => i.href === MOBILE_FAB_HREF)).toBe(false);
   });
 
+  it("drops Profil from the bar (reached via the header avatar instead)", () => {
+    expect(MOBILE_BOTTOM_NAV_ITEMS.some((i) => i.href === "/user/profile")).toBe(false);
+    expect(MOBILE_BAR_EXCLUDED_HREFS).toContain("/user/profile");
+  });
+
   it("keeps the remaining items in original order", () => {
     expect(MOBILE_BOTTOM_NAV_ITEMS.map((i) => i.label)).toEqual([
       "Dashboard",
@@ -74,12 +80,17 @@ describe("mobile bottom navigation split", () => {
       "Laporan",
       "Penggunaan",
       "Langganan",
-      "Profil",
     ]);
   });
 
-  it("partitions the full nav with no item lost or duplicated", () => {
-    const combined = [...MOBILE_BOTTOM_NAV_ITEMS.map((i) => i.href), MOBILE_FAB_HREF].sort();
+  it("keeps the bar small enough for full-width tap targets", () => {
+    // At most five slots: six would push each below the ~44px minimum on a
+    // 360px-wide phone.
+    expect(MOBILE_BOTTOM_NAV_ITEMS.length).toBeLessThanOrEqual(5);
+  });
+
+  it("partitions the full nav into bar items, the FAB, and excluded routes", () => {
+    const combined = [...MOBILE_BOTTOM_NAV_ITEMS.map((i) => i.href), ...MOBILE_BAR_EXCLUDED_HREFS].sort();
     const all = USER_NAV_ITEMS.map((i) => i.href).sort();
     expect(combined).toEqual(all);
   });

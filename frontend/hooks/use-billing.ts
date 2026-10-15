@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData, type QueryClie
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
+import { staleTimeConfig } from "@/lib/cache-invalidation";
 
 /**
  * User-facing billing hooks (P0/P1).
@@ -162,7 +163,8 @@ export function usePublicPlans() {
       const res = await api.get("/plans");
       return (res.data?.data ?? []) as PublicPlan[];
     },
-    staleTime: 1000 * 60 * 10,
+    staleTime: staleTimeConfig.billing,
+    placeholderData: keepPreviousData,
   });
   return { plans: query.data ?? [], isLoading: query.isLoading, isError: query.isError };
 }
@@ -177,7 +179,8 @@ export function useMyPayments(options?: { enabled?: boolean }) {
     // Only fetch when the caller's view needs it (e.g. the payments tab is
     // open). This avoids paying for a request the user never sees.
     enabled: options?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
+    placeholderData: keepPreviousData,
   });
   return { payments: query.data ?? [], isLoading: query.isLoading, isError: query.isError, refetch: query.refetch };
 }
@@ -190,7 +193,8 @@ export function useMyInvoices(options?: { enabled?: boolean }) {
       return (res.data?.data ?? []) as Invoice[];
     },
     enabled: options?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
+    placeholderData: keepPreviousData,
   });
   return { invoices: query.data ?? [], isLoading: query.isLoading, isError: query.isError };
 }
@@ -241,7 +245,7 @@ export function useMyPaymentsPaged(p: BillingTableParams, opts?: { enabled?: boo
       };
     },
     enabled: opts?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
     placeholderData: keepPreviousData,
   });
   return {
@@ -269,7 +273,7 @@ export function useMyInvoicesPaged(p: BillingTableParams, opts?: { enabled?: boo
       };
     },
     enabled: opts?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
     placeholderData: keepPreviousData,
   });
   return {
@@ -293,7 +297,8 @@ export function useMySubscription() {
         scheduled_plan_code: data?.scheduled_plan_code ?? "",
       };
     },
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
+    placeholderData: keepPreviousData,
   });
   return {
     subscription: query.data?.subscription ?? null,
@@ -331,7 +336,7 @@ export function useMySubscriptionEvents(p: BillingTableParams, opts?: { enabled?
       };
     },
     enabled: opts?.enabled ?? true,
-    staleTime: 1000 * 30,
+    staleTime: staleTimeConfig.billing,
     placeholderData: keepPreviousData,
   });
   return {
@@ -356,6 +361,7 @@ function invalidateBilling(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: queryKeys.billing.invoices });
   qc.invalidateQueries({ queryKey: queryKeys.billing.subscription });
   qc.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+  qc.invalidateQueries({ queryKey: queryKeys.usage.all });
 }
 
 /**

@@ -14,6 +14,7 @@ export function useInvalidateQueries() {
     // the quota bars must refresh too (the SSE usage_changed event covers other
     // tabs; this covers the tab that made the change).
     queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+    queryClient.invalidateQueries({ queryKey: queryKeys.usage.all });
   }, [queryClient]);
 
   /**
@@ -70,4 +71,7 @@ export const staleTimeConfig = {
   ai: 1000 * 60 * 1,
   admin: 1000 * 60 * 5,
   profile: 1000 * 60 * 60,
+  usage: 1000 * 60 * 5,
+  billing: 1000 * 60 * 5,
+  entitlements: 1000 * 60 * 5,
 };

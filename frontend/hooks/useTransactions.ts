@@ -156,6 +156,7 @@ function invalidateTransactionViews(queryClient: QueryClient) {
   // quota bars immediately in this tab (the SSE usage_changed event covers
   // other tabs).
   queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+  queryClient.invalidateQueries({ queryKey: queryKeys.usage.all });
 }
 
 export function useCreateTransaction() {

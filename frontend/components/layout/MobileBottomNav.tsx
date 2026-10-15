@@ -10,13 +10,14 @@ import { cn } from "@/lib/utils";
  * Mobile-only primary navigation: a fixed bar of five destinations plus a
  * floating action button for AI Chat.
  *
- * Six items would not fit a phone-width bar without shrinking the tap targets
- * below the 44px minimum, so AI Chat — the one action that is a verb rather than
- * a place — is lifted into the FAB. The bar is hidden from `md` up, where the
- * docked sidebar takes over.
+ * The bar is capped at five slots so each keeps a full-width, ~44px tap target
+ * on a 360px phone. Two routes are therefore surfaced elsewhere: AI Chat — the
+ * one action that is a verb rather than a place — becomes the FAB, and Profil is
+ * reached by tapping the header avatar (ProfileMenu links to the same page).
  *
  * The FAB hides on its own route: once you are already in the chat, a shortcut
- * to the chat is dead weight that covers content.
+ * to the chat is dead weight that covers content. The bar itself is hidden from
+ * `md` up, where the docked sidebar takes over.
  */
 export function MobileBottomNav() {
   const pathname = usePathname();

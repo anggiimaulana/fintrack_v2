@@ -44,14 +44,14 @@ export interface QueryInvalidator {
 export function keysForEvent(event: string): readonly (readonly unknown[])[] {
   switch (event) {
     case "payment_received":
-      // The payment row flips to settled and the plan/quota may change, so both
-      // the billing history and the entitlements must refresh.
+      // The payment row flips to settled, plan/quota and usage counters update.
       return [
         queryKeys.entitlements.me,
         queryKeys.dashboard.all,
         queryKeys.billing.payments,
         queryKeys.billing.invoices,
         queryKeys.billing.subscription,
+        queryKeys.usage.all,
       ];
 
     case "plan_updated":
@@ -62,11 +62,13 @@ export function keysForEvent(event: string): readonly (readonly unknown[])[] {
         queryKeys.dashboard.all,
         queryKeys.billing.subscription,
         queryKeys.billing.payments,
+        queryKeys.billing.invoices,
+        queryKeys.usage.all,
       ];
 
     case "quota_reset":
       // A new cycle: entitlements, transaction counters, reports and budgets all
-      // move.
+      // move, and usage charts/history reset for the new window.
       return [
         queryKeys.entitlements.me,
         queryKeys.transactions.all,
@@ -74,17 +76,20 @@ export function keysForEvent(event: string): readonly (readonly unknown[])[] {
         queryKeys.reports.all,
         queryKeys.budgets.all,
         queryKeys.spk.all,
+        queryKeys.usage.all,
+        queryKeys.billing.subscription,
       ];
 
     case "usage_changed":
       // Consumption moved (transaction created/deleted, AI tokens/requests, a
-      // voice recording). Refresh the entitlements query — the authoritative
-      // usage source — the voice config (which carries the daily counter), and
-      // the voice history (a server-mode recording is written backend-side and
-      // must appear in the panel without a manual refresh). The history query is
-      // only active while its panel is open, so a closed panel issues no request.
-      return [queryKeys.entitlements.me, queryKeys.voice.config, queryKeys.voice.historyAll];
-
+      // voice recording). Refresh entitlements, usage charts/ledger, voice config
+      // (daily counter), and voice history.
+      return [
+        queryKeys.entitlements.me,
+        queryKeys.usage.all,
+        queryKeys.voice.config,
+        queryKeys.voice.historyAll,
+      ];
     case "config_changed":
       // The configuration catalog changed (setting/metric/feature/plan/pricing).
       // Reload ONLY the catalog queries plus entitlements and the settings

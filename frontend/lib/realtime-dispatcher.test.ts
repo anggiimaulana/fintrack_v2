@@ -46,16 +46,17 @@ describe("keysForEvent", () => {
     expect(keys).toContainEqual(queryKeys.superAdmin.paymentsReview());
   });
 
-  it("refreshes entitlements, voice config and voice history on usage_changed", () => {
+  it("refreshes entitlements, usage cache, voice config and voice history on usage_changed", () => {
     const keys = keysForEvent("usage_changed");
     expect(keys).toContainEqual(queryKeys.entitlements.me);
+    expect(keys).toContainEqual(queryKeys.usage.all);
     // The voice config carries the live daily counter, so it must refresh too.
     expect(keys).toContainEqual(queryKeys.voice.config);
     // A server-mode recording is written backend-side; the history panel must
     // pick it up without a manual refresh.
     expect(keys).toContainEqual(queryKeys.voice.historyAll);
     // Must not refetch data lists — only quota/usage surfaces moved.
-    expect(keys).toHaveLength(3);
+    expect(keys).toHaveLength(4);
     expect(keys).not.toContainEqual(queryKeys.transactions.all);
     expect(keys).not.toContainEqual(queryKeys.dashboard.all);
   });

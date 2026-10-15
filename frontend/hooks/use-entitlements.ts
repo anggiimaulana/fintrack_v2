@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
+import { staleTimeConfig } from "@/lib/cache-invalidation";
 
 /**
  * Effective entitlements for the signed-in user, as returned by
@@ -92,10 +93,10 @@ export function useEntitlements() {
   const query = useQuery({
     queryKey: queryKeys.entitlements.me,
     queryFn: fetchEntitlements,
-    staleTime: 1000 * 60 * 2,
+    staleTime: staleTimeConfig.entitlements,
     retry: false,
+    placeholderData: (previousData) => previousData,
   });
-
   const data = query.data ?? null;
 
   return {

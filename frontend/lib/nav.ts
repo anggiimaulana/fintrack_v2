@@ -43,16 +43,25 @@ export function activeNavHref(pathname: string, items: NavItem[] = USER_NAV_ITEM
 
 /**
  * The route promoted to the floating action button on mobile. It is pulled out
- * of the bottom bar so the remaining five items split the width evenly.
+ * of the bottom bar so the remaining items split the width evenly.
  */
 export const MOBILE_FAB_HREF = "/user/ai";
 
 /**
- * Items rendered in the mobile bottom bar: every user nav item except the one
- * lifted into the FAB. Order follows `USER_NAV_ITEMS`, so Dashboard sits first.
+ * Routes deliberately kept out of the mobile bottom bar because they already
+ * have a dedicated entry point there:
+ * - `/user/ai` is lifted into the floating action button.
+ * - `/user/profile` is reached by tapping the header avatar (ProfileMenu), which
+ *   links to the same page, so a bar slot would be redundant.
+ */
+export const MOBILE_BAR_EXCLUDED_HREFS: readonly string[] = [MOBILE_FAB_HREF, "/user/profile"];
+
+/**
+ * Items rendered in the mobile bottom bar: every user nav item that is not
+ * excluded above. Order follows `USER_NAV_ITEMS`, so Dashboard sits first.
  */
 export const MOBILE_BOTTOM_NAV_ITEMS: NavItem[] = USER_NAV_ITEMS.filter(
-  (item) => item.href !== MOBILE_FAB_HREF,
+  (item) => !MOBILE_BAR_EXCLUDED_HREFS.includes(item.href),
 );
 
 /** Reports whether a nav item is the active one for the current pathname. */

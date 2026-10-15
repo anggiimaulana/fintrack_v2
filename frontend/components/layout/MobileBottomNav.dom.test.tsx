@@ -20,7 +20,7 @@ describe("MobileBottomNav", () => {
     for (const item of MOBILE_BOTTOM_NAV_ITEMS) {
       expect(screen.getByRole("link", { name: item.label })).toHaveAttribute("href", item.href);
     }
-    // Five bar items + the FAB link.
+    // One link per bar item (the FAB is a sibling of the nav, not inside it).
     expect(nav.querySelectorAll("a")).toHaveLength(MOBILE_BOTTOM_NAV_ITEMS.length);
   });
 
