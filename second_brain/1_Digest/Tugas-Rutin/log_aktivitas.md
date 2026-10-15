@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-10-15 — Akun Demo Super Admin Disediakan & Terverifikasi
+- **Konteks**: User menanyakan peran `super_admin` dan kredensialnya untuk pengujian fitur portal Super Admin (`/super-admin`).
+- **Aksi**: 
+  - Membuat akun `superadmin@fintrack.id` (role: `super_admin`) dengan password `Admin@123456`.
+  - Menguji login API (`POST /api/v1/auth/login`) dan memverifikasi token serta metadata user (`role: super_admin`).
+  - Memperbarui dokumentasi kredensial di `second_brain/0_Inbox/2026-10-14_kredensial-login-demo.md`.
+
+---
+
+## 2026-10-15 — Mobile Nav: Profil Dikeluarkan dari Bottom Bar
+- **Konteks**: Setelah halaman `/user/usage` (Penggunaan) ditambahkan ke navigasi, bottom bar mobile menjadi 6 slot (≤78px/slot di 390px, mendekati batas minimum tap target ~44px). User meminta Profil dihapus dari navigasi mobile karena sudah bisa diakses lewat klik foto profil di header.
+- **Keputusan**: Profil **hanya** dikeluarkan dari bottom bar mobile; tetap ada di sidebar desktop dan di `ProfileMenu` (klik avatar header) yang memang sudah menautkan ke `/user/profile`. Bottom bar kembali 5 slot.
+- **Perubahan**:
+  - `lib/nav.ts`: tambah `MOBILE_BAR_EXCLUDED_HREFS = [MOBILE_FAB_HREF, "/user/profile"]`; `MOBILE_BOTTOM_NAV_ITEMS` kini memfilter berdasarkan konstanta itu (bukan hanya FAB). Alasan tiap eksklusi didokumentasikan di JSDoc.
+  - `components/layout/MobileBottomNav.tsx`: perbarui doc comment (menjelaskan batas 5 slot dan dua route yang disurfacekan di tempat lain).
+  - `lib/nav.test.ts`: ganti asersi urutan menjadi tanpa "Profil"; tambah test eksplisit Profil absen dari bar + guard `length <= 5`; test partisi kini memakai `MOBILE_BAR_EXCLUDED_HREFS`.
+  - `components/layout/MobileBottomNav.dom.test.tsx`: perbaiki komentar basi ("five bar items + the FAB link").
+- **Verifikasi**: `pnpm test` → **349 passed (44 files)**; `pnpm build` sukses (route `/user/usage` & `/user/subscription` ter-render). Browser 360/390/442px: 5 label `[Dashboard, Transaksi, Laporan, Penggunaan, Langganan]`, slot 72–88px, semua tap target ≥44px, tanpa scroll horizontal, FAB tidak overlap bar (gap 6px). Klik avatar header → menu berisi link `/user/profile` & `/user/subscription` (terverifikasi). Desktop 1568px tidak berubah: sidebar tetap memuat Profil, bottom bar & FAB `display:none`.
+- **Catatan**: Halaman `/user/profile` kini tidak menandai item bar mana pun sebagai aktif (`aria-current` kosong) — konsisten dengan `/user/ai` yang juga tidak punya slot bar.
+
 ## 2026-10-15 — Migrasi Dijalankan + Bug Replay `ai_routes` Ditemukan & Diperbaiki
 - **Aksi**: menjalankan `database/scripts/migrate.sh` (seluruh rantai) setelah Docker Desktop pulih. Target: seed key `ai_timeout_*` ke tabel `settings`.
 - **Hasil target**: ✅ 5 key ter-seed sebagai JSON **number** (`chat` 60000, `vision` 120000, `voice` 120000, `embedding` 60000, `reasoning` 120000) + 6 key terdaftar di katalog `setting_definitions` (grup `ai_timeout`).
@@ -1631,3 +1651,29 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - `go test -count=1 ./internal/...` **semua ok** (30 paket); `go test ./tests/` (e2e) ok.
   - Frontend: `pnpm test` 347 passed (44 files); `pnpm build` sukses 36 route.
   - Dump DB di-regenerate (memuat setting baru).
+
+## 2026-10-15 (UX Discoverability) — Deep-link Tab Pengaturan + Item Sidebar "Estimasi Token AI"
+- **Masalah**: user tidak menemukan konfigurasi estimasi token Voice/Vision karena tersembunyi di dalam tab "Kuota" pada halaman Pengaturan Sistem; tidak ada entri menu langsung.
+- **Perbaikan**:
+  - `hooks/use-hash.ts`: hook `useHash()` baru (useSyncExternalStore) untuk deep-link berbasis hash.
+  - `super-admin/settings/page.tsx`: Tabs kini **controlled** dan tersinkron hash — `/super-admin/settings#kuota` langsung membuka tab Kuota; ganti tab menulis hash ke URL (shareable + back button).
+  - `SuperAdminSidebar.tsx`: entri baru **"Estimasi Token AI"** (`/super-admin/settings#kuota`, ikon Gauge) + deteksi aktif hash-aware (dua entri yang berbagi pathname tidak menyala bersamaan).
+  - Klik "Pengaturan" (tanpa hash) mereset ke tab Global.
+- **Verifikasi**:
+  - `npx tsc --noEmit` bersih untuk file terkait.
+  - Test baru `hooks/use-hash.dom.test.tsx` (3 test) PASS.
+  - Frontend `pnpm test` **352 passed (45 files)**; `pnpm build` sukses.
+
+## 2026-10-15 (Bug NaN Pagination + Sidebar Bergrup) — 2 Perbaikan UI Super Admin
+- **Bug #1 — `NaN` pada pagination (`Received NaN for the children attribute`)**:
+  - **Akar masalah**: helper `response.Paginated` mengirim `meta` **tanpa `total_pages`**; `DataTablePagination` menghitung `Math.max(undefined,1)` → `NaN` → `<Button>{NaN}</Button>`. Dibuktikan lewat API live (`meta: {total,page,per_page}` tanpa `total_pages`).
+  - **Fix backend**: `pkg/response/response.go` — `Meta` kini punya `TotalPages`, dihitung di `Paginated` (`ceil(total/perPage)`, minimal 1). Berlaku untuk SEMUA endpoint paginated.
+  - **Fix frontend**: `DataTablePagination` meng-coerce `page`/`perPage`/`total`/`totalPages` ke angka aman (fallback derive dari `total/perPage`) sehingga payload lama pun tidak merender NaN.
+  - **Bukti**: API live kini mengembalikan `total_pages` di `subscriptions` (1), `audit-logs` (26), `payments` (6), `tokens/users` (36), `tokens/ledger` (121).
+  - **Test**: `pkg/response` (`TestPaginated`, `TestPaginated_TotalPagesFloorsAtOne`), `data-table-pagination.dom.test.tsx` (4 test: undefined/NaN/valid/klik).
+- **Bug #2 — Sidebar Super Admin tidak terkelola**:
+  - 15 item dalam satu daftar datar → sulit dipindai.
+  - **Fix**: dikelompokkan jadi 4 grup collapsible (**Ringkasan, Langganan & Pembayaran, Token & AI, Sistem**), **default terbuka semua**, toggle via `Record<string,boolean>` (state lokal). Titik indikator oranye menandai grup yang memuat halaman aktif.
+- **Verifikasi**:
+  - Backend `go build ./...`, `go vet ./...` bersih; `go test -count=1 ./...` **semua ok**; `go test ./tests/` (e2e) ok.
+  - Frontend `pnpm test` **356 passed (46 files)**; `pnpm build` sukses.

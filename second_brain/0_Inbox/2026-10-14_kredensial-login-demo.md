@@ -8,6 +8,7 @@ Dokumen ini memuat daftar akun demo hasil seeder database (`database/seeds/0001_
 
 | Peran (Role) | Email | Password | Nama Lengkap | Route Frontend | Keterangan |
 |---|---|---|---|---|---|
+| **Super Admin** | `superadmin@fintrack.id` | `Admin@123456` | Super Admin FinTrack | `/super-admin` | Akses penuh panel super admin (katalog paket, pembayaran, AI Gateway) |
 | **Admin** | `admin@fintrack.id` | `Admin@123456` | Admin FinTrack | `/admin` | Akses panel admin platform |
 | **User (Demo 1)** | `budi@example.com` | `User@123456` | Budi Santoso | `/user` | Akun aktif dengan data transaksi & kategori lengkap |
 | **User (Demo 2)** | `siti@example.com` | `User@123456` | Siti Rahayu | `/user` | Akun kedua untuk uji isolasi data & otorisasi |
