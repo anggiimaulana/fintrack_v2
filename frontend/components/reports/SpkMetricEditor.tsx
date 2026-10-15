@@ -130,7 +130,7 @@ export function SpkMetricEditor({ open, onOpenChange, current, isOverride }: Spk
 
           <div className="space-y-3">
             {draft.indicators.map((ind, idx) => (
-              <div key={idx} className="grid grid-cols-12 items-end gap-2 border-2 border-foreground p-3">
+              <div key={idx} className="grid grid-cols-12 items-end gap-2 border-2 rounded-md border-foreground p-3">
                 <div className="col-span-12 sm:col-span-4">
                   <label className="text-[10px] font-black uppercase text-muted-foreground" htmlFor={`ind-label-${idx}`}>
                     Nama
@@ -149,7 +149,7 @@ export function SpkMetricEditor({ open, onOpenChange, current, isOverride }: Spk
                     id={`ind-type-${idx}`}
                     value={ind.type}
                     onChange={(e) => updateIndicator(idx, { type: e.target.value as SpkMetricType })}
-                    className="h-9 w-full border-2 border-foreground bg-background px-2 text-sm font-bold"
+                    className="h-9 w-full border-2 rounded-md border-foreground bg-background px-2 text-sm font-bold"
                   >
                     {METRIC_TYPES.map((t) => (
                       <option key={t} value={t}>{SPK_METRIC_TYPE_LABELS[t]}</option>

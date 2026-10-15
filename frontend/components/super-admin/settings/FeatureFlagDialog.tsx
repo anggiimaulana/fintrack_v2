@@ -198,7 +198,7 @@ export function FeatureFlagDialog({
 
           {/* Enabled switch & Rollout */}
           <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="flex flex-col justify-between p-3 border border-border bg-card">
+            <div className="flex flex-col justify-between p-3 border rounded-md border-border bg-card">
               <span className="text-xs font-semibold mb-2">Status Flag</span>
               <div className="flex items-center gap-3">
                 <Switch
@@ -213,7 +213,7 @@ export function FeatureFlagDialog({
               </div>
             </div>
 
-            <div className="p-3 border border-border bg-card space-y-1">
+            <div className="p-3 border rounded-md border-border bg-card space-y-1">
               <Label htmlFor="flag-rollout" className="text-xs font-semibold">
                 Rollout ({rollout}%)
               </Label>
@@ -256,7 +256,7 @@ export function FeatureFlagDialog({
                 setJsonError(null)
               }}
               placeholder='{\n  "plan": "pro",\n  "min_version": "2.1.0"\n}'
-              className="w-full min-h-[90px] border-2 border-foreground bg-background px-3 py-2 text-xs font-mono text-foreground outline-none focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground"
+              className="w-full min-h-[90px] border-2 rounded-md border-foreground bg-background px-3 py-2 text-xs font-mono text-foreground outline-none focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground"
               aria-label="Flag Rules JSON"
             />
             {jsonError && (

@@ -13,7 +13,7 @@ interface DataTableSkeletonProps {
 /** Loading placeholder shown while table data is being fetched. */
 export function DataTableSkeleton({ columns, rows = 5, headers }: DataTableSkeletonProps) {
   return (
-    <div className="border-2 border-foreground bg-background">
+    <div className="border-2 rounded-md border-foreground bg-background">
       <Table>
         {headers && (
           <TableHeader>

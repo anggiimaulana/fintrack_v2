@@ -152,7 +152,7 @@ export function transactionColumns({
             ? { label: "Pemasukan", style: "bg-emerald-100 text-emerald-900 border-emerald-900/40" }
             : { label: "Pengeluaran", style: "bg-rose-100 text-rose-900 border-rose-900/40" };
         return (
-          <span className={`inline-block border-2 px-2 py-0.5 text-xs font-black uppercase tracking-wider ${typeConfig.style}`}>
+          <span className={`inline-block border-2 rounded-md px-2 py-0.5 text-xs font-black uppercase tracking-wider ${typeConfig.style}`}>
             {typeConfig.label}
           </span>
         );
@@ -173,7 +173,7 @@ export function transactionColumns({
       cell: ({ row }) => {
         const catName = getCategoryName(row.original, categoryMap);
         return (
-          <span className="inline-block border-2 border-foreground bg-muted px-2.5 py-0.5 text-xs font-bold text-foreground">
+          <span className="inline-block border-2 rounded-md border-foreground bg-muted px-2.5 py-0.5 text-xs font-bold text-foreground">
             {catName}
           </span>
         );
@@ -215,7 +215,7 @@ export function transactionColumns({
               onClick={() => onDetail(row.original)}
               aria-label="Detail transaksi"
               title="Detail transaksi"
-              className="cursor-pointer border-2 border-foreground bg-card p-1.5 text-foreground transition-all hover:bg-muted shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+              className="cursor-pointer border-2 rounded-md border-foreground bg-card p-1.5 text-foreground transition-all hover:bg-muted shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
             >
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -226,7 +226,7 @@ export function transactionColumns({
               onClick={() => onEdit(row.original)}
               aria-label="Ubah transaksi"
               title="Ubah transaksi"
-              className="cursor-pointer border-2 border-blue-600 bg-blue-50 p-1.5 text-blue-600 transition-all hover:bg-blue-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+              className="cursor-pointer border-2 rounded-md border-blue-600 bg-blue-50 p-1.5 text-blue-600 transition-all hover:bg-blue-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -237,7 +237,7 @@ export function transactionColumns({
               onClick={() => onDelete(row.original.id)}
               aria-label="Hapus transaksi"
               title="Hapus transaksi"
-              className="cursor-pointer border-2 border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+              className="cursor-pointer border-2 rounded-md border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>

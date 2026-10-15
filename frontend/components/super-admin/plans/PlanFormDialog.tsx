@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RupiahInput } from '@/components/shared/RupiahInput'
 import {
   Dialog,
@@ -71,6 +72,10 @@ export function PlanFormDialog({
   const [fallbackGateway, setFallbackGateway] = useState<string>(plan?.fallback_gateway ?? 'midtrans')
   const [sortOrder, setSortOrder] = useState<number>(plan?.sort_order ?? 0)
 
+  // Token→unit ratio (P-2). Dynamic: 1 = 1:1 (default), higher = quota lasts longer.
+
+  const [tokenQuotaRatio, setTokenQuotaRatio] = useState<number>(plan?.token_quota_ratio ?? 1)
+
   // Entitlements list
   const [entitlements, setEntitlements] = useState<EntitlementEntry[]>(() => {
     if (!plan?.entitlements) return []
@@ -99,6 +104,8 @@ export function PlanFormDialog({
   const descInputId = useId()
   const periodInputId = useId()
   const sortInputId = useId()
+
+  const ratioInputId = useId()
   const gatewayInputId = useId()
 
   const handleAddEntitlement = () => {
@@ -169,6 +176,11 @@ export function PlanFormDialog({
     if (billingPeriodDays <= 0) {
       errors.billing_period_days = 'Periode tagihan minimal 1 hari'
     }
+    // The ratio divides provider tokens before charging quota; a value < 1
+    // would over-charge and a non-number would send NaN (JSON null) upstream.
+    if (!Number.isFinite(tokenQuotaRatio) || tokenQuotaRatio < 1 || tokenQuotaRatio > 1000) {
+      errors.token_quota_ratio = 'Rasio kuota harus antara 1 dan 1000'
+    }
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -186,12 +198,14 @@ export function PlanFormDialog({
       }
     }
 
-    // Pack limits object
+    // Pack limits object. -1 is the "unlimited" sentinel, so it must survive:
+    // clamping to 0 would silently turn an unlimited plan into a zero-limit one.
     const limitsObj: Record<string, number> = {}
     for (const item of limits) {
       const k = item.key.trim()
       if (k) {
-        limitsObj[k] = Math.max(0, item.value || 0)
+        const v = item.value || 0
+        limitsObj[k] = v < 0 ? -1 : v
       }
     }
 
@@ -206,6 +220,7 @@ export function PlanFormDialog({
       is_public: isPublic,
       fallback_gateway: fallbackGateway.trim() || 'midtrans',
       sort_order: sortOrder,
+      token_quota_ratio: tokenQuotaRatio,
       entitlements: entitlementsObj,
       limits: limitsObj,
     }
@@ -377,6 +392,28 @@ export function PlanFormDialog({
                 disabled={isSubmitting}
               />
             </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor={ratioInputId}>Rasio Kuota Token (token_quota_ratio)</Label>
+              <Input
+                id={ratioInputId}
+                type="number"
+                min={1}
+                max={1000}
+                value={tokenQuotaRatio}
+                onChange={(e) => setTokenQuotaRatio(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                disabled={isSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                Token provider dibagi rasio ini sebelum ditagih ke kuota. Rasio 1 = 1 token : 1 kuota.
+                {' '}Contoh: rasio 5 membuat 9.945 token hanya menagih 1.989 kuota.
+              </p>
+              {validationErrors.token_quota_ratio && (
+                <p className="text-xs font-bold text-destructive" role="alert">
+                  {validationErrors.token_quota_ratio}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-6 p-4 rounded-md border border-border bg-card">
@@ -502,16 +539,30 @@ export function PlanFormDialog({
                 {limits.map((item) => (
                   <div key={item.id} className="space-y-1">
                     <div className="flex items-center gap-3 p-2 rounded border border-border bg-card">
-                      <Input
+                      <Select
                         value={item.key}
-                        onChange={(e) => handleUpdateLimitKey(item.id, e.target.value)}
-                        placeholder="kunci batas (contoh: ai_chat_monthly)"
-                        className="flex-1 font-mono text-xs"
+                        onValueChange={(v) => handleUpdateLimitKey(item.id, v)}
                         disabled={isSubmitting}
-                      />
+                      >
+                        <SelectTrigger className="flex-1 font-mono text-xs" aria-label="Kunci batas">
+                          <SelectValue placeholder="Pilih kunci batas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Only keys the backend can enforce are offered, so a
+                              plan never advertises a limit the API cannot apply
+                              (F4). voice_requests_per_day is included here. */}
+                          {catalog.limits
+                            .filter((l) => l.enforced)
+                            .map((l) => (
+                              <SelectItem key={l.key} value={l.key} className="font-mono text-xs">
+                                {l.label} ({l.key})
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                       <Input
                         type="number"
-                        min={0}
+                        min={-1}
                         value={item.value}
                         onChange={(e) =>
                           handleUpdateLimitValue(item.id, parseInt(e.target.value, 10) || 0)
@@ -519,6 +570,7 @@ export function PlanFormDialog({
                         placeholder="0"
                         className="w-28 font-mono text-xs"
                         disabled={isSubmitting}
+                        aria-label="Nilai batas (-1 = tak terbatas)"
                       />
                       <Button
                         type="button"

@@ -74,7 +74,7 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-6">
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+        <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
           <div className="flex items-center justify-between px-6 py-4 border-b-2 border-foreground">
             <div className="flex items-center gap-2">
               <UserPlus className="text-primary" size={20} />
@@ -98,10 +98,10 @@ export default function AdminDashboardPage() {
                 {usersLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-32 border-2 border-foreground" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-48 border-2 border-foreground" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24 border-2 border-foreground" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-5 w-16 ml-auto border-2 border-foreground" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32 border-2 rounded-md border-foreground" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-48 border-2 rounded-md border-foreground" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24 border-2 rounded-md border-foreground" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-16 ml-auto border-2 rounded-md border-foreground" /></TableCell>
                     </TableRow>
                   ))
                 ) : (

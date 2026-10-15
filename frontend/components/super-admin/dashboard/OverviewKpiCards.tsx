@@ -51,7 +51,7 @@ export function OverviewKpiCardsSkeleton() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {Array.from({ length: 7 }).map((_, i) => (
-        <Card key={i} className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
+        <Card key={i} className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
           <div className="flex items-center justify-between mb-2">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-6 w-6 rounded-full" />
@@ -86,7 +86,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* 1. MRR */}
-      <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardContent className="p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-bold uppercase tracking-wider">MRR</span>
@@ -103,7 +103,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
       </Card>
 
       {/* 2. Pengguna Aktif 30d */}
-      <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardContent className="p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-bold uppercase tracking-wider">Pengguna Aktif (30h)</span>
@@ -120,7 +120,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
       </Card>
 
       {/* 3. Konsumsi Token 24h */}
-      <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardContent className="p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-bold uppercase tracking-wider">Token Digunakan (24j)</span>
@@ -137,7 +137,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
       </Card>
 
       {/* 4. Payment Success Rate */}
-      <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardContent className="p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-bold uppercase tracking-wider">Tingkat Sukses Pembayaran</span>
@@ -154,7 +154,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
 
       {/* 5. Pending Manual Payments (Deep Link) */}
       <Link href="/super-admin/payments/review" className="block group">
-        <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground h-full transition-transform hover:-translate-y-0.5">
+        <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground h-full transition-transform hover:-translate-y-0.5">
           <CardContent className="p-4">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-bold uppercase tracking-wider">Menunggu Review Manual</span>
@@ -175,7 +175,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
       </Link>
 
       {/* 6. AI Endpoints Healthy / Total */}
-      <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardContent className="p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-bold uppercase tracking-wider">AI Endpoints Sehat</span>
@@ -194,7 +194,7 @@ export function OverviewKpiCards({ overview, isLoading }: OverviewKpiCardsProps)
 
       {/* 7. Circuit Breakers Open (Deep Link) */}
       <Link href="/super-admin/ai-gateway" className="block group">
-        <Card className={`border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground h-full transition-transform hover:-translate-y-0.5 ${
+        <Card className={`border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground h-full transition-transform hover:-translate-y-0.5 ${
           circuit_breaker_open_count > 0 ? 'border-destructive' : ''
         }`}>
           <CardContent className="p-4">

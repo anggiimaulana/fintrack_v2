@@ -16,6 +16,7 @@ export interface PlanDTO {
   is_public: boolean
   fallback_gateway: string
   sort_order: number
+  token_quota_ratio: number
   entitlements: Record<string, boolean>
   limits: Record<string, number>
 }
@@ -31,6 +32,7 @@ export interface PlanPayload {
   is_public?: boolean
   fallback_gateway?: string
   sort_order?: number
+  token_quota_ratio?: number
   entitlements?: Record<string, boolean>
   limits?: Record<string, number>
 }

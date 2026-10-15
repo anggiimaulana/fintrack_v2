@@ -39,7 +39,7 @@ export function ReportsSpkTab() {
   return (
     <div className="space-y-6">
       {/* Score header */}
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
             <CardTitle className="text-xs font-black uppercase tracking-wide">Skor Kesehatan Finansial</CardTitle>
@@ -90,7 +90,7 @@ export function ReportsSpkTab() {
       </Card>
 
       {/* Trend */}
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Tren Skor</CardTitle>
           <CardDescription>Garis putus-putus menandai ambang &ldquo;Baik&rdquo; (60).</CardDescription>
@@ -104,7 +104,7 @@ export function ReportsSpkTab() {
 
       {/* Breakdown + simulator */}
       {modelLoading || !model ? (
-        <div className="h-64 animate-pulse border-2 border-foreground bg-muted" />
+        <div className="h-64 animate-pulse border-2 rounded-md border-foreground bg-muted" />
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <SpkBreakdown model={model} breakdown={breakdown} />

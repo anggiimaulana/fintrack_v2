@@ -79,7 +79,7 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="p-0 gap-0 border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground bg-card sm:max-w-lg top-[15%] translate-y-0"
+        className="p-0 gap-0 border-2 rounded-md border-foreground shadow-[6px_6px_0px_0px] shadow-foreground bg-card sm:max-w-lg top-[15%] translate-y-0"
         showCloseButton={false}
         onOpenAutoFocus={(e) => {
           // Radix would focus the content container; focus the input instead so
@@ -101,7 +101,7 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
             aria-label="Kata kunci pencarian"
             className="flex-1 bg-transparent text-sm font-bold focus:outline-none placeholder:text-muted-foreground/70"
           />
-          <kbd className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground border-2 border-foreground/30 px-1.5 py-0.5">
+          <kbd className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground border-2 rounded-md border-foreground/30 px-1.5 py-0.5">
             ESC
           </kbd>
         </div>

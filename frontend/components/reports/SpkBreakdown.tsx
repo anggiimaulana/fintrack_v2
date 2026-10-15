@@ -23,7 +23,7 @@ export function SpkBreakdown({ model, breakdown }: SpkBreakdownProps) {
   }));
 
   return (
-    <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+    <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
       <CardHeader>
         <CardTitle className="text-xs font-black uppercase tracking-wide">Rincian Indikator</CardTitle>
         <CardDescription>
@@ -50,7 +50,7 @@ export function SpkBreakdown({ model, breakdown }: SpkBreakdownProps) {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="h-2.5 flex-1 border-2 border-foreground bg-muted">
+                    <div className="h-2.5 flex-1 border-2 rounded-md border-foreground bg-muted">
                       <div
                         className="h-full bg-primary"
                         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}

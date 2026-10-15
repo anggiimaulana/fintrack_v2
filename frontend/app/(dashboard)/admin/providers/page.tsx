@@ -139,10 +139,10 @@ export default function AdminProvidersPage() {
 
       {isLoading ? (
         <div className="space-y-4">
-          <Skeleton className="h-[300px] w-full border-2 border-foreground" />
+          <Skeleton className="h-[300px] w-full border-2 rounded-md border-foreground" />
         </div>
       ) : (
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground overflow-hidden">
+        <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-foreground bg-muted">
@@ -166,7 +166,7 @@ export default function AdminProvidersPage() {
                     {p.supports_reasoning ? <span className="text-green-600 font-bold">Ya</span> : <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold border ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold border rounded-md ${
                       p.is_active ? 'bg-green-100 text-green-700 border-green-300' : 'bg-gray-100 text-gray-500 border-gray-300'
                     }`}>
                       {p.is_active ? 'Aktif' : 'Nonaktif'}
@@ -197,7 +197,7 @@ export default function AdminProvidersPage() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] border-2 border-foreground">
+        <DialogContent className="sm:max-w-[425px] border-2 rounded-md border-foreground">
           <DialogHeader>
             <DialogTitle className="font-black uppercase tracking-wide">
               {editingProvider ? 'Edit Provider' : 'Tambah Provider'}

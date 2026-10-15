@@ -92,7 +92,7 @@ export default function SuperAdminDashboardPage() {
       ) : overview ? (
         <OverviewKpiCards overview={overview} isLoading={isOverviewLoading} />
       ) : overviewError ? (
-        <div className="p-6 border-2 border-destructive bg-card text-destructive font-bold text-sm">
+        <div className="p-6 border-2 rounded-lg border-destructive bg-card text-destructive font-bold text-sm">
           Gagal memuat ringkasan KPI. Silakan coba lagi.
         </div>
       ) : null}

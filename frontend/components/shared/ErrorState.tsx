@@ -16,9 +16,9 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="flex flex-col items-center justify-center gap-3 border-2 border-destructive bg-destructive/10 py-12 px-6 text-center"
+      className="flex flex-col items-center justify-center gap-3 border-2 rounded-lg border-destructive bg-destructive/10 py-12 px-6 text-center"
     >
-      <div className="flex h-12 w-12 items-center justify-center border-2 border-destructive bg-background">
+      <div className="flex h-12 w-12 items-center justify-center border-2 rounded-md border-destructive bg-background">
         <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
       </div>
       <p className="text-sm font-black uppercase tracking-wide text-foreground">{title}</p>

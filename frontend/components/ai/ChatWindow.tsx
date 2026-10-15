@@ -4,15 +4,20 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useAiChat } from "@/hooks/useAiChat";
 import { ChatMessage } from "@/components/ai/ChatMessage";
 import { ChatInput } from "@/components/ai/ChatInput";
+import { VoiceHistoryPanel } from "@/components/ai/VoiceHistoryPanel";
 import { TypingIndicator } from "@/components/ai/TypingIndicator";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Trash2, Plus, MessageSquare, Loader2, CheckCircle2, Search, PenLine, BarChart3, X, Zap, Brain, PanelLeftClose, PanelLeft } from "lucide-react";
+import { Trash2, Plus, MessageSquare, Loader2, CheckCircle2, Search, PenLine, BarChart3, X, Zap, Brain, PanelLeftClose, PanelLeft, Gauge, AlertTriangle } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/cache-keys";
 import api from "@/lib/api";
 import { notifyEntitlementError } from "@/lib/entitlement-errors";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import type { ReceiptResult } from "@/lib/receipt";
+import { buildReceiptTransaction, formatRupiahIDR, normalizeReceiptType, receiptTypeLabel } from "@/lib/receipt";
 
 import { BarChartView } from "@/components/charts/BarChartView";
 import { LineChartView } from "@/components/charts/LineChartView";
@@ -44,6 +49,9 @@ function updateUrlSession(sessionId: string | null) {
 export default function ChatWindow() {
   const { sessions, sessionsLoading, createSession, deleteSession, updateSession, streamChat, cancelStream, isStreaming, streamingContent, toolSteps, lastToolSteps, cooldownSeconds } = useAiChat("chatbot");
   const queryClient = useQueryClient();
+  // Quota mirror (UX only — the backend is the gate). Used to warn the user
+  // before a token-exhausted turn surprises them with a limit error.
+  const { usage: entitlementUsage } = useEntitlements();
 
   const [messages, setMessages] = useState<Array<{ role: string; content: string; mode?: "fast" | "reasoning" | null; modelUsed?: string | null }>>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
@@ -62,8 +70,21 @@ export default function ChatWindow() {
   const [aiMode, setAiMode] = useState<"fast" | "reasoning">("fast");
   const { categories: incomeCategories } = useAdminCategories("income");
   const { categories: expenseCategories } = useAdminCategories("expense");
+  const { categories: savingsCategories } = useAdminCategories("savings");
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Two independent states rather than one shared flag. The session list is a
+  // docked rail on desktop (open by default) and a full-screen overlay on
+  // mobile (closed by default). Keeping them separate means the mobile overlay
+  // starts closed without touching the desktop rail's initial width — a single
+  // flag defaulting to "closed" would flip the desktop rail to w-0 during
+  // hydration, and defaulting to "open" would flash the overlay on phones.
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
+  const toggleSidebar = useCallback(() => {
+    if (isMobile) setMobileSidebarOpen((v) => !v);
+    else setDesktopSidebarOpen((v) => !v);
+  }, [isMobile]);
   const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const q = new URLSearchParams(window.location.search).get("q");
@@ -80,6 +101,9 @@ export default function ChatWindow() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
+  // Holds the in-flight session creation so concurrent sends reuse one session
+  // instead of each creating their own (the 1-message → 2-sessions bug).
+  const sessionCreateRef = useRef<Promise<{ id: string } | null> | null>(null);
 
   const { data: sessionMessages, isLoading: sessionMessagesLoading } = useQuery({
     queryKey: ["chat-messages", currentSessionId],
@@ -143,6 +167,19 @@ export default function ChatWindow() {
 
   const lastAssistantIndex = messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i >= 0).pop() ?? -1;
 
+  // Token quota mirror for the header. `low` warns at 80% consumed so the user
+  // is told the limit is near *before* the next turn is refused.
+  const tokenUsage = entitlementUsage?.["ai_tokens_per_cycle"];
+  const tokenQuota = tokenUsage
+    ? {
+        unlimited: tokenUsage.unlimited,
+        remaining: Math.max(0, tokenUsage.remaining),
+        limit: tokenUsage.limit,
+        exhausted: !tokenUsage.unlimited && tokenUsage.remaining <= 0,
+        low: !tokenUsage.unlimited && tokenUsage.limit > 0 && tokenUsage.remaining <= tokenUsage.limit * 0.2,
+      }
+    : null;
+
   // Persist tool steps (chart data) per assistant message index when streaming ends
   useEffect(() => {
     if (!isStreaming && lastToolSteps.length > 0 && lastAssistantIndex >= 0) {
@@ -168,6 +205,35 @@ export default function ChatWindow() {
     }
   }, [messages.length, streamingContent]);
 
+  // ensureSession returns the active session, creating exactly one when none
+  // exists. Concurrent callers await the same in-flight promise, so a rapid
+  // double-send (or the ?q= auto-send racing a manual send) cannot produce two
+  // sessions for one message.
+  const ensureSession = useCallback(
+    async (title: string): Promise<{ id: string } | null> => {
+      if (currentSessionId) return { id: currentSessionId };
+      if (sessionCreateRef.current) return sessionCreateRef.current;
+
+      const promise = createSession
+        .mutateAsync(title)
+        .then((newSession: { id: string } | null) => {
+          if (newSession) {
+            lastLoadedSessionIdRef.current = newSession.id;
+            setCurrentSessionId(newSession.id);
+            updateUrlSession(newSession.id);
+          }
+          return newSession ?? null;
+        })
+        .finally(() => {
+          sessionCreateRef.current = null;
+        });
+
+      sessionCreateRef.current = promise;
+      return promise;
+    },
+    [currentSessionId, createSession],
+  );
+
   const handleSend = async (message: string, overrideSessionId?: string) => {
     let sessionId: string | null = overrideSessionId || currentSessionId;
 
@@ -178,13 +244,11 @@ export default function ChatWindow() {
     }
 
     if (!sessionId) {
-      const newSession = await createSession.mutateAsync(message.substring(0, 50));
-      if (newSession) {
-        sessionId = newSession.id;
-        lastLoadedSessionIdRef.current = newSession.id;
-        setCurrentSessionId(sessionId);
-        updateUrlSession(sessionId);
-      }
+      // A single message must never create two sessions. Concurrent callers
+      // (a fast double-click, or the ?q= auto-send path racing the send) share
+      // one in-flight creation instead of each issuing its own POST.
+      const created = await ensureSession(message.substring(0, 50));
+      sessionId = created?.id ?? null;
     }
 
     const userMsg = { role: "user" as const, content: message };
@@ -240,20 +304,20 @@ export default function ChatWindow() {
           return prev;
         });
       } else {
-        // A quota gate is a plan issue, not a bug: show the upgrade CTA instead
-        // of a generic error bubble.
+        // Any plan/quota gate (402 limit_exceeded, 402 limit_not_in_plan,
+        // 403 feature_not_in_plan, 429 insufficient_quota) is a plan issue, not
+        // a bug: show the upgrade CTA instead of a bubble with a raw error code.
         const code = err instanceof Error ? err.message : String(err);
-        if (code === "insufficient_quota" || code === "quota_exceeded") {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && !last.content) {
-              return prev.slice(0, -1);
-            }
-            return prev;
-          });
-          notifyEntitlementError({ response: { status: 429, data: { error: code } } });
-        } else {
-          setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi. " + code }]);
+        const isGate = notifyEntitlementError({ response: { status: 402, data: { error: code } } });
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && !last.content) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+        if (!isGate) {
+          setMessages((prev) => [...prev, { role: "assistant", content: "Maaf, terjadi kesalahan. Silakan coba lagi." }]);
         }
       }
     }
@@ -264,14 +328,12 @@ export default function ChatWindow() {
     const msg = pendingAutoSend;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPendingAutoSend(null);
-    createSession.mutateAsync(msg.substring(0, 50)).then((newSession) => {
-      if (newSession) {
-        lastLoadedSessionIdRef.current = newSession.id;
-        setCurrentSessionId(newSession.id);
-        updateUrlSession(newSession.id);
-        setTimeout(() => handleSend(msg, newSession.id), 300);
-      }
-    });
+    // Send directly: handleSend creates the session when needed (through the
+    // shared ensureSession guard). The old code pre-created a session and then
+    // re-sent after a 300 ms timer, which opened a race window that produced a
+    // second session for the same message.
+    void handleSend(msg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAutoSend]);
 
   
@@ -297,47 +359,36 @@ export default function ChatWindow() {
   };
 
   const createFromReceiptMutation = useMutation({
-    mutationFn: async (result: import("./ReceiptUpload").ReceiptResult) => {
-      const detectedType = result.type === "income" ? "income" : "expense";
-      const catList = detectedType === "income" ? (incomeCategories || []) : (expenseCategories || []);
-      let matched = catList.find((c: { name: string }) =>
-        c.name?.toLowerCase() === (result.category || "").toLowerCase()
-      );
-      if (!matched) {
-        matched = catList.find((c: { name: string }) =>
-          c.name?.toLowerCase().includes((result.category || "").toLowerCase()) ||
-          (result.category || "").toLowerCase().includes(c.name?.toLowerCase())
-        );
-      }
-      if (!matched) {
-        const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-        matched = catList.find((c: { name: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
-      }
-      if (!matched) throw new Error("Kategori tidak ditemukan: " + (result.category || "Unknown"));
-      const payload = {
-        type: detectedType,
-        amount: result.total,
-        expense_category_id: detectedType === "expense" ? matched.id : undefined,
-        income_category_id: detectedType === "income" ? matched.id : undefined,
-        description: result.merchant || "",
-        transaction_date: result.date || new Date().toISOString().split("T")[0],
-        source: "receipt",
-      };
+    mutationFn: async (result: ReceiptResult) => {
+      // Shared matcher: handles income/expense/savings and snaps the model's
+      // category onto a real one, so this path cannot fail where the scanner
+      // succeeds.
+      const { payload } = buildReceiptTransaction(result, {
+        income: incomeCategories,
+        expense: expenseCategories,
+        savings: savingsCategories,
+      });
       const res = await api.post("/ai/receipt/transaction", payload);
       return res.data?.data;
     },
     onSuccess: (tx, result) => {
-      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-      const msg = `\u2705 Struk berhasil dicatat sebagai transaksi **${result.type === "income" ? "Pemasukan" : "Pengeluaran"}** sebesar ${formatted}\n\n**Merchant:** ${result.merchant || "-"}\n**Kategori:** ${result.category || "-"}\n**Tanggal:** ${result.date || "-"}\n**ID Transaksi:** ${tx?.id || "-"}`;
+      // OCR consumed a scan + tokens, and a transaction was created — refresh
+      // the quota bars (entitlements only; the transaction lists are refreshed
+      // when the user opens them).
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+      const formatted = formatRupiahIDR(result.total || 0);
+      const typeLabel = receiptTypeLabel(normalizeReceiptType(result.type));
+      const msg = `\u2705 Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Deskripsi:** ${result.description || result.merchant || "-"}\n**Kategori:** ${result.category || "-"}\n**Tanggal:** ${result.date || "-"}\n**ID Transaksi:** ${tx?.id || "-"}`;
       handleSend(msg);
     },
-    onError: (err: unknown, result: import("./ReceiptUpload").ReceiptResult) => {
-      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-      handleSend(`\u26A0\uFE0F Gagal menyimpan struk: ${(err instanceof Error ? err.message : String(err))}\n\nHasil analisis: ${result.merchant || "-"} - ${formatted}`);
+    onError: (err: unknown, result: ReceiptResult) => {
+      const formatted = formatRupiahIDR(result.total || 0);
+      handleSend(`\u26A0\uFE0F Gagal menyimpan struk: ${(err instanceof Error ? err.message : String(err))}\n\nHasil analisis: ${result.description || result.merchant || "-"} - ${formatted}`);
     },
   });
 
-  const handleReceiptResult = (result: import("./ReceiptUpload").ReceiptResult) => {
+  const handleReceiptResult = (result: ReceiptResult) => {
     if (result?.success && result?.total) {
       if (result.category) {
         createFromReceiptMutation.mutate(result);
@@ -365,6 +416,9 @@ export default function ChatWindow() {
 
   const handleNewSession = async () => {
     if (isStreaming) cancelStream();
+    // A rapid double-click must not create two sessions; the button's
+    // `disabled` only flips after React re-renders.
+    if (createSession.isPending) return;
     const newSession = await createSession.mutateAsync("Percakapan baru");
     if (newSession) {
       lastLoadedSessionIdRef.current = newSession.id;
@@ -383,7 +437,7 @@ export default function ChatWindow() {
     const chartStep = (activeToolSteps as { tool: string; status: string; result?: unknown }[]).find((s) => s.tool === "generate_chart" && s.status === "success" && s.result);
 
     return (
-      <div className="border-2 border-foreground bg-muted p-3 space-y-2 mb-2">
+      <div className="border-2 rounded-md border-foreground bg-muted p-3 space-y-2 mb-2">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">AI Agent</p>
         {(activeToolSteps as { tool: string; status: string; error?: string; result?: unknown }[]).map((step, i: number) => (
           <div key={`tool-${i}`} className="flex items-center gap-2 text-xs font-bold">
@@ -440,7 +494,7 @@ export default function ChatWindow() {
     return (
       <div className="space-y-3 mt-2">
         {pieData && (
-          <div className="h-44 border-2 border-foreground p-2 bg-card">
+          <div className="h-44 border-2 rounded-md border-foreground p-2 bg-card">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Distribusi Keuangan</p>
             <div className="h-[calc(100%-40px)]">
               <PieChartView data={pieData} compact />
@@ -454,13 +508,13 @@ export default function ChatWindow() {
         )}
         {chartType !== "pie" && labels.length > 1 && (
           <div className="grid grid-cols-2 gap-2">
-            <div className="h-36 border-2 border-foreground p-2 bg-card">
+            <div className="h-36 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Batang</p>
               <div className="h-[calc(100%-20px)]">
                 <BarChartView data={chartData} />
               </div>
             </div>
-            <div className="h-36 border-2 border-foreground p-2 bg-card">
+            <div className="h-36 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Garis</p>
               <div className="h-[calc(100%-20px)]">
                 <LineChartView data={chartData} />
@@ -495,7 +549,7 @@ export default function ChatWindow() {
     const chartStep = (steps as { tool: string; status: string; result?: unknown }[]).find(s => s.tool === "generate_chart" && s.status === "success" && s.result);
     if (!chartStep) return null;
     return (
-      <div className="border-2 border-foreground bg-muted p-3 space-y-2 mb-2 mt-1">
+      <div className="border-2 rounded-md border-foreground bg-muted p-3 space-y-2 mb-2 mt-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Visualisasi</p>
         {chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
@@ -503,10 +557,10 @@ export default function ChatWindow() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-120px)]">
+    <div className="flex h-full min-h-0 w-full">
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 z-50 flex">
-          <div role="presentation" className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
+          <div role="presentation" className="absolute inset-0 bg-black/30" onClick={() => setMobileSidebarOpen(false)} />
           <div className="relative w-64 bg-muted border-r-2 border-foreground flex flex-col overflow-hidden animate-in slide-in-from-left duration-200">
             <div className="p-3 border-b-2 border-foreground">
               <Button
@@ -518,9 +572,9 @@ export default function ChatWindow() {
                 <Plus className="w-3.5 h-3.5 mr-2" /> Sesi Baru
               </Button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1">
               {(sessions || []).map((s: { id: string; title: string; created_at?: string }) => (
-                <div key={s.id} className="flex items-center group">
+                <div key={s.id} className="flex items-center group min-w-0">
                   {editingSessionId === s.id ? (
                     <input
                       ref={renameInputRef}
@@ -528,15 +582,15 @@ export default function ChatWindow() {
                       onChange={(e) => setEditTitle(e.target.value)}
                       onBlur={() => saveEdit(s.id)}
                       onKeyDown={(e) => { if (e.key === "Enter") saveEdit(s.id); if (e.key === "Escape") setEditingSessionId(null); }}
-                      className="flex-1 px-3 py-2 text-xs font-bold border-2 border-foreground bg-background outline-none"
+                      className="flex-1 px-3 py-2 text-xs font-bold border-2 rounded-md border-foreground bg-background outline-none"
                     />
                   ) : (
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                       <button
-                        onClick={() => { switchSession(s.id); if (isMobile) setSidebarOpen(false); }}
-                        className={`flex-1 text-left px-3 py-2 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                        onClick={() => { switchSession(s.id); if (isMobile) setMobileSidebarOpen(false); }}
+                        className={`flex-1 min-w-0 text-left px-3 py-2 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                           currentSessionId === s.id
-                            ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+                            ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
                             : "text-muted-foreground hover:text-foreground hover:bg-card border-2 border-transparent"
                         }`}
                       >
@@ -570,7 +624,7 @@ export default function ChatWindow() {
               {sessionsLoading && (
                 <div className="space-y-2 p-2">
                   {[1,2,3].map((i) => (
-                    <div key={i} className="h-8 bg-muted-foreground/10 border-2 border-foreground animate-pulse" />
+                    <div key={i} className="h-8 bg-muted-foreground/10 border-2 rounded-md border-foreground animate-pulse" />
                   ))}
                 </div>
               )}
@@ -578,8 +632,12 @@ export default function ChatWindow() {
           </div>
         </div>
       )}
-      {!isMobile && (
-        <div className={`${sidebarOpen ? "w-60" : "w-0"} border-r-2 border-foreground bg-muted flex flex-col overflow-hidden transition-all duration-200`}>
+      {/* Docked session rail. Visibility is CSS-driven (`hidden md:flex`) rather
+          than JS-gated so the server-rendered markup never flashes this rail on
+          a phone before hydration reports a mobile viewport. */}
+      <div
+        className={`hidden md:flex ${desktopSidebarOpen ? "md:w-64" : "md:w-0"} min-w-0 border-r-2 border-foreground bg-muted flex-col overflow-hidden transition-all duration-200`}
+      >
           <div className="p-3 border-b-2 border-foreground">
             <Button
               size="sm"
@@ -590,9 +648,9 @@ export default function ChatWindow() {
               <Plus className="w-3.5 h-3.5 mr-2" /> Sesi Baru
             </Button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1">
             {(sessions || []).map((s: { id: string; title: string; created_at?: string }) => (
-              <div key={s.id} className="flex items-center group">
+              <div key={s.id} className="flex items-center group min-w-0">
                 {editingSessionId === s.id ? (
                   <input
                     ref={renameInputRef}
@@ -600,15 +658,15 @@ export default function ChatWindow() {
                     onChange={(e) => setEditTitle(e.target.value)}
                     onBlur={() => saveEdit(s.id)}
                     onKeyDown={(e) => { if (e.key === "Enter") saveEdit(s.id); if (e.key === "Escape") setEditingSessionId(null); }}
-                    className="flex-1 px-3 py-2 text-xs font-bold border-2 border-foreground bg-background outline-none"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs font-bold border-2 rounded-md border-foreground bg-background outline-none"
                   />
                 ) : (
                   <div className="flex items-center gap-1 flex-1 min-w-0">
                     <button
                       onClick={() => switchSession(s.id)}
-                      className={`flex-1 text-left px-3 py-2 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      className={`flex-1 min-w-0 text-left px-3 py-2 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                         currentSessionId === s.id
-                          ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+                          ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
                           : "text-muted-foreground hover:text-foreground hover:bg-card border-2 border-transparent"
                       }`}
                     >
@@ -642,54 +700,78 @@ export default function ChatWindow() {
             {sessionsLoading && (
               <div className="space-y-2 p-2">
                 {[1,2,3].map((i) => (
-                  <div key={i} className="h-8 bg-muted-foreground/10 border-2 border-foreground animate-pulse" />
+                  <div key={i} className="h-8 bg-muted-foreground/10 border-2 rounded-md border-foreground animate-pulse" />
                 ))}
               </div>
             )}
           </div>
-        </div>
-      )}
+      </div>
 
-      <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between p-3 border-b-2 border-foreground bg-card">
-          <div className="flex items-center gap-2">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-center justify-between gap-2 p-3 border-b-2 border-foreground bg-card">
+          <div className="flex items-center gap-2 min-w-0">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={toggleSidebar}
+              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+              aria-label={sidebarOpen ? "Tutup daftar sesi" : "Buka daftar sesi"}
               title={sidebarOpen ? "Tutup daftar sesi" : "Buka daftar sesi"}
             >
               {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
             </button>
-            <MessageSquare className="w-4 h-4 text-primary" />
-            <h2 className="text-xs font-black uppercase tracking-wide text-foreground">AI Assistant</h2>
+            <MessageSquare className="w-4 h-4 text-primary shrink-0" />
+            {/* The title yields to the mode switch on narrow screens: it is the
+                only purely decorative element in this row. */}
+            <h2 className="hidden sm:block text-xs font-black uppercase tracking-wide text-foreground truncate">AI Assistant</h2>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex border-2 border-foreground p-0.5 bg-muted">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <VoiceHistoryPanel />
+            <div className="flex border-2 rounded-md border-foreground p-0.5 bg-muted">
               <button
                 onClick={() => setAiMode("fast")}
-                className={`px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
-                  aiMode === "fast" ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
+                aria-label="Mode cepat"
+                aria-pressed={aiMode === "fast"}
+                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
+                  aiMode === "fast" ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Zap className="w-3 h-3" /> CEPAT
+                <Zap className="w-3 h-3" /> <span className="hidden sm:inline">CEPAT</span>
               </button>
               <button
                 onClick={() => setAiMode("reasoning")}
-                className={`px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
-                  aiMode === "reasoning" ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
+                aria-label="Mode penalaran"
+                aria-pressed={aiMode === "reasoning"}
+                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
+                  aiMode === "reasoning" ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Brain className="w-3 h-3" /> PENALARAN
+                <Brain className="w-3 h-3" /> <span className="hidden sm:inline">PENALARAN</span>
               </button>
             </div>
             {isStreaming && (
-              <Button variant="ghost" size="sm" className="text-xs text-red-500" onClick={cancelStream}>
-                <X className="w-3.5 h-3.5 mr-1" /> Stop
+              <Button variant="ghost" size="sm" className="text-xs text-red-500 px-2" onClick={cancelStream} aria-label="Hentikan respons">
+                <X className="w-3.5 h-3.5 sm:mr-1" /> <span className="hidden sm:inline">Stop</span>
               </Button>
             )}
+            {tokenQuota && !tokenQuota.unlimited && (
+              <span
+                title={`Sisa kuota AI siklus ini: ${tokenQuota.remaining.toLocaleString("id-ID")} dari ${tokenQuota.limit.toLocaleString("id-ID")}`}
+                className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase tracking-wide border-2 rounded-md border-foreground ${
+                  tokenQuota.exhausted
+                    ? "bg-destructive text-primary-foreground"
+                    : tokenQuota.low
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                      : "bg-muted text-foreground"
+                }`}
+              >
+                <Gauge className="w-3 h-3" />
+                <span className="hidden sm:inline">
+                  {tokenQuota.exhausted ? "Kuota habis" : `Sisa kuota ${tokenQuota.remaining.toLocaleString("id-ID")}`}
+                </span>
+              </span>
+            )}
             {(messages.length > 0 || currentSessionId) && (
-              <Button variant="ghost" size="sm" className="text-red-500 text-xs" onClick={() => { setMessages([]); }}>
-                <Trash2 className="w-3.5 h-3.5 mr-1" /> Hapus
+              <Button variant="ghost" size="sm" className="text-red-500 text-xs px-2" onClick={() => { setMessages([]); }} aria-label="Bersihkan pesan">
+                <Trash2 className="w-3.5 h-3.5 sm:mr-1" /> <span className="hidden sm:inline">Hapus</span>
               </Button>
             )}
           </div>
@@ -700,21 +782,21 @@ export default function ChatWindow() {
             <div className="space-y-4 p-4">
               {[1,2,3].map((i) => (
                 <div key={i} className="space-y-2">
-                  <div className="h-4 bg-muted-foreground/10 border-2 border-foreground animate-pulse w-3/4" />
-                  <div className="h-4 bg-muted-foreground/10 border-2 border-foreground animate-pulse w-1/2" />
+                  <div className="h-4 bg-muted-foreground/10 border-2 rounded-md border-foreground animate-pulse w-3/4" />
+                  <div className="h-4 bg-muted-foreground/10 border-2 rounded-md border-foreground animate-pulse w-1/2" />
                 </div>
               ))}
             </div>
           )}
 
           {!currentSessionId && messages.length === 0 && !isStreaming && !pendingAutoSend && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center max-w-sm">
+            <div className="flex items-center justify-center h-full px-2">
+              <div className="text-center w-full max-w-sm">
                 <div className="w-16 h-16 border-2 border-foreground bg-primary/10 flex items-center justify-center mx-auto mb-5">
                   <MessageSquare className="w-7 h-7 text-primary" />
                 </div>
                 <p className="text-base font-black uppercase tracking-wide text-foreground mb-2">Belum Ada Sesi</p>
-                <p className="text-sm font-bold text-muted-foreground mb-6">
+                <p className="text-sm font-bold text-muted-foreground mb-6 text-pretty">
                   Mulai percakapan baru untuk bertanya atau mencatat transaksi menggunakan AI Assistant.
                 </p>
                 <Button
@@ -731,10 +813,10 @@ export default function ChatWindow() {
           )}
 
           {currentSessionId && messages.length === 0 && !isStreaming && !(sessionMessagesLoading && currentSessionId) && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center max-w-sm">
+            <div className="flex items-center justify-center h-full px-2">
+              <div className="text-center w-full max-w-sm">
                 <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm font-bold text-muted-foreground mb-4">
+                <p className="text-sm font-bold text-muted-foreground mb-4 text-pretty">
                   Tanyakan apapun tentang keuangan Anda
                 </p>
                 <div className="space-y-2">
@@ -747,7 +829,7 @@ export default function ChatWindow() {
                       key={i}
                       onClick={() => handleSend(item.text)}
                       disabled={isStreaming}
-                      className="w-full text-left border-2 border-foreground px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-2"
+                      className="w-full text-left border-2 rounded-md border-foreground px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-2"
                     >
                       <item.icon className="w-3.5 h-3.5 text-primary shrink-0" />
                       {item.text}
@@ -769,6 +851,18 @@ export default function ChatWindow() {
 
         {currentSessionId && (
           <>
+            {tokenQuota?.exhausted && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border-b-2 border-destructive text-xs font-bold text-destructive">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Kuota token AI siklus ini sudah habis.{" "}
+                  <a href="/user/subscription" className="underline font-black">
+                    Tingkatkan paket
+                  </a>{" "}
+                  untuk melanjutkan.
+                </span>
+              </div>
+            )}
             {cooldownSeconds > 0 && (
               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b-2 border-amber-500 text-xs font-bold text-amber-700">
                 <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />

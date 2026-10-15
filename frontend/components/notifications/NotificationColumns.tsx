@@ -95,7 +95,7 @@ export function notificationColumns({
         const meta = eventMeta(row.original.event);
         const Icon = meta.icon;
         return (
-          <span className={`inline-flex items-center gap-1.5 border-2 px-2 py-0.5 text-xs font-black uppercase tracking-wider ${meta.className}`}>
+          <span className={`inline-flex items-center gap-1.5 border-2 rounded-md px-2 py-0.5 text-xs font-black uppercase tracking-wider ${meta.className}`}>
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             {meta.label}
           </span>
@@ -110,7 +110,7 @@ export function notificationColumns({
         const read = !!row.original.read_at;
         return (
           <span
-            className={`inline-block border-2 px-2 py-0.5 text-xs font-black uppercase tracking-wider ${
+            className={`inline-block border-2 rounded-md px-2 py-0.5 text-xs font-black uppercase tracking-wider ${
               read
                 ? "border-foreground/30 bg-muted text-muted-foreground"
                 : "border-primary bg-primary/10 text-primary"
@@ -149,7 +149,7 @@ export function notificationColumns({
                 onClick={() => onDetail(n)}
                 aria-label="Lihat notifikasi"
                 title="Lihat"
-                className="cursor-pointer border-2 border-foreground bg-card p-1.5 text-foreground transition-all hover:bg-muted shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+                className="cursor-pointer border-2 rounded-md border-foreground bg-card p-1.5 text-foreground transition-all hover:bg-muted shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
               >
                 <Eye className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -160,7 +160,7 @@ export function notificationColumns({
                 onClick={() => onMarkRead(n)}
                 aria-label="Tandai sudah dibaca"
                 title="Tandai sudah dibaca"
-                className="cursor-pointer border-2 border-emerald-600 bg-emerald-50 p-1.5 text-emerald-600 transition-all hover:bg-emerald-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+                className="cursor-pointer border-2 rounded-md border-emerald-600 bg-emerald-50 p-1.5 text-emerald-600 transition-all hover:bg-emerald-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
               >
                 <MailOpen className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -171,7 +171,7 @@ export function notificationColumns({
                 onClick={() => onDelete(n.id)}
                 aria-label="Hapus notifikasi"
                 title="Hapus"
-                className="cursor-pointer border-2 border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
+                className="cursor-pointer border-2 rounded-md border-red-600 bg-red-50 p-1.5 text-red-600 transition-all hover:bg-red-600 hover:text-white shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px]"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>

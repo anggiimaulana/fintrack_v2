@@ -31,7 +31,7 @@ export function SpkSimulator({ model, breakdown }: SpkSimulatorProps) {
   const dirty = Object.values(changes).some((v) => v !== 0);
 
   return (
-    <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+    <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Simulasi What-If</CardTitle>
@@ -52,7 +52,7 @@ export function SpkSimulator({ model, breakdown }: SpkSimulatorProps) {
         )}
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid grid-cols-2 gap-3 border-2 border-foreground bg-muted p-4">
+        <div className="grid grid-cols-2 gap-3 border-2 rounded-lg border-foreground bg-muted p-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Skor saat ini</p>
             <p className="font-mono text-2xl font-black">{projection.current.toFixed(1)}</p>

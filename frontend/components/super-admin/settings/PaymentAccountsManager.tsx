@@ -51,7 +51,7 @@ function AccountForm({
   const isQRIS = form.kind === 'qris'
 
   return (
-    <div className="space-y-3 border-2 border-foreground bg-muted/40 p-4">
+    <div className="space-y-3 border-2 rounded-lg border-foreground bg-muted/40 p-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="pa_kind">Jenis</Label>
@@ -59,7 +59,7 @@ function AccountForm({
             id="pa_kind"
             value={form.kind}
             onChange={(e) => patch({ kind: e.target.value as PaymentAccountKind })}
-            className="h-9 w-full border-2 border-foreground bg-background px-2 text-sm font-bold"
+            className="h-9 w-full border-2 rounded-md border-foreground bg-background px-2 text-sm font-bold"
           >
             {KIND_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -158,14 +158,14 @@ function AccountRow({
 }) {
   const Icon = KIND_OPTIONS.find((o) => o.value === account.kind)?.icon ?? Building2
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-foreground bg-card p-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-2 rounded-md border-foreground bg-card p-3">
       <div className="flex min-w-0 items-center gap-3">
         <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
         <div className="min-w-0">
           <p className="truncate text-sm font-black">
             {account.name}
             {!account.is_active && (
-              <span className="ml-2 border-2 border-foreground px-1.5 py-0.5 text-[10px] font-black uppercase text-muted-foreground">
+              <span className="ml-2 border-2 rounded-md border-foreground px-1.5 py-0.5 text-[10px] font-black uppercase text-muted-foreground">
                 Nonaktif
               </span>
             )}

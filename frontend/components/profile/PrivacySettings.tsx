@@ -101,7 +101,7 @@ export function PrivacySettings() {
       </div>
 
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
-        <DialogContent className="border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground bg-card sm:max-w-md">
+        <DialogContent className="border-2 rounded-md border-foreground shadow-[6px_6px_0px_0px] shadow-foreground bg-card sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-black text-destructive flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-destructive" /> Konfirmasi Penghapusan Akun
@@ -122,7 +122,7 @@ export function PrivacySettings() {
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Masukkan password Anda"
                 required
-                className="w-full border-2 border-foreground bg-background px-3 py-2 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
+                className="w-full border-2 rounded-md border-foreground bg-background px-3 py-2 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
               />
             </div>
             <div className="space-y-1.5">
@@ -135,7 +135,7 @@ export function PrivacySettings() {
                 value={deleteReason}
                 onChange={(e) => setDeleteReason(e.target.value)}
                 placeholder="Alasan penutupan akun"
-                className="w-full border-2 border-foreground bg-background px-3 py-2 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
+                className="w-full border-2 rounded-md border-foreground bg-background px-3 py-2 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
               />
             </div>
             <DialogFooter className="gap-2 sm:gap-0 mt-4">

@@ -38,7 +38,7 @@ import type { TableQuery } from "@/lib/client-table";
 import { toast } from "sonner";
 
 // Charts pull in recharts (~500 KB); keep them code-split and below the fold.
-const chartFallback = <Skeleton className="h-full w-full border-2 border-foreground" />;
+const chartFallback = <Skeleton className="h-full w-full border-2 rounded-md border-foreground" />;
 const PieChartView = dynamic(() => import("@/components/charts/PieChartView").then((m) => m.PieChartView), { ssr: false, loading: () => chartFallback });
 const BarChartView = dynamic(() => import("@/components/charts/BarChartView").then((m) => m.BarChartView), { ssr: false, loading: () => chartFallback });
 const MultiSeriesChart = dynamic(() => import("@/components/charts/MultiSeriesChart").then((m) => m.MultiSeriesChart), { ssr: false, loading: () => chartFallback });
@@ -51,7 +51,7 @@ const DEFAULT_PER_PAGE = 20;
 
 export default function ReportsPage() {
   return (
-    <React.Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <React.Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <ReportsContent />
     </React.Suspense>
   );
@@ -159,7 +159,7 @@ function ReportsContent() {
   if (entLoading) {
     return (
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 md:grid-cols-3">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 border-2 border-foreground" />)}
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 border-2 rounded-md border-foreground" />)}
       </div>
     );
   }
@@ -171,7 +171,7 @@ function ReportsContent() {
           description="Analisis laporan, distribusi kategori, tren, skor SPK, dan ekspor tersedia mulai paket Pro. Tingkatkan paket untuk membuka halaman ini."
           action={
             <Button asChild className="cursor-pointer">
-              <Link href="/user/settings/subscription">
+              <Link href="/user/subscription">
                 <Sparkles className="w-4 h-4 mr-2" /> Tingkatkan Paket
               </Link>
             </Button>
@@ -193,7 +193,7 @@ function ReportsContent() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {/* Report type switch (URL-backed) */}
-          <div className="flex border-2 border-foreground bg-background p-1">
+          <div className="flex border-2 rounded-md border-foreground bg-background p-1">
             {REPORT_TYPES.map((t) => (
               <button
                 key={t.id}
@@ -218,7 +218,7 @@ function ReportsContent() {
                 {exporting ? `Mengunduh ${exporting.toUpperCase()}…` : "Ekspor"}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+            <DropdownMenuContent align="end" className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
               <DropdownMenuItem className="cursor-pointer font-bold" onSelect={() => handleExport("pdf")}>
                 <FileText className="mr-2 h-4 w-4" /> PDF
               </DropdownMenuItem>
@@ -234,7 +234,7 @@ function ReportsContent() {
       </div>
 
       {/* Date range */}
-      <div className="border-2 border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
+      <div className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
         <DateRangeFilter value={dateFilter} onChange={setDateFilterState} />
       </div>
 
@@ -266,7 +266,7 @@ function ReportsContent() {
                 { label: "Total Tabungan", value: report?.summary.total_savings ?? 0, cls: "text-amber-600" },
                 { label: "Surplus", value: report?.summary.surplus ?? 0, cls: "text-primary" },
               ].map((c) => (
-                <div key={c.label} className="flex flex-col gap-2 border-2 border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
+                <div key={c.label} className="flex flex-col gap-2 border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                   <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">{c.label}</span>
                   {isLoading ? <Skeleton className="h-6 w-24" /> : (
                     <span className={`font-mono text-xl font-black ${c.cls}`}>{formatIDR(c.value)}</span>
@@ -276,13 +276,13 @@ function ReportsContent() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="flex h-[400px] flex-col border-2 border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
+              <div className="flex h-[400px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Distribusi {typeName} per Kategori</h3>
                 <div className="relative flex-1 w-full">
                   <PieChartView data={categories.map((c) => ({ name: c.category_name, value: c.total }))} />
                 </div>
               </div>
-              <div className="flex h-[400px] flex-col border-2 border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
+              <div className="flex h-[400px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Perbandingan Bulanan</h3>
                 <div className="relative flex-1 w-full">
                   <BarChartView data={(report?.monthly ?? []).map((m: MonthlyComparison) => ({ name: m.month, income: m.income, expense: m.expense, savings: m.savings }))} />
@@ -308,7 +308,7 @@ function ReportsContent() {
           <div className="space-y-6">
             <TopMoversPanel movers={analytics?.top_movers} />
             {catChart?.labels?.length && catChart?.series?.length ? (
-              <div className="flex h-[420px] flex-col border-2 border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
+              <div className="flex h-[420px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Tren Kategori</h3>
                 <div className="min-h-0 flex-1 w-full">
                   <MultiSeriesChart labels={catChart.labels} series={catChart.series} type="area" />

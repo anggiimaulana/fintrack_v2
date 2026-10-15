@@ -112,7 +112,7 @@ export function CategoryTable({
       ),
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
-          <div className="h-2 w-20 border border-foreground bg-muted">
+          <div className="h-2 w-20 border rounded-md border-foreground bg-muted">
             <div className="h-full bg-primary" style={{ width: `${Math.min(100, row.original.percentage)}%` }} />
           </div>
           <span className="font-mono text-xs font-bold">{row.original.percentage.toFixed(1)}%</span>
@@ -172,7 +172,7 @@ export function CategoryTable({
         <select
           value={query.filters.min_pct || ""}
           onChange={(e) => onFilter("min_pct", e.target.value)}
-          className="h-9 cursor-pointer border-2 border-foreground bg-background px-2 text-xs font-bold"
+          className="h-9 cursor-pointer border-2 rounded-md border-foreground bg-background px-2 text-xs font-bold"
           aria-label="Filter porsi minimum"
         >
           <option value="">Semua porsi</option>
@@ -183,7 +183,7 @@ export function CategoryTable({
         <button
           type="button"
           onClick={onReset}
-          className="h-9 cursor-pointer border-2 border-foreground px-3 text-xs font-bold hover:bg-muted"
+          className="h-9 cursor-pointer border-2 rounded-md border-foreground px-3 text-xs font-bold hover:bg-muted"
         >
           Reset
         </button>

@@ -40,7 +40,7 @@ export function AppearanceSettings() {
                 aria-pressed={isActive}
                 onClick={() => setTheme(option.value)}
                 className={cn(
-                  "flex-1 py-2.5 text-sm font-bold border-2 border-foreground transition-all cursor-pointer",
+                  "flex-1 py-2.5 text-sm font-bold border-2 rounded-md border-foreground transition-all cursor-pointer",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground"
@@ -63,7 +63,7 @@ export function AppearanceSettings() {
           id="settings-language"
           value="id"
           disabled
-          className="w-full border-2 border-foreground bg-muted px-4 py-2.5 text-sm font-bold text-muted-foreground cursor-not-allowed focus:outline-none"
+          className="w-full border-2 rounded-md border-foreground bg-muted px-4 py-2.5 text-sm font-bold text-muted-foreground cursor-not-allowed focus:outline-none"
         >
           <option value="id">Indonesia (ID)</option>
         </select>

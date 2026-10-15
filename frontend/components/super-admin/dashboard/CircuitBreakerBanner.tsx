@@ -12,7 +12,7 @@ export function CircuitBreakerBanner({ count }: CircuitBreakerBannerProps) {
   return (
     <div
       role="alert"
-      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-2 border-destructive bg-destructive/15 text-destructive font-medium rounded-none shadow-[4px_4px_0px_0px] shadow-destructive"
+      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-2 border-destructive bg-destructive/15 text-destructive font-medium rounded-md shadow-[4px_4px_0px_0px] shadow-destructive"
     >
       <div className="flex items-center gap-3">
         <AlertTriangle className="h-5 w-5 shrink-0" />

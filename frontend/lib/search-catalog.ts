@@ -46,18 +46,19 @@ export const SEARCH_ENTRIES: SearchEntry[] = [
   { id: "transactions", label: "Transaksi", group: "Modul", href: "/user/transactions", icon: ArrowLeftRight, keywords: ["transaksi", "transaction", "catatan", "riwayat", "pengeluaran", "pemasukan"], description: "Catat & kelola transaksi" },
   { id: "ai-chat", label: "AI Chat", group: "Modul", href: "/user/ai", icon: MessageSquare, keywords: ["ai", "chat", "asisten", "assistant", "tanya", "bot"], description: "Asisten keuangan AI" },
   { id: "reports", label: "Laporan", group: "Modul", href: "/user/reports", icon: FileText, keywords: ["laporan", "report", "ekspor", "export", "unduh"], description: "Laporan keuangan" },
-  { id: "subscription", label: "Langganan", group: "Modul", href: "/user/settings/subscription", icon: CreditCard, keywords: ["langganan", "subscription", "paket", "plan", "upgrade", "harga", "billing", "tagihan", "kuota"], description: "Paket, kuota & pembayaran" },
+  { id: "subscription", label: "Langganan", group: "Modul", href: "/user/subscription", icon: CreditCard, keywords: ["langganan", "subscription", "paket", "plan", "upgrade", "harga", "billing", "tagihan", "kuota"], description: "Paket, kuota & pembayaran" },
   { id: "profile", label: "Profil & Pengaturan", group: "Modul", href: "/user/profile", icon: User, keywords: ["profil", "profile", "akun", "account", "nama", "telepon", "avatar", "foto", "pengaturan", "settings", "preferensi", "konfigurasi", "password", "tema", "bahasa", "notifikasi"], description: "Data akun & preferensi" },
 
   // ── Features (on a page) ───────────────────────────────────────
   { id: "feat-new-tx", label: "Tambah Transaksi", group: "Fitur", href: "/user/transactions?new=1", icon: Plus, keywords: ["tambah", "baru", "catat", "transaksi", "input"], description: "Catat transaksi baru" },
   { id: "feat-ocr", label: "Pindai Struk (OCR)", group: "Fitur", href: "/user/transactions?scan=1", icon: ScanLine, keywords: ["scan", "struk", "ocr", "receipt", "foto", "kamera", "pindai"], description: "Ambil data dari foto struk" },
-  { id: "feat-voice", label: "Input Suara", group: "Fitur", href: "/user/voice", icon: Mic, keywords: ["suara", "voice", "audio", "rekam", "bicara", "mic"], description: "Catat lewat perintah suara" },
+  { id: "feat-voice", label: "Input Suara", group: "Fitur", href: "/user/ai", icon: Mic, keywords: ["suara", "voice", "audio", "rekam", "bicara", "mic", "dikte"], description: "Dikte lewat suara di AI Chat" },
   { id: "feat-export", label: "Ekspor Laporan", group: "Fitur", href: "/user/reports", icon: FileText, keywords: ["ekspor", "export", "unduh", "download", "laporan", "pdf", "csv"], description: "Unduh laporan keuangan" },
   { id: "feat-privacy", label: "Privasi & UU PDP", group: "Fitur", href: "/user/profile#privacy", icon: ShieldCheck, keywords: ["privasi", "pdp", "hapus akun", "ekspor data", "gdpr", "kepatuhan"], description: "Hak data pribadi Anda" },
-  { id: "feat-quota", label: "Pemakaian Kuota", group: "Fitur", href: "/user/settings/subscription", icon: BarChart3, keywords: ["kuota", "quota", "pemakaian", "usage", "token", "limit", "sisa"], description: "Sisa kuota Anda" },
-  { id: "feat-plans", label: "Tingkatkan Paket", group: "Fitur", href: "/user/settings/subscription", icon: Sparkles, keywords: ["upgrade", "tingkatkan", "paket", "pro", "business", "berlangganan"], description: "Naikkan paket langganan" },
-  { id: "feat-invoices", label: "Riwayat Pembayaran", group: "Fitur", href: "/user/settings/subscription?tab=payments", icon: Receipt, keywords: ["invoice", "faktur", "pembayaran", "payment", "riwayat", "transfer", "bukti"], description: "Faktur & bukti transfer" },
+  { id: "feat-usage", label: "Penggunaan", group: "Modul", href: "/user/usage", icon: BarChart3, keywords: ["penggunaan", "usage", "pemakaian", "kuota", "quota", "token", "statistik", "grafik", "riwayat pemakaian"], description: "Statistik & riwayat pemakaian" },
+  { id: "feat-quota", label: "Pemakaian Kuota", group: "Fitur", href: "/user/usage", icon: BarChart3, keywords: ["kuota", "quota", "pemakaian", "usage", "token", "limit", "sisa"], description: "Sisa kuota Anda" },
+  { id: "feat-plans", label: "Tingkatkan Paket", group: "Fitur", href: "/user/subscription", icon: Sparkles, keywords: ["upgrade", "tingkatkan", "paket", "pro", "business", "berlangganan"], description: "Naikkan paket langganan" },
+  { id: "feat-invoices", label: "Riwayat Pembayaran", group: "Fitur", href: "/user/subscription?tab=payment", icon: Receipt, keywords: ["invoice", "faktur", "pembayaran", "payment", "riwayat", "transfer", "bukti"], description: "Faktur & bukti transfer" },
   { id: "feat-savings", label: "Tabungan", group: "Fitur", href: "/user/transactions?filter_type=savings", icon: PiggyBank, keywords: ["tabungan", "savings", "menabung", "investasi"], description: "Lihat transaksi tabungan" },
 ];
 

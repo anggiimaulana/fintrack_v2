@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DataTableSkeleton } from "./data-table-skeleton";
-import type { SortOrder } from "@/lib/table-params";
+import type { SortOrder, SortSpec } from "@/lib/table-params";
 
 export interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
@@ -36,7 +36,9 @@ export interface DataTableProps<TData> {
    */
   sort?: string;
   order?: SortOrder;
-  onSort?: (columnId: string, order: SortOrder) => void;
+  /** Full multi-sort list, surfaced to headers for multi-sort indicators. */
+  sorts?: SortSpec[];
+  onSort?: (columnId: string, order: SortOrder, opts?: { additive?: boolean }) => void;
   /** Optional per-row click handler. */
   onRowClick?: (row: TData) => void;
   /** Column count used for the skeleton (defaults to columns.length). */
@@ -68,6 +70,7 @@ export function DataTable<TData>({
   emptyMessage = "Tidak ada data.",
   sort,
   order,
+  sorts,
   onSort,
   onRowClick,
   skeletonColumns,
@@ -95,7 +98,7 @@ export function DataTable<TData>({
 
   if (error) {
     return (
-      <div className="border-2 border-danger-500 bg-danger-50 p-6 text-sm font-bold text-danger-700">
+      <div className="border-2 rounded-lg border-danger-500 bg-danger-50 p-6 text-sm font-bold text-danger-700">
         Gagal memuat data: {error}
       </div>
     );
@@ -103,14 +106,14 @@ export function DataTable<TData>({
 
   if (data.length === 0) {
     return (
-      <div className="border-2 border-foreground bg-background">
+      <div className="border-2 rounded-md border-foreground bg-background">
         <EmptyState title={emptyMessage} />
       </div>
     );
   }
 
   return (
-    <div className="border-2 border-foreground bg-background">
+    <div className="border-2 rounded-md border-foreground bg-background">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -123,6 +126,7 @@ export function DataTable<TData>({
                         ...header.getContext(),
                         sort,
                         order,
+                        sorts,
                         onSort,
                       })}
                 </TableHead>

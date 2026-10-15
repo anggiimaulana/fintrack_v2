@@ -41,10 +41,10 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Konfirmasi tindakan"
-        className="relative border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md"
+        className="relative border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md"
       >
         <div className="p-6 text-center">
-          <div className={`w-14 h-14 border-2 border-foreground flex items-center justify-center mx-auto mb-4 ${
+          <div className={`w-14 h-14 border-2 rounded-md border-foreground flex items-center justify-center mx-auto mb-4 ${
             variant === "danger" ? "bg-red-100" : "bg-primary/10"
           }`}>
             <AlertTriangle className={`w-7 h-7 ${variant === "danger" ? "text-red-600" : "text-primary"}`} />

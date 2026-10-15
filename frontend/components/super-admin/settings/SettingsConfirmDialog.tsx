@@ -44,7 +44,7 @@ export function SettingsConfirmDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          <div className="border border-border rounded-none divide-y divide-border text-sm">
+          <div className="overflow-hidden rounded-md border border-border divide-y divide-border text-sm">
             {diffs.map((diff) => (
               <div key={diff.key} className="p-3 bg-card space-y-1">
                 <div className="font-semibold text-foreground flex items-center justify-between">
@@ -56,7 +56,7 @@ export function SettingsConfirmDialog({
                     {String(diff.before ?? '(kosong)')}
                   </span>
                   <span className="text-muted-foreground">→</span>
-                  <span className="font-bold text-foreground bg-primary/10 px-1 py-0.5 border border-primary/20">
+                  <span className="font-bold text-foreground bg-primary/10 px-1 py-0.5 border rounded-md border-primary/20">
                     {String(diff.after)}
                   </span>
                 </div>

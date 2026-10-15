@@ -80,7 +80,7 @@ export function SecuritySettings() {
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           placeholder="Masukkan password saat ini"
-          className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+          className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           required
         />
       </div>
@@ -92,7 +92,7 @@ export function SecuritySettings() {
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="Minimal 8 karakter"
-          className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+          className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           required
           minLength={8}
         />
@@ -105,7 +105,7 @@ export function SecuritySettings() {
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           placeholder="Ulangi password baru"
-          className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+          className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           required
         />
       </div>

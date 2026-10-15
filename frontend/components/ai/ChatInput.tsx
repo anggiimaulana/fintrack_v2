@@ -46,7 +46,7 @@ export function ChatInput({ onSend, onStop, isSending, isStreaming, onReceiptRes
             }
           }} disabled={isBusy} />
         </div>
-        <div className="flex-1 bg-background border-2 border-foreground overflow-hidden flex items-end relative min-h-[44px]">
+        <div className="flex-1 bg-background border-2 rounded-md border-foreground overflow-hidden flex items-end relative min-h-[44px]">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -65,7 +65,7 @@ export function ChatInput({ onSend, onStop, isSending, isStreaming, onReceiptRes
               size="icon"
               aria-label="Hentikan respons"
               title="Hentikan respons"
-              className="rounded-none bg-red-600 hover:bg-red-700 text-white border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
+              className="bg-red-600 hover:bg-red-700 text-white border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
             </Button>
@@ -77,7 +77,7 @@ export function ChatInput({ onSend, onStop, isSending, isStreaming, onReceiptRes
               size="icon"
               aria-label="Kirim pesan"
               title="Kirim pesan"
-              className="rounded-none cursor-pointer disabled:cursor-not-allowed"
+              className="cursor-pointer disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
             </Button>

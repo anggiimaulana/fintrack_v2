@@ -32,7 +32,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             size="icon"
             className={cn(
               "h-10 w-10 p-2",
-              value === iconName ? "bg-primary-50 text-primary-600 border-primary-200 border" : "text-neutral-500"
+              value === iconName ? "bg-primary-50 text-primary-600 border-primary-200 border rounded-md" : "text-neutral-500"
             )}
             onClick={() => onChange(iconName)}
           >

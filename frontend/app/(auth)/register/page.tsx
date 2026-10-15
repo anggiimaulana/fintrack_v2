@@ -63,7 +63,7 @@ export default function RegisterPage() {
           </div>
           <Card>
             <CardContent className="pt-8 flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 border-2 border-foreground bg-green-100 flex items-center justify-center shadow-[3px_3px_0px_0px] shadow-foreground">
+              <div className="w-16 h-16 border-2 rounded-md border-foreground bg-green-100 flex items-center justify-center shadow-[3px_3px_0px_0px] shadow-foreground">
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
               <CardTitle className="text-xl font-black uppercase tracking-wide">Pendaftaran Berhasil</CardTitle>
@@ -101,7 +101,7 @@ export default function RegisterPage() {
           <CardContent>
             <form onSubmit={handleRegister} className="space-y-5">
               {error && (
-                <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm font-medium text-destructive">
+                <div className="border-2 rounded-md border-destructive bg-destructive/10 p-3 text-sm font-medium text-destructive">
                   {error}
                 </div>
               )}

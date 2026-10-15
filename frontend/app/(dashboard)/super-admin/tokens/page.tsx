@@ -171,7 +171,7 @@ function SuperAdminTokensContent() {
 // the route to stay statically prerenderable.
 export default function SuperAdminTokensPage() {
   return (
-    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <SuperAdminTokensContent />
     </Suspense>
   )

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
 import { staleTimeConfig } from "@/lib/cache-invalidation";
@@ -166,6 +167,97 @@ export function useNotificationStats() {
     },
     staleTime: staleTimeConfig.profile,
   });
+}
+
+/** How many rows the header bell dropdown renders. */
+export const BELL_PREVIEW_LIMIT = 8;
+
+/**
+ * Per-user notification preferences, persisted server-side.
+ *
+ * The toggles control EMAIL delivery: the backend writes every event to the
+ * in-app inbox, and emails only when the matching preference is on.
+ */
+export interface NotificationPreferences {
+  transaction_email: boolean;
+  category_reminder: boolean;
+  weekly_report: boolean;
+}
+
+export function useNotificationPreferences() {
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: queryKeys.notifications.preferences,
+    queryFn: async (): Promise<NotificationPreferences> => {
+      const res = await api.get("/me/notification-preferences");
+      return res.data?.data as NotificationPreferences;
+    },
+    staleTime: staleTimeConfig.profile,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (prefs: NotificationPreferences) => {
+      const res = await api.put("/me/notification-preferences", prefs);
+      return res.data?.data as NotificationPreferences;
+    },
+    onSuccess: (saved) => {
+      // Seed the cache with the server's canonical value so the switches do not
+      // flicker back on the next read.
+      queryClient.setQueryData(queryKeys.notifications.preferences, saved);
+      toast.success("Preferensi notifikasi disimpan.");
+    },
+    onError: () => toast.error("Gagal menyimpan preferensi notifikasi."),
+  });
+
+  return { preferences: query.data, isLoading: query.isLoading, isSaving: mutation.isPending, save: mutation.mutate };
+}
+
+/** Sends a test email to the signed-in user (verifies delivery end-to-end). */
+export function useSendTestEmail() {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/me/notifications/test-email");
+      return res.data;
+    },
+    onSuccess: () => toast.success("Email uji terkirim. Periksa kotak masuk Anda."),
+    onError: (err: unknown) => {
+      const code = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      toast.error(
+        code === "mail_disabled"
+          ? "Email belum dikonfigurasi. Hubungi admin."
+          : "Gagal mengirim email uji. Periksa konfigurasi SMTP.",
+      );
+    },
+  });
+}
+
+/**
+ * useNotificationInbox backs the header bell.
+ *
+ * It reads the SAME cache entries as the notifications page (the default
+ * newest-first first page and the stats query) so a single SSE event updates
+ * both, and it never polls: freshness comes from `useNotificationsRealtime`,
+ * which is mounted once at the provider level. The list is sliced for display,
+ * so no extra request is issued just to render the dropdown.
+ */
+export function useNotificationInbox() {
+  const filter: NotificationListFilter = { page: 1, perPage: 20, sort: "created_at", order: "desc" };
+  const { data, isLoading } = useNotifications(filter);
+  const { data: stats } = useNotificationStats();
+
+  const markReadMutation = useMarkNotificationRead();
+  const markAllReadMutation = useMarkAllNotificationsRead();
+  const clearMutation = useClearNotifications();
+
+  return {
+    items: (data?.data ?? []).slice(0, BELL_PREVIEW_LIMIT),
+    unread: stats?.unread ?? 0,
+    isLoading,
+    markRead: (id: string) => markReadMutation.mutate(id),
+    markAllRead: () => markAllReadMutation.mutate(),
+    clear: () => clearMutation.mutate(),
+  };
 }
 
 // ─── realtime subscription ────────────────────────────────────────
@@ -355,6 +447,33 @@ export function useDeleteNotifications() {
     onError: (_e, _v, ctx) => {
       if (ctx?.snapshot) restoreLists(queryClient, ctx.snapshot);
       toast.error("Gagal menghapus notifikasi.");
+    },
+  });
+}
+
+/**
+ * useClearNotifications empties the whole inbox (DELETE /me/notifications). Used
+ * by the bell's "clear" action. Patches every cached page to empty and zeroes
+ * the counters optimistically, restoring the snapshot on failure.
+ */
+export function useClearNotifications() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      await api.delete("/me/notifications");
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.notifications.all });
+      const snapshot = snapshotLists(queryClient);
+      for (const [key, value] of snapshotLists(queryClient)) {
+        queryClient.setQueryData(key, { ...value, data: [], total: 0 });
+      }
+      patchStats(queryClient, () => ({ total: 0, unread: 0, read: 0 }));
+      return { snapshot };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.snapshot) restoreLists(queryClient, ctx.snapshot);
+      toast.error("Gagal membersihkan notifikasi.");
     },
   });
 }

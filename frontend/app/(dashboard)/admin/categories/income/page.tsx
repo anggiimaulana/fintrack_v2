@@ -93,7 +93,7 @@ export default function IncomeCategoriesPage() {
 
       {isLoading ? (
         <div className="space-y-4">
-          <Skeleton className="h-[400px] w-full border-2 border-foreground" />
+          <Skeleton className="h-[400px] w-full border-2 rounded-md border-foreground" />
         </div>
       ) : (
         <CategoryTable
@@ -104,7 +104,7 @@ export default function IncomeCategoriesPage() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] border-2 border-foreground">
+        <DialogContent className="sm:max-w-[425px] border-2 rounded-md border-foreground">
           <DialogHeader>
             <DialogTitle className="font-black uppercase tracking-wide">{editingCategory ? 'Edit Kategori' : 'Tambah Kategori'}</DialogTitle>
             <DialogDescription className="font-medium">

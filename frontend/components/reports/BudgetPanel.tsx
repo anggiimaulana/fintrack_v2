@@ -41,7 +41,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
 
   if (!enabled) {
     return (
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Anggaran vs Aktual</CardTitle>
           <CardDescription>Fitur anggaran tersedia di paket Pro ke atas.</CardDescription>
@@ -80,7 +80,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
   return (
     <div className="space-y-6">
       {/* Add form */}
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Atur Anggaran Kategori</CardTitle>
           <CardDescription>Tetapkan batas bulanan per kategori pengeluaran.</CardDescription>
@@ -94,7 +94,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
               id="budget-category"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="h-9 w-full border-2 border-foreground bg-background px-2 text-sm font-bold"
+              className="h-9 w-full border-2 rounded-md border-foreground bg-background px-2 text-sm font-bold"
             >
               <option value="">Pilih kategori…</option>
               {expenseCategories.map((c) => (
@@ -123,15 +123,15 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
       {/* Overview */}
       {budgets.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="border-2 border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
+          <div className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Total Anggaran</p>
             <p className="font-mono text-lg font-black">{formatIDR(totalBudget)}</p>
           </div>
-          <div className="border-2 border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
+          <div className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Terpakai</p>
             <p className="font-mono text-lg font-black text-red-600">{formatIDR(totalActual)}</p>
           </div>
-          <div className="border-2 border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
+          <div className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Sisa</p>
             <p className={`font-mono text-lg font-black ${totalBudget - totalActual < 0 ? "text-red-600" : "text-green-700"}`}>
               {formatIDR(totalBudget - totalActual)}
@@ -142,9 +142,9 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
 
       {/* Per-category bars */}
       {isLoading ? (
-        <div className="h-40 animate-pulse border-2 border-foreground bg-muted" />
+        <div className="h-40 animate-pulse border-2 rounded-md border-foreground bg-muted" />
       ) : budgets.length === 0 ? (
-        <Card className="border-2 border-foreground">
+        <Card className="border-2 rounded-md border-foreground">
           <CardContent className="py-10 text-center text-sm font-bold text-muted-foreground">
             Belum ada anggaran. Tambahkan satu di atas untuk mulai memantau.
           </CardContent>
@@ -152,12 +152,12 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
       ) : (
         <div className="space-y-3">
           {budgets.map((b: BudgetStatus) => (
-            <div key={b.id} className="border-2 border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
+            <div key={b.id} className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-black">{b.category_name}</span>
                   {b.over && (
-                    <span className="border-2 border-red-600 px-1.5 py-0.5 text-[10px] font-black uppercase text-red-600">
+                    <span className="border-2 rounded-md border-red-600 px-1.5 py-0.5 text-[10px] font-black uppercase text-red-600">
                       Lewat {formatIDR(Math.abs(b.remaining))}
                     </span>
                   )}
@@ -179,7 +179,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="h-3 flex-1 border-2 border-foreground bg-muted">
+                <div className="h-3 flex-1 border-2 rounded-md border-foreground bg-muted">
                   <div
                     className={`h-full ${barClass(b.over, b.used_pct)}`}
                     style={{ width: `${Math.min(100, b.used_pct)}%` }}

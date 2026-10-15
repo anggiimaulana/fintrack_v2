@@ -16,7 +16,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
   if (!active || !payload?.length) return null;
   const total = payload.reduce((sum: number, p: {value: number, color: string, name: string}) => sum + ((p.value as number) || 0), 0);
   return (
-    <div className="bg-card border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1 max-h-48 overflow-y-auto">
+    <div className="bg-card border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1 max-h-48 overflow-y-auto">
       <p className="text-muted-foreground mb-1">{label}</p>
       {payload.map((p: {value: number, color: string, name: string}, i: number) => (
         <div key={i} className="flex items-center gap-2">

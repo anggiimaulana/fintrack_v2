@@ -34,6 +34,11 @@ export interface UsageEntry {
   /** -1 when the limit is unlimited. */
   remaining: number;
   unlimited: boolean;
+  /**
+   * Display unit for this limit (e.g. "kuota", "permintaan"). Supplied by the
+   * backend so the UI never hardcodes a unit that could change.
+   */
+  unit?: string;
 }
 
 /** Period is the active quota cycle bounds (RFC3339). */

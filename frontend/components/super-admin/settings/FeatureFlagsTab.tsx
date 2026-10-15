@@ -111,7 +111,7 @@ export function FeatureFlagsTab({
           </Button>
         </Card>
       ) : (
-        <div className="border border-border divide-y divide-border bg-card">
+        <div className="border rounded-md border-border divide-y divide-border bg-card">
           {flags.map((flag) => {
             const isEnabled = flag.enabled ?? flag.is_enabled ?? false
             return (
@@ -124,11 +124,11 @@ export function FeatureFlagsTab({
                     <span className="font-bold text-foreground text-sm">
                       {flag.name}
                     </span>
-                    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 border border-border text-muted-foreground">
+                    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 border rounded-md border-border text-muted-foreground">
                       {flag.key}
                     </code>
                     <span
-                      className={`text-[11px] px-2 py-0.5 font-semibold border ${
+                      className={`text-[11px] px-2 py-0.5 font-semibold border rounded-md ${
                         isEnabled
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                           : 'bg-muted text-muted-foreground border-border'
@@ -136,7 +136,7 @@ export function FeatureFlagsTab({
                     >
                       {isEnabled ? 'Aktif' : 'Nonaktif'}
                     </span>
-                    <span className="text-[11px] px-2 py-0.5 font-mono bg-primary/10 text-primary-strong border border-primary/20">
+                    <span className="text-[11px] px-2 py-0.5 font-mono bg-primary/10 text-primary-strong border rounded-md border-primary/20">
                       Rollout {flag.rollout}%
                     </span>
                   </div>
@@ -149,7 +149,7 @@ export function FeatureFlagsTab({
 
                   {flag.rules && Object.keys(flag.rules).length > 0 && (
                     <div className="pt-1">
-                      <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/40 px-2 py-1 border border-border max-w-full overflow-hidden truncate">
+                      <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/40 px-2 py-1 border rounded-md border-border max-w-full overflow-hidden truncate">
                         <Sliders className="size-3 shrink-0" />
                         <span>Rules: {JSON.stringify(flag.rules)}</span>
                       </div>

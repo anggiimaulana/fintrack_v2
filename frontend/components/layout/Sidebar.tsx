@@ -85,7 +85,7 @@ export function Sidebar() {
                 "group relative flex items-center gap-3 px-3 py-2.5 text-sm font-bold transition-all cursor-pointer",
                 collapsed && "justify-center px-0",
                 isActive
-                  ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+                  ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
                   : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               )}
             >
@@ -100,7 +100,7 @@ export function Sidebar() {
               </span>
               {/* Tooltip when collapsed */}
               {collapsed && (
-                <span className="pointer-events-none absolute left-full ml-3 z-50 hidden group-hover:block whitespace-nowrap bg-foreground text-background text-xs font-bold px-2.5 py-1.5 border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground/40">
+                <span className="pointer-events-none absolute left-full ml-3 z-50 hidden group-hover:block whitespace-nowrap bg-foreground text-background text-xs font-bold px-2.5 py-1.5 border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground/40">
                   {item.label}
                 </span>
               )}
@@ -112,14 +112,14 @@ export function Sidebar() {
       <div className={cn("border-t-2 border-sidebar-border", collapsed ? "p-2" : "p-4")}>
         {collapsed ? (
           <div className="flex justify-center mb-2" title={displayName}>
-            <Avatar className="w-9 h-9 border-2 border-foreground">
+            <Avatar className="w-9 h-9 border-2 rounded-md border-foreground">
               {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
               <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
             </Avatar>
           </div>
         ) : (
-          <div className="flex items-center gap-3 px-3 py-2 border-2 border-sidebar-border bg-sidebar-accent mb-2">
-            <Avatar className="w-8 h-8 border-2 border-foreground">
+          <div className="flex items-center gap-3 px-3 py-2 border-2 rounded-md border-sidebar-border bg-sidebar-accent mb-2">
+            <Avatar className="w-8 h-8 border-2 rounded-md border-foreground">
               {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
               <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
             </Avatar>

@@ -33,14 +33,14 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
       <DialogTrigger asChild>
         <button
           type="button"
-          className="cursor-pointer group relative inline-flex items-center gap-2 overflow-hidden rounded border border-border bg-card p-1 text-left transition hover:border-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          className="cursor-pointer group relative inline-flex items-center gap-2 overflow-hidden rounded-md border border-border bg-card p-1 text-left transition hover:border-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           aria-label="Lihat bukti transfer"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={proofUrl}
             alt={`Bukti pembayaran ${invoiceNumber || ''}`}
-            className="h-12 w-12 rounded object-cover transition group-hover:scale-105"
+            className="h-12 w-12 rounded-md object-cover transition group-hover:scale-105"
             loading="lazy"
           />
           <span className="text-xs font-semibold text-primary underline underline-offset-2">
@@ -65,12 +65,12 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
             </Button>
           </DialogTitle>
         </DialogHeader>
-        <div className="flex max-h-[70vh] items-center justify-center overflow-auto rounded border border-border bg-muted/40 p-2">
+        <div className="flex max-h-[70vh] items-center justify-center overflow-auto rounded-md border border-border bg-muted/40 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={proofUrl}
             alt={`Bukti pembayaran penuh ${invoiceNumber || ''}`}
-            className="max-h-[65vh] w-auto max-w-full rounded object-contain"
+            className="max-h-[65vh] w-auto max-w-full rounded-md object-contain"
           />
         </div>
       </DialogContent>

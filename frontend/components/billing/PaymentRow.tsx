@@ -39,7 +39,7 @@ const STATUS_VARIANT: Record<UserPayment['status'], 'default' | 'secondary' | 'd
 }
 
 /** The payment modal: instructions for every destination + inline proof upload. */
-function PayNowDialog({
+export function PayNowDialog({
   payment,
   open,
   onOpenChange,
@@ -82,7 +82,7 @@ function PayNowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-black">
             <CreditCard className="h-5 w-5 text-primary" aria-hidden="true" /> Bayar {payment.plan_name || payment.plan_code || 'Langganan'}
@@ -95,7 +95,7 @@ function PayNowDialog({
         <div className="space-y-3 py-2">
           <TransferInstructions paymentId={payment.id} amountIdr={payment.amount_idr} />
 
-          <div className="space-y-2 border-2 border-foreground bg-muted/40 p-3">
+          <div className="space-y-2 border-2 rounded-md border-foreground bg-muted/40 p-3">
             <p className="text-xs font-black uppercase tracking-wide text-foreground">Unggah Bukti Transfer</p>
             <input
               key={open ? 'open' : 'closed'}
@@ -103,7 +103,7 @@ function PayNowDialog({
               accept="image/png,image/jpeg,image/webp"
               onChange={onFileChange}
               aria-label={`Unggah bukti transfer untuk ${payment.invoice_number}`}
-              className="block w-full cursor-pointer border-2 border-foreground bg-background px-2 py-1.5 text-xs font-bold file:mr-2 file:border-0 file:bg-primary file:px-2 file:py-1 file:text-xs file:font-bold file:text-primary-foreground"
+              className="block w-full cursor-pointer border-2 rounded-md border-foreground bg-background px-2 py-1.5 text-xs font-bold file:mr-2 file:border-0 file:bg-primary file:px-2 file:py-1 file:text-xs file:font-bold file:text-primary-foreground"
             />
             <Button onClick={submit} disabled={!file || upload.isPending} size="sm" className="w-full cursor-pointer">
               <Upload className="mr-2 h-4 w-4" />
@@ -144,7 +144,7 @@ export function PaymentRow({ payment }: { payment: UserPayment }) {
     )
 
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+    <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-foreground p-4">
         <div className="min-w-0">
           <p className="truncate text-sm font-black uppercase tracking-wide text-foreground">{planLabel}</p>

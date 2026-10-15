@@ -42,7 +42,7 @@ export function CalendarHeatmap({ daily }: CalendarHeatmapProps) {
 
   if (!daily || daily.length === 0) {
     return (
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Kalender Pengeluaran</CardTitle>
         </CardHeader>
@@ -65,7 +65,7 @@ export function CalendarHeatmap({ daily }: CalendarHeatmapProps) {
   const avgPerActiveDay = activeDays > 0 ? totalExpense / activeDays : 0;
 
   return (
-    <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+    <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
       <CardHeader>
         <CardTitle className="text-xs font-black uppercase tracking-wide">Kalender Pengeluaran</CardTitle>
         <CardDescription>
@@ -100,7 +100,7 @@ export function CalendarHeatmap({ daily }: CalendarHeatmapProps) {
                     onClick={() => setSelected(d)}
                     title={`${d.date}: ${formatIDR(d.expense)}`}
                     aria-label={`${d.date}, pengeluaran ${formatIDR(d.expense)}`}
-                    className={`flex aspect-square items-center justify-center border-2 border-foreground text-[10px] font-bold transition-transform hover:scale-105 ${HEAT_CLASSES[level]} ${level >= 3 ? "text-primary-foreground" : "text-foreground"}`}
+                    className={`flex aspect-square items-center justify-center border-2 rounded-md border-foreground text-[10px] font-bold transition-transform hover:scale-105 ${HEAT_CLASSES[level]} ${level >= 3 ? "text-primary-foreground" : "text-foreground"}`}
                   >
                     {day}
                   </button>
@@ -113,13 +113,13 @@ export function CalendarHeatmap({ daily }: CalendarHeatmapProps) {
         <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground">
           <span>Sedikit</span>
           {HEAT_CLASSES.map((c, i) => (
-            <span key={i} className={`h-3 w-3 border border-foreground ${c}`} />
+            <span key={i} className={`h-3 w-3 border rounded-md border-foreground ${c}`} />
           ))}
           <span>Banyak</span>
         </div>
 
         {selected && (
-          <div className="border-2 border-foreground bg-muted p-3 text-xs font-bold">
+          <div className="border-2 rounded-md border-foreground bg-muted p-3 text-xs font-bold">
             <p className="mb-1 font-black">{selected.date}</p>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               <span>Masuk: <span className="font-mono text-green-700">{formatIDR(selected.income)}</span></span>

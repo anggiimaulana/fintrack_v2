@@ -59,6 +59,9 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
   // `undefined` (not null) so clearTimeout accepts it without a guard.
   const timerRef = useRef<ReconnectTimer | undefined>(undefined);
   const stoppedRef = useRef(false);
+  // Tracks whether the stream has ever opened in this mount. Used to
+  // distinguish a genuine reconnect (which needs a resync) from the first open.
+  const hadOpenRef = useRef(false);
 
   const handleEvent = useCallback(
     (raw: MessageEvent) => {
@@ -102,8 +105,24 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
       esRef.current = es;
 
       es.onopen = () => {
+        const isReconnect = attemptRef.current > 0 || hadOpenRef.current;
         attemptRef.current = 0;
         setStreamStatus("open");
+
+        // After a drop, buffered events are replayed on resume — but a gap
+        // longer than the server buffer TTL (or a Redis-less deployment) can
+        // still lose events. Synthesise one `stream_reconnected` so consumers
+        // resync exactly once, replacing any need for polling. The very first
+        // open needs no resync: the initial queries fetch fresh data anyway.
+        if (isReconnect) {
+          const ev: DomainEvent = {
+            event: "stream_reconnected",
+            timestamp: Math.floor(Date.now() / 1000),
+          };
+          dispatchDomainEvent(queryClient, ev);
+          publishDomainEvent(ev);
+        }
+        hadOpenRef.current = true;
       };
 
       // Domain events arrive as named events; the server also sends unnamed
@@ -113,6 +132,9 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
         "payment_received",
         "plan_updated",
         "quota_reset",
+        // Consumption moved: refreshes the entitlements query only, so the
+        // quota bars stay live without touching the data lists.
+        "usage_changed",
         "ai_endpoint_down",
         "ai_route_quarantined",
         "manual_approval_needed",

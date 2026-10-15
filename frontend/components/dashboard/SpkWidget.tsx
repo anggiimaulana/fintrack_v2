@@ -14,24 +14,24 @@ interface SpkWidgetProps {
 
 export function SpkWidgetSkeleton() {
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col gap-4">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col gap-4">
       <div className="flex justify-between items-center">
-        <Skeleton className="h-5 w-32 border-2 border-foreground" />
-        <Skeleton className="h-5 w-5 border-2 border-foreground" />
+        <Skeleton className="h-5 w-32 border-2 rounded-md border-foreground" />
+        <Skeleton className="h-5 w-5 border-2 rounded-md border-foreground" />
       </div>
       <div className="flex items-center gap-6 my-4">
-        <Skeleton className="w-24 h-24 border-2 border-foreground" />
+        <Skeleton className="w-24 h-24 border-2 rounded-md border-foreground" />
         <div className="space-y-2 flex-1">
-          <Skeleton className="h-6 w-24 border-2 border-foreground" />
-          <Skeleton className="h-4 w-full border-2 border-foreground" />
-          <Skeleton className="h-4 w-4/5 border-2 border-foreground" />
+          <Skeleton className="h-6 w-24 border-2 rounded-md border-foreground" />
+          <Skeleton className="h-4 w-full border-2 rounded-md border-foreground" />
+          <Skeleton className="h-4 w-4/5 border-2 rounded-sm border-foreground" />
         </div>
       </div>
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
           <div key={i} className="flex gap-2">
-            <Skeleton className="w-1.5 h-1.5 mt-1.5 shrink-0 border-2 border-foreground" />
-            <Skeleton className="h-4 w-full border-2 border-foreground" />
+            <Skeleton className="w-1.5 h-1.5 mt-1.5 shrink-0 border-2 rounded-md border-foreground" />
+            <Skeleton className="h-4 w-full border-2 rounded-md border-foreground" />
           </div>
         ))}
       </div>
@@ -72,7 +72,7 @@ export function SpkWidget({ score, status, insights, isLoading, hasData }: SpkWi
   const progressColor = getProgressColor();
 
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-full">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-full">
       <div className="flex justify-between items-center mb-5">
         <h3 className="text-xs font-black uppercase tracking-wide text-foreground">Kondisi Keuangan</h3>
         <button className="text-muted-foreground hover:text-foreground cursor-pointer" title="Sistem Pendukung Keputusan">
@@ -100,7 +100,7 @@ export function SpkWidget({ score, status, insights, isLoading, hasData }: SpkWi
         </div>
         
         <div className="flex-1 text-center md:text-left">
-          <div className={`inline-block border-2 border-foreground px-3 py-1 text-sm font-black uppercase tracking-wide ${colors}`}>
+          <div className={`inline-block border-2 rounded-md border-foreground px-3 py-1 text-sm font-black uppercase tracking-wide ${colors}`}>
             {status}
           </div>
           <p className="text-xs text-muted-foreground font-medium mt-2">
@@ -119,7 +119,7 @@ export function SpkWidget({ score, status, insights, isLoading, hasData }: SpkWi
         ))}
       </div>
 
-      <Link href="/user/reports" className="mt-5 flex items-center justify-center gap-2 w-full py-2.5 text-sm font-black text-primary bg-primary/10 border-2 border-foreground shadow-[3px_3px_0px_0px] shadow-foreground hover:shadow-[2px_2px_0px_0px] hover:shadow-foreground active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all cursor-pointer uppercase tracking-wide">
+      <Link href="/user/reports" className="mt-5 flex items-center justify-center gap-2 w-full py-2.5 text-sm font-black text-primary bg-primary/10 border-2 rounded-md border-foreground shadow-[3px_3px_0px_0px] shadow-foreground hover:shadow-[2px_2px_0px_0px] hover:shadow-foreground active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all cursor-pointer uppercase tracking-wide">
         Lihat Detail Laporan
         <ArrowRight className="w-4 h-4" />
       </Link>

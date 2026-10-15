@@ -170,13 +170,13 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-center gap-1 flex-nowrap md:flex-wrap overflow-x-auto pb-1 -mb-1">
         <Calendar className="w-4 h-4 text-muted-foreground shrink-0 mr-1" />
         {PRESETS.map((p) => (
           <button
             key={p.key}
             onClick={() => handlePreset(p.key)}
-            className={`px-3 py-1.5 text-xs font-bold uppercase cursor-pointer transition-all border-2 ${
+            className={`px-3 py-1.5 text-xs font-bold uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all border-2 rounded-md ${
               value.preset === p.key
                 ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-foreground"
                 : "bg-background text-muted-foreground border-transparent hover:border-foreground hover:text-foreground"
@@ -196,7 +196,7 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
               type="date"
               value={value.startDate}
               onChange={(e) => onChange({ ...value, startDate: e.target.value })}
-              className="border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
+              className="border-2 rounded-md border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
             />
           </div>
           <ArrowRight className="w-4 h-4 text-muted-foreground" />
@@ -207,7 +207,7 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
               type="date"
               value={value.endDate}
               onChange={(e) => onChange({ ...value, endDate: e.target.value })}
-              className="border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
+              className="border-2 rounded-md border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
             />
           </div>
         </div>
@@ -230,7 +230,7 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleComparePreset("prev_period")}
-                  className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer border-2 ${
+                  className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer border-2 rounded-md ${
                     localComparePreset === "prev_period"
                       ? "bg-card text-foreground border-foreground"
                       : "bg-background text-muted-foreground border-transparent"
@@ -240,7 +240,7 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
                 </button>
                 <button
                   onClick={() => handleComparePreset("year_ago")}
-                  className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer border-2 ${
+                  className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer border-2 rounded-md ${
                     localComparePreset === "year_ago"
                       ? "bg-card text-foreground border-foreground"
                       : "bg-background text-muted-foreground border-transparent"
@@ -256,14 +256,14 @@ export function DateRangeFilter({ value, onChange, showCompare = true }: DateRan
                     type="date"
                     value={value.compareStart}
                     onChange={(e) => onChange({ ...value, compareStart: e.target.value })}
-                    className="border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none w-[140px]"
+                    className="border-2 rounded-md border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none w-[140px]"
                   />
                   <span className="text-xs text-muted-foreground">→</span>
                   <input
                     type="date"
                     value={value.compareEnd}
                     onChange={(e) => onChange({ ...value, compareEnd: e.target.value })}
-                    className="border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none w-[140px]"
+                    className="border-2 rounded-md border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none w-[140px]"
                   />
                 </div>
               </div>

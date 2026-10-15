@@ -12,7 +12,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "flex flex-col border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground data-[size=sm]:shadow-[3px_3px_0px_0px] data-[size=sm]:shadow-foreground",
+        "flex flex-col rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground data-[size=sm]:shadow-[3px_3px_0px_0px] data-[size=sm]:shadow-foreground",
         className
       )}
       {...props}
@@ -84,7 +84,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-footer"
       className={cn(
-        "flex items-center border-t-2 border-foreground px-5 py-3",
+        "flex items-center rounded-b-lg border-t-2 border-foreground px-5 py-3",
         className
       )}
       {...props}

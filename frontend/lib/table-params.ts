@@ -17,11 +17,21 @@ export const FILTER_PREFIX = "filter_";
 
 export type SortOrder = "asc" | "desc";
 
+/** One column + direction inside a (possibly multi-column) sort. */
+export interface SortSpec {
+  column: string;
+  order: SortOrder;
+}
+
 export interface TableState {
   page: number;
   perPage: number;
+  /** Primary sort column (mirror of `sorts[0]`), kept for single-sort callers. */
   sort: string;
+  /** Primary sort direction (mirror of `sorts[0]`). */
   order: SortOrder;
+  /** Full ordered sort list. Empty when no sort is active. */
+  sorts: SortSpec[];
   q: string;
   filters: Record<string, string>;
 }
@@ -30,6 +40,13 @@ export interface TableDefaults {
   sort?: string;
   order?: SortOrder;
   perPage?: number;
+  /**
+   * Namespace for this table's URL params, so several independent tables can
+   * coexist on one page (e.g. the subscription tabs). When set, params become
+   * `<prefix>page`, `<prefix>sort`, `<prefix>filter_status`, … Backend requests
+   * are unaffected — the page reads this state and maps it to API params.
+   */
+  prefix?: string;
 }
 
 /** Clamp a per-page value into the allowed range. */
@@ -53,6 +70,16 @@ export function normalizeOrder(v: string | null, fallback: SortOrder = "desc"): 
   return v.toLowerCase() === "asc" ? "asc" : "desc";
 }
 
+/** Effective filter prefix for a table (namespaced when a prefix is set). */
+export function filterPrefix(prefix?: string): string {
+  return prefix ? `${prefix}_${FILTER_PREFIX}` : FILTER_PREFIX;
+}
+
+/** Effective URL param name for a base key (namespaced when a prefix is set). */
+export function paramName(base: string, prefix?: string): string {
+  return prefix ? `${prefix}_${base}` : base;
+}
+
 /**
  * Parse table state from URL search params, applying safe defaults.
  */
@@ -65,21 +92,59 @@ export function parseTableParams(
       ? (params as URLSearchParams).get(k)
       : null;
 
+  const fPrefix = filterPrefix(defaults.prefix);
   const filters: Record<string, string> = {};
   params.forEach?.((value, key) => {
-    if (key.startsWith(FILTER_PREFIX) && value !== "") {
-      filters[key.slice(FILTER_PREFIX.length)] = value;
+    if (key.startsWith(fPrefix) && value !== "") {
+      filters[key.slice(fPrefix.length)] = value;
     }
   });
 
+  const rawSort = get(paramName("sort", defaults.prefix)) ?? "";
+  const rawOrder = get(paramName("order", defaults.prefix)) ?? "";
+  const sorts = parseSortList(rawSort, rawOrder, defaults);
+
   return {
-    page: toPositiveInt(get("page"), DEFAULT_PAGE),
-    perPage: clampPerPage(toPositiveInt(get("per_page"), defaults.perPage ?? DEFAULT_PER_PAGE)),
-    sort: get("sort") ?? defaults.sort ?? "",
-    order: normalizeOrder(get("order"), defaults.order ?? "desc"),
-    q: (get("q") ?? "").trim(),
+    page: toPositiveInt(get(paramName("page", defaults.prefix)), DEFAULT_PAGE),
+    perPage: clampPerPage(
+      toPositiveInt(
+        get(paramName("per_page", defaults.prefix)),
+        defaults.perPage ?? DEFAULT_PER_PAGE
+      )
+    ),
+    sort: sorts[0]?.column ?? "",
+    order: sorts[0]?.order ?? normalizeOrder(null, defaults.order ?? "desc"),
+    sorts,
+    q: (get(paramName("q", defaults.prefix)) ?? "").trim(),
     filters,
   };
+}
+
+/**
+ * Parse a comma-separated `sort=a,b` / `order=desc,asc` pair into a sort list.
+ * When the URL carries no sort, the endpoint default (if any) is used.
+ */
+export function parseSortList(
+  rawSort: string,
+  rawOrder: string,
+  defaults: TableDefaults = {}
+): SortSpec[] {
+  const cols = rawSort
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (cols.length === 0) {
+    if (defaults.sort) {
+      return [{ column: defaults.sort, order: defaults.order ?? "desc" }];
+    }
+    return [];
+  }
+  const orders = rawOrder.split(",").map((o) => o.trim());
+  const fallback = defaults.order ?? "desc";
+  return cols.map((column, i) => {
+    const raw = orders[i] ?? orders[orders.length - 1] ?? "";
+    return { column, order: normalizeOrder(raw || null, fallback) };
+  });
 }
 
 /**
@@ -88,17 +153,31 @@ export function parseTableParams(
  */
 export function buildTableParams(state: TableState, defaults: TableDefaults = {}): URLSearchParams {
   const p = new URLSearchParams();
+  const name = (base: string) => paramName(base, defaults.prefix);
 
-  if (state.page !== DEFAULT_PAGE) p.set("page", String(state.page));
+  if (state.page !== DEFAULT_PAGE) p.set(name("page"), String(state.page));
   if (state.perPage !== (defaults.perPage ?? DEFAULT_PER_PAGE)) {
-    p.set("per_page", String(state.perPage));
+    p.set(name("per_page"), String(state.perPage));
   }
-  if (state.sort) p.set("sort", state.sort);
-  if (state.order && state.order !== (defaults.order ?? "desc")) p.set("order", state.order);
-  if (state.q) p.set("q", state.q);
 
+  // Multi-sort: only emit `sort`/`order` when the list differs from defaults.
+  const sorts = state.sorts ?? [];
+  if (sorts.length > 0) {
+    const isDefault =
+      sorts.length === 1 &&
+      sorts[0].column === (defaults.sort ?? "") &&
+      sorts[0].order === (defaults.order ?? "desc");
+    if (!isDefault) {
+      p.set(name("sort"), sorts.map((s) => s.column).join(","));
+      p.set(name("order"), sorts.map((s) => s.order).join(","));
+    }
+  }
+
+  if (state.q) p.set(name("q"), state.q);
+
+  const fPrefix = filterPrefix(defaults.prefix);
   for (const [k, v] of Object.entries(state.filters)) {
-    if (v !== "") p.set(FILTER_PREFIX + k, v);
+    if (v !== "") p.set(fPrefix + k, v);
   }
 
   return p;
@@ -122,7 +201,24 @@ export function updateTableState(
       }
     }
   }
-  const next: TableState = { ...state, ...patch, filters: nextFilters };
+
+  // Keep `sorts` and the `sort`/`order` mirrors consistent: an explicit `sorts`
+  // patch wins; otherwise a `sort`/`order` patch collapses to a single column.
+  let nextSorts = patch.sorts ?? state.sorts ?? [];
+  if (patch.sorts === undefined && (patch.sort !== undefined || patch.order !== undefined)) {
+    const column = patch.sort ?? state.sort;
+    const order = patch.order ?? state.order;
+    nextSorts = column ? [{ column, order }] : [];
+  }
+
+  const next: TableState = {
+    ...state,
+    ...patch,
+    filters: nextFilters,
+    sorts: nextSorts,
+    sort: nextSorts[0]?.column ?? "",
+    order: nextSorts[0]?.order ?? "desc",
+  };
   const resetPage = opts.resetPage ?? Object.keys(patch).some((k) => k !== "page");
   if (resetPage) next.page = 1;
   return next;

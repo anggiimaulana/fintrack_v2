@@ -13,7 +13,7 @@ import { toast } from "sonner";
  * the only place access is enforced.
  */
 
-export const UPGRADE_URL = "/user/settings/subscription";
+export const UPGRADE_URL = "/user/subscription";
 
 const FEATURE_MESSAGES: Record<string, string> = {
   ai_chat: "Asisten AI tidak tersedia pada paket Anda.",
@@ -30,6 +30,9 @@ interface ApiErrorBody {
   error?: string;
   feature_key?: string;
   limit_key?: string;
+  /** Present on a limit gate: the plan limit and the usage that hit it. */
+  limit_value?: number;
+  current_usage?: number;
   upgrade_url?: string;
 }
 
@@ -62,6 +65,14 @@ export function isEntitlementError(err: unknown): boolean {
   );
 }
 
+/** Human labels for the limit keys the backend reports on a gate response. */
+const LIMIT_MESSAGES: Record<string, string> = {
+  ai_tokens_per_cycle: "Kuota AI Anda untuk siklus ini sudah habis.",
+  ai_requests_per_cycle: "Jumlah permintaan AI Anda untuk siklus ini sudah habis.",
+  max_transactions: "Jumlah transaksi Anda sudah mencapai batas paket.",
+  ocr_scans_per_cycle: "Kuota pindai struk (OCR) Anda untuk siklus ini sudah habis.",
+};
+
 /**
  * notifyEntitlementError shows an upgrade toast when `err` is a plan or quota
  * gate. Returns true when it handled the error, so callers can skip their
@@ -74,17 +85,23 @@ export function notifyEntitlementError(err: unknown): boolean {
 
   const url = body.upgrade_url || UPGRADE_URL;
   let message: string;
+  let description = "Lihat paket Anda untuk meningkatkan batas.";
 
   if (body.error === "feature_not_in_plan") {
     message = FEATURE_MESSAGES[body.feature_key ?? ""] ?? "Fitur ini tidak tersedia pada paket Anda.";
   } else if (QUOTA_ERRORS[body.error] === true) {
-    message = "Sisa kuota token Anda tidak mencukupi. Tingkatkan paket untuk melanjutkan.";
+    message = "Sisa kuota Anda tidak mencukupi untuk permintaan ini.";
   } else {
-    message = "Anda telah mencapai batas paket Anda untuk periode ini.";
+    // A limit gate: name the exact limit and, when the backend reports it, how
+    // much has been used so the user understands *why* it stopped.
+    message = LIMIT_MESSAGES[body.limit_key ?? ""] ?? "Anda telah mencapai batas paket Anda untuk periode ini.";
+    if (typeof body.limit_value === "number" && typeof body.current_usage === "number") {
+      description = `Terpakai ${body.current_usage.toLocaleString("id-ID")} dari ${body.limit_value.toLocaleString("id-ID")}. Lihat paket untuk meningkatkan batas.`;
+    }
   }
 
   toast.error(message, {
-    description: "Lihat paket Anda untuk meningkatkan batas.",
+    description,
     action: {
       label: "Lihat paket",
       onClick: () => {

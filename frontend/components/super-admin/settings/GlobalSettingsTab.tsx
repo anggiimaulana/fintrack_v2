@@ -561,7 +561,7 @@ export function GlobalSettingsTab({
               </CardDescription>
             </div>
             {diffs.length > 0 && (
-              <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-1 font-medium">
+              <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border rounded-md border-amber-500/30 px-2 py-1 font-medium">
                 {diffs.length} perubahan belum disimpan
               </span>
             )}
@@ -997,7 +997,7 @@ export function GlobalSettingsTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="border border-border divide-y divide-border">
+            <div className="border rounded-md border-border divide-y divide-border">
               {unknownSettings.map((s) => (
                 <div key={s.key} className="p-4 bg-muted/30 space-y-2">
                   <div className="flex items-start justify-between">
@@ -1007,11 +1007,11 @@ export function GlobalSettingsTab({
                         <p className="text-xs text-muted-foreground mt-0.5">{s.description}</p>
                       )}
                     </div>
-                    <span className="text-[11px] bg-muted border border-border text-muted-foreground px-2 py-0.5 font-medium">
+                    <span className="text-[11px] bg-muted border rounded-md border-border text-muted-foreground px-2 py-0.5 font-medium">
                       tidak dapat diubah dari UI
                     </span>
                   </div>
-                  <div className="text-xs font-mono bg-card p-2 border border-border overflow-x-auto">
+                  <div className="text-xs font-mono bg-card p-2 border rounded-md border-border overflow-x-auto">
                     {typeof s.value === 'object'
                       ? JSON.stringify(s.value, null, 2)
                       : String(s.value)}

@@ -10,6 +10,19 @@ export function useInvalidateQueries() {
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     queryClient.invalidateQueries({ queryKey: queryKeys.spk.all });
     queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+    // A transaction create/delete moves the `max_transactions` usage counter, so
+    // the quota bars must refresh too (the SSE usage_changed event covers other
+    // tabs; this covers the tab that made the change).
+    queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+  }, [queryClient]);
+
+  /**
+   * invalidateEntitlements refreshes only the quota/entitlements query. Use it
+   * after an action that consumes quota without changing the transaction lists
+   * (e.g. an AI chat turn charging the token quota).
+   */
+  const invalidateEntitlements = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
   }, [queryClient]);
 
   const invalidateDashboard = useCallback(() => {
@@ -39,6 +52,7 @@ export function useInvalidateQueries() {
 
   return {
     invalidateTransactions,
+    invalidateEntitlements,
     invalidateDashboard,
     invalidateSpk,
     invalidateCategories,

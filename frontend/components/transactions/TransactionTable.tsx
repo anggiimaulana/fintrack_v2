@@ -25,7 +25,7 @@ export function TransactionTable({ transactions, isLoading, categoryMap }: Trans
   );
 
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
+    <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
       <div className="px-5 py-4 border-b-2 border-foreground flex justify-between items-center bg-card">
         <h3 className="text-xs font-black uppercase tracking-wide text-foreground">Transaksi Terbaru</h3>
         <Link href="/user/transactions" className="text-xs font-black text-primary hover:text-primary/80 flex items-center gap-1 cursor-pointer uppercase tracking-wide">

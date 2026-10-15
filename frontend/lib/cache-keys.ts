@@ -24,6 +24,9 @@ export const queryKeys = {
   },
   ai: {
     history: ["ai", "history"] as const,
+    // Effective AI timeout budget, resolved server-side from the dynamic
+    // settings so the client never hardcodes a value.
+    config: ["ai", "config"] as const,
   },
   admin: {
     users: ["admin", "users"] as const,
@@ -57,15 +60,30 @@ export const queryKeys = {
     list: (params?: string) => ["notifications", "list", params] as const,
     stats: ["notifications", "stats"] as const,
     detail: (id: string) => ["notifications", "detail", id] as const,
+    preferences: ["notifications", "preferences"] as const,
   },
   entitlements: {
     me: ["entitlements", "me"] as const,
+  },
+  voice: {
+    config: ["voice", "config"] as const,
+    /** Prefix key: invalidating this matches every paged history query. */
+    historyAll: ["voice", "history"] as const,
+    history: (params?: string) => ["voice", "history", params] as const,
+  },
+  usage: {
+    all: ["usage"] as const,
+    timeseries: (range: string) => ["usage", "timeseries", range] as const,
+    history: (params: string) => ["usage", "history", params] as const,
   },
   billing: {
     plans: ["billing", "plans"] as const,
     payments: ["billing", "payments"] as const,
     invoices: ["billing", "invoices"] as const,
     subscription: ["billing", "subscription"] as const,
+    paymentsPaged: (params: string) => ["billing", "payments", "paged", params] as const,
+    invoicesPaged: (params: string) => ["billing", "invoices", "paged", params] as const,
+    subscriptionEvents: (params: string) => ["billing", "subscription", "events", params] as const,
   },
   providers: {
     all: ["providers"] as const,
@@ -88,5 +106,12 @@ export const queryKeys = {
     auditLogs: (params?: unknown) => ["super-admin", "audit-logs", params] as const,
     settings: ["super-admin", "settings"] as const,
     featureFlags: ["super-admin", "feature-flags"] as const,
+    // Dynamic configuration catalog (P-13). Keys MUST match configCatalogKeys
+    // in hooks/useConfigCatalog.ts so a config_changed invalidation lands.
+    entitlementCatalog: ["admin", "entitlement-catalog"] as const,
+    settingDefinitions: ["admin", "setting-definitions"] as const,
+    metricDefinitions: ["admin", "metric-definitions"] as const,
+    featureDefinitions: ["admin", "feature-definitions"] as const,
+    resolvers: ["admin", "resolvers"] as const,
   },
 };

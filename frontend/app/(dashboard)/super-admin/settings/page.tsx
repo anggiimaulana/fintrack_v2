@@ -2,14 +2,17 @@
 
 import * as React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Flag, Mail, CreditCard, HardDrive } from 'lucide-react'
+import { Settings, Flag, Mail, CreditCard, HardDrive, Mic, Timer, Gauge } from 'lucide-react'
 import { useSuperAdminSettings } from '@/hooks/useSuperAdminSettings'
 import { useSuperAdminStorage } from '@/hooks/useSuperAdminStorage'
 import { GlobalSettingsTab } from '@/components/super-admin/settings/GlobalSettingsTab'
+import { QuotaSettingsTab } from '@/components/super-admin/settings/QuotaSettingsTab'
+import { AITimeoutSettingsTab } from '@/components/super-admin/settings/AITimeoutSettingsTab'
 import { FeatureFlagsTab } from '@/components/super-admin/settings/FeatureFlagsTab'
 import { MailSettingsTab } from '@/components/super-admin/settings/MailSettingsTab'
 import { PaymentSettingsTab } from '@/components/super-admin/settings/PaymentSettingsTab'
 import { StorageSettingsTab } from '@/components/super-admin/settings/StorageSettingsTab'
+import { VoiceSettingsTab } from '@/components/super-admin/settings/VoiceSettingsTab'
 
 export default function SuperAdminSettingsPage() {
   const {
@@ -44,10 +47,22 @@ export default function SuperAdminSettingsPage() {
       </div>
 
       <Tabs defaultValue="settings" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 max-w-3xl">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 max-w-5xl">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="size-4" />
             <span>Global</span>
+          </TabsTrigger>
+          <TabsTrigger value="kuota" className="flex items-center gap-2">
+            <Gauge className="size-4" />
+            <span>Kuota</span>
+          </TabsTrigger>
+          <TabsTrigger value="ai-timeout" className="flex items-center gap-2">
+            <Timer className="size-4" />
+            <span>Batas Waktu AI</span>
+          </TabsTrigger>
+          <TabsTrigger value="voice" className="flex items-center gap-2">
+            <Mic className="size-4" />
+            <span>Suara</span>
           </TabsTrigger>
           <TabsTrigger value="payment" className="flex items-center gap-2">
             <CreditCard className="size-4" />
@@ -76,6 +91,36 @@ export default function SuperAdminSettingsPage() {
             isSaving={isSavingSettings}
             onRefresh={refetchSettings}
             storageStatus={storageStatus}
+          />
+        </TabsContent>
+
+        <TabsContent value="kuota" className="space-y-4 focus-visible:outline-none">
+          <QuotaSettingsTab
+            settings={settings}
+            isLoading={isLoadingSettings}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
+          />
+        </TabsContent>
+        <TabsContent value="ai-timeout" className="space-y-4 focus-visible:outline-none">
+          <AITimeoutSettingsTab
+            settings={settings}
+            isLoading={isLoadingSettings}
+            error={settingsError}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
+            onRefresh={refetchSettings}
+          />
+        </TabsContent>
+
+        <TabsContent value="voice" className="space-y-4 focus-visible:outline-none">
+          <VoiceSettingsTab
+            settings={settings}
+            isLoading={isLoadingSettings}
+            error={settingsError}
+            onSave={updateSettings}
+            isSaving={isSavingSettings}
+            onRefresh={refetchSettings}
           />
         </TabsContent>
 

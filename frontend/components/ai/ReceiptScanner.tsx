@@ -4,30 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import { Camera, X, Loader2, Upload, ImageIcon, Receipt, ShoppingCart, Sparkles, AlertCircle, CheckCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
-import type { TransactionData } from "@/components/transactions/TransactionRow";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useCreateTransaction } from "@/hooks/useTransactions";
 import { useInvalidateQueries } from "@/lib/cache-invalidation";
-import api from "@/lib/api";
-
-interface ReceiptItem {
-  name: string;
-  quantity: number;
-  unit_price: number;
-  total: number;
-}
-
-interface ReceiptResult {
-  success: boolean;
-  message?: string;
-  merchant?: string;
-  date?: string;
-  total?: number;
-  category?: string;
-  type?: string;
-  items?: ReceiptItem[];
-  raw_text?: string;
-}
+import api, { aiRequestTimeout } from "@/lib/api";
+import { buildReceiptTransaction, normalizeReceiptType, receiptTypeLabel, type ReceiptResult, type ReceiptTransactionPayload } from "@/lib/receipt";
 
 interface ReceiptScannerProps {
   open: boolean;
@@ -149,47 +130,19 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
   const handleDragLeave = () => setDragOver(false);
 
   const doAutoSave = async (data: ReceiptResult) => {
-    const detectedType = (data.type as "income" | "expense" | "savings") || "expense";
-    const catList = detectedType === "income" ? (incomeCategories || []) : detectedType === "savings" ? (savingsCategories || []) : (expenseCategories || []);
-    // Try exact match, then fallback for "Lainnya" vs "Lain-lain" mismatch
-    let matched = catList.find((c: { name: string; id: string }) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
-    if (!matched) {
-      matched = catList.find((c: { name: string; id: string }) =>
-        c.name?.toLowerCase().includes((data.category || "").toLowerCase()) ||
-        (data.category || "").toLowerCase().includes(c.name?.toLowerCase())
-      );
-    }
-    // Final fallback: use the generic category for the type
-    if (!matched) {
-      const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-      matched = catList.find((c: { name: string; id: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
-    }
-    const categoryId = matched?.id || "";
-    const amount = data.total || 0;
-
-    if (!amount || !categoryId) {
-      throw new Error(!amount ? "Jumlah tidak terbaca" : `Kategori "${data.category}" tidak ditemukan`);
-    }
-
-    const txDate = data.date
-      ? new Date(data.date + "T00:00:00").toISOString()
-      : new Date().toISOString();
-
-    const categoryField = detectedType === "income" ? "income_category_id" : detectedType === "savings" ? "savings_category_id" : "expense_category_id";
-    await createTransaction({
-      type: detectedType as "income" | "expense",
-      amount,
-      [categoryField]: categoryId,
-      description: data.merchant || undefined,
-      transaction_date: txDate,
-    } as unknown as Partial<TransactionData>);
+    const { payload } = buildReceiptTransaction(data, {
+      income: incomeCategories,
+      expense: expenseCategories,
+      savings: savingsCategories,
+    });
+    await createTransaction(payload as unknown as Parameters<typeof createTransaction>[0]);
   };
 
   const analyzeMutation = useMutation({
     mutationFn: async (f: File) => {
       const formData = new FormData();
       formData.append("image", f);
-      const res = await api.post("/ai/receipt", formData, { timeout: 30000 });
+      const res = await api.post("/ai/receipt", formData, { timeout: aiRequestTimeout.ms });
       const data = res.data?.data as ReceiptResult;
       if (!data.success) throw new Error(data.message || "Gagal menganalisis struk.");
       return data;
@@ -239,12 +192,12 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Pindai struk"
-        className="relative border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="relative border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b-2 border-foreground bg-muted shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 border-2 border-foreground bg-primary/10 flex items-center justify-center">
+            <div className="w-9 h-9 border-2 rounded-md border-foreground bg-primary/10 flex items-center justify-center">
               <Camera className="w-5 h-5" />
             </div>
             <div>
@@ -258,7 +211,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
               </p>
             </div>
           </div>
-          <button onClick={handleClose} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 border-2 border-transparent hover:border-foreground transition-all cursor-pointer" disabled={step === "analyzing" || step === "saving"}>
+          <button onClick={handleClose} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 border-2 rounded-md border-transparent hover:border-foreground transition-all cursor-pointer" disabled={step === "analyzing" || step === "saving"}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -279,7 +232,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
                 dragOver ? "bg-primary/5 scale-[1.01]" : "hover:bg-muted/30"
               }`}
             >
-              <div className="w-16 h-16 border-2 border-foreground bg-muted flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 border-2 rounded-md border-foreground bg-muted flex items-center justify-center mx-auto mb-4">
                 <Upload className="w-7 h-7 text-muted-foreground" />
               </div>
               <p className="text-base font-black text-foreground mb-2">Klik atau tarik file ke sini</p>
@@ -302,7 +255,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {step === "preview" && file && (
             <div className="flex flex-col lg:flex-row divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-foreground min-h-[300px]">
               <div className="lg:w-2/5 p-5 flex flex-col items-center justify-center">
-                <div className="w-full border-2 border-foreground bg-muted overflow-hidden mb-3">
+                <div className="w-full border-2 rounded-md border-foreground bg-muted overflow-hidden mb-3">
                   {preview ? (
                     <img src={preview} alt="Preview" className="w-full max-h-[260px] object-contain" />
                   ) : null}
@@ -346,7 +299,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {/* ── STEP: Error ── */}
           {step === "error" && (
             <div className="p-6">
-              <div className="border-2 border-red-500 bg-red-50 p-4 flex items-start gap-3">
+              <div className="border-2 rounded-lg border-red-500 bg-red-50 p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-700 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-bold text-red-700">Gagal</p>
@@ -356,7 +309,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
 
               {/* Show result data even on save failure */}
               {result && !result.success && result.raw_text && (
-                <div className="mt-4 border-2 border-foreground p-3">
+                <div className="mt-4 border-2 rounded-md border-foreground p-3">
                   <p className="text-xs font-black uppercase text-muted-foreground mb-2">Hasil mentah dari AI:</p>
                   <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words max-h-40 overflow-y-auto">{result.raw_text}</pre>
                 </div>
@@ -378,7 +331,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {/* ── STEP: Success ── */}
           {step === "success" && result && (
             <div className="p-6">
-              <div className="flex items-center gap-3 px-4 py-3 border-2 border-green-500 bg-green-50 mb-5">
+              <div className="flex items-center gap-3 px-4 py-3 border-2 rounded-md border-green-500 bg-green-50 mb-5">
                 <CheckCircle className="w-5 h-5 text-green-700 shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-green-700">Transaksi berhasil disimpan!</p>
@@ -387,31 +340,31 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
               </div>
 
               {result.type && (
-                <div className="flex items-center gap-2 px-3 py-2 border-2 border-primary/30 bg-primary/5 mb-4">
+                <div className="flex items-center gap-2 px-3 py-2 border-2 rounded-md border-primary/30 bg-primary/5 mb-4">
                   <Sparkles className="w-4 h-4 text-primary shrink-0" />
                   <span className="text-xs font-bold text-primary uppercase">
-                    Terdeteksi sebagai: {
-                      result.type === "income" ? "PEMASUKAN" :
-                      result.type === "savings" ? "TABUNGAN" : "PENGELUARAN"
-                    }
+                    Terdeteksi sebagai: {receiptTypeLabel(normalizeReceiptType(result.type)).toUpperCase()}
                   </span>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="border-2 border-foreground p-3">
-                  <p className="text-xs font-black uppercase text-muted-foreground mb-1">Merchant</p>
-                  <p className="text-sm font-bold">{result.merchant || "-"}</p>
+                <div className="border-2 rounded-md border-foreground p-3">
+                  <p className="text-xs font-black uppercase text-muted-foreground mb-1">Deskripsi / Nama</p>
+                  <p className="text-sm font-bold">{result.description || result.merchant || "-"}</p>
                 </div>
-                <div className="border-2 border-foreground p-3">
-                  <p className="text-xs font-black uppercase text-muted-foreground mb-1">Tanggal</p>
-                  <p className="text-sm font-bold">{result.date || "-"}</p>
+                <div className="border-2 rounded-md border-foreground p-3">
+                  <p className="text-xs font-black uppercase text-muted-foreground mb-1">Tanggal{result.time ? " & Waktu" : ""}</p>
+                  <p className="text-sm font-bold">
+                    {result.date || "-"}
+                    {result.time ? ` · ${result.time}` : ""}
+                  </p>
                 </div>
-                <div className="border-2 border-foreground p-3">
+                <div className="border-2 rounded-md border-foreground p-3">
                   <p className="text-xs font-black uppercase text-muted-foreground mb-1">Kategori</p>
                   <p className="text-sm font-bold">{result.category || "-"}</p>
                 </div>
-                <div className="border-2 border-foreground p-3">
+                <div className="border-2 rounded-md border-foreground p-3">
                   <p className="text-xs font-black uppercase text-muted-foreground mb-1">Total</p>
                   <p className="text-sm font-black text-green-700">Rp {formatRupiah(result.total || 0)}</p>
                 </div>
@@ -422,7 +375,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
                   <p className="text-xs font-black uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
                     <ShoppingCart className="w-3.5 h-3.5" /> Item
                   </p>
-                  <div className="border-2 border-foreground divide-y-2 divide-foreground max-h-28 overflow-y-auto">
+                  <div className="border-2 rounded-md border-foreground divide-y-2 divide-foreground max-h-28 overflow-y-auto">
                     {result.items.map((item, i) => (
                       <div key={i} className="px-3 py-1.5 text-xs font-bold flex items-center justify-between">
                         <span className="truncate flex-1">{item.name}</span>

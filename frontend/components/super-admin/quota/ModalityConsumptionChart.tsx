@@ -45,7 +45,7 @@ export function ModalityConsumptionChart({
   }
 
   return (
-    <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+    <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
       <CardHeader className="p-5 pb-2">
         <CardTitle className="text-base font-black">Konsumsi Token per Modalitas</CardTitle>
         <CardDescription className="text-xs font-medium">

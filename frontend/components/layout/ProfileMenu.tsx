@@ -44,7 +44,7 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
           aria-label="Menu profil"
           className="rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          <Avatar className="w-8 h-8 border-2 border-foreground">
+          <Avatar className="w-8 h-8 rounded-full">
             {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
             <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
           </Avatar>
@@ -53,7 +53,7 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
 
       <DropdownMenuContent
         align="end"
-        className="w-56 p-1 border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
+        className="w-56 p-1 border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
       >
         <DropdownMenuLabel className="px-2 py-1.5">
           <span className="block text-sm font-black truncate">{displayName}</span>
@@ -67,7 +67,7 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/user/settings/subscription" className="flex items-center gap-2 cursor-pointer font-bold">
+          <Link href="/user/subscription" className="flex items-center gap-2 cursor-pointer font-bold">
             <CreditCard className="w-4 h-4" /> Langganan &amp; Paket
           </Link>
         </DropdownMenuItem>

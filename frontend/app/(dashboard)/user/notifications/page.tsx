@@ -16,7 +16,6 @@ import { useDataTableUrlState, type UseDataTableUrlState } from "@/hooks/use-dat
 import {
   useNotifications,
   useNotificationStats,
-  useNotificationsRealtime,
   useMarkNotificationRead,
   useMarkNotificationsRead,
   useMarkAllNotificationsRead,
@@ -31,10 +30,6 @@ function NotificationsContent() {
   // as the transactions table.
   const table = useDataTableUrlState({ perPage: 20, sort: "created_at", order: "desc" });
   const status = table.filters.status || "all";
-
-  // Live cache patching: created/read/deleted events patch only the affected
-  // rows instead of refetching the table.
-  useNotificationsRealtime();
 
   const { data, isLoading } = useNotifications({
     page: table.page,
@@ -140,30 +135,30 @@ function NotificationsContent() {
 
       {/* Statistics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Total</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-muted text-foreground">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-muted text-foreground">
               <Inbox className="w-4 h-4" />
             </div>
           </div>
           <div className="text-lg sm:text-xl font-black font-mono text-foreground">{stats?.total ?? 0}</div>
         </div>
 
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Belum Dibaca</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-amber-100 text-amber-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-amber-100 text-amber-800">
               <MailQuestion className="w-4 h-4" />
             </div>
           </div>
           <div className="text-lg sm:text-xl font-black font-mono text-amber-700">{stats?.unread ?? 0}</div>
         </div>
 
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Sudah Dibaca</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-emerald-100 text-emerald-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-emerald-100 text-emerald-800">
               <Mail className="w-4 h-4" />
             </div>
           </div>
@@ -171,10 +166,10 @@ function NotificationsContent() {
         </div>
       </div>
 
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
         {/* Filter tabs + toolbar */}
         <div className="p-4 border-b-2 border-foreground flex flex-col md:flex-row gap-4 justify-between items-center bg-muted">
-          <div className="flex border-2 border-foreground p-1 bg-background w-full md:w-auto">
+          <div className="flex border-2 rounded-md border-foreground p-1 bg-background w-full md:w-auto">
             {[
               { key: "all", label: "Semua" },
               { key: "unread", label: "Belum Dibaca" },
@@ -265,7 +260,7 @@ function NotificationsContent() {
 
       {/* Detail dialog */}
       <Dialog open={!!detail} onOpenChange={(open) => { if (!open) setDetail(null); }}>
-        <DialogContent className="sm:max-w-lg border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground">
+        <DialogContent className="sm:max-w-lg border-2 rounded-md border-foreground shadow-[6px_6px_0px_0px] shadow-foreground">
           <DialogHeader className="pr-8">
             <DialogTitle className="font-black uppercase tracking-wide flex items-center gap-2.5">
               <span>Detail Notifikasi</span>
@@ -273,7 +268,7 @@ function NotificationsContent() {
                 const meta = eventMeta(detail.event);
                 const Icon = meta.icon;
                 return (
-                  <span className={`inline-flex items-center gap-1 border-2 px-2 py-0.5 text-[10px] font-black uppercase ${meta.className}`}>
+                  <span className={`inline-flex items-center gap-1 border-2 rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${meta.className}`}>
                     <Icon className="h-3 w-3" /> {meta.label}
                   </span>
                 );
@@ -283,19 +278,19 @@ function NotificationsContent() {
 
           {detail && (
             <div className="py-2 space-y-4">
-              <div className="border-2 border-foreground bg-muted p-4 space-y-1">
+              <div className="border-2 rounded-lg border-foreground bg-muted p-4 space-y-1">
                 <p className="font-black text-base text-foreground">{detail.title}</p>
                 <p className="text-sm font-medium text-muted-foreground whitespace-pre-wrap">{detail.body}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Waktu</p>
                   <p className="font-black text-sm text-foreground">
                     {new Date(detail.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
                   </p>
                 </div>
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Status</p>
                   <p className="font-black text-sm text-foreground">{detail.read_at ? "Sudah dibaca" : "Belum dibaca"}</p>
                 </div>
@@ -318,7 +313,7 @@ function NotificationsContent() {
                   </Button>
                 )}
                 <Button
-                  className="border-2 border-red-600 bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+                  className="border-2 rounded-md border-red-600 bg-red-600 hover:bg-red-700 text-white cursor-pointer"
                   onClick={() => {
                     const id = detail.id;
                     setDetail(null);
@@ -409,7 +404,7 @@ function NotificationTable({
 
 export default function NotificationsPage() {
   return (
-    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <NotificationsContent />
     </Suspense>
   );

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
 import { staleTimeConfig } from "@/lib/cache-invalidation";
@@ -112,17 +112,17 @@ export interface TransactionListPage {
 /** Every cached transactions list page, for optimistic patching. */
 type ListSnapshot = [readonly unknown[], TransactionListPage][];
 
-function snapshotLists(queryClient: ReturnType<typeof useQueryClient>): ListSnapshot {
+function snapshotLists(queryClient: QueryClient): ListSnapshot {
   return queryClient.getQueriesData<TransactionListPage>({ queryKey: queryKeys.transactions.all }) as ListSnapshot;
 }
 
-function restoreLists(queryClient: ReturnType<typeof useQueryClient>, snapshot: ListSnapshot) {
+function restoreLists(queryClient: QueryClient, snapshot: ListSnapshot) {
   for (const [key, value] of snapshot) queryClient.setQueryData(key, value);
 }
 
 /** Patch one transaction in every cached list page. */
 function patchList(
-  queryClient: ReturnType<typeof useQueryClient>,
+  queryClient: QueryClient,
   id: string,
   patch: Partial<TransactionData>,
 ) {
@@ -136,7 +136,7 @@ function patchList(
 }
 
 /** Remove one transaction from every cached list page. */
-function removeFromList(queryClient: ReturnType<typeof useQueryClient>, id: string) {
+function removeFromList(queryClient: QueryClient, id: string) {
   for (const [key, value] of snapshotLists(queryClient)) {
     if (!value?.data) continue;
     const next = value.data.filter((tx) => tx.id !== id);
@@ -148,10 +148,14 @@ function removeFromList(queryClient: ReturnType<typeof useQueryClient>, id: stri
   }
 }
 
-function invalidateTransactionViews(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidateTransactionViews(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
   queryClient.invalidateQueries({ queryKey: queryKeys.spk.all });
+  // A create/delete moves the `max_transactions` usage counter, so refresh the
+  // quota bars immediately in this tab (the SSE usage_changed event covers
+  // other tabs).
+  queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
 }
 
 export function useCreateTransaction() {

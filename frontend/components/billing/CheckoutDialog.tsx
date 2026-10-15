@@ -68,7 +68,7 @@ export function CheckoutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-black">
             <CreditCard className="h-5 w-5 text-primary" aria-hidden="true" /> Selesaikan Pembayaran
@@ -95,7 +95,7 @@ export function CheckoutDialog({
 
             {/* Upload the proof right here — no need to hunt for the payments tab. */}
             {isManual && paymentId && (
-              <div className="space-y-2 border-2 border-foreground bg-muted/40 p-3">
+              <div className="space-y-2 border-2 rounded-md border-foreground bg-muted/40 p-3">
                 <p className="text-xs font-black uppercase tracking-wide text-foreground">
                   Unggah Bukti Transfer
                 </p>
@@ -105,7 +105,7 @@ export function CheckoutDialog({
                   accept="image/png,image/jpeg,image/webp"
                   onChange={onFileChange}
                   aria-label="Unggah bukti transfer"
-                  className="block w-full cursor-pointer border-2 border-foreground bg-background px-2 py-1.5 text-xs font-bold file:mr-2 file:border-0 file:bg-primary file:px-2 file:py-1 file:text-xs file:font-bold file:text-primary-foreground"
+                  className="block w-full cursor-pointer border-2 rounded-md border-foreground bg-background px-2 py-1.5 text-xs font-bold file:mr-2 file:border-0 file:bg-primary file:px-2 file:py-1 file:text-xs file:font-bold file:text-primary-foreground"
                 />
                 <Button
                   onClick={submitProof}

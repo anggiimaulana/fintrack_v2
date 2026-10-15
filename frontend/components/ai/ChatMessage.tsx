@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Zap, Brain } from "lucide-react";
+import { sanitizeAssistantContent } from "@/lib/chat-sanitize";
 
 interface ChatMessageProps {
   /** Message author. Named `author` (not `role`) to avoid being read as the ARIA role attribute. */
@@ -36,13 +37,10 @@ function isSafeUrl(url?: string): boolean {
 export function ChatMessage({ author, content, mode, modelUsed }: ChatMessageProps) {
   const isUser = author === "user";
 
-  // Strip complete and partial tool call blocks (security: never expose internal tool JSON to user)
-  const cleanContent = content
-    .replace(/<TOOL_CALL>[\s\S]*?<\/TOOL_CALL>/g, "")
-    .replace(/<TOOL_RESULT>[\s\S]*?<\/TOOL_RESULT>/g, "")
-    .replace(/<TOOL_CALL>[\s\S]*$/g, "")          // partial: no closing tag yet
-    .replace(/<TOOL_RESULT>[\s\S]*$/g, "")         // partial: no closing tag yet
-    .trim();
+  // Assistant text may still carry internal payloads the backend filter missed
+  // (a bare JSON object, a ```json block, or tool commentary). User messages are
+  // never rewritten — only assistant output is sanitized.
+  const cleanContent = isUser ? content : sanitizeAssistantContent(content);
 
   // Only assistant replies carry a mode badge; user messages never do.
   const showModeBadge = !isUser && (mode === "fast" || mode === "reasoning");
@@ -51,7 +49,7 @@ export function ChatMessage({ author, content, mode, modelUsed }: ChatMessagePro
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`w-full sm:max-w-[80%] px-4 py-2.5 border-2 border-foreground break-words ${
+        className={`w-full sm:max-w-[80%] px-4 py-2.5 border-2 rounded-md border-foreground break-words ${
           isUser
             ? "bg-primary text-primary-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
             : "bg-card text-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
@@ -61,7 +59,7 @@ export function ChatMessage({ author, content, mode, modelUsed }: ChatMessagePro
           <div className="mb-1.5">
             <span
               title={modelUsed ? `Model: ${modelUsed}` : undefined}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide border-2 border-foreground ${
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide border-2 rounded-md border-foreground ${
                 isReasoning
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-foreground"
@@ -85,13 +83,13 @@ export function ChatMessage({ author, content, mode, modelUsed }: ChatMessagePro
               code: ({ inline, className, children, ...props }: CodeProps) => {
                 if (inline) {
                   return (
-                    <code className="bg-muted px-1.5 py-0.5 border border-foreground text-xs font-mono font-bold break-all" {...props}>
+                    <code className="bg-muted px-1.5 py-0.5 border rounded-md border-foreground text-xs font-mono font-bold break-all" {...props}>
                       {children}
                     </code>
                   );
                 }
                 return (
-                  <pre className="bg-muted p-3 border-2 border-foreground overflow-x-auto my-2 text-xs font-mono">
+                  <pre className="bg-muted p-3 border-2 rounded-md border-foreground overflow-x-auto my-2 text-xs font-mono">
                     <code className={className} {...props}>{children}</code>
                   </pre>
                 );
@@ -128,17 +126,17 @@ export function ChatMessage({ author, content, mode, modelUsed }: ChatMessagePro
               ),
               table: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"table"> & { node?: unknown }) => (
                 <div className="overflow-x-auto my-2">
-                  <table className="min-w-full border-2 border-foreground text-xs" {...props}>{children}</table>
+                  <table className="min-w-full border-2 rounded-md border-foreground text-xs" {...props}>{children}</table>
                 </div>
               ),
               thead: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"thead"> & { node?: unknown }) => (
                 <thead className="bg-muted font-bold" {...props}>{children}</thead>
               ),
               th: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"th"> & { node?: unknown }) => (
-                <th className="border border-foreground px-2 py-1 text-left" {...props}>{children}</th>
+                <th className="border rounded-md border-foreground px-2 py-1 text-left" {...props}>{children}</th>
               ),
               td: ({ children, node, ...props }: React.ComponentPropsWithoutRef<"td"> & { node?: unknown }) => (
-                <td className="border border-foreground px-2 py-1 break-words" {...props}>{children}</td>
+                <td className="border rounded-md border-foreground px-2 py-1 break-words" {...props}>{children}</td>
               ),
               hr: ({ node, ...props }: React.ComponentPropsWithoutRef<"hr"> & { node?: unknown }) => (
                 <hr className="my-3 border-t-2 border-foreground/20" {...props} />

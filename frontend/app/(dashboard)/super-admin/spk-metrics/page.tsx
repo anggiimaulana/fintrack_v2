@@ -84,7 +84,7 @@ export default function SuperAdminSpkMetricsPage() {
   };
 
   if (isLoading || !draft) {
-    return <div className="h-64 animate-pulse border-2 border-foreground bg-muted" />;
+    return <div className="h-64 animate-pulse border-2 rounded-md border-foreground bg-muted" />;
   }
 
   return (
@@ -96,7 +96,7 @@ export default function SuperAdminSpkMetricsPage() {
         </p>
       </div>
 
-      <div className="flex items-start gap-2 border-2 border-blue-600 bg-blue-50 p-3 text-xs font-bold text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+      <div className="flex items-start gap-2 border-2 rounded-md border-blue-600 bg-blue-50 p-3 text-xs font-bold text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p>
           Setiap indikator dinilai 0–100 terhadap <em>target</em>, lalu dikalikan <em>bobot</em>. Total bobot wajib 100%.
@@ -104,7 +104,7 @@ export default function SuperAdminSpkMetricsPage() {
         </p>
       </div>
 
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader>
           <CardTitle className="text-xs font-black uppercase tracking-wide">Identitas Model</CardTitle>
         </CardHeader>
@@ -120,7 +120,7 @@ export default function SuperAdminSpkMetricsPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+      <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-xs font-black uppercase tracking-wide">Indikator</CardTitle>
@@ -134,7 +134,7 @@ export default function SuperAdminSpkMetricsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {draft.indicators.map((ind, idx) => (
-            <div key={idx} className="grid grid-cols-12 items-end gap-2 border-2 border-foreground p-3">
+            <div key={idx} className="grid grid-cols-12 items-end gap-2 border-2 rounded-md border-foreground p-3">
               <div className="col-span-12 sm:col-span-4">
                 <label className="text-[10px] font-black uppercase text-muted-foreground" htmlFor={`a-label-${idx}`}>Nama</label>
                 <Input id={`a-label-${idx}`} value={ind.label} onChange={(e) => updateIndicator(idx, { label: e.target.value })} />
@@ -145,7 +145,7 @@ export default function SuperAdminSpkMetricsPage() {
                   id={`a-type-${idx}`}
                   value={ind.type}
                   onChange={(e) => updateIndicator(idx, { type: e.target.value as SpkMetricType })}
-                  className="h-9 w-full border-2 border-foreground bg-background px-2 text-sm font-bold"
+                  className="h-9 w-full border-2 rounded-md border-foreground bg-background px-2 text-sm font-bold"
                 >
                   {METRIC_TYPES.map((t) => <option key={t} value={t}>{SPK_METRIC_TYPE_LABELS[t]}</option>)}
                 </select>

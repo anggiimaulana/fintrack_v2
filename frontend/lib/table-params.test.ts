@@ -3,8 +3,11 @@ import {
   parseTableParams,
   buildTableParams,
   updateTableState,
+  parseSortList,
   clampPerPage,
   normalizeOrder,
+  paramName,
+  filterPrefix,
   DEFAULT_PAGE,
   DEFAULT_PER_PAGE,
   type TableState,
@@ -60,6 +63,7 @@ describe("buildTableParams", () => {
       perPage: DEFAULT_PER_PAGE,
       sort: "",
       order: "desc",
+      sorts: [],
       q: "",
       filters: {},
     };
@@ -72,6 +76,7 @@ describe("buildTableParams", () => {
       perPage: 50,
       sort: "amount",
       order: "asc",
+      sorts: [{ column: "amount", order: "asc" }],
       q: "kopi",
       filters: { status: "active" },
     };
@@ -91,6 +96,7 @@ describe("buildTableParams", () => {
       perPage: 20,
       sort: "created_at",
       order: "desc",
+      sorts: [{ column: "created_at", order: "desc" }],
       q: "abc",
       filters: { type: "income" },
     };
@@ -102,6 +108,88 @@ describe("buildTableParams", () => {
     expect(back.q).toBe("abc");
     expect(back.filters).toEqual({ type: "income" });
   });
+
+  it("serialises and round-trips a multi-column sort", () => {
+    const state: TableState = {
+      page: 1,
+      perPage: 20,
+      sort: "amount",
+      order: "desc",
+      sorts: [
+        { column: "amount", order: "desc" },
+        { column: "created_at", order: "asc" },
+      ],
+      q: "",
+      filters: {},
+    };
+    const qs = buildTableParams(state).toString();
+    const parsed = new URLSearchParams(qs);
+    expect(parsed.get("sort")).toBe("amount,created_at");
+    expect(parsed.get("order")).toBe("desc,asc");
+
+    const back = parseTableParams(parsed);
+    expect(back.sorts).toEqual([
+      { column: "amount", order: "desc" },
+      { column: "created_at", order: "asc" },
+    ]);
+    expect(back.sort).toBe("amount");
+    expect(back.order).toBe("desc");
+  });
+
+  it("namespaces params when a prefix is set", () => {
+    const state: TableState = {
+      page: 2,
+      perPage: 50,
+      sort: "created_at",
+      order: "asc",
+      sorts: [{ column: "created_at", order: "asc" }],
+      q: "x",
+      filters: { status: "paid" },
+    };
+    const parsed = buildTableParams(state, { prefix: "payment" });
+    expect(parsed.get("payment_page")).toBe("2");
+    expect(parsed.get("payment_per_page")).toBe("50");
+    expect(parsed.get("payment_sort")).toBe("created_at");
+    expect(parsed.get("payment_order")).toBe("asc");
+    expect(parsed.get("payment_q")).toBe("x");
+    expect(parsed.get("payment_filter_status")).toBe("paid");
+
+    const back = parseTableParams(parsed, { prefix: "payment" });
+    expect(back.page).toBe(2);
+    expect(back.filters).toEqual({ status: "paid" });
+  });
+});
+
+describe("parseSortList", () => {
+  it("parses a comma list with per-column directions", () => {
+    expect(parseSortList("a,b", "asc,desc")).toEqual([
+      { column: "a", order: "asc" },
+      { column: "b", order: "desc" },
+    ]);
+  });
+
+  it("reuses the last direction when fewer are given", () => {
+    expect(parseSortList("a,b", "asc")).toEqual([
+      { column: "a", order: "asc" },
+      { column: "b", order: "asc" },
+    ]);
+  });
+
+  it("falls back to the default when the list is empty", () => {
+    expect(parseSortList("", "", { sort: "created_at", order: "desc" })).toEqual([
+      { column: "created_at", order: "desc" },
+    ]);
+    expect(parseSortList("", "")).toEqual([]);
+  });
+});
+
+describe("param helpers", () => {
+  it("paramName / filterPrefix namespace correctly", () => {
+    expect(paramName("page")).toBe("page");
+    expect(paramName("page", "payment")).toBe("payment_page");
+    expect(filterPrefix()).toBe("filter_");
+    expect(filterPrefix("payment")).toBe("payment_filter_");
+  });
 });
 
 describe("updateTableState", () => {
@@ -110,6 +198,7 @@ describe("updateTableState", () => {
     perPage: 20,
     sort: "created_at",
     order: "desc",
+    sorts: [{ column: "created_at", order: "desc" }],
     q: "",
     filters: {},
   };
@@ -124,6 +213,25 @@ describe("updateTableState", () => {
     expect(updateTableState(base, { sort: "amount" }).page).toBe(1);
     expect(updateTableState(base, { q: "x" }).page).toBe(1);
     expect(updateTableState(base, { perPage: 50 }).page).toBe(1);
+  });
+
+  it("keeps sorts in sync when patching sort/order", () => {
+    const next = updateTableState(base, { sort: "amount", order: "asc" });
+    expect(next.sorts).toEqual([{ column: "amount", order: "asc" }]);
+    expect(next.sort).toBe("amount");
+    expect(next.order).toBe("asc");
+  });
+
+  it("accepts an explicit multi-sort list", () => {
+    const next = updateTableState(base, {
+      sorts: [
+        { column: "amount", order: "desc" },
+        { column: "created_at", order: "asc" },
+      ],
+    });
+    expect(next.sorts).toHaveLength(2);
+    expect(next.sort).toBe("amount");
+    expect(next.order).toBe("desc");
   });
 
   it("merges filters", () => {

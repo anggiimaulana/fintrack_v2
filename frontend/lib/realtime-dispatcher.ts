@@ -14,9 +14,15 @@ export type DomainEventName =
   | "payment_received"
   | "plan_updated"
   | "quota_reset"
+  | "usage_changed"
   | "ai_endpoint_down"
   | "ai_route_quarantined"
-  | "manual_approval_needed";
+  | "manual_approval_needed"
+  | "config_changed"
+  // Client-synthesised: emitted by the stream hook when the SSE connection is
+  // re-established after a drop, so consumers can resync anything missed. It is
+  // never sent by the server.
+  | "stream_reconnected";
 
 export interface DomainEvent {
   event: DomainEventName | string;
@@ -69,6 +75,38 @@ export function keysForEvent(event: string): readonly (readonly unknown[])[] {
         queryKeys.budgets.all,
         queryKeys.spk.all,
       ];
+
+    case "usage_changed":
+      // Consumption moved (transaction created/deleted, AI tokens/requests, a
+      // voice recording). Refresh the entitlements query — the authoritative
+      // usage source — the voice config (which carries the daily counter), and
+      // the voice history (a server-mode recording is written backend-side and
+      // must appear in the panel without a manual refresh). The history query is
+      // only active while its panel is open, so a closed panel issues no request.
+      return [queryKeys.entitlements.me, queryKeys.voice.config, queryKeys.voice.historyAll];
+
+    case "config_changed":
+      // The configuration catalog changed (setting/metric/feature/plan/pricing).
+      // Reload ONLY the catalog queries plus entitlements and the settings
+      // VALUES (an operator on the Settings page must see a peer's change) —
+      // never a blanket refetch. The voice config is included because every
+      // voice knob is a dynamic setting.
+      return [
+        queryKeys.superAdmin.entitlementCatalog,
+        queryKeys.superAdmin.settingDefinitions,
+        queryKeys.superAdmin.metricDefinitions,
+        queryKeys.superAdmin.featureDefinitions,
+        queryKeys.superAdmin.settings,
+        queryKeys.entitlements.me,
+        queryKeys.voice.config,
+      ];
+
+    case "stream_reconnected":
+      // The SSE stream reconnected after a gap. Buffered events are replayed on
+      // resume, but a gap longer than the server's buffer TTL (or a Redis-less
+      // deployment) can drop events, so resync the notification inbox exactly
+      // once. This is what replaces polling.
+      return [queryKeys.notifications.all];
 
     case "ai_endpoint_down":
       // Admin dashboard: gateway health + metrics.

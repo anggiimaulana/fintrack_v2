@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function AiChatPage() {
   return (
-    <div className="flex-1 w-full max-w-4xl mx-auto border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground overflow-hidden">
+    <div className="flex h-full w-full max-w-7xl mx-auto border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground overflow-hidden">
       <ChatWindow />
     </div>
   );

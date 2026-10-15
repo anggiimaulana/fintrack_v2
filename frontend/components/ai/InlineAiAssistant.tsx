@@ -11,7 +11,9 @@ import { BarChartView } from "@/components/charts/BarChartView";
 import { LineChartView } from "@/components/charts/LineChartView";
 import { PieChartView } from "@/components/charts/PieChartView";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import { notifyEntitlementError } from "@/lib/entitlement-errors";
+import api, { aiRequestTimeout } from "@/lib/api";
+import { buildReceiptTransaction, formatRupiahIDR, normalizeReceiptType, receiptTypeLabel, type ReceiptTransactionPayload } from "@/lib/receipt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useCreateTransaction } from "@/hooks/useTransactions";
@@ -158,7 +160,14 @@ export function InlineAiAssistant() {
       }
       // Refresh messages from server to get the persisted version
       queryClient.invalidateQueries({ queryKey: ["inline-chat-messages", sid] });
-    } catch {}
+    } catch (err) {
+      // A silent catch left the user with no feedback at all. Plan/quota gates
+      // get the upgrade toast; anything else gets a short retry message.
+      const code = err instanceof Error ? err.message : String(err);
+      if (!notifyEntitlementError({ response: { status: 402, data: { error: code } } })) {
+        toast.error("Maaf, terjadi kesalahan. Silakan coba lagi.");
+      }
+    }
   }, [sessionId, streamChat, isStreaming, queryClient]);
 
   const handleVoiceTranscript = useCallback((text: string) => {
@@ -170,7 +179,7 @@ export function InlineAiAssistant() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("image", file);
-      const res = await api.post("/ai/receipt", formData, { timeout: 30000 });
+      const res = await api.post("/ai/receipt", formData, { timeout: aiRequestTimeout.ms });
       return res.data?.data;
     },
     onSuccess: async (data) => {
@@ -179,48 +188,36 @@ export function InlineAiAssistant() {
         return;
       }
 
-      // Try to auto-save to DB
-      const detectedType = (data.type as "income" | "expense" | "savings") || "expense";
-      const catList = detectedType === "income" ? (incomeCategories || []) : detectedType === "savings" ? (savingsCategories || []) : (expenseCategories || []);
-      // Try exact match, then fallback for "Lainnya" vs "Lain-lain" mismatch
-      let matched = catList.find((c: { name: string }) => c.name?.toLowerCase() === (data.category || "").toLowerCase());
-      if (!matched) {
-        matched = catList.find((c: { name: string }) =>
-          c.name?.toLowerCase().includes((data.category || "").toLowerCase()) ||
-          (data.category || "").toLowerCase().includes(c.name?.toLowerCase())
-        );
-      }
-      if (!matched) {
-        const fallbackNames = detectedType === "expense" ? ["lain-lain", "lainnya"] : ["lainnya"];
-        matched = catList.find((c: { name: string }) => fallbackNames.some(f => c.name?.toLowerCase() === f));
-      }
-      const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.total || 0);
+      const formatted = formatRupiahIDR(data.total || 0);
 
-      if (matched && data.total) {
-        try {
-          const categoryField = detectedType === "income" ? "income_category_id" : detectedType === "savings" ? "savings_category_id" : "expense_category_id";
-          const txDate = data.date ? new Date(data.date + "T00:00:00").toISOString() : new Date().toISOString();
-          await createTransaction({
-            amount: data.total,
-            [categoryField]: matched.id,
-            description: data.merchant || undefined,
-            transaction_date: txDate,
-          } as unknown as Partial<TransactionData>);
-          invalidateTransactions();
-          toast.success("Struk berhasil dicatat sebagai transaksi!");
+      // Try to auto-save to DB using the shared matcher (same as ReceiptScanner).
+      let payload: ReceiptTransactionPayload;
+      try {
+        ({ payload } = buildReceiptTransaction(data, {
+          income: incomeCategories,
+          expense: expenseCategories,
+          savings: savingsCategories,
+        }));
+      } catch (err: unknown) {
+        // Can't build a valid transaction (no amount / no matching category):
+        // show the analysis so the user can record it manually.
+        const typeLabel = receiptTypeLabel(normalizeReceiptType(data.type));
+        const msg = `📋 Hasil scan foto\n\n**Deskripsi:** ${data.description || data.merchant || "-"}\n**Tanggal:** ${data.date || "-"}\n**Kategori:** ${data.category || "-"} (${typeLabel})\n**Total:** ${formatted}\n\n*${(err as Error).message}*`;
+        handleSend(msg);
+        return;
+      }
 
-          const typeLabel = detectedType === "income" ? "Pemasukan" : detectedType === "savings" ? "Tabungan" : "Pengeluaran";
-          const msg = `✅ Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Merchant:** ${data.merchant || "-"}\n**Kategori:** ${data.category || "-"}\n**Tanggal:** ${data.date || "-"}`;
-          handleSend(msg);
-        } catch (err: unknown) {
-          toast.error("Gagal menyimpan: " + ((err as Error).message || "Error"));
-          const msg = `⚠️ Gagal menyimpan struk: ${(err as Error).message}\n\nHasil analisis: **${data.merchant || "-"}** - ${formatted}`;
-          handleSend(msg);
-        }
-      } else {
-        // Can't auto-save, just show the result
-        const typeLabel = data.type === "income" ? "Pemasukan" : data.type === "savings" ? "Tabungan" : "Pengeluaran";
-        const msg = `📋 Hasil scan foto\n\n**Merchant:** ${data.merchant || "-"}\n**Tanggal:** ${data.date || "-"}\n**Kategori:** ${data.category || "-"} (${typeLabel})\n**Total:** ${formatted}\n\n*Kategori tidak ditemukan di database. Silakan catat manual.*`;
+      try {
+        await createTransaction(payload as unknown as Parameters<typeof createTransaction>[0]);
+        invalidateTransactions();
+        toast.success("Struk berhasil dicatat sebagai transaksi!");
+
+        const typeLabel = receiptTypeLabel(normalizeReceiptType(data.type));
+        const msg = `✅ Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Deskripsi:** ${data.description || data.merchant || "-"}\n**Kategori:** ${data.category || "-"}\n**Tanggal:** ${data.date || "-"}`;
+        handleSend(msg);
+      } catch (err: unknown) {
+        toast.error("Gagal menyimpan: " + ((err as Error).message || "Error"));
+        const msg = `⚠️ Gagal menyimpan struk: ${(err as Error).message}\n\nHasil analisis: **${data.description || data.merchant || "-"}** - ${formatted}`;
         handleSend(msg);
       }
     },
@@ -267,7 +264,7 @@ export function InlineAiAssistant() {
     return (
       <div className="space-y-2 mt-1">
         {pieData && (
-          <div className="h-36 border-2 border-foreground p-2 bg-card">
+          <div className="h-36 border-2 rounded-md border-foreground p-2 bg-card">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Distribusi Keuangan</p>
             <div className="h-[calc(100%-40px)]">
               <PieChartView data={pieData} compact />
@@ -281,13 +278,13 @@ export function InlineAiAssistant() {
         )}
         {chartType !== "pie" && labels.length > 1 && (
           <div className="grid grid-cols-2 gap-2">
-            <div className="h-32 border-2 border-foreground p-2 bg-card">
+            <div className="h-32 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Batang</p>
               <div className="h-[calc(100%-20px)]">
                 <BarChartView data={chartData} />
               </div>
             </div>
-            <div className="h-32 border-2 border-foreground p-2 bg-card">
+            <div className="h-32 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Garis</p>
               <div className="h-[calc(100%-20px)]">
                 <LineChartView data={chartData} />
@@ -308,7 +305,7 @@ export function InlineAiAssistant() {
           <div key={s.id} className="flex items-center gap-1 group">
             <button
               onClick={() => handleSwitchSession(s.id)}
-              className="flex-1 text-left px-2 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card border-2 border-transparent hover:border-foreground truncate cursor-pointer"
+              className="flex-1 text-left px-2 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-card border-2 rounded-md border-transparent hover:border-foreground truncate cursor-pointer"
             >
               <MessageSquare className="w-3 h-3 inline-block mr-1.5 shrink-0" />
               {s.title || "Percakapan"}
@@ -332,7 +329,7 @@ export function InlineAiAssistant() {
     if (activeToolSteps.length === 0) return null;
     const chartStep = activeToolSteps.find((s: { tool: string; status: string; result?: unknown }) => s.tool === "generate_chart" && s.status === "success" && s.result);
     return (
-      <div className="border-2 border-foreground bg-muted p-2 space-y-1 mb-1">
+      <div className="border-2 rounded-md border-foreground bg-muted p-2 space-y-1 mb-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">AI Agent</p>
         {activeToolSteps.map((step: { status: string; tool: string }, i: number) => (
           <div key={i} className="flex items-center gap-1.5 text-[11px] font-bold">
@@ -371,7 +368,7 @@ export function InlineAiAssistant() {
     const chartStep = (steps as { tool: string; status: string; result?: unknown }[]).find(s => s.tool === "generate_chart" && s.status === "success" && s.result);
     if (!chartStep) return null;
     return (
-      <div className="border-2 border-foreground bg-muted p-2 space-y-1 mb-1 mt-1">
+      <div className="border-2 rounded-md border-foreground bg-muted p-2 space-y-1 mb-1 mt-1">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Visualisasi</p>
         {chartStep.result ? renderChartResult(chartStep.result as Record<string, unknown>) : null}
       </div>
@@ -379,7 +376,7 @@ export function InlineAiAssistant() {
   };
 
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
+    <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -399,7 +396,7 @@ export function InlineAiAssistant() {
           <div ref={scrollContainerRef} onScroll={handleScroll} className="max-h-80 overflow-y-auto p-3 space-y-2 bg-background">
             {!sessionId && !hasClickedNew && (
               <div className="text-center py-6">
-                <div className="w-12 h-12 border-2 border-foreground bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                <div className="w-12 h-12 border-2 rounded-md border-foreground bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <MessageSquare className="w-5 h-5 text-primary" />
                 </div>
                 <p className="text-sm font-black uppercase tracking-wide text-foreground mb-1">Belum Ada Sesi</p>
@@ -489,7 +486,7 @@ export function InlineAiAssistant() {
           {sessionId && (
             <div className="border-t-2 border-foreground p-2">
               {cooldownSeconds > 0 ? (
-                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-2 border-amber-500 text-xs font-bold text-amber-700">
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-2 rounded-md border-amber-500 text-xs font-bold text-amber-700">
                   <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                   Cooldown {cooldownSeconds} detik. Tunggu sebelum mengirim pesan lagi.
                 </div>
@@ -502,13 +499,13 @@ export function InlineAiAssistant() {
                     onKeyDown={(e) => { if (e.key === "Enter") handleSend(inputText); }}
                     placeholder="Tanya AI Assistant..."
                     disabled={isStreaming}
-                    className="flex-1 border-2 border-foreground bg-background px-3 py-1.5 text-sm font-bold focus:outline-none focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground placeholder:text-muted-foreground/70"
+                    className="flex-1 border-2 rounded-md border-foreground bg-background px-3 py-1.5 text-sm font-bold focus:outline-none focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground placeholder:text-muted-foreground/70"
                   />
                   <VoiceInput onTranscript={handleVoiceTranscript} disabled={isStreaming} />
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isStreaming || analyzePhotoMutation.isPending}
-                    className="p-1.5 border-2 border-foreground bg-muted text-muted-foreground hover:text-foreground hover:bg-card disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                    className="p-1.5 border-2 rounded-md border-foreground bg-muted text-muted-foreground hover:text-foreground hover:bg-card disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                     title="Scan struk dari foto"
                   >
                     <Camera className="w-3.5 h-3.5" />
@@ -524,7 +521,7 @@ export function InlineAiAssistant() {
                     <button
                       type="button"
                       onClick={cancelStream}
-                      className="p-1.5 border-2 border-foreground bg-red-600 text-white hover:bg-red-700 shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
+                      className="p-1.5 border-2 rounded-md border-foreground bg-red-600 text-white hover:bg-red-700 shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
                       title="Hentikan respons"
                       aria-label="Hentikan respons"
                     >
@@ -535,7 +532,7 @@ export function InlineAiAssistant() {
                       type="button"
                       onClick={() => handleSend(inputText)}
                       disabled={!inputText.trim() || isStreaming}
-                      className="p-1.5 border-2 border-foreground bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                      className="p-1.5 border-2 rounded-md border-foreground bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                       title="Kirim pesan"
                       aria-label="Kirim pesan"
                     >

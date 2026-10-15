@@ -69,7 +69,7 @@ export function QuotaMonitorTable({ rows, isLoading, isError, threshold, onRetry
   }
 
   return (
-    <div className="overflow-x-auto border-2 border-foreground">
+    <div className="overflow-x-auto border-2 rounded-md border-foreground">
       <Table>
         <TableHeader>
           <TableRow className="border-b-2 border-foreground bg-muted">

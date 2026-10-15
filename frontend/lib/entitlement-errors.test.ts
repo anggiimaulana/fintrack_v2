@@ -21,6 +21,6 @@ describe("isEntitlementError", () => {
   });
 
   it("exposes the subscription route the backend points at", () => {
-    expect(UPGRADE_URL).toBe("/user/settings/subscription");
+    expect(UPGRADE_URL).toBe("/user/subscription");
   });
 });

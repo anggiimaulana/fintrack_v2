@@ -956,7 +956,7 @@ export function RoutingMatrixPanel() {
                     </div>
 
                     {caseRows.length === 0 ? (
-                      <div className="text-xs text-muted-foreground italic py-3 px-4 border border-dashed rounded bg-muted/20">
+                      <div className="text-xs text-muted-foreground italic py-3 px-4 border border-dashed rounded-md bg-muted/20">
                         Belum ada rute untuk modalitas {label}. Klik &quot;Tambah Rute&quot; di atas.
                       </div>
                     ) : (
@@ -1103,7 +1103,7 @@ export function RoutingMatrixPanel() {
               Tindakan ini akan mengganti seluruh konfigurasi rute AI secara atomik. Pastikan semua endpoint tujuan dan model sudah benar.
             </DialogDescription>
           </DialogHeader>
-          <div className="text-xs text-muted-foreground bg-muted p-3 rounded">
+          <div className="text-xs text-muted-foreground bg-muted p-3 rounded-md">
             Total rute yang akan diterapkan: <strong>{localRoutes.length}</strong> rute.
           </div>
           <DialogFooter className="gap-2 sm:gap-0">

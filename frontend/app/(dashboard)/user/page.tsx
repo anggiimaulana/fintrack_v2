@@ -115,7 +115,7 @@ function UserDashboardContent() {
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
+      <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
         <DateRangeFilter value={dateFilter} onChange={setDateFilter} />
       </div>
 
@@ -179,7 +179,7 @@ function UserDashboardContent() {
       </div>
 
       <div className="mb-8">
-        <div className="mb-3 flex border-2 border-foreground p-1 bg-background w-full md:w-auto">
+        <div className="mb-3 flex border-2 rounded-md border-foreground p-1 bg-background w-full md:w-auto">
           {[{ key: "all", label: "Semua" }, { key: "income", label: "Pemasukan" }, { key: "expense", label: "Pengeluaran" }, { key: "savings", label: "Tabungan" }].map((f) => (
             <button
               key={f.key}
@@ -206,7 +206,7 @@ function UserDashboardContent() {
 
 export default function UserDashboardPage() {
   return (
-    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <UserDashboardContent />
     </Suspense>
   );

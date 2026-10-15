@@ -229,10 +229,10 @@ function TransactionsContent() {
           <h2 className="text-xl font-black uppercase tracking-wide text-foreground">Daftar Transaksi</h2>
           <p className="text-xs font-bold text-muted-foreground mt-1">Kelola dan pantau semua riwayat transaksi Anda.</p>
         </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <Button
             variant="outline"
-            className="text-muted-foreground cursor-pointer disabled:cursor-not-allowed"
+            className="flex-1 sm:flex-none text-muted-foreground cursor-pointer disabled:cursor-not-allowed"
             disabled={!hasFeature("reports_export") || isExporting}
             title={hasFeature("reports_export") ? undefined : "Ekspor laporan membutuhkan paket Pro atau lebih tinggi."}
             onClick={handleExportCSV}
@@ -255,27 +255,27 @@ function TransactionsContent() {
             Tambah Transaksi
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsDialogOpen(open); }}>
-            <DialogContent className="sm:max-w-md border-2 border-foreground">
+            <DialogContent className="sm:max-w-md border-2 rounded-md border-foreground">
               <DialogHeader>
                 <DialogTitle className="font-black uppercase tracking-wide">{editingTx ? "Edit Transaksi" : "Tambah Transaksi Baru"}</DialogTitle>
               </DialogHeader>
               <div className="py-4 space-y-5">
-                <div className="flex border-2 border-foreground p-1 bg-muted">
+                <div className="flex border-2 rounded-md border-foreground p-1 bg-muted">
                   <button
                     onClick={() => { setFormType("expense"); setFormCategoryId(""); }}
-                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "expense" ? "border-2 border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
+                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "expense" ? "border-2 rounded-md border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
                   >
                     Pengeluaran
                   </button>
                   <button
                     onClick={() => { setFormType("income"); setFormCategoryId(""); }}
-                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "income" ? "border-2 border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
+                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "income" ? "border-2 rounded-md border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
                   >
                     Pemasukan
                   </button>
                   <button
                     onClick={() => { setFormType("savings"); setFormCategoryId(""); }}
-                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "savings" ? "border-2 border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
+                    className={`flex-1 py-2 text-sm font-bold cursor-pointer ${formType === "savings" ? "border-2 rounded-md border-foreground bg-card shadow-[2px_2px_0px_0px] shadow-foreground text-foreground" : "text-muted-foreground hover:text-foreground border-0"}`}
                   >
                     Tabungan
                   </button>
@@ -292,7 +292,7 @@ function TransactionsContent() {
                     id="tx-form-category"
                     value={formCategoryId}
                     onChange={(e) => setFormCategoryId(e.target.value)}
-                    className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
+                    className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
                   >
                     <option value="">Pilih kategori</option>
                     {categories.map((cat: { id: string; name: string }) => (
@@ -308,7 +308,7 @@ function TransactionsContent() {
                     type="date"
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
+                    className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
                   />
                 </div>
 
@@ -320,7 +320,7 @@ function TransactionsContent() {
                     placeholder="Makan siang bersama teman..."
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70 resize-none"
+                    className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70 resize-none"
                   />
                 </div>
 
@@ -338,14 +338,14 @@ function TransactionsContent() {
 
       <InlineAiAssistant />
 
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-3">
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-3">
         <DateRangeFilter value={dateFilter} onChange={setDateFilter} showCompare={false} />
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Pemasukan</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-emerald-100 text-emerald-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-emerald-100 text-emerald-800">
               <ArrowDownLeft className="w-4 h-4" />
             </div>
           </div>
@@ -359,10 +359,10 @@ function TransactionsContent() {
           </div>
         </div>
 
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Pengeluaran</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-rose-100 text-rose-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-rose-100 text-rose-800">
               <ArrowUpRight className="w-4 h-4" />
             </div>
           </div>
@@ -376,10 +376,10 @@ function TransactionsContent() {
           </div>
         </div>
 
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Tabungan</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-blue-100 text-blue-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-blue-100 text-blue-800">
               <PiggyBank className="w-4 h-4" />
             </div>
           </div>
@@ -393,10 +393,10 @@ function TransactionsContent() {
           </div>
         </div>
 
-        <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2">
+        <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 flex flex-col justify-between gap-2 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">Sisa Bersih</span>
-            <div className="w-8 h-8 border-2 border-foreground flex items-center justify-center bg-amber-100 text-amber-800">
+            <div className="w-8 h-8 border-2 rounded-md border-foreground flex items-center justify-center bg-amber-100 text-amber-800">
               <Wallet className="w-4 h-4" />
             </div>
           </div>
@@ -411,22 +411,24 @@ function TransactionsContent() {
         </div>
       </div>
 
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col overflow-hidden">
         <div className="p-4 border-b-2 border-foreground flex flex-col md:flex-row gap-4 justify-between items-center bg-muted">
-          <div className="flex border-2 border-foreground p-1 bg-background w-full md:w-auto">
-            {[{ key: "all", label: "Semua" }, { key: "income", label: "Pemasukan" }, { key: "expense", label: "Pengeluaran" }, { key: "savings", label: "Tabungan" }].map((f) => (
-              <button
-                key={f.key}
-                onClick={() => table.setFilter("type", f.key === "all" ? "" : f.key)}
-                className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold cursor-pointer transition-colors ${
-                  filterType === f.key
-                    ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-x-2 border-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="w-full overflow-x-auto pb-1 -mb-1">
+            <div className="flex border-2 rounded-md border-foreground p-1 bg-background w-full md:w-auto min-w-max">
+              {[{ key: "all", label: "Semua" }, { key: "income", label: "Pemasukan" }, { key: "expense", label: "Pengeluaran" }, { key: "savings", label: "Tabungan" }].map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => table.setFilter("type", f.key === "all" ? "" : f.key)}
+                  className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 text-xs font-bold cursor-pointer transition-colors ${
+                    filterType === f.key
+                      ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-x-2 border-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
             <DataTableToolbar
               search={search}
@@ -452,14 +454,16 @@ function TransactionsContent() {
           onSort={table.setSort}
         />
 
-        <DataTablePagination
-          page={page}
-          perPage={table.perPage}
-          total={txData?.total ?? 0}
-          totalPages={Math.max(1, Math.ceil((txData?.total ?? 0) / table.perPage))}
-          onPageChange={table.setPage}
-          onPerPageChange={table.setPerPage}
-        />
+        <div className="p-4 border-t-2 border-foreground bg-muted/40">
+          <DataTablePagination
+            page={page}
+            perPage={table.perPage}
+            total={txData?.total ?? 0}
+            totalPages={Math.max(1, Math.ceil((txData?.total ?? 0) / table.perPage))}
+            onPageChange={table.setPage}
+            onPerPageChange={table.setPerPage}
+          />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -477,12 +481,12 @@ function TransactionsContent() {
         onClose={() => setScannerOpen(false)}
       />
       <Dialog open={!!detailTx} onOpenChange={(open) => { if (!open) setDetailTx(null); }}>
-        <DialogContent className="sm:max-w-lg border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground">
+        <DialogContent className="sm:max-w-lg border-2 rounded-md border-foreground shadow-[6px_6px_0px_0px] shadow-foreground">
           <DialogHeader className="pr-8">
             <DialogTitle className="font-black uppercase tracking-wide flex items-center gap-2.5">
               <span>Detail Transaksi</span>
               {detailTx && (
-                <span className={`text-[10px] px-2 py-0.5 border-2 border-foreground ${
+                <span className={`text-[10px] px-2 py-0.5 border-2 rounded-md border-foreground ${
                   detailTx.type === "income" ? "bg-emerald-100 text-emerald-800" : detailTx.type === "savings" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
                 }`}>
                   {detailTx.type === "income" ? "Pemasukan" : detailTx.type === "savings" ? "Tabungan" : "Pengeluaran"}
@@ -493,7 +497,7 @@ function TransactionsContent() {
 
           {detailTx && (
             <div className="py-2 space-y-4">
-              <div className="border-2 border-foreground bg-muted p-4 flex flex-col items-center justify-center gap-1 text-center">
+              <div className="border-2 rounded-lg border-foreground bg-muted p-4 flex flex-col items-center justify-center gap-1 text-center">
                 <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Nominal Transaksi</span>
                 <span className={`text-2xl sm:text-3xl font-black font-mono ${
                   detailTx.type === "income" ? "text-emerald-700" : detailTx.type === "savings" ? "text-blue-700" : "text-foreground"
@@ -504,14 +508,14 @@ function TransactionsContent() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Kategori</p>
                   <p className="font-black text-sm text-foreground">
                     {getCategoryName(detailTx, categoryMap)}
                   </p>
                 </div>
 
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Tanggal & Waktu</p>
                   <p className="font-black text-sm text-foreground">
                     {new Date(detailTx.transaction_date || detailTx.date || "").toLocaleDateString("id-ID", {
@@ -523,7 +527,7 @@ function TransactionsContent() {
                   </p>
                 </div>
 
-                <div className="col-span-2 border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="col-span-2 border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Deskripsi / Nama</p>
                   <p className="font-bold text-sm text-foreground">
                     {detailTx.description || "-"}
@@ -531,7 +535,7 @@ function TransactionsContent() {
                 </div>
 
                 {detailTx.notes && (
-                  <div className="col-span-2 border-2 border-foreground p-3 bg-card space-y-1">
+                  <div className="col-span-2 border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                     <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Catatan</p>
                     <p className="font-bold text-sm text-muted-foreground">
                       {detailTx.notes}
@@ -539,14 +543,14 @@ function TransactionsContent() {
                   </div>
                 )}
 
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">Sumber Input</p>
                   <p className="font-black text-xs uppercase text-foreground">
                     {detailTx.source || "manual"}
                   </p>
                 </div>
 
-                <div className="border-2 border-foreground p-3 bg-card space-y-1">
+                <div className="border-2 rounded-md border-foreground p-3 bg-card space-y-1">
                   <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">ID Transaksi</p>
                   <p className="font-mono text-[10px] text-muted-foreground truncate" title={detailTx.id}>
                     {detailTx.id}
@@ -563,7 +567,7 @@ function TransactionsContent() {
                   Tutup
                 </Button>
                 <Button
-                  className="border-2 border-blue-600 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                  className="border-2 rounded-md border-blue-600 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                   onClick={() => {
                     const tx = detailTx;
                     setDetailTx(null);
@@ -574,7 +578,7 @@ function TransactionsContent() {
                   Ubah
                 </Button>
                 <Button
-                  className="border-2 border-red-600 bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+                  className="border-2 rounded-md border-red-600 bg-red-600 hover:bg-red-700 text-white cursor-pointer"
                   onClick={() => {
                     const id = detailTx.id;
                     setDetailTx(null);
@@ -595,7 +599,7 @@ function TransactionsContent() {
 
 export default function TransactionsPage() {
   return (
-    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <TransactionsContent />
     </Suspense>
   );

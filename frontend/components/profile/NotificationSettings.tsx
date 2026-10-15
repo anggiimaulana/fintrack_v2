@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useNotificationPreferences, useSendTestEmail, type NotificationPreferences } from "@/hooks/use-notifications-api";
+import { useNotificationPreferences, useSendTestEmail, type NotificationPreferences } from "@/hooks/useNotifications";
 
 const NOTIFICATION_ITEMS: { key: keyof NotificationPreferences; label: string; desc: string }[] = [
   { key: "transaction_email", label: "Email Notifikasi Transaksi", desc: "Dapatkan notifikasi email setiap ada transaksi baru" },
@@ -24,7 +24,7 @@ export function NotificationSettings() {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-12 border-2 border-foreground" />
+          <Skeleton key={i} className="h-12 border-2 rounded-md border-foreground" />
         ))}
       </div>
     );

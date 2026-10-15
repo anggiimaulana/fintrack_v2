@@ -46,7 +46,7 @@ export function CheckoutConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !loading && onOpenChange(o)}>
-      <DialogContent className="border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-md">
+      <DialogContent className="border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-black">
             <Receipt className="h-5 w-5 text-primary" aria-hidden="true" />
@@ -71,7 +71,7 @@ export function CheckoutConfirmDialog({
             <span className="font-bold">{plan.billing_period_days} hari</span>
           </div>
 
-          <div className="space-y-1.5 border-2 border-foreground bg-muted/40 p-3">
+          <div className="space-y-1.5 border-2 rounded-md border-foreground bg-muted/40 p-3">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Harga paket</span>
               <Money value={subtotal} />

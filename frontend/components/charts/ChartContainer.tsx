@@ -24,16 +24,16 @@ const periodToApi: Record<PeriodType, string> = {
 
 export function ChartContainerSkeleton() {
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
       <div className="flex justify-between items-center mb-5">
-        <Skeleton className="h-5 w-32 border-2 border-foreground" />
+        <Skeleton className="h-5 w-32 border-2 rounded-md border-foreground" />
         <div className="flex gap-2">
           {CHART_TYPES.map((t) => (
-            <Skeleton key={t} className="h-8 w-12 border-2 border-foreground" />
+            <Skeleton key={t} className="h-8 w-12 border-2 rounded-md border-foreground" />
           ))}
         </div>
       </div>
-      <Skeleton className="flex-1 w-full border-2 border-foreground" />
+      <Skeleton className="flex-1 w-full border-2 rounded-md border-foreground" />
     </div>
   );
 }
@@ -83,7 +83,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
     if (isLoading || (needsCat && catLoading)) {
       return (
         <div className="flex items-center justify-center h-full">
-          <Skeleton className="w-full h-full border-2 border-foreground" />
+          <Skeleton className="w-full h-full border-2 rounded-md border-foreground" />
         </div>
       );
     }
@@ -126,14 +126,14 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
   };
 
   return (
-    <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
         <div>
           <h3 className="text-xs font-black uppercase tracking-wide text-foreground">Grafik Transaksi</h3>
           {!dateRange && (
             <div className="mt-1">
               <select
-                className="text-xs border-2 border-foreground bg-background font-bold text-muted-foreground focus:outline-none cursor-pointer px-2 py-0.5"
+                className="text-xs border-2 rounded-md border-foreground bg-background font-bold text-muted-foreground focus:outline-none cursor-pointer px-2 py-0.5"
                 value={period}
                 onChange={(e) => setPeriod(e.target.value as PeriodType)}
               >
@@ -147,7 +147,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
 
         <div className="flex items-center gap-2 flex-wrap">
           {(chartType === "line" || chartType === "area") && (
-            <div className="flex border-2 border-foreground bg-background p-0.5">
+            <div className="flex border-2 rounded-md border-foreground bg-background p-0.5">
               <button
                 onClick={() => setGroupBy("summary")}
                 className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
@@ -170,7 +170,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
               </button>
             </div>
           )}
-          <div className="flex border-2 border-foreground bg-background p-0.5">
+          <div className="flex border-2 rounded-md border-foreground bg-background p-0.5">
             {CHART_TYPES.map((type) => (
               <button
                 key={type}

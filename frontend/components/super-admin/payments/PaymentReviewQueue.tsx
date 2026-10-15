@@ -45,7 +45,7 @@ export function PaymentReviewQueue() {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <Card key={i} className="border-2 border-border bg-card">
+          <Card key={i} className="border-2 rounded-md border-border bg-card">
             <CardHeader className="space-y-2 pb-2">
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-4 w-48" />
@@ -66,7 +66,7 @@ export function PaymentReviewQueue() {
 
   if (isError) {
     return (
-      <div className="rounded border-2 border-destructive bg-destructive/10 p-6 text-sm text-destructive font-bold">
+      <div className="rounded-md border-2 border-destructive bg-destructive/10 p-6 text-sm text-destructive font-bold">
         Gagal memuat antrean verifikasi pembayaran: {(error as Error)?.message || 'Terjadi kesalahan sistem'}
       </div>
     )
@@ -98,7 +98,7 @@ export function PaymentReviewQueue() {
         {payments.map((p) => (
           <Card
             key={p.id}
-            className="flex flex-col justify-between border-2 border-border bg-card transition hover:border-foreground shadow-sm"
+            className="flex flex-col justify-between border-2 rounded-md border-border bg-card transition hover:border-foreground shadow-sm"
           >
             <CardHeader className="space-y-2 pb-3">
               <div className="flex items-start justify-between gap-2">
@@ -121,7 +121,7 @@ export function PaymentReviewQueue() {
             </CardHeader>
 
             <CardContent className="space-y-3 py-2 flex-1">
-              <div className="rounded border border-border bg-muted/30 p-2.5">
+              <div className="rounded-md border border-border bg-muted/30 p-2.5">
                 <div className="flex items-baseline justify-between">
                   <span className="text-xs text-muted-foreground">Nominal Transfer</span>
                   <span className="text-base font-bold text-foreground">

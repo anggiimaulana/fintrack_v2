@@ -2,7 +2,8 @@ import { useState, useRef } from "react";
 import { Camera, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import api, { aiRequestTimeout } from "@/lib/api";
+import type { ReceiptResult } from "@/lib/receipt";
 
 async function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
@@ -32,14 +33,9 @@ async function compressImage(file: File): Promise<File> {
   });
 }
 
-export interface ReceiptResult {
-  total?: number;
-  type?: string;
-  merchant?: string;
-  category?: string;
-  date?: string;
-  [key: string]: unknown;
-}
+// ReceiptResult is re-exported from the shared helper (lib/receipt) so callers
+// (ChatInput, ChatWindow) keep importing it from this module unchanged.
+export type { ReceiptResult };
 
 interface ReceiptUploadProps {
   onResult: (result: ReceiptResult) => void;
@@ -86,7 +82,7 @@ export function ReceiptUpload({ onResult, disabled }: ReceiptUploadProps) {
       const formData = new FormData();
       formData.append("image", file);
       const res = await api.post("/ai/receipt", formData, {
-        timeout: 30000,
+        timeout: aiRequestTimeout.ms,
       });
       onResult(res.data?.data || res.data);
       handleCancel();
@@ -119,7 +115,7 @@ export function ReceiptUpload({ onResult, disabled }: ReceiptUploadProps) {
 
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="border-2 border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md mx-4">
+          <div className="border-2 rounded-md border-foreground bg-card shadow-[6px_6px_0px_0px] shadow-foreground w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-5 py-4 border-b-2 border-foreground">
               <h3 className="text-sm font-black uppercase tracking-wide text-foreground">Preview Foto Struk</h3>
               <button onClick={handleCancel} className="text-muted-foreground hover:text-foreground cursor-pointer" disabled={isAnalyzing}>
@@ -127,7 +123,7 @@ export function ReceiptUpload({ onResult, disabled }: ReceiptUploadProps) {
               </button>
             </div>
             <div className="p-5">
-              <img src={preview} alt="Preview struk" className="w-full max-h-[300px] object-contain border-2 border-foreground bg-muted" />
+              <img src={preview} alt="Preview struk" className="w-full max-h-[300px] object-contain border-2 rounded-md border-foreground bg-muted" />
               <p className="text-xs font-bold text-muted-foreground mt-3">{file?.name} ({(file!.size / 1024 / 1024).toFixed(1)} MB)</p>
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t-2 border-foreground bg-muted">

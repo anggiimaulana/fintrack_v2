@@ -29,8 +29,23 @@ function newClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 }
 
-function inbox(items: unknown[], unread: number) {
-  return { data: { data: { items, unread } } };
+/**
+ * Wire the two endpoints the bell reads, using the REAL response shapes:
+ *   GET /me/notifications       -> { data: <ARRAY>, meta: { total, page, per_page } }
+ *   GET /me/notifications/stats -> { data: { total, unread, read } }
+ * The previous mock used a `{ data: { items, unread } }` shape the backend never
+ * sends, which is exactly how the bell's empty-badge bug slipped through.
+ */
+function mockInbox(items: unknown[], unread: number, total = items.length) {
+  get.mockImplementation((url: string) => {
+    if (url.startsWith("/me/notifications/stats")) {
+      return Promise.resolve({ data: { data: { total, unread, read: total - unread } } });
+    }
+    if (url.startsWith("/me/notifications")) {
+      return Promise.resolve({ data: { data: items, meta: { total, page: 1, per_page: 20 } } });
+    }
+    return Promise.resolve({ data: {} });
+  });
 }
 
 /** Radix menus open on pointerdown, not click. */
@@ -45,7 +60,7 @@ beforeEach(() => {
 
 describe("NotificationBell", () => {
   it("shows an empty state when the server inbox is empty", async () => {
-    get.mockResolvedValue(inbox([], 0));
+    mockInbox([], 0);
     const client = newClient();
     render(<NotificationBell />, { wrapper: makeWrapper(client) });
     await waitFor(() => expect(screen.getByLabelText("Notifikasi")).toBeInTheDocument());
@@ -54,21 +69,19 @@ describe("NotificationBell", () => {
   });
 
   it("renders server notifications and the unread badge", async () => {
-    get.mockResolvedValue(
-      inbox(
-        [
-          {
-            id: "n1",
-            event: "payment_received",
-            title: "Pembayaran diterima",
-            body: "Pembayaran Anda sebesar Rp 39.000 telah kami terima.",
-            href: "/user/settings/subscription?tab=payments",
-            read_at: null,
-            created_at: new Date().toISOString(),
-          },
-        ],
-        1,
-      ),
+    mockInbox(
+      [
+        {
+          id: "n1",
+          event: "payment_received",
+          title: "Pembayaran diterima",
+          body: "Pembayaran Anda sebesar Rp 39.000 telah kami terima.",
+          href: "/user/subscription?tab=payment",
+          read_at: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      1,
     );
     const client = newClient();
     render(<NotificationBell />, { wrapper: makeWrapper(client) });
@@ -78,21 +91,19 @@ describe("NotificationBell", () => {
   });
 
   it("marks a notification read and navigates on click", async () => {
-    get.mockResolvedValue(
-      inbox(
-        [
-          {
-            id: "n2",
-            event: "plan_updated",
-            title: "Paket diperbarui",
-            body: "Paket Anda kini Pro.",
-            href: "/user/settings/subscription",
-            read_at: null,
-            created_at: new Date().toISOString(),
-          },
-        ],
-        1,
-      ),
+    mockInbox(
+      [
+        {
+          id: "n2",
+          event: "plan_updated",
+          title: "Paket diperbarui",
+          body: "Paket Anda kini Pro.",
+          href: "/user/subscription",
+          read_at: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      1,
     );
     post.mockResolvedValue({ data: { success: true } });
     const client = newClient();
@@ -100,11 +111,11 @@ describe("NotificationBell", () => {
     openBell();
     fireEvent.click(await screen.findByText("Paket diperbarui"));
     await waitFor(() => expect(post).toHaveBeenCalledWith("/me/notifications/n2/read"));
-    expect(pushMock).toHaveBeenCalledWith("/user/settings/subscription");
+    expect(pushMock).toHaveBeenCalledWith("/user/subscription");
   });
 
   it("has no accessibility violations when open", async () => {
-    get.mockResolvedValue(inbox([], 0));
+    mockInbox([], 0);
     const client = newClient();
     const { container } = render(<NotificationBell />, { wrapper: makeWrapper(client) });
     await waitFor(() => expect(screen.getByLabelText("Notifikasi")).toBeInTheDocument());

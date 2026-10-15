@@ -18,6 +18,10 @@ export interface CatalogLimit {
   unit: string
   /** Whether the backend actually computes usage for this key. */
   enforced: boolean
+  /** Human explanation for a tooltip. */
+  description?: string
+  /** Whether the value is affected by the token→unit ratio. */
+  ratioAdjusted?: boolean
 }
 
 export interface EntitlementCatalog {

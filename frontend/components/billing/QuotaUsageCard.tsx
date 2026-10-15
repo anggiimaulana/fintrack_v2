@@ -6,7 +6,7 @@ import type { UsageEntry } from '@/hooks/use-entitlements'
 
 /** Human labels for the limit keys the backend exposes usage for. */
 const LIMIT_LABELS: Record<string, string> = {
-  ai_tokens_per_cycle: 'Token AI',
+  ai_tokens_per_cycle: 'Kuota AI',
   ai_requests_per_cycle: 'Permintaan AI',
   max_transactions: 'Transaksi',
   ocr_scans_per_cycle: 'Pindai struk',
@@ -35,7 +35,7 @@ export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
   if (keys.length === 0) return null
 
   return (
-    <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+    <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg font-black">
           <Gauge className="w-5 h-5 text-primary" /> Pemakaian Kuota
@@ -43,6 +43,7 @@ export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
         <CardDescription>
           Sisa kuota Anda pada siklus ini.
           {period ? ` Periode berakhir ${new Date(period.end).toLocaleDateString('id-ID')}.` : ''}
+          {' '}Kuota diukur dalam unit, bukan token mentah.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -63,7 +64,7 @@ export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
                     : `${entry.used.toLocaleString('id-ID')} / ${entry.limit.toLocaleString('id-ID')}`}
                 </span>
               </div>
-              <div className="h-2.5 w-full border-2 border-foreground bg-muted overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className="h-2.5 w-full border-2 rounded-md border-foreground bg-muted overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
                 <div
                   className={`h-full transition-all ${entry.unlimited ? 'bg-emerald-500' : warn ? 'bg-amber-500' : 'bg-primary'}`}
                   style={{ width: entry.unlimited ? '100%' : `${pct}%` }}

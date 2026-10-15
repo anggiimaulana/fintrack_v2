@@ -73,7 +73,7 @@ export function PlanCard({
 
   return (
     <Card
-      className={`flex flex-col justify-between border-2 ${
+      className={`flex flex-col justify-between border-2 rounded-md ${
         isCurrent
           ? 'border-primary ring-2 ring-primary/20'
           : 'border-foreground shadow-[4px_4px_0px_0px] shadow-foreground'

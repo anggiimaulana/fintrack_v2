@@ -33,7 +33,7 @@ describe("searchEntries", () => {
   it("matches by English synonym", () => {
     // "subscription" is a keyword of the Langganan module.
     const results = searchEntries("subscription");
-    expect(results.some((e) => e.href === "/user/settings/subscription")).toBe(true);
+    expect(results.some((e) => e.href === "/user/subscription")).toBe(true);
   });
 
   it("ranks a label prefix above a keyword match", () => {

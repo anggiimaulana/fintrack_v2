@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
@@ -195,6 +195,93 @@ export function useMyInvoices(options?: { enabled?: boolean }) {
   return { invoices: query.data ?? [], isLoading: query.isLoading, isError: query.isError };
 }
 
+/** Table query state accepted by the paginated billing hooks. */
+export interface BillingTableParams {
+  page: number;
+  perPage: number;
+  sorts: { column: string; order: "asc" | "desc" }[];
+  q: string;
+  filters: Record<string, string>;
+}
+
+function billingQuery(p: BillingTableParams): string {
+  const params = new URLSearchParams();
+  params.set("page", String(p.page));
+  params.set("per_page", String(p.perPage));
+  if (p.sorts.length > 0) {
+    params.set("sort", p.sorts.map((s) => s.column).join(","));
+    params.set("order", p.sorts.map((s) => s.order).join(","));
+  }
+  if (p.q) params.set("q", p.q);
+  for (const [k, v] of Object.entries(p.filters)) {
+    if (v) params.set(`filter_${k}`, v);
+  }
+  return params.toString();
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
+/** Paginated + sortable + searchable payment history for the subscription page. */
+export function useMyPaymentsPaged(p: BillingTableParams, opts?: { enabled?: boolean }) {
+  const qs = billingQuery(p);
+  const query = useQuery({
+    queryKey: queryKeys.billing.paymentsPaged(qs),
+    queryFn: async (): Promise<PagedResult<UserPayment>> => {
+      const res = await api.get(`/payments?${qs}`);
+      return {
+        items: (res.data?.data ?? []) as UserPayment[],
+        total: res.data?.meta?.total ?? 0,
+        page: res.data?.meta?.page ?? p.page,
+        perPage: res.data?.meta?.per_page ?? p.perPage,
+      };
+    },
+    enabled: opts?.enabled ?? true,
+    staleTime: 1000 * 30,
+    placeholderData: keepPreviousData,
+  });
+  return {
+    payments: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}
+
+/** Paginated + sortable + searchable invoice list for the subscription page. */
+export function useMyInvoicesPaged(p: BillingTableParams, opts?: { enabled?: boolean }) {
+  const qs = billingQuery(p);
+  const query = useQuery({
+    queryKey: queryKeys.billing.invoicesPaged(qs),
+    queryFn: async (): Promise<PagedResult<Invoice>> => {
+      const res = await api.get(`/invoices?${qs}`);
+      return {
+        items: (res.data?.data ?? []) as Invoice[],
+        total: res.data?.meta?.total ?? 0,
+        page: res.data?.meta?.page ?? p.page,
+        perPage: res.data?.meta?.per_page ?? p.perPage,
+      };
+    },
+    enabled: opts?.enabled ?? true,
+    staleTime: 1000 * 30,
+    placeholderData: keepPreviousData,
+  });
+  return {
+    invoices: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}
+
 export function useMySubscription() {
   const query = useQuery({
     queryKey: queryKeys.billing.subscription,
@@ -212,6 +299,47 @@ export function useMySubscription() {
     subscription: query.data?.subscription ?? null,
     scheduledPlanCode: query.data?.scheduled_plan_code ?? "",
     isLoading: query.isLoading,
+    refetch: query.refetch,
+  };
+}
+
+/** One subscription lifecycle event (from GET /subscriptions/me/events). */
+export interface SubscriptionEvent {
+  id: string;
+  subscription_id: string;
+  user_id: string;
+  event_type: string;
+  previous_state?: Record<string, unknown> | null;
+  new_state?: Record<string, unknown> | null;
+  reason?: string | null;
+  actor_id?: string | null;
+  created_at: string;
+}
+
+/** Paginated subscription lifecycle history for the "Riwayat" tab. */
+export function useMySubscriptionEvents(p: BillingTableParams, opts?: { enabled?: boolean }) {
+  const qs = billingQuery(p);
+  const query = useQuery({
+    queryKey: queryKeys.billing.subscriptionEvents(qs),
+    queryFn: async (): Promise<PagedResult<SubscriptionEvent>> => {
+      const res = await api.get(`/subscriptions/me/events?${qs}`);
+      return {
+        items: (res.data?.data ?? []) as SubscriptionEvent[],
+        total: res.data?.meta?.total ?? 0,
+        page: res.data?.meta?.page ?? p.page,
+        perPage: res.data?.meta?.per_page ?? p.perPage,
+      };
+    },
+    enabled: opts?.enabled ?? true,
+    staleTime: 1000 * 30,
+    placeholderData: keepPreviousData,
+  });
+  return {
+    events: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isError: query.isError,
     refetch: query.refetch,
   };
 }

@@ -51,11 +51,11 @@ const KIND_LABEL: Record<PaymentAccountKind, string> = {
 function AccountCard({ account }: { account: PaymentAccount }) {
   const Icon = KIND_ICON[account.kind] ?? Building2
   return (
-    <div className="border-2 border-foreground bg-card p-3">
+    <div className="border-2 rounded-md border-foreground bg-card p-3">
       <div className="mb-2 flex items-center gap-2">
         <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
         <span className="text-sm font-black">{account.name}</span>
-        <span className="ml-auto border-2 border-foreground px-1.5 py-0.5 text-[10px] font-black uppercase text-muted-foreground">
+        <span className="ml-auto border-2 rounded-md border-foreground px-1.5 py-0.5 text-[10px] font-black uppercase text-muted-foreground">
           {KIND_LABEL[account.kind] ?? account.kind}
         </span>
       </div>
@@ -69,7 +69,7 @@ function AccountCard({ account }: { account: PaymentAccount }) {
             <img
               src={account.qris_url}
               alt={`Kode QRIS ${account.name}`}
-              className="mx-auto h-48 w-48 border-2 border-foreground bg-white object-contain p-1"
+              className="mx-auto h-48 w-48 border-2 rounded-md border-foreground bg-white object-contain p-1"
             />
             <p className="text-center text-[11px] font-bold text-muted-foreground">
               Pindai kode di atas dengan aplikasi pembayaran Anda.
@@ -112,7 +112,7 @@ export function TransferInstructions({ paymentId, amountIdr }: { paymentId: stri
   return (
     <div className="space-y-3">
       {/* Amount to pay — the one thing every method needs. */}
-      <div className="border-2 border-foreground bg-muted/40 p-3">
+      <div className="border-2 rounded-md border-foreground bg-muted/40 p-3">
         <p className="mb-2 text-xs font-black uppercase tracking-wide text-foreground">Jumlah yang Harus Dibayar</p>
         <InstructionRow label="Jumlah" value={`Rp ${amountIdr.toLocaleString('id-ID')}`} />
         {instructions?.order_id && <InstructionRow label="Kode Order" value={instructions.order_id} />}
@@ -131,7 +131,7 @@ export function TransferInstructions({ paymentId, amountIdr }: { paymentId: stri
           </div>
         </div>
       ) : hasLegacy ? (
-        <div className="border-2 border-foreground bg-muted/40 p-3">
+        <div className="border-2 rounded-md border-foreground bg-muted/40 p-3">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-foreground">
             <Building2 className="h-3.5 w-3.5" aria-hidden="true" /> Instruksi Transfer
           </p>
@@ -140,7 +140,7 @@ export function TransferInstructions({ paymentId, amountIdr }: { paymentId: stri
           {legacyHolder && <InstructionRow label="Atas Nama" value={legacyHolder} />}
         </div>
       ) : (
-        <p className="border-2 border-dashed border-foreground/40 p-3 text-xs font-bold text-muted-foreground">
+        <p className="border-2 rounded-md border-dashed border-foreground/40 p-3 text-xs font-bold text-muted-foreground">
           Belum ada tujuan pembayaran yang dikonfigurasi. Hubungi admin untuk detail rekening, lalu unggah bukti
           transfer Anda.
         </p>

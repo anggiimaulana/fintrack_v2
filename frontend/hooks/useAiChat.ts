@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import api, { refreshSession } from "@/lib/api";
+import { queryKeys } from "@/lib/cache-keys";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -307,6 +308,11 @@ export function useAiChat(source?: string) {
         setLastToolSteps([...toolStepsRef.current]);
         setIsStreaming(false);
         throw err;
+      } finally {
+        // Every settled turn consumed AI tokens/requests, so refresh the quota
+        // bars. Runs on success, abort, and error alike; the backend event
+        // (usage_changed) covers other tabs.
+        queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
       }
     },
     [queryClient, queryKey, source],

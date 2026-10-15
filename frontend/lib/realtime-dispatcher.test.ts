@@ -46,6 +46,27 @@ describe("keysForEvent", () => {
     expect(keys).toContainEqual(queryKeys.superAdmin.paymentsReview());
   });
 
+  it("refreshes entitlements, voice config and voice history on usage_changed", () => {
+    const keys = keysForEvent("usage_changed");
+    expect(keys).toContainEqual(queryKeys.entitlements.me);
+    // The voice config carries the live daily counter, so it must refresh too.
+    expect(keys).toContainEqual(queryKeys.voice.config);
+    // A server-mode recording is written backend-side; the history panel must
+    // pick it up without a manual refresh.
+    expect(keys).toContainEqual(queryKeys.voice.historyAll);
+    // Must not refetch data lists — only quota/usage surfaces moved.
+    expect(keys).toHaveLength(3);
+    expect(keys).not.toContainEqual(queryKeys.transactions.all);
+    expect(keys).not.toContainEqual(queryKeys.dashboard.all);
+  });
+
+  it("resyncs notifications on stream_reconnected", () => {
+    const keys = keysForEvent("stream_reconnected");
+    expect(keys).toContainEqual(queryKeys.notifications.all);
+    // A reconnect is a resync hint only — it must not storm every cache.
+    expect(keys).toHaveLength(1);
+  });
+
   it("returns nothing for an unknown event", () => {
     expect(keysForEvent("some_future_event")).toEqual([]);
   });
@@ -55,6 +76,7 @@ describe("keysForEvent", () => {
       "payment_received",
       "plan_updated",
       "quota_reset",
+      "usage_changed",
       "ai_endpoint_down",
       "ai_route_quarantined",
       "manual_approval_needed",

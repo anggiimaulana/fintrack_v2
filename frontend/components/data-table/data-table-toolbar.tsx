@@ -57,7 +57,7 @@ export function DataTableToolbar({
   const filterEntries = Object.entries(filters).filter(([, v]) => v !== "");
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between w-full md:w-auto">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -73,7 +73,7 @@ export function DataTableToolbar({
         {filterEntries.map(([key, v]) => (
           <span
             key={key}
-            className="inline-flex items-center gap-1 border-2 border-foreground bg-muted px-2 py-1 text-xs font-bold"
+            className="inline-flex items-center gap-1 border-2 rounded-md border-foreground bg-muted px-2 py-1 text-xs font-bold"
           >
             {key}: {v}
             {onRemoveFilter && (

@@ -156,7 +156,7 @@ function SuperAdminAuditContent() {
 // missing-suspense-with-csr-bailout).
 export default function SuperAdminAuditPage() {
   return (
-    <React.Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+    <React.Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
       <SuperAdminAuditContent />
     </React.Suspense>
   )

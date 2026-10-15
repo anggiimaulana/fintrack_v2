@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { Bell, Check, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,8 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useNotificationInbox, notificationKeys, type AppNotification } from "@/hooks/use-notifications-api";
-import { subscribeDomainEvents } from "@/lib/realtime-bus";
+import { useNotificationInbox, type NotificationItem } from "@/hooks/useNotifications";
 
 /** relativeTime renders a compact "baru saja / 5m / 2j / 3h" style label. */
 function relativeTime(iso: string, now: number = Date.now()): string {
@@ -26,20 +23,17 @@ function relativeTime(iso: string, now: number = Date.now()): string {
   return `${Math.floor(hours / 24)}h lalu`;
 }
 
+/**
+ * The header bell. Reads the shared notification cache (no polling); freshness
+ * is driven entirely by the single SSE stream subscribed once in
+ * `NotificationRealtimeProvider`. Clicking a row marks it read optimistically and
+ * navigates to its href.
+ */
 export function NotificationBell() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { items, unread, markAllRead, markRead, clear } = useNotificationInbox();
 
-  // The inbox is durable (server-side), but a live SSE event should surface
-  // immediately rather than waiting for the next poll — so refetch on any event.
-  useEffect(() => {
-    return subscribeDomainEvents(() => {
-      queryClient.invalidateQueries({ queryKey: notificationKeys.inbox });
-    });
-  }, [queryClient]);
-
-  const openNotification = (n: AppNotification) => {
+  const openNotification = (n: NotificationItem) => {
     markRead(n.id);
     if (n.href) router.push(n.href);
   };
@@ -63,7 +57,7 @@ export function NotificationBell() {
 
       <DropdownMenuContent
         align="end"
-        className="w-80 p-0 border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
+        className="w-80 p-0 border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
       >
         <div className="flex items-center justify-between px-3 py-2 border-b-2 border-foreground">
           <span className="text-sm font-black uppercase tracking-wide">Notifikasi</span>

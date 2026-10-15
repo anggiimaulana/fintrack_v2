@@ -111,7 +111,7 @@ export function AdminSidebar() {
                     isActive={pathname === item.href}
                     className={`flex items-center gap-3 px-4 py-3 text-sm font-bold transition-all ${
                       pathname === item.href
-                        ? 'bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground'
+                        ? 'bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground'
                         : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                     }`}
                   >
@@ -128,7 +128,7 @@ export function AdminSidebar() {
       </SidebarContent>
       <SidebarFooter className="p-4 border-t-2 border-sidebar-border">
         <div className="flex items-center gap-3 mb-4 px-2">
-          <Avatar className="h-9 w-9 border-2 border-foreground">
+          <Avatar className="h-9 w-9 border-2 rounded-md border-foreground">
             <AvatarImage src={user?.avatar_url ?? undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold">
               {user?.full_name?.substring(0, 2).toUpperCase() || 'AD'}

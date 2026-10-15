@@ -108,10 +108,10 @@ export default function UserManagementPage() {
       />
 
       <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, user: null })}>
-        <DialogContent className="sm:max-w-[425px] border-2 border-foreground">
+        <DialogContent className="sm:max-w-[425px] border-2 rounded-md border-foreground">
           <DialogHeader>
             <div className="flex justify-center mb-4">
-              <div className={confirmDialog.user?.is_active ? "p-3 border-2 border-foreground bg-red-100 text-red-700" : "p-3 border-2 border-foreground bg-green-100 text-green-700"}>
+              <div className={confirmDialog.user?.is_active ? "p-3 border-2 rounded-md border-foreground bg-red-100 text-red-700" : "p-3 border-2 rounded-md border-foreground bg-green-100 text-green-700"}>
                 <ShieldAlert size={32} />
               </div>
             </div>

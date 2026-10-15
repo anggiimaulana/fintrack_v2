@@ -66,7 +66,7 @@ export default function ProfilePage() {
           <AccordionItem key={section.id} value={section.id} id={section.id} className="shadow-[4px_4px_0px_0px] shadow-foreground">
             <AccordionTrigger>
               <span className="flex items-center gap-3">
-                <span className="w-9 h-9 border-2 border-foreground bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="w-9 h-9 border-2 rounded-md border-foreground bg-primary/10 flex items-center justify-center shrink-0">
                   <section.icon className="w-4 h-4 text-primary" />
                 </span>
                 <span className="flex flex-col">

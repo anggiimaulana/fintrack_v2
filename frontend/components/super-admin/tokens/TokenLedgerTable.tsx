@@ -265,7 +265,7 @@ export function TokenLedgerTable({
       {isLoading ? (
         <DataTableSkeleton columns={8} rows={6} />
       ) : error ? (
-        <div className="border-2 border-destructive bg-destructive/10 p-4 text-sm font-semibold text-destructive">
+        <div className="border-2 rounded-lg border-destructive bg-destructive/10 p-4 text-sm font-semibold text-destructive">
           Gagal memuat ledger: {error instanceof Error ? error.message : 'Terjadi kesalahan sistem'}
         </div>
       ) : rows.length === 0 ? (

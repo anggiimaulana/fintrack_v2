@@ -13,7 +13,7 @@ interface PaymentMethodsDonutProps {
 
 export function PaymentMethodsDonutSkeleton() {
   return (
-    <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[400px]">
+    <Card className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[400px]">
       <div className="flex justify-between items-center mb-4">
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-4 w-20" />
@@ -40,7 +40,7 @@ export function PaymentMethodsDonut({ data, isLoading }: PaymentMethodsDonutProp
   })
 
   return (
-    <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col h-full">
+    <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col h-full">
       <CardHeader className="p-5 pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-black">Metode Pembayaran</CardTitle>

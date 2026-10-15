@@ -43,13 +43,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-4xl: 0px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
 }
 
 :root {
@@ -79,7 +79,7 @@
   --chart-3: oklch(0.65 0.2 145);
   --chart-4: oklch(0.75 0.18 80);
   --chart-5: oklch(0.15 0.02 260);
-  --radius: 0px;
+  --radius: 6px;
   --sidebar: oklch(0.15 0.02 260);
   --sidebar-foreground: oklch(0.95 0 0);
   --sidebar-primary: oklch(0.55 0.24 260);
@@ -148,16 +148,19 @@
 
 .neo-card {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-lg);
   background-color: var(--card);
   box-shadow: 4px 4px 0px 0px var(--foreground);
 }
 .neo-card-sm {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-md);
   background-color: var(--card);
   box-shadow: 3px 3px 0px 0px var(--foreground);
 }
 .neo-button {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-md);
   font-weight: 700;
   box-shadow: 3px 3px 0px 0px var(--foreground);
   transition: all 75ms ease;
@@ -168,6 +171,7 @@
 }
 .neo-button-primary {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-md);
   font-weight: 700;
   box-shadow: 3px 3px 0px 0px var(--foreground);
   transition: all 75ms ease;
@@ -183,6 +187,7 @@
 }
 .neo-input {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-md);
   background-color: var(--background);
   padding: 0.5rem 0.75rem;
   color: var(--foreground);
@@ -197,6 +202,7 @@
 }
 .neo-badge {
   border: 2px solid var(--foreground);
+  border-radius: var(--radius-sm);
   font-weight: 700;
   padding: 0.125rem 0.625rem;
   font-size: 0.75rem;

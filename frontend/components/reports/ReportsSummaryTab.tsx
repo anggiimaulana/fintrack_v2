@@ -47,7 +47,7 @@ export function ReportsSummaryTab({ analytics, isLoading, type }: ReportsSummary
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-28 animate-pulse border-2 border-foreground bg-muted" />
+          <div key={i} className="h-28 animate-pulse border-2 rounded-md border-foreground bg-muted" />
         ))}
       </div>
     );
@@ -76,7 +76,7 @@ export function ReportsSummaryTab({ analytics, isLoading, type }: ReportsSummary
       {/* Multi-period comparison */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {comparisons.map(({ key, set, label }) => (
-          <Card key={key} className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+          <Card key={key} className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
             <CardHeader>
               <CardTitle className="text-xs font-black uppercase tracking-wide">vs {label}</CardTitle>
               <CardDescription className="text-[11px]">{set.start} s/d {set.end}</CardDescription>
@@ -101,21 +101,21 @@ export function ReportsSummaryTab({ analytics, isLoading, type }: ReportsSummary
 
       {/* Ratios + best/worst */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+        <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
           <CardHeader>
             <CardTitle className="text-xs font-black uppercase tracking-wide">Rasio Keuangan</CardTitle>
             <CardDescription>Dihitung dari {ratios.months_spanned} bulan pada periode ini.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-3 gap-3 text-center">
-            <div className="border-2 border-foreground bg-muted p-3">
+            <div className="border-2 rounded-md border-foreground bg-muted p-3">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Rasio Tabungan</p>
               <p className="font-mono text-xl font-black text-green-700">{ratios.savings_rate.toFixed(1)}%</p>
             </div>
-            <div className="border-2 border-foreground bg-muted p-3">
+            <div className="border-2 rounded-md border-foreground bg-muted p-3">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Rasio Beban</p>
               <p className="font-mono text-xl font-black text-red-600">{ratios.expense_ratio.toFixed(1)}%</p>
             </div>
-            <div className="border-2 border-foreground bg-muted p-3">
+            <div className="border-2 rounded-md border-foreground bg-muted p-3">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Runway</p>
               <p className="font-mono text-xl font-black">
                 {ratios.runway_months > 0 ? `${ratios.runway_months.toFixed(1)} bln` : "—"}
@@ -124,18 +124,18 @@ export function ReportsSummaryTab({ analytics, isLoading, type }: ReportsSummary
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
+        <Card className="border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground">
           <CardHeader>
             <CardTitle className="text-xs font-black uppercase tracking-wide">Periode Terbaik &amp; Terburuk</CardTitle>
             <CardDescription>Berdasarkan surplus (pemasukan − pengeluaran) tahun ini.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
-            <div className="border-2 border-green-600 bg-green-50 p-3 dark:bg-green-950/30">
+            <div className="border-2 rounded-md border-green-600 bg-green-50 p-3 dark:bg-green-950/30">
               <p className="text-[10px] font-black uppercase tracking-wide text-green-700">Terbaik</p>
               <p className="text-sm font-black">{best_worst.best_month || "—"}</p>
               <p className="font-mono text-xs font-bold text-green-700">{formatIDR(best_worst.best_value)}</p>
             </div>
-            <div className="border-2 border-red-600 bg-red-50 p-3 dark:bg-red-950/30">
+            <div className="border-2 rounded-md border-red-600 bg-red-50 p-3 dark:bg-red-950/30">
               <p className="text-[10px] font-black uppercase tracking-wide text-red-700">Terburuk</p>
               <p className="text-sm font-black">{best_worst.worst_month || "—"}</p>
               <p className="font-mono text-xs font-bold text-red-700">{formatIDR(best_worst.worst_value)}</p>

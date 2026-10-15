@@ -17,7 +17,7 @@ function CustomTooltip({ active, payload }: { active?: boolean, payload?: Array<
   if (!active || !payload?.length) return null;
   const data = payload[0].payload;
   return (
-    <div className="bg-card border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1">
+    <div className="bg-card border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1">
       <p className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].color }} />
         {data.name}

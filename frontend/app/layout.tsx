@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -16,6 +16,15 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "FinTrack - Kelola Keuangan Cerdas",
   description: "Catat transaksi via teks, suara, atau foto. AI FinTrack memahami bahasa Indonesia dan langsung menyimpan ke database Anda.",
+};
+
+// `viewportFit: "cover"` lets the mobile bottom navigation extend into the
+// iPhone home-indicator area; the nav itself pads with `env(safe-area-inset-*)`
+// so nothing interactive is hidden behind the indicator.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

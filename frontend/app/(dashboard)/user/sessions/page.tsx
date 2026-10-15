@@ -63,7 +63,7 @@ export default function SessionsPage() {
         </div>
       </div>
 
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
+      <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4">
         <form
           onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }}
           className="flex gap-3"
@@ -73,7 +73,7 @@ export default function SessionsPage() {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Nama sesi baru..."
-            className="flex-1 border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+            className="flex-1 border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           />
           <Button type="submit" disabled={!newTitle.trim() || createMutation.isPending}>
             <Plus className="w-4 h-4 mr-2" /> Buat Sesi
@@ -81,21 +81,21 @@ export default function SessionsPage() {
         </form>
       </div>
 
-      <div className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground divide-y-2 divide-foreground">
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground divide-y-2 divide-foreground">
         {isLoading ? (
           Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="p-4 flex items-center gap-4">
-              <Skeleton className="w-10 h-10 border-2 border-foreground" />
+              <Skeleton className="w-10 h-10 border-2 rounded-md border-foreground" />
               <div className="flex-1 space-y-1">
-                <Skeleton className="h-5 w-48 border-2 border-foreground" />
-                <Skeleton className="h-3 w-32 border-2 border-foreground" />
+                <Skeleton className="h-5 w-48 border-2 rounded-md border-foreground" />
+                <Skeleton className="h-3 w-32 border-2 rounded-md border-foreground" />
               </div>
             </div>
           ))
         ) : sessions && sessions.length > 0 ? (
           sessions.map((s: Session) => (
             <div key={s.id} className="p-4 flex items-center gap-4 hover:bg-muted/50 transition-colors group">
-              <div className="w-10 h-10 border-2 border-foreground bg-primary/10 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 border-2 rounded-md border-foreground bg-primary/10 flex items-center justify-center shrink-0">
                 <MessageSquare className="w-5 h-5 text-primary" />
               </div>
 
@@ -106,7 +106,7 @@ export default function SessionsPage() {
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     ref={renameInputRef}
-                    className="flex-1 border-2 border-foreground bg-background px-3 py-1.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
+                    className="flex-1 border-2 rounded-md border-foreground bg-background px-3 py-1.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none"
                   />
                   <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: s.id, title: editTitle })} disabled={!editTitle.trim()}>
                     <Check className="w-4 h-4" />

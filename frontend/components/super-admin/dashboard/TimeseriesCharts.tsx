@@ -39,11 +39,11 @@ export function TimeseriesChartsSkeleton() {
         <Skeleton className="h-8 w-48" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 h-[380px]">
+        <Card className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 h-[380px]">
           <Skeleton className="h-6 w-36 mb-4" />
           <Skeleton className="h-[280px] w-full" />
         </Card>
-        <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 h-[380px]">
+        <Card className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 h-[380px]">
           <Skeleton className="h-6 w-36 mb-4" />
           <Skeleton className="h-[280px] w-full" />
         </Card>
@@ -64,7 +64,7 @@ function RevenueChartTooltip({
   if (!active || !payload?.length) return null
 
   return (
-    <div className="bg-card border-2 border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1.5 z-50">
+    <div className="bg-card border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground p-3 text-xs font-bold space-y-1.5 z-50">
       <p className="text-muted-foreground pb-1 border-b border-border">{label}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center justify-between gap-4">
@@ -110,7 +110,7 @@ export function TimeseriesCharts({
       {/* Segmented control for period */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-lg font-black tracking-tight">Tren Performa & Penggunaan</h2>
-        <div className="inline-flex border-2 border-foreground bg-card p-0.5 shadow-[2px_2px_0px_0px] shadow-foreground">
+        <div className="inline-flex border-2 rounded-md border-foreground bg-card p-0.5 shadow-[2px_2px_0px_0px] shadow-foreground">
           {PERIODS.map((p) => {
             const isActive = period === p.value
             return (
@@ -119,7 +119,7 @@ export function TimeseriesCharts({
                 size="sm"
                 variant={isActive ? 'default' : 'ghost'}
                 onClick={() => onPeriodChange(p.value)}
-                className={`h-7 px-3 text-xs font-black border-0 shadow-none active:translate-x-0 active:translate-y-0 rounded-none ${
+                className={`h-7 px-3 text-xs font-black border-0 shadow-none active:translate-x-0 active:translate-y-0 rounded-sm ${
                   isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
                 }`}
               >
@@ -132,7 +132,7 @@ export function TimeseriesCharts({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Revenue, MRR benchmark, & Settled Payments */}
-        <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col">
+        <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col">
           <CardHeader className="p-5 pb-2">
             <CardTitle className="text-base font-black">Pendapatan & Pembayaran</CardTitle>
             <p className="text-xs text-muted-foreground font-medium">
@@ -215,7 +215,7 @@ export function TimeseriesCharts({
         </Card>
 
         {/* Chart 2: Modalitas Token Usage (Stacked Bar / Multi-Series) */}
-        <Card className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col">
+        <Card className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground flex flex-col">
           <CardHeader className="p-5 pb-2">
             <CardTitle className="text-base font-black">Konsumsi Token per Modalitas</CardTitle>
             <p className="text-xs text-muted-foreground font-medium">

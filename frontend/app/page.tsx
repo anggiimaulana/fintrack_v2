@@ -41,7 +41,7 @@ export default function LandingPage() {
         <section className="relative bg-surface-dark overflow-hidden pt-20 pb-32 border-b-2 border-foreground">
           <div className="mx-auto max-w-7xl px-4 relative z-10 flex flex-col lg:flex-row items-center gap-12">
             <div className="flex-1 text-center lg:text-left space-y-8">
-              <div className="inline-flex items-center border-2 border-primary bg-primary/20 px-3 py-1 text-sm font-bold text-white">
+              <div className="inline-flex items-center border-2 rounded-md border-primary bg-primary/20 px-3 py-1 text-sm font-bold text-white">
                 <span className="flex h-2 w-2 bg-primary mr-2 animate-pulse" />
                 Multi AI Provider
               </div>
@@ -61,7 +61,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="flex-1 w-full max-w-xl lg:max-w-none">
-              <div className="border-2 border-foreground bg-surface-dark-2 shadow-[6px_6px_0px_0px] shadow-primary/50 overflow-hidden">
+              <div className="border-2 rounded-md border-foreground bg-surface-dark-2 shadow-[6px_6px_0px_0px] shadow-primary/50 overflow-hidden">
                 <div className="h-8 border-b-2 border-foreground bg-surface-dark-3 flex items-center px-4 gap-2">
                   <div className="w-3 h-3 border border-foreground bg-red-500 rounded-full" />
                   <div className="w-3 h-3 border border-foreground bg-amber-500 rounded-full" />
@@ -69,16 +69,16 @@ export default function LandingPage() {
                 </div>
                 <div className="flex-1 p-6 bg-surface-dark-2 flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="border-2 border-foreground bg-surface-dark-3 p-4">
+                    <div className="border-2 rounded-lg border-foreground bg-surface-dark-3 p-4">
                       <div className="text-neutral-400 text-xs font-bold uppercase mb-1">Total Pemasukan</div>
                       <div className="text-green-400 font-bold font-mono text-lg">Rp 12.500.000</div>
                     </div>
-                    <div className="border-2 border-foreground bg-surface-dark-3 p-4">
+                    <div className="border-2 rounded-lg border-foreground bg-surface-dark-3 p-4">
                       <div className="text-neutral-400 text-xs font-bold uppercase mb-1">Total Pengeluaran</div>
                       <div className="text-red-400 font-bold font-mono text-lg">Rp 4.200.000</div>
                     </div>
                   </div>
-                  <div className="border-2 border-foreground bg-surface-dark-3 p-4 flex flex-col">
+                  <div className="border-2 rounded-lg border-foreground bg-surface-dark-3 p-4 flex flex-col">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="w-8 h-8 bg-primary flex items-center justify-center">
                         <MessageSquare className="w-4 h-4 text-white" />
@@ -88,7 +88,7 @@ export default function LandingPage() {
                     <div className="bg-primary text-white text-sm p-3 self-end max-w-[80%] mb-4 font-medium">
                       Tolong catat beli kopi 25rb tadi siang
                     </div>
-                    <div className="border-2 border-foreground bg-surface-dark-2 text-white text-sm p-3 self-start max-w-[80%] font-medium">
+                    <div className="border-2 rounded-md border-foreground bg-surface-dark-2 text-white text-sm p-3 self-start max-w-[80%] font-medium">
                       Siapp! Pengeluaran Rp 25.000 untuk &quot;Kopi&quot; telah dicatat.
                     </div>
                   </div>
@@ -113,8 +113,8 @@ export default function LandingPage() {
                 { icon: Target, title: "Analisis SPK", desc: "Sistem cerdas mengklasifikasi kondisi keuangan Anda dari Sangat Baik hingga Kritis." },
                 { icon: Shield, title: "Privasi Total", desc: "Data tersimpan aman. AI key milik Anda sendiri, kami tidak membaca data Anda." },
               ].map((feature, i) => (
-                <div key={i} className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6 hover:shadow-[6px_6px_0px_0px] hover:shadow-foreground transition-all duration-100">
-                  <div className="w-12 h-12 border-2 border-foreground bg-primary/10 flex items-center justify-center mb-6">
+                <div key={i} className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6 hover:shadow-[6px_6px_0px_0px] hover:shadow-foreground transition-all duration-100">
+                  <div className="w-12 h-12 border-2 rounded-md border-foreground bg-primary/10 flex items-center justify-center mb-6">
                     <feature.icon className="w-6 h-6 text-primary" />
                   </div>
                   <h3 className="text-lg font-black uppercase tracking-wide mb-2">{feature.title}</h3>
@@ -137,8 +137,8 @@ export default function LandingPage() {
                 { step: "2", title: "Catat Transaksi", desc: "Teks, suara, atau foto. Beritahu AI transaksi Anda senatural mungkin." },
                 { step: "3", title: "Analisis Keuangan", desc: "Tanyakan apapun soal keuangan Anda, AI akan menjawab berdasarkan data Anda." },
               ].map((item, i) => (
-                <div key={i} className="border-2 border-foreground bg-card shadow-[5px_5px_0px_0px] shadow-foreground p-6 text-center">
-                  <div className="w-12 h-12 border-2 border-foreground bg-primary text-primary-foreground flex items-center justify-center text-xl font-black mx-auto mb-6 shadow-[3px_3px_0px_0px] shadow-foreground">
+                <div key={i} className="border-2 rounded-lg border-foreground bg-card shadow-[5px_5px_0px_0px] shadow-foreground p-6 text-center">
+                  <div className="w-12 h-12 border-2 rounded-md border-foreground bg-primary text-primary-foreground flex items-center justify-center text-xl font-black mx-auto mb-6 shadow-[3px_3px_0px_0px] shadow-foreground">
                     {item.step}
                   </div>
                   <h3 className="text-base font-black uppercase tracking-wide mb-3">{item.title}</h3>
@@ -165,15 +165,15 @@ export default function LandingPage() {
                   { status: "Kritis", color: "bg-red-600" },
                 ].map((item, i) => (
                   <li key={i} className="flex items-center gap-3">
-                    <div className={`w-3 h-3 border border-foreground ${item.color}`} />
+                    <div className={`w-3 h-3 border rounded-md border-foreground ${item.color}`} />
                     <span className="font-bold text-foreground">{item.status}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="flex-1 w-full border-2 border-foreground bg-muted p-8 shadow-[5px_5px_0px_0px] shadow-foreground">
-              <div className="border-2 border-foreground bg-card shadow-[3px_3px_0px_0px] shadow-foreground p-6 flex items-center gap-6">
-                <div className="relative w-24 h-24 flex items-center justify-center border-2 border-foreground bg-green-50">
+            <div className="flex-1 w-full border-2 rounded-lg border-foreground bg-muted p-8 shadow-[5px_5px_0px_0px] shadow-foreground">
+              <div className="border-2 rounded-lg border-foreground bg-card shadow-[3px_3px_0px_0px] shadow-foreground p-6 flex items-center gap-6">
+                <div className="relative w-24 h-24 flex items-center justify-center border-2 rounded-md border-foreground bg-green-50">
                   <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="46" fill="transparent" stroke="#e5e7eb" strokeWidth="8" />
                     <circle cx="50" cy="50" r="46" fill="transparent" stroke="#16A34A" strokeWidth="8" strokeDasharray="289" strokeDashoffset="40" />
@@ -198,7 +198,7 @@ export default function LandingPage() {
                 { name: "Siti Aminah", role: "Ibu Rumah Tangga", text: "Fitur foto struk sangat ajaib! Semua belanjaan langsung tercatat otomatis." },
                 { name: "Andi Wijaya", role: "Karyawan Swasta", text: "Analisis SPK bikin saya sadar kalau bulan ini saya terlalu boros di kopi." },
               ].map((testi, i) => (
-                <div key={i} className="border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6">
+                <div key={i} className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-6">
                   <div className="flex gap-1 mb-4">
                     {[1,2,3,4,5].map(star => (
                       <Star key={star} className="w-4 h-4 fill-amber-500 text-amber-500" />
@@ -206,7 +206,7 @@ export default function LandingPage() {
                   </div>
                   <p className="text-muted-foreground font-medium mb-6 italic">&ldquo;{testi.text}&rdquo;</p>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 border-2 border-foreground bg-primary flex items-center justify-center text-primary-foreground font-black">
+                    <div className="w-10 h-10 border-2 rounded-md border-foreground bg-primary flex items-center justify-center text-primary-foreground font-black">
                       {testi.name.charAt(0)}
                     </div>
                     <div>

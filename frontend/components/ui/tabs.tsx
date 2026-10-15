@@ -25,7 +25,7 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center border-2 border-foreground p-[3px] text-muted-foreground group-data-horizontal/tabs:h-9 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col bg-background",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-md border-2 border-foreground p-[3px] text-muted-foreground group-data-horizontal/tabs:h-9 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col bg-background",
   {
     variants: {
       variant: {
@@ -64,7 +64,7 @@ function TabsTrigger({
       data-slot="tabs-trigger"
       className={cn(
         "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 px-3 py-1 text-sm font-bold whitespace-nowrap text-muted-foreground transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "data-active:bg-card data-active:text-foreground data-active:border-2 data-active:border-foreground data-active:shadow-[2px_2px_0px_0px] data-active:shadow-foreground",
+        "data-active:rounded-sm data-active:bg-card data-active:text-foreground data-active:border-2 data-active:border-foreground data-active:shadow-[2px_2px_0px_0px] data-active:shadow-foreground",
         className
       )}
       {...props}

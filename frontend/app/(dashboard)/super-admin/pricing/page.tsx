@@ -264,7 +264,7 @@ export default function PricingPage() {
                     const cost = costIDR(rule.base_per_1k_idr, rule.price_unit ?? 'per_1k', rule.markup_multiplier, rule.markup_percent, mult)
                     const margin = cost - rule.provider_cost_per_1k_idr
                     return (
-                      <div key={m} className="border-2 border-foreground/20 p-3">
+                      <div key={m} className="border-2 rounded-md border-foreground/20 p-3">
                         <p className="text-xs font-black uppercase text-muted-foreground">{m}</p>
                         <p className="text-sm font-bold">×{mult}</p>
                         <p className="text-xs font-bold text-primary mt-1">1.000 = {formatIDR(cost)}</p>
@@ -282,7 +282,7 @@ export default function PricingPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg border-2 border-foreground">
+        <DialogContent className="sm:max-w-lg border-2 rounded-md border-foreground">
           <DialogHeader>
             <DialogTitle>{editing ? 'Ubah Aturan Harga' : 'Aturan Harga Baru'}</DialogTitle>
             <DialogDescription>
@@ -306,7 +306,7 @@ export default function PricingPage() {
                 <Label htmlFor="rule-unit">Satuan Harga Jual</Label>
                 <select
                   id="rule-unit"
-                  className="h-10 w-full border-2 border-foreground bg-background px-3 text-sm font-bold"
+                  className="h-10 w-full border-2 rounded-md border-foreground bg-background px-3 text-sm font-bold"
                   value={form.price_unit}
                   onChange={(e) => setForm((s) => ({ ...s, price_unit: e.target.value as 'per_1k' | 'per_10k' }))}
                 >
@@ -380,7 +380,7 @@ export default function PricingPage() {
               </div>
             </div>
 
-            <div className="border-2 border-foreground/20 p-3 bg-muted/40">
+            <div className="border-2 rounded-md border-foreground/20 p-3 bg-muted/40">
               <p className="text-xs font-black uppercase text-muted-foreground mb-2">Pratinjau biaya (1.000 token)</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm font-bold">
                 {PRICING_MODALITIES.map((m) => (

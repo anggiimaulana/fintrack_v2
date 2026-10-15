@@ -111,7 +111,7 @@ export function ProfileDetails() {
     return (
       <div className="space-y-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-10 bg-muted border-2 border-foreground animate-pulse" />
+          <div key={i} className="h-10 bg-muted border-2 rounded-md border-foreground animate-pulse" />
         ))}
       </div>
     );
@@ -145,7 +145,7 @@ export function ProfileDetails() {
             setIsDragging(false);
             submitAvatar(e.dataTransfer.files?.[0]);
           }}
-          className={`group relative w-20 h-20 shrink-0 border-2 border-foreground overflow-hidden flex items-center justify-center transition-all cursor-pointer ${
+          className={`group relative w-20 h-20 shrink-0 border-2 rounded-md border-foreground overflow-hidden flex items-center justify-center transition-all cursor-pointer ${
             isDragging ? "bg-primary/20 ring-4 ring-primary/30" : "bg-primary/10"
           }`}
         >
@@ -183,7 +183,7 @@ export function ProfileDetails() {
             value={fullName}
             onChange={(e) => setFormOverride((s) => ({ ...s, fullName: e.target.value }))}
             placeholder="Nama lengkap Anda"
-            className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+            className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           />
         </div>
 
@@ -197,7 +197,7 @@ export function ProfileDetails() {
             value={phone}
             onChange={(e) => setFormOverride((s) => ({ ...s, phone: e.target.value }))}
             placeholder="08xxxxxxxxxx"
-            className="w-full border-2 border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
+            className="w-full border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold focus:shadow-[2px_2px_0px_0px] focus:shadow-foreground focus:outline-none placeholder:text-muted-foreground/70"
           />
         </div>
       </div>
@@ -211,7 +211,7 @@ export function ProfileDetails() {
           type="email"
           value={email}
           disabled
-          className="w-full border-2 border-foreground bg-muted px-4 py-2.5 text-sm font-bold text-muted-foreground cursor-not-allowed"
+          className="w-full border-2 rounded-md border-foreground bg-muted px-4 py-2.5 text-sm font-bold text-muted-foreground cursor-not-allowed"
         />
         <p className="text-xs font-bold text-muted-foreground">Email tidak dapat diubah. Hubungi admin jika perlu perubahan.</p>
       </div>

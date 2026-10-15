@@ -18,7 +18,7 @@ export default function SuperAdminSubscriptionsPage() {
 
       {/* SubscriptionsView reads useSearchParams, so it needs a Suspense
           boundary for the route to stay statically prerenderable. */}
-      <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 border-foreground" />}>
+      <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
         <SubscriptionsView />
       </Suspense>
     </div>
