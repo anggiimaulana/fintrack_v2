@@ -80,6 +80,22 @@ func TestPaginated(t *testing.T) {
 	if resp.Meta.PerPage != 20 {
 		t.Errorf("Expected PerPage = 20, got %d", resp.Meta.PerPage)
 	}
+	// total_pages must be derived so clients never compute NaN (50 / 20 -> 3).
+	if resp.Meta.TotalPages != 3 {
+		t.Errorf("Expected TotalPages = 3, got %d", resp.Meta.TotalPages)
+	}
+}
+
+func TestPaginated_TotalPagesFloorsAtOne(t *testing.T) {
+	// An empty result set must still report "page 1 of 1", never 0 or NaN.
+	w := performRequest("GET", "/paginated", func(c *gin.Context) {
+		Paginated(c, "list", []string{}, 0, 1, 20)
+	})
+	var resp Response
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Meta == nil || resp.Meta.TotalPages != 1 {
+		t.Fatalf("expected TotalPages = 1 for an empty set, got %+v", resp.Meta)
+	}
 }
 
 func TestStatusCodes(t *testing.T) {

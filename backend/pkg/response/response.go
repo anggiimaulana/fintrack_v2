@@ -52,9 +52,10 @@ func sanitizeErrorCode(status int, errCode string) string {
 }
 
 type Meta struct {
-	Total   int `json:"total"`
-	Page    int `json:"page"`
-	PerPage int `json:"per_page"`
+	Total      int `json:"total"`
+	Page       int `json:"page"`
+	PerPage    int `json:"per_page"`
+	TotalPages int `json:"total_pages"`
 }
 
 type Response struct {
@@ -96,14 +97,26 @@ func Created(c *gin.Context, msg string, data interface{}) {
 }
 
 func Paginated(c *gin.Context, msg string, data interface{}, total, page, perPage int) {
+	// total_pages is derived here so every paginated endpoint returns it
+	// consistently. Omitting it made clients compute NaN (e.g. a pagination
+	// control rendering `undefined` as a page number) — a defensive floor of 1
+	// also keeps an empty result set at "page 1 of 1".
+	totalPages := 1
+	if perPage > 0 {
+		totalPages = (total + perPage - 1) / perPage
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Message: msg,
 		Data:    data,
 		Meta: &Meta{
-			Total:   total,
-			Page:    page,
-			PerPage: perPage,
+			Total:      total,
+			Page:       page,
+			PerPage:    perPage,
+			TotalPages: totalPages,
 		},
 	})
 }
