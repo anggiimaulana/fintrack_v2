@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-10-16 — Eksekusi Migrasi Database 0036 (Dual-Cycle Weekly & Monthly Quota) & Regenerasi Dump
+- **Konteks**: Permintaan user untuk menjalankan migrasi skema database terbaru (`0036_weekly_monthly_quota.sql`).
+- **Aksi**:
+  - Mengeksekusi `database/scripts/migrate.sh` untuk database utama `fintrack` dan database pengetesan `fintrack_test`.
+  - Mengaplikasikan skema baru:
+    - Kolom `subscriptions.weekly_anchor` (timestamptz) untuk anchor 7-hari rolling cycle.
+    - Kolom `metric_definitions.icon` dan `metric_definitions.display_order`.
+    - Tabel `plan_limit_cycles` dengan constraint validasi degraded mode (`hard_block`, `throttle`, `model_downgrade`) & trigger update.
+    - Tabel `usage_counters` untuk akumulasi rolling mingguan/bulanan & trigger update.
+    - Tabel `quota_notification_config` dengan constraint `UNIQUE NULLS NOT DISTINCT (plan_id)` & seeding default warning threshold 80%.
+    - Grant DML permissions ke role `fintrack_app`.
+  - Menjalankan `database/scripts/dump.sh` untuk regenerasi dump final `fintrack_v2.dump` dan `fintrack_v2.sql`.
+  - Verifikasi integritas tabel via `verify.sql` dan pengujian unit/integrasi Go backend (`go test ./...` 100% passed).
+
+---
+
 ## 2026-10-16 — Pengorganisasian & Pengarsipan second_brain (0_Inbox & 2_Projects)
 - **Konteks**: Permintaan user untuk merapikan `second_brain/0_Inbox` dan menyederhanakan `second_brain/2_Projects`:
   1. Memindahkan seluruh konten `0_Inbox/audit`, `0_Inbox/ide` (sisakan `.gitkeep`), dan `0_Inbox/brief_awal.md` ke folder arsip baru `second_brain/5_Archives/ide/`.
@@ -2057,3 +2073,291 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - **Backend**: `cd backend && go test ./...` -> 37 paket sukses lulus 100% (PASS).
   - **Frontend**: `cd frontend && pnpm test` -> 61 berkas uji, 422 pengujian (unit, DOM, a11y) lulus 100% (PASS).
   - **Next.js Production Build**: `cd frontend && pnpm build` -> 36 rute sukses terkompilasi bersih tanpa error TypeScript maupun prerender.
+
+## 2026-10-16 (Reports URL State & Realtime Caching) — Sinkronisasi URL Filter Waktu Berbahasa Inggris & Realtime Caching Laporan
+- **Konteks & Kebutuhan**:
+  - Halaman Laporan (`/user/reports`) pada tab ringkasan, kalender, budget, tren, kategori, dan spk sebelumnya tidak menyinkronkan parameter filter waktu (preset rentang tanggal seperti hari ini, minggu ini, bulan ini) ke URL browser seperti halnya pada halaman dashboard atau transactions.
+  - Transisi tab dan waktu terasa memicu fetch ulang lambat karena kurangnya prefetch, hilangnya sinkronisasi parameter URL berbahasa Inggris, serta ketiadaan pembaharuan realtime berbasis SSE saat mutasi transaksi berlangsung.
+- **Perubahan yang Diterapkan**:
+  1. **URL Parameter Sync Standar Bahasa Inggris**:
+     - `frontend/lib/report-tabs.ts`: Menambahkan parser dan serializer parameter URL filter waktu berbahasa Inggris (`preset`, `start`, `end`, `cmp`, `cs`, `ce`) via `parseReportFilterParams` dan `reportFilterToParams`.
+     - Menambahkan dukungan alias bahasa Inggris pada `parseTab` (`summary`, `category`, `trend`, `calendar`, `budget`, `spk`) dengan tetap menjaga kompatibilitas ID tab bawaan (`ringkasan`, `kategori`, `tren`, `kalender`, `budget`, `spk`).
+     - `frontend/app/(dashboard)/user/reports/page.tsx`: Mengintegrasikan `setDateFilter` dengan pembaruan URL `router.replace` + `history.replaceState` untuk memastikan parameter tersimpan di URL secara persist saat berpindah tab.
+  2. **Realtime Caching & Prefetching**:
+     - `frontend/hooks/useReports.ts`: Mengimplementasikan `useReportsRealtime` yang berlangganan event domain SSE (`usage_changed` pada mutasi transaksi, `quota_reset`, `stream_reconnected`) untuk melakukan surgical invalidation pada cache `reports.all`, `budgets.all`, `spk.all`, dan `dashboard.all`.
+     - `frontend/providers/realtime-provider.tsx`: Mendaftarkan `useReportsRealtime` di tingkat provider aplikasi.
+     - `frontend/hooks/useTransactions.ts`: Menambahkan invalidasi langsung `reports.all` dan `budgets.all` pada `invalidateTransactionViews`.
+     - `frontend/app/(dashboard)/user/reports/page.tsx`: Menghapus delay artifisial `useDebounce(dateFilter, 300)` pada tombol preset waktu dan menambahkan prefetch periode umum (`this_month`, `last_month`, `3months`, `this_year`, `today`, `this_week`) serta tab SPK dan Budget pada mount halaman, menghasilkan transisi tab dan waktu instan tanpa jeda loading.
+     - `frontend/hooks/useBudgets.ts`, `frontend/hooks/useSpk.ts`, `frontend/hooks/useSpkMetrics.ts`: Menambahkan `placeholderData: (prev) => prev` agar pergantian filter tidak menyebabkan kedipan skeleton.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test lib/report-tabs.test.ts` -> 12 tests passed.
+  - `pnpm --filter frontend test hooks/useReportsRealtime.dom.test.tsx` -> 3 tests passed.
+  - `pnpm --filter frontend test components/reports` -> 4 tests passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+  - `cd backend && go test ./...` -> 37 packages passed.
+
+## 2026-10-16 (UI Dark Mode Contrast & Profile Dropdown Polish) — Kontras Dark Mode Blue BG, Avatar Bulat, dan Dinamisasi Plan
+- **Konteks & Masalah**:
+  - Pada dark mode, komponen aktif dengan background biru (`bg-primary`) menampilkan teks dan ikon hitam karena `--primary-foreground` disetel ke `oklch(0.12 0.01 260)`.
+  - Hover item pada menu dropdown profil (`DropdownMenuItem`) menampilkan warna oranye mencolok karena `--accent` disetel ke `oklch(0.75 0.18 80)`.
+  - Avatar sidebar pengguna memiliki border kotak kaku (`border-2 rounded-md border-foreground`), bukan lingkaran bersih seperti pada header.
+  - Keterangan pengguna pada sidebar bawah dan header dropdown profil menampilkan teks statis role ("USER"), bukan nama paket langganan aktif pengguna ("PRO", "FREE").
+- **Perubahan yang Diterapkan**:
+  1. `frontend/app/globals.css`:
+     - Mengubah `--primary-foreground` pada `.dark` menjadi `oklch(0.98 0 0)` (putih) sehingga seluruh elemen/tombol/navigasi berlatar biru menghasilkan teks dan ikon putih bersih pada dark mode di semua halaman dan role.
+     - Mengubah `--accent` pada `:root` menjadi `oklch(0.94 0.01 260)` dan pada `.dark` menjadi `oklch(0.25 0.01 260)` sehingga hover item pada dropdown menu netral dan bersih (tidak lagi oranye).
+  2. `frontend/components/billing/SavedCardsCard.tsx`:
+     - Menyesuaikan style kartu default menggunakan `bg-primary/10` agar konsisten dengan brand token.
+  3. `frontend/components/layout/Sidebar.tsx`:
+     - Mengubah avatar menjadi `rounded-full` tanpa border kotak kaku baik saat collapsed maupun expanded.
+     - Mengintegrasikan `useEntitlements()` untuk mengganti keterangan role ("USER") menjadi nama plan aktif secara dinamis (`planName || planCode || "Free"`).
+  4. `frontend/components/admin/AdminSidebar.tsx` & `frontend/components/super-admin/SuperAdminSidebar.tsx`:
+     - Menyesuaikan avatar footer menjadi `rounded-full` konsisten.
+  5. `frontend/components/layout/ProfileMenu.tsx`:
+     - Mengintegrasikan `useEntitlements()` untuk menampilkan label plan dinamis menggantikan teks "USER".
+     - Menyempurnakan layout header dropdown (`w-60`, `min-w-0`, `truncate` dengan `max-w-[84px]`, `gap-2`) agar nama dan label plan tidak pernah turun ke baris kedua atau mepet, dengan ellipsis jika panjang.
+  6. `frontend/components/layout/Sidebar.dom.test.tsx` & `ProfileMenu.dom.test.tsx`:
+     - Menambahkan pengujian DOM unit untuk verifikasi render plan dinamis dan kelas styling aktif.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test` -> 63 file uji, 431 test passed (PASS).
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+  - `cd backend && go test ./...` -> 37 packages passed.
+
+## 2026-10-16 (Weekly & Monthly Dual-Cycle Quota Implementation) — Implementasi Sistem Kuota Dwi-Siklus (Mingguan + Bulanan) & Degraded Mode
+- **Konteks & Kebutuhan**:
+  - Membangun subsistem kuota dwi-siklus (mingguan + bulanan) dinamis terkonfigurasi per-fitur dan per-plan pada FinTrack v2.
+  - Memastikan siklus rolling 7 hari berpatokan pada timestamp subscription user (to the minute), penegakan batas `remaining = min(weekly, monthly)`, mekanisme lazy reset atomik tanpa cron, mode degraded (hard block, rate limiting/throttle, model AI downgrade), serta visibilitas lengkap di frontend dengan dual progress bar, countdown timer, dan SSE event sync.
+- **Perubahan yang Diterapkan**:
+  1. **Database & Migrasi**:
+     - `database/migrations/0036_weekly_monthly_quota.sql`: Tabel baru `plan_limit_cycles`, `usage_counters`, `quota_notification_config`, serta penambahan kolom `weekly_anchor` pada `subscriptions` dan `icon`, `display_order` pada `metric_definitions`.
+     - `database/scripts/migrate.sh` & `database/scripts/dump.sh`: Migrasi dieksekusi sukses dan dump DB `fintrack_v2.sql` + `fintrack_v2.dump` diregenerasi.
+  2. **Backend Domain & Repository**:
+     - `backend/internal/quota/domain.go`: Model data `PlanLimitCycle`, `UsageCounter`, `QuotaNotificationConfig`, `EvalResult`, serta antarmuka `CycleStore` dan `UsageCounterStore`.
+     - `backend/internal/quota/enforcer.go` & `enforcer_test.go`: Implementasi `DualCycleEnforcer` dengan penegakan `min(weekly, monthly)`, perhitungan window rolling 7 hari, mode degraded (`model_downgrade`, `throttle`, `hard_block`), dan verifikasi unit test komprehensif.
+     - `backend/internal/repository/postgres/quota_repo.go` & `quota_repo_test.go`: Implementasi Postgres query parameterized untuk `plan_limit_cycles`, `usage_counters` atomik (`INSERT ON CONFLICT DO NOTHING`, `UPDATE SET used = used + delta WHERE used + delta <= limit`), dan integrasi database test.
+     - `backend/internal/repository/postgres/billing_repo.go`: Penambahan implementasi `GetSubscriptionPeriod` memenuhi antarmuka `SubscriptionPeriodProvider`.
+  3. **Backend Middleware & API Handlers**:
+     - `backend/internal/delivery/http/middleware/entitlement.go`: Perluasan `WithinLimit` untuk mengevaluasi dual-cycle kuota, mengatur context `quota_degraded`, `quota_degraded_mode`, dan `quota_fallback_model`, serta respons 402 informatif dengan `reset_at`.
+     - `backend/internal/delivery/http/handler/ai_handler.go`: Otomatis mengalihkan model ke `domain.LLMFast` saat mode degraded `model_downgrade` aktif.
+     - `backend/internal/delivery/http/handler/quota_handler.go` & `quota_handler_test.go`: Endpoint admin `GET/PUT /api/v1/admin/plans/:id/cycles` dan user `GET /api/v1/me/quota`.
+     - `backend/internal/admin/cycles.go` & `admin/routes.go`: Pemasangan handler siklus admin di `/api/v1/admin/plans/:id/cycles`.
+     - `backend/cmd/server/main.go` & `delivery/http/router.go`: Wire-up dependensi `QuotaRepo`, `DualCycleEnforcer`, `QuotaHandler`, dan endpoint `/me/quota`.
+  4. **Kontrak Realtime SSE**:
+     - `backend/pkg/contracts/events.go`: Penambahan kontrak event domain `quota_degraded`, `quota_blocked`, dan `cycle_config_changed` beserta payload struct terkait.
+     - `frontend/lib/realtime-dispatcher.ts` & `realtime-dispatcher.test.ts`: Pemetaan query invalidation untuk `quota_degraded`, `quota_blocked`, `cycle_config_changed`, dan query key `queryKeys.quota.snapshot`.
+     - `frontend/lib/quota-toast-handler.ts`: Notifikasi toast interaktif (`sonner`) dengan deduplikasi 30 detik untuk degraded mode, blocking, dan quota reset.
+     - `frontend/hooks/use-realtime-stream.ts`: Integrasi pemanggilan `handleQuotaToast` saat menerima stream SSE event.
+  5. **Frontend UI Super Admin & User**:
+     - `frontend/hooks/usePlanCycles.ts`: Hook data fetching & mutating siklus kuota plan admin.
+     - `frontend/components/super-admin/plans/DegradedParamsForm.tsx`: Form dinamis input parameter mode degraded (rate limit window, fallback model, max degraded usage).
+     - `frontend/components/super-admin/plans/CycleConfigMatrix.tsx` & `CycleConfigMatrix.dom.test.tsx`: Matrix konfigurasi siklus per-metrik per-plan dengan tes DOM.
+     - `frontend/components/super-admin/plans/PlanFormDialog.tsx`: Integrasi tab/section "Siklus & Kuota Mingguan" pada dialog edit paket.
+     - `frontend/hooks/use-quota.ts`: Hook data fetching kuota aktif user `/me/quota`.
+     - `frontend/components/billing/QuotaStatusBadge.tsx`: Badge visual status kuota (`Normal`, `Peringatan`, `Dibatasi`, `Model Diturunkan`, `Terblokir`).
+     - `frontend/components/billing/QuotaCountdown.tsx` & `QuotaCountdown.dom.test.tsx`: Komponen countdown timer dwi-siklus (mingguan & bulanan) dengan tes DOM.
+     - `frontend/components/billing/DualQuotaBar.tsx` & `DualQuotaCard.tsx` & `DualQuotaCard.dom.test.tsx`: Kartu ringkasan kuota dengan dual progress bar (mingguan & bulanan), sisa efektif, dan tes DOM.
+     - `frontend/app/(dashboard)/user/usage/page.tsx`: Penggantian kartu kuota menjadi `DualQuotaCard`.
+  6. **Dokumentasi & Spesifikasi**:
+     - Pembaruan dokumen `second_brain/0_Inbox/ide/weekly-monthly-quota-spec/06-implementation-testing-plan.md` dengan penandaan `[X]` pada seluruh kriteria penerimaan.
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go test ./...` -> 38 paket lulus 100% (PASS).
+  - `cd frontend && pnpm test` -> 66 file uji, 440 pengujian lulus 100% (PASS).
+  - `cd frontend && pnpm build` -> 36 static & dynamic pages sukses dikompilasi (PASS).
+
+## 2026-10-16 (Sidebar Visual Polish) — Penghapusan Scrollbar Indikator & Penyelarasan Icon FinTrack Super Admin & Admin
+- **Konteks & Masalah**:
+  - Sidebar Super Admin dan Admin menampilkan indikator scrollbar bawaan OS (panah dan bar abu-abu) yang mengganggu estetika neo-brutalist.
+  - Icon brand FinTrack di header Super Admin menggunakan `ShieldCheck`, berbeda dengan icon brand `Wallet` di User dan Admin.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/app/globals.css`:
+     - Menambahkan utility `.no-scrollbar` (cross-browser: webkit, Firefox `scrollbar-width: none`, IE/Edge `-ms-overflow-style: none`) untuk menyembunyikan visual scrollbar tanpa mematikan fungsionalitas scroll.
+  2. `frontend/components/super-admin/SuperAdminSidebar.tsx`:
+     - Mengganti icon brand `ShieldCheck` dengan `Wallet` konsisten dengan User dan Admin.
+     - Menerapkan class `no-scrollbar` pada elemen `<nav>`.
+  3. `frontend/components/admin/AdminSidebar.tsx` & `frontend/components/layout/Sidebar.tsx`:
+     - Menerapkan class `no-scrollbar` pada elemen `<nav>` sehingga scrollbar tidak muncul di seluruh role sidebar.
+  4. `frontend/components/super-admin/SuperAdminSidebar.dom.test.tsx`:
+     - Menambahkan unit test verifikasi icon `Wallet` dan class `no-scrollbar`.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test Sidebar` -> 2 suite, 3 test passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+
+## 2026-10-16 (Super Admin Plans Modal Expansion) — Perluasan Dimensi Modal Create & Edit Paket Langganan
+- **Konteks & Masalah**:
+  - Modal Create dan Edit Paket di `/super-admin/plans` terbatasi secara tidak sengaja oleh breakpoint bawaan `sm:max-w-sm` (384px) pada `DialogContent`, menyebabkan input terpotong, sempit, dan memunculkan horizontal scrollbar serta vertical scrollbar berlebih.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/components/super-admin/plans/PlanFormDialog.tsx`:
+     - Mengganti class `DialogContent` menjadi `w-[95vw] sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-6 sm:p-8` sehingga modal melebar leluasa hingga breakpoint `xl` (1152px) dan mengabaikan batas sempit `sm:max-w-sm`.
+     - Menyusun ulang grid: Harga Bulanan, Harga Tahunan, dan Periode (Hari) rapi dalam 3 kolom (`sm:grid-cols-3`).
+     - Mengelompokkan Fallback Gateway, Urutan Tampilan, dan Rasio Kuota Token secara simetris dalam 3 kolom (`sm:grid-cols-3`).
+     - Menata editor Hak Akses Fitur (Entitlements) dan Batas Penggunaan (Limits) berdampingan dalam grid 2 kolom (`grid-cols-1 lg:grid-cols-2 gap-6`), menghemat ketinggian vertikal dan meminimalkan kebutuhan scrolling.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test components/super-admin/plans` -> 1 test suite, 3 test passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+
+## 2026-10-16 (PlanFormDialog UI Polish & Component Upgrade) — Textarea Deskripsi, Checklist Hak Akses Siap Pakai, Dropdown Metrik, & Pembersihan Label
+- **Konteks & Masalah**:
+  - Input deskripsi paket sebelumnya menggunakan `Input` text biasa 1 baris yang sempit dan terpotong.
+  - Hak akses fitur (entitlements) dan batasan numerik (limits) mengharuskan operator mengetik kunci manual (raw string input) yang rentan typo dan tidak selaras dengan katalog sistem.
+  - Label pengaturan masih menampilkan teks teknis raw/snake_case seperti `(sort_order)`, `(is_active)`, `(is_public)`. Fallback gateway input text bebas tanpa opsi dropdown.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/components/ui/textarea.tsx`:
+     - Membuat komponen reusable `Textarea` neo-brutalist berstandardisasi dengan outline, border, dan focus shadow konsisten.
+  2. `frontend/components/super-admin/plans/PlanFormDialog.tsx`:
+     - Kolom deskripsi paket diganti menggunakan `Textarea` 3 baris.
+     - Hak akses fitur dirombak menjadi checklist siap pakai (`DEFAULT_SYSTEM_FEATURES` + katalog server) menggunakan `Switch` lengkap dengan label bahasa Indonesia yang ramah pengguna dan keterangan fungsi, serta opsi input manual untuk fitur kustom.
+     - Batas penggunaan (limits) dirombak menggunakan dropdown pilihan metrik siap sedia (`DEFAULT_SYSTEM_METRICS` + katalog server) beserta tombol cepat `Unlimited` (-1) dan satuan metrik (token, transaksi, request, scan, dsb).
+     - Fallback gateway diubah menjadi dropdown `Select` dengan opsi siap pakai: `midtrans`, `manual`, `xendit`.
+     - Seluruh label teknis dibersihkan dari snake_case menjadi label Indonesia bersih: `Urutan Tampilan`, `Rasio Kuota Token`, `Status Aktif`, dan `Tampilkan ke Publik`.
+     - Kontainer modal menggunakan style popup neo-brutalist konsisten (`border-2 border-foreground shadow-[6px_6px_0px_0px] shadow-foreground rounded-lg bg-card no-scrollbar`).
+  3. `frontend/components/shared/ConfirmActionModal.tsx`:
+     - Menambahkan varian aksi `activate` untuk mendukung aktivasi provider/entitas dengan ikon `CheckCircle` dan tombol emerald.
+  4. `frontend/components/super-admin/payments/PaymentHistoryTable.tsx`:
+     - Memperbaiki pengamanan null check `meta?.total`.
+  5. `frontend/components/super-admin/plans/PlanFormDialog.dom.test.tsx`:
+     - Menambahkan pengujian DOM menyeluruh untuk verifikasi render `textarea`, label bersih, checklist switch fitur, dan payload submit.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test components/super-admin/plans` -> 2 suite, 6 test passed.
+  - `pnpm --filter frontend test` -> 69 suite, 453 test passed (PASS).
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+  - `cd backend && go test ./...` -> 38 packages passed.
+
+## 2026-10-16 (Admin & Super Admin Parity Spec — Audit & Pemenuhan Fase 1: Shell & Header) — Audit & Implementasi Lengkap Paritas Shell & Header
+- **Konteks & Sasaran**:
+  - Meninjau secara berurutan dan mendalam spesifikasi `01-arsitektur-shell-header.md`, `06-implementation-plan.md` (Fase 1), dan `07-testing-matrix-qa.md` (Level L1 & L2).
+  - Memverifikasi apakah seluruh komponen antarmuka, kontrak props, rute layout, storage key, dan matriks pengujian telah diimplementasikan 100% atau masih ada celah (*parity gap*).
+- **Temuan Kesenjangan (Gaps) yang Diidentifikasi & Segera Diimplementasikan**:
+  1. **Unifikasi Shell Menyeluruh pada Seluruh Role**:
+     - `frontend/components/layout/DashboardShell.tsx`: Diperbarui untuk mendukung prop `role?: "user" | "admin" | "super_admin"` dan `bottomNav?: React.ReactNode` dengan perhitungan offset padding bawah yang aman untuk safe-area perangkat mobile.
+     - `frontend/app/(dashboard)/user/layout.tsx`: Dimigrasikan dari wrapper `div` mentah terduplikasi menjadi konsumsi resmi `<DashboardShell sidebar={<Sidebar />} bottomNav={<MobileBottomNav />} role="user">`, menyatukan hierarki shell di seluruh modul `user`, `admin`, dan `super-admin`.
+  2. **Penyediaan Berkas Komponen `DashboardHeader.tsx`**:
+     - `frontend/components/layout/DashboardHeader.tsx`: Dibuat secara modular sebagai re-export kanonik dari `Header`, dan mengekspor `DashboardHeader` alias pada `Header.tsx` sesuai spesifikasi dokumen.
+     - `frontend/components/layout/Header.tsx`: Ditambahkan fallback breadcrumb rute kategori `/admin/categories` -> `"Kategori Transaksi"`.
+  3. **Kepatuhan Kunci LocalStorage Sidebar Collapse**:
+     - `frontend/hooks/use-sidebar-collapsed.ts`: Diselaraskan untuk mendukung kunci penyimpanan primer spesifikasi `fintrack_sidebar_collapsed` (`true`/`false`) sekaligus tetap backward-compatible dengan `fintrack.sidebar.collapsed` (`1`/`0`).
+  4. **Pengkayaan Katalog Pencarian & Kontrak Metadata**:
+     - `frontend/lib/search-catalog.ts`: Menambahkan properti resmi `iconName?: string` dan `actionId?: string` pada `SearchEntry`. Melengkapi seluruh kata kunci pencarian sesuai Matriks Indeks Menu Admin & Super Admin Tabel 4.2 (`transaksi`, `daftar pengguna`, `pos biaya`, `dividen`, `omset`, `alokasi`, `anthropic`, `saldo token`, `langganan aktif`, `mutasi`, `katalog paket`, `diff json`, `endpoint ai`, `payment gateway`).
+  5. **Pemenuhan Matriks Pengujian QA (L1 & L2)**:
+     - `frontend/components/layout/DashboardHeader.dom.test.tsx`: Dibuat pengujian DOM interaksi lengkap (L2) untuk verifikasi render judul halaman, breadcrumb bersarang admin & super admin, desktop toggle sidebar, tombol pencarian `Ctrl+K`, dan audit aksesibilitas `axe`.
+     - `frontend/lib/search-catalog.test.ts`: Ditambahkan suite pengujian penyaringan berbasis peran (RBAC) (L1) untuk memastikan modul eksklusif admin/super admin tidak bocor ke role user.
+     - `frontend/components/layout/SearchCommand.dom.test.tsx`: Ditambahkan pengujian DOM eksklusi RBAC ketika pengguna biasa melakukan pencarian.
+     - `frontend/components/layout/DashboardShell.dom.test.tsx`: Ditambahkan pengujian render `role="user"` dan `bottomNav`.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test components/layout lib/search-catalog.test.ts` -> 8 test suite, 44 pengujian lulus 100% (PASS).
+  - `cd frontend && pnpm build` -> 36 halaman statis & dinamis Next.js sukses terkompilasi (PASS).
+  - `cd backend && go test ./...` -> 38 paket Go lulus 100% (PASS).
+
+
+## 2026-10-16 (AI Receipt Image Persistence, ChatMessage src Guard & Reasoning Model Route Alignment) — Penyimpanan Gambar Struk ke Object Storage & Optimasi AI Gateway
+- **Konteks & Masalah**:
+  - Upload struk di AI Chat (`/user/ai`) sebelumnya menyimpan `blob:http://localhost:3001/...` lokal ke database (`chat_messages`). Saat halaman di-refresh atau sesi dibuka ulang, blob URL browser menjadi invalid/mati, menghasilkan UI gambar rusak dan memicu warning React di console: `An empty string ("") was passed to the src attribute`.
+  - Analisis struk terasa lambat dan rute reasoning lambat/gagal (OpenRouter DeepSeek-R1 kehabisan kuota 402 di upstream), sedangkan rute vision dan reasoning belum terarah optimal ke upstream model yang responsif.
+- **Perubahan yang Diterapkan**:
+  1. **Receipt Image Storage**:
+     - `backend/internal/storage/storage.go`: Menambahkan key builder `ReceiptKey(filename string)`.
+     - `backend/internal/delivery/http/handler/ai_handler.go`:
+       - Menginjeksi `WithStorage` ke `AIHandler`.
+       - Pada endpoint `AnalyzeReceipt`, gambar yang diunggah disimpan ke driver storage aktif (`storage.Put(..., ReceiptKey(uuid + ext))`), lalu mengembalikan path publik `image_url: "/api/v1/receipts/" + filename`.
+       - Menambahkan endpoint handler publik `ServeReceipt` (`GET /api/v1/receipts/:file`) dengan header cache dan serving inline.
+     - `backend/internal/delivery/http/router.go`: Registrasi rute `r.GET("/api/v1/receipts/:file", aiH.ServeReceipt)`.
+  2. **Frontend Chat Image Rendering & Message Persistence**:
+     - `frontend/components/ai/ChatMessage.tsx`: Menambahkan guard `if (!src) return null;` pada komponen kustom `img` di ReactMarkdown, mengeliminasi error `An empty string ("") was passed to the src attribute`.
+     - `frontend/components/ai/ChatWindow.tsx`: Menggunakan `result.image_url` permanen dari backend untuk menggantikan temporary blob URL saat mencatat pesan riwayat struk ke server (`api.post(/ai/sessions/:id/messages)`).
+     - `frontend/components/ai/InlineAiAssistant.tsx`: Sinkronisasi penyimpanan pesan struk menggunakan `image_url` permanen.
+  3. **Routing Model AI Reasoning**:
+     - `database`: Mengubah rute AI `reasoning` pada tabel `ai_routes` dari `deepseek-r1` (upstream OpenRouter 402 exhausted) ke `gemini/gemini-3.5-flash` yang terbukti 200 OK dan responsif di gateway 9router.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test ChatMessage` -> 7 passed.
+  - `cd backend && go test ./...` -> 38 paket passed (PASS 100%).
+  - Database chat messages dibersihkan dari blob URL lama yang rusak.
+  - Query `ai_routes` untuk reasoning terverifikasi aktif.
+  - 9router model endpoints chat, reasoning, dan vision terverifikasi 200 OK.
+
+## 2026-10-16 (NumberInput Formatting & Subscription Quota/Cycle Details Sync) — Input Angka Ribuan Otomatis & Penyelarasan Rincian Siklus Kuota di Langganan User
+- **Konteks & Masalah**:
+  - Input batasan penggunaan (limits) pada modal paket (`/super-admin/plans`) dan batas mingguan pada matriks siklus kuota masih berupa input angka mentah tanpa pemisah ribuan (`50000`, `100000`, `250000`), menyulitkan pembacaan nilai besar.
+  - Konfigurasi siklus kuota dwi-siklus (mingguan vs bulanan, model AI fallback, batas mingguan) yang diinisiasi super admin belum terpapar secara detail dan komprehensif pada halaman langganan pengguna (`/user/subscription`).
+- **Perubahan yang Diterapkan**:
+  1. **Komponen NumberInput Berpemisah Ribuan**:
+     - `frontend/components/shared/NumberInput.tsx`: Implementasi input angka terstandardisasi dengan formatting titik pemisah ribuan otomatis ala Indonesia (`formatNumberWithDots`), dukungan angka negatif (`-1` untuk tak terbatas), prefix/suffix, dan sanitasi integer.
+     - `frontend/components/shared/NumberInput.dom.test.tsx`: Pengujian DOM format ribuan, pengetikan dinamis, dan dukungan angka negatif.
+  2. **Integrasi NumberInput di Plan Editor Super Admin**:
+     - `frontend/components/super-admin/plans/PlanFormDialog.tsx`: Menerapkan `NumberInput` pada input batas kuota metrik, durasi periode (hari), urutan tampilan, dan rasio kuota token. Nilai seperti `50000` otomatis tampil `50.000`, `250000` tampil `250.000`.
+     - `frontend/components/super-admin/plans/CycleConfigMatrix.tsx`: Menerapkan `NumberInput` pada input `Batas/Minggu` (`100000` -> `100.000`).
+     - `frontend/components/super-admin/plans/DegradedParamsForm.tsx`: Menerapkan `NumberInput` pada input `max_degraded_usage`, `throttle_rate_amount`, dan `throttle_rate_window_secs`.
+  3. **Penyelarasan Siklus Kuota Backend ke Public Catalog**:
+     - `backend/internal/payment/catalog.go`: Menambahkan `PlanCycleSource` pada `CatalogService` (`WithCycles`) dan field `Cycles map[string]quota.PlanLimitCycle` pada `PublicPlan`, sehingga `GET /api/v1/plans` menyertakan detail siklus per-metrik.
+     - `backend/cmd/server/main.go`: Menghubungkan `quotaRepo` ke `payCatalog.WithCycles(quotaRepo)`.
+     - `frontend/hooks/use-billing.ts`: Memperbarui `PublicPlan` dengan field opsional `cycles?: Record<string, PlanLimitCycle>`.
+  4. **Penyajian Rincian Kuota & Siklus di Halaman Subscription User**:
+     - `frontend/app/(dashboard)/user/subscription/page.tsx`:
+       - Memperkaya kartu ringkasan "Paket Anda" dengan seksi komprehensif "Konfigurasi Kuota & Siklus Reset".
+       - Setiap metrik menampilkan kuota maksimal per bulan, tipe reset (per bulan vs per minggu rolling 7 hari), batas mingguan, perilaku saat kuota mingguan habis (turunkan ke model AI fallback hemat, batasi kecepatan, atau blokir sementara), dan tautan ke halaman riwayat pemakaian realtime (`/user/usage`).
+     - `frontend/components/billing/PlanCard.tsx`:
+       - Memperbarui daftar kuota di setiap kartu paket pada tab "Paket" untuk menampilkan kuota bulanan, jenis siklus reset (mingguan vs bulanan), batas mingguan, serta kebijakan fallback degraded mode.
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go test ./...` -> 38 paket lulus 100% (PASS).
+  - `cd frontend && pnpm vitest run --poolOptions.threads.singleThread` -> 70 file uji, 458 pengujian lulus 100% (PASS).
+  - `cd frontend && pnpm build` -> 36 static & dynamic pages sukses terkompilasi bersih tanpa error TypeScript.
+
+## 2026-10-16 (CycleConfigMatrix Default Validation & Dynamic Plan Cycles Propagation) — Perbaikan Payload Siklus Mingguan & Restart Backend Service
+- **Konteks & Masalah**:
+  - Pengubahan siklus kuota menjadi "Mingguan + Bulanan" pada paket Pro (contohnya "Pindai struk / siklus") sebelumnya tetap terbaca sebagai "Reset Bulanan" di `/user/subscription`.
+  - Penyebab 1: Backend process `main.exe` sebelumnya masih menjalankan binary lama sebelum wire-up `payCatalog.WithCycles(quotaRepo)`.
+  - Penyebab 2: Saat operator mengubah opsi ke `weekly_monthly` di `CycleConfigMatrix`, state `weekly_limit` dan `degraded_mode` belum terisi default (> 0 dan valid degraded mode), sehingga validasi backend HTTP 400 menolak payload cycles diam-diam.
+  - Penyebab 3: Query cache `queryKeys.billing.plans` belum di-invalidasi saat mutasi siklus plan berhasil.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/components/super-admin/plans/CycleConfigMatrix.tsx`:
+     - Menginjeksi nilai default yang valid seketika saat `cycle_type` dialihkan ke `weekly_monthly`: `weekly_limit` otomatis diisi (default 50.000 untuk token, 25 untuk scan, 500 untuk lainnya), `degraded_mode` ("model_downgrade" untuk token AI, "hard_block" untuk lainnya), dan `fallback_model`.
+  2. `frontend/components/super-admin/plans/PlanFormDialog.tsx`:
+     - Menambahkan sanitasi payload sebelum `saveCycles(cycles)` untuk menjamin nilai `weekly_limit` > 0 dan `degraded_mode` selalu terisi lengkap.
+  3. `frontend/hooks/usePlanCycles.ts`:
+     - Menambahkan invalidasi `queryKeys.billing.plans` pada `onSuccess`.
+  4. `frontend/components/billing/PlanCard.tsx` & `frontend/app/(dashboard)/user/subscription/page.tsx`:
+     - Evaluasi `isWeekly` dinamis menggunakan `cycle?.cycle_type === 'weekly_monthly' || (typeof cycle?.weekly_limit === 'number' && cycle.weekly_limit > 0)`.
+     - Menambahkan fallback siklus dari `currentPlan?.cycles?.[key]` jika user melihat paket aktifnya.
+  5. **Restart Service Backend**:
+     - Menghentikan proses `main.exe` lama dan menjalankan server backend terbaru pada port 8081 yang terhubung penuh dengan `WithCycles`.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test` -> 70 test file, 458 passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled cleanly.
+  - `cd backend && go test ./...` -> 38 packages passed.
+
+## 2026-10-16 (Anonymization of Fallback AI Model on User Interfaces) — Pengabstraksian Nama Model Fallback Menjadi "Mode Hemat"
+- **Konteks & Permintaan**:
+  - Teks user-facing pada kartu paket dan halaman langganan sebelumnya menampilkan nama teknis model AI fallback (`gpt-4o-mini`, dll.), contohnya: *"Saat mingguan habis: turun ke model gpt-4o-mini"*.
+  - Nama internal model tidak boleh diekspos kepada pengguna akhir di seluruh antarmuka aplikasi.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/components/billing/PlanCard.tsx`:
+     - Mengubah teks fallback degraded mode menjadi *"Saat mingguan habis: dialihkan ke mode hemat"* tanpa menyebutkan nama spesifik model.
+  2. `frontend/app/(dashboard)/user/subscription/page.tsx`:
+     - Mengubah teks rincian siklus menjadi *"Jika mingguan habis: dialihkan ke mode hemat"*.
+  3. `frontend/components/billing/QuotaStatusBadge.tsx`:
+     - Mengubah label badge status kuota `degraded_downgrade` dari *"Model Diturunkan"* menjadi *"Mode Hemat"*.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test PlanCard.dom.test.tsx DualQuotaCard.dom.test.tsx` -> 2 suite, 7 passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled cleanly (PASS).
+  - `cd backend && go test ./...` -> 38 packages passed (PASS).
+
+## 2026-10-16 (Live Rolling Weekly Quota Usage Synchronization) — Sinkronisasi Konsumsi Kuota Mingguan Realtime & Pewarisan Konsumsi Minggu Awal
+- **Konteks & Masalah**:
+  - Pada `/user/usage`, pemakaian kuota mingguan (misal Kuota AI dan Pindai Struk) masih menampilkan `0 / 100.000 (0%)` dan `0 / 25 (0%)` meskipun pemakaian bulanan sudah berjalan (`59.394 / 500.000` dan `3 / 100`).
+  - Pada minggu pertama langganan (baru berjalan beberapa hari), seluruh konsumsi yang terjadi sejak siklus dimulai berada di dalam rentang minggu berjalan (`wStart == subscription.current_period_start`), sehingga pemakaian mingguan seharusnya sama dengan pemakaian bulanan yang telah dilakukan.
+  - Penyebab: Tabel `usage_counters` sebelumnya hanya mengandalkan inisialisasi default 0 tanpa mengagregasi ground truth penggunaan dari tabel `token_ledger`, `transactions`, dan `voice_requests` untuk jendela waktu mingguan `[wStart, wEnd)`.
+- **Perubahan yang Diterapkan**:
+  1. **Backend Real-Time Window Counter (`backend/internal/repository/postgres/quota_repo.go`)**:
+     - `GetSubscriptionWeeklyAnchor`: Menambahkan fallback `COALESCE(weekly_anchor, current_period_start)` agar timestamp awal rolling 7 hari otomatis menggunakan awal periode saat kolom anchor belum diisi manual.
+     - `CountUsageInWindow`: Menghitung konsumsi aktual per metrik (`ai_tokens_per_cycle`, `ocr_scans_per_cycle`, `ai_requests_per_cycle`, `max_transactions`, `voice_requests_per_day`) pada jendela `[start, end)` langsung dari data tabel `token_ledger`, `token_periods`, `transactions`, dan `voice_requests`.
+     - `GetOrCreateCounter`: Secara otomatis meng-update nilai `used` pada baris `usage_counters` jika hasil agregasi aktual lebih besar dari counter tersimpan.
+  2. **Endpoint Quota Snapshot (`backend/internal/delivery/http/handler/quota_handler.go`)**:
+     - Pada `GetUserQuotaSnapshot` (`GET /api/v1/me/quota`), secara proaktif memastikan counter mingguan untuk setiap konfigurasi siklus `weekly_monthly` diinisiasi dan di-sync dengan `GetOrCreateCounter` sebelum mengembalikan snapshot ke frontend.
+  3. **Dual Cycle Enforcer (`backend/internal/quota/enforcer.go`)**:
+     - Pada `Evaluate`, jika jendela mingguan dimulai pada atau sebelum awal periode langganan bulanan (`wStart <= p.MonthlyPeriodStart`), `weeklyUsed` dipastikan bernilai minimal sebesar `p.CurrentMonthlyUsage`.
+  4. **Frontend Fail-Safe Synchronization (`frontend/components/billing/DualQuotaCard.tsx`)**:
+     - Jika langganan baru berjalan kurang dari 7 hari sejak `entitlements.period.start`, konsumsi mingguan otomatis mencerminkan pemakaian periode berjalan (`Math.max(weeklyUsed, monthlyUsed)`), menjamin tampilan antarmuka selalu konsisten dan akurat.
+     - `DualQuotaCard.dom.test.tsx`: Penambahan pengujian unit DOM untuk skenario pewarisan pemakaian minggu awal.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend test DualQuotaCard.dom.test.tsx` -> 3 passed.
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
+  - `cd backend && go test ./...` -> 38 packages passed.
+  - Backend binary `server.exe` di-compile dan dijalankan ulang di port 8081.
