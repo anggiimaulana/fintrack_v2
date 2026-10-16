@@ -40,6 +40,9 @@ const (
 	EventUserCreated       = "user_created"
 	EventRoleUpdated       = "role_updated"
 	EventTokensAdjusted    = "tokens_adjusted"
+	EventQuotaDegraded     = "quota_degraded"
+	EventQuotaBlocked      = "quota_blocked"
+	EventCycleConfigChanged = "cycle_config_changed"
 )
 
 // Event is the envelope every domain event shares. Field order and names are
@@ -155,6 +158,30 @@ type UsageChangedPayload struct {
 	// Reason is a short, human-readable origin tag for observability
 	// (e.g. "transaction_created", "ai_chat").
 	Reason string `json:"reason,omitempty"`
+}
+
+// QuotaDegradedPayload accompanies EventQuotaDegraded.
+type QuotaDegradedPayload struct {
+	LimitKey      string `json:"limit_key"`
+	DegradedMode  string `json:"degraded_mode"`
+	FallbackModel string `json:"fallback_model,omitempty"`
+	WeeklyResetAt string `json:"weekly_reset_at"`
+	Message       string `json:"message"`
+}
+
+// QuotaBlockedPayload accompanies EventQuotaBlocked.
+type QuotaBlockedPayload struct {
+	LimitKey       string `json:"limit_key"`
+	BlockReason    string `json:"block_reason"`
+	MonthlyResetAt string `json:"monthly_reset_at"`
+	Message        string `json:"message"`
+}
+
+// CycleConfigChangedPayload accompanies EventCycleConfigChanged.
+type CycleConfigChangedPayload struct {
+	PlanID      string   `json:"plan_id"`
+	PlanCode    string   `json:"plan_code"`
+	ChangedKeys []string `json:"changed_keys"`
 }
 
 // NotificationChangedPayload accompanies the notification-inbox lifecycle events

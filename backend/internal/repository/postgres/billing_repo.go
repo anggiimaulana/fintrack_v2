@@ -132,6 +132,31 @@ func (r *BillingRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (*billi
 	return s, nil
 }
 
+// GetSubscriptionPeriod implements middleware.SubscriptionPeriodProvider.
+func (r *BillingRepo) GetSubscriptionPeriod(ctx context.Context, userID uuid.UUID) (start, end time.Time, weeklyAnchor *time.Time, err error) {
+	var pStart time.Time
+	var pEnd *time.Time
+	var wAnchor *time.Time
+	err = q(ctx, r.pool).QueryRow(ctx, `
+		SELECT current_period_start, current_period_end, weekly_anchor
+		FROM subscriptions
+		WHERE user_id = $1
+	`, userID).Scan(&pStart, &pEnd, &wAnchor)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			now := time.Now().UTC()
+			return now, now.Add(30 * 24 * time.Hour), nil, nil
+		}
+		return time.Time{}, time.Time{}, nil, err
+	}
+	if pEnd != nil {
+		end = *pEnd
+	} else {
+		end = pStart.Add(30 * 24 * time.Hour)
+	}
+	return pStart, end, wAnchor, nil
+}
+
 func (r *BillingRepo) Create(ctx context.Context, s *billing.Subscription) error {
 	if s.ID == uuid.Nil {
 		s.ID = uuid.New()

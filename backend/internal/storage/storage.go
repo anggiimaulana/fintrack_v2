@@ -75,6 +75,11 @@ func AvatarKey(filename string) string {
 	return "avatars/" + sanitizeSegment(filename)
 }
 
+// ReceiptKey builds the canonical object key for an uploaded receipt image.
+func ReceiptKey(filename string) string {
+	return "receipts/" + sanitizeSegment(filename)
+}
+
 // sanitizeSegment strips path separators and traversal sequences from a single
 // key segment so a hostile id cannot escape the store prefix. A file extension
 // (the part after the final dot) is preserved so serving can infer the type.

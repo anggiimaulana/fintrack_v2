@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/billing"
+	"github.com/fintrack/backend/internal/quota"
 )
 
 // LimitMeta is display metadata for a plan limit key: its human label, unit,
@@ -24,6 +25,7 @@ type LimitMeta struct {
 type CatalogService struct {
 	plans     billing.PlanRepository
 	entSource PlanEntitlementSource
+	cycleSource PlanCycleSource
 	// limitMeta maps a limit key to its display metadata. Sourced from the
 	// authoritative entitlement catalog so the UI can label limits and hide the
 	// ones the backend does not enforce.
@@ -31,6 +33,11 @@ type CatalogService struct {
 	// tax computes the same tax the checkout will charge, so the UI can show the
 	// real total *before* an invoice is issued (no price surprise on checkout).
 	tax *TaxCalculator
+}
+
+// PlanCycleSource reads a plan's cycle configurations.
+type PlanCycleSource interface {
+	GetPlanCycles(ctx context.Context, planID uuid.UUID) ([]quota.PlanLimitCycle, error)
 }
 
 // PlanEntitlementSource reads a plan's features and limits.
@@ -50,6 +57,12 @@ func NewCatalogService(plans billing.PlanRepository, entSource PlanEntitlementSo
 	return &CatalogService{plans: plans, entSource: entSource, limitMeta: m, tax: tax}
 }
 
+// WithCycles attaches the plan cycle configuration source.
+func (s *CatalogService) WithCycles(cs PlanCycleSource) *CatalogService {
+	s.cycleSource = cs
+	return s
+}
+
 // PublicPlan is a plan plus its features/limits, shaped for the pricing UI.
 type PublicPlan struct {
 	Code              string           `json:"code"`
@@ -66,7 +79,8 @@ type PublicPlan struct {
 	// LimitMeta annotates each limit key with label/unit/enforced so the UI can
 	// present only the limits the backend actually enforces.
 	LimitMeta map[string]LimitMeta `json:"limit_meta,omitempty"`
-	// TaxEnabled is true when the operator has switched PPN on. The UI hides the
+	// Cycles holds cycle configurations (e.g. weekly/monthly, degraded mode) for limits.
+	Cycles map[string]quota.PlanLimitCycle `json:"cycles,omitempty"`
 	// tax line entirely when false, rather than showing "+ 0%".
 	TaxEnabled bool `json:"tax_enabled"`
 	// TaxLabel is the display name for the tax (e.g. "PPN").
@@ -120,7 +134,14 @@ func (s *CatalogService) ListPublicPlans(ctx context.Context) ([]*PublicPlan, er
 				pp.LimitMeta[key] = lm
 			}
 		}
-		// Show the tax-inclusive total the checkout will charge, so the price on
+		if s.cycleSource != nil {
+			if cycles, cerr := s.cycleSource.GetPlanCycles(ctx, p.ID); cerr == nil && len(cycles) > 0 {
+				pp.Cycles = make(map[string]quota.PlanLimitCycle, len(cycles))
+				for _, c := range cycles {
+					pp.Cycles[c.LimitKey] = c
+				}
+			}
+		}
 		// the card matches the invoice exactly. When tax is disabled the rate is
 		// 0 and the total equals the subtotal, so the UI hides the tax line.
 		if s.tax != nil {
