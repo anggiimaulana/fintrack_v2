@@ -2,7 +2,7 @@
 # FinTrack v2 — local stack (Docker Compose)
 #   db        PostgreSQL 17 + pgvector      (5435 -> 5432)
 #   redis     Redis 7 (cache + pub/sub)     (6379 -> 6379)
-#   backend   Go API                        (8080 -> 8080)
+#   backend   Go API                        (8081 -> 8081)
 #   frontend  Next.js                       (3001 -> 3000)
 # ============================================================
 services:
@@ -49,18 +49,18 @@ services:
     environment:
       DATABASE_URL: postgres://fintrack_app:${APP_DB_PASSWORD}@db:5432/fintrack
       REDIS_URL: redis://redis:6379/0
-      PORT: "8080"
+      PORT: "8081"
       CORS_ORIGIN: http://localhost:3001
       # Relaxed login limit so the k6 load profile can exercise the auth flow.
       RATE_LIMIT_LOGIN: "100000"
       RATE_LIMIT_DEFAULT: "100000"
     ports:
-      - "8080:8080"
+      - "8081:8081"
     # Readiness probe: fails when PostgreSQL is unreachable (503), so the
     # orchestrator does not route traffic to an instance that cannot serve it.
     # Redis being down is reported as degraded but keeps the container healthy.
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -T 3 -O - http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "wget -q -T 3 -O - http://localhost:8081/health/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,11 +78,11 @@ services:
     build:
       context: ./frontend
       args:
-        BACKEND_ORIGIN: http://backend:8080
+        BACKEND_ORIGIN: http://backend:8081
     container_name: fintrack_v2_frontend
     restart: unless-stopped
     environment:
-      BACKEND_ORIGIN: http://backend:8080
+      BACKEND_ORIGIN: http://backend:8081
       JWT_SECRET: ${JWT_SECRET}
       NEXT_PUBLIC_API_URL: /api/v1
     ports:

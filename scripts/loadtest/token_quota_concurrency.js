@@ -17,7 +17,7 @@ export const options = {
 };
 
 export default function () {
-  const url = __ENV.TARGET_URL || 'http://localhost:8080/api/v1/ai/chat';
+  const url = __ENV.TARGET_URL || 'http://localhost:8081/api/v1/ai/chat';
   const payload = JSON.stringify({
     message: 'Halo FinTrack, hitung ringkasan pengeluaran saya.',
   });

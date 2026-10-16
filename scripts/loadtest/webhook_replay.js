@@ -17,7 +17,7 @@ export const options = {
 };
 
 export default function () {
-  const url = __ENV.TARGET_URL || 'http://localhost:8080/api/v1/payments/webhook/midtrans';
+  const url = __ENV.TARGET_URL || 'http://localhost:8081/api/v1/payments/webhook/midtrans';
   const orderId = __ENV.ORDER_ID || 'INV-2026-TEST-998811';
   const payload = JSON.stringify({
     order_id: orderId,
