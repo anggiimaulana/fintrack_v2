@@ -83,8 +83,8 @@ func (s *UserService) GetPaymentForAdmin(ctx context.Context, paymentID uuid.UUI
 		up.SubtotalIDR = inv.SubtotalIDR
 		up.TaxIDR = inv.TaxIDR
 		up.TotalIDR = inv.TotalIDR
-		if inv.Notes != nil {
-			up.PlanCode = *inv.Notes
+		if inv.PlanCode != nil {
+			up.PlanCode = *inv.PlanCode
 		}
 	}
 	return up, nil

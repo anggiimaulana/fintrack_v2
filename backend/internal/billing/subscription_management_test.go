@@ -1,8 +1,13 @@
 package billing
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/fintrack/backend/pkg/pagination"
 )
 
 // TestCanTransition covers the legal/illegal state matrix.
@@ -99,5 +104,89 @@ func TestCalculateUpgradeProration_NoPeriodEnd(t *testing.T) {
 	p := CalculateUpgradeProration(&Subscription{}, nil, &Plan{PriceMonthlyIDR: 100}, time.Now())
 	if p.AmountDueIDR != 0 {
 		t.Fatalf("nil period end must yield 0, got %d", p.AmountDueIDR)
+	}
+}
+
+// fakeLifecycleSubRepo is a one-row SubscriptionRepository for lifecycle tests.
+type fakeLifecycleSubRepo struct {
+	sub    *Subscription
+	events []*SubscriptionEvent
+}
+
+func (f *fakeLifecycleSubRepo) GetByUserID(context.Context, uuid.UUID) (*Subscription, error) {
+	if f.sub == nil {
+		return nil, ErrSubscriptionNotFound
+	}
+	return f.sub, nil
+}
+func (f *fakeLifecycleSubRepo) Create(_ context.Context, s *Subscription) error { f.sub = s; return nil }
+func (f *fakeLifecycleSubRepo) Update(_ context.Context, s *Subscription) error { f.sub = s; return nil }
+func (f *fakeLifecycleSubRepo) RecordEvent(_ context.Context, ev *SubscriptionEvent) error {
+	f.events = append(f.events, ev)
+	return nil
+}
+func (f *fakeLifecycleSubRepo) ListEvents(context.Context, uuid.UUID, int) ([]*SubscriptionEvent, error) {
+	return f.events, nil
+}
+func (f *fakeLifecycleSubRepo) ListEventsPaged(context.Context, uuid.UUID, *pagination.Query) ([]*SubscriptionEvent, int, error) {
+	return f.events, len(f.events), nil
+}
+
+// TestTransitionByUserID_ExpiresLapsedSubscription is the regression guard for
+// "nothing moves a non-renewed subscription out of active": the worker's
+// entry point must expire it (and record the event).
+func TestTransitionByUserID_ExpiresLapsedSubscription(t *testing.T) {
+	repo := &fakeLifecycleSubRepo{sub: &Subscription{
+		ID: uuid.New(), UserID: uuid.New(), Status: StatusActive,
+	}}
+	svc := NewLifecycleService(repo, fakeTx{}, nil)
+
+	if err := svc.TransitionByUserID(context.Background(), repo.sub.UserID, StatusExpired, "expired", "cycle ended"); err != nil {
+		t.Fatalf("transition: %v", err)
+	}
+	if repo.sub.Status != StatusExpired {
+		t.Fatalf("status = %s, want expired", repo.sub.Status)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != "expired" {
+		t.Fatalf("expected one 'expired' event, got %+v", repo.events)
+	}
+}
+
+// A canceled-at-period-end subscription becomes `canceled`.
+func TestTransitionByUserID_CancelsAtPeriodEnd(t *testing.T) {
+	repo := &fakeLifecycleSubRepo{sub: &Subscription{
+		ID: uuid.New(), UserID: uuid.New(), Status: StatusActive, CancelAtPeriodEnd: true,
+	}}
+	svc := NewLifecycleService(repo, fakeTx{}, nil)
+
+	if err := svc.TransitionByUserID(context.Background(), repo.sub.UserID, StatusCanceled, "canceled", "cancel_at_period_end"); err != nil {
+		t.Fatalf("transition: %v", err)
+	}
+	if repo.sub.Status != StatusCanceled {
+		t.Fatalf("status = %s, want canceled", repo.sub.Status)
+	}
+	if repo.sub.CanceledAt == nil {
+		t.Fatal("canceled_at must be set")
+	}
+}
+
+// Idempotent: re-applying the same transition is a no-op, not an error (a sweep
+// may observe a subscription another worker just settled).
+func TestTransitionByUserID_Idempotent(t *testing.T) {
+	repo := &fakeLifecycleSubRepo{sub: &Subscription{
+		ID: uuid.New(), UserID: uuid.New(), Status: StatusExpired,
+	}}
+	svc := NewLifecycleService(repo, fakeTx{}, nil)
+	if err := svc.TransitionByUserID(context.Background(), repo.sub.UserID, StatusExpired, "expired", ""); err != nil {
+		t.Fatalf("re-applying a terminal status must be a no-op, got %v", err)
+	}
+}
+
+// A missing subscription is a no-op, not an error.
+func TestTransitionByUserID_NoSubscriptionIsNoop(t *testing.T) {
+	repo := &fakeLifecycleSubRepo{}
+	svc := NewLifecycleService(repo, fakeTx{}, nil)
+	if err := svc.TransitionByUserID(context.Background(), uuid.New(), StatusExpired, "expired", ""); err != nil {
+		t.Fatalf("missing subscription must be a no-op, got %v", err)
 	}
 }

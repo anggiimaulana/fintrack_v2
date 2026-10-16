@@ -69,13 +69,29 @@ func TestBillingRepo_PlansAndEntitlements(t *testing.T) {
 
 // TestBillingRepo_TokenPeriodAndLedger verifies period creation, ledger insert,
 // idempotency, and append-only enforcement at the repository level.
+//
+// It seeds its OWN throwaway user. It must NOT reuse a seeded demo user id:
+// doing so wrote a 1000-token period into the live demo account on every run
+// against a shared database, silently overriding that account's real plan
+// quota (a Pro user ended up capped at 1000 tokens and got spurious 429s).
 func TestBillingRepo_TokenPeriodAndLedger(t *testing.T) {
 	pool := newTestPool(t)
 	repo := NewBillingRepo(pool)
 	ctx := context.Background()
 
-	// Use a deterministic seeded user.
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	userID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, password_hash, full_name, role) VALUES ($1,$2,'x','Period Test','user')`,
+		userID, "period-"+userID.String()+"@test.local"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() {
+		// token_ledger is append-only (no UPDATE/DELETE) and references the
+		// period with ON DELETE RESTRICT, so delete it explicitly first.
+		_, _ = pool.Exec(context.Background(), `DELETE FROM token_ledger WHERE user_id = $1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM token_periods WHERE user_id = $1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
+	})
+
 	now := time.Now().UTC().Truncate(time.Second)
 
 	period, err := repo.GetOrCreatePeriod(ctx, userID, now.Unix(), now.Add(30*24*time.Hour).Unix(), 1000, 1)

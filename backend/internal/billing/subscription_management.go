@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/fintrack/backend/pkg/logger"
 )
 
 // SubscriptionManager handles plan changes: instant prorated upgrades and
@@ -15,6 +18,28 @@ type SubscriptionManager struct {
 	lifecycle *LifecycleService
 	tx        TxRunner
 	now       func() time.Time
+	// quotaSyncer pushes a plan change into the user's running token period, so
+	// a scheduled downgrade is not left enforcing the previous plan's quota.
+	quotaSyncer *QuotaSyncer
+}
+
+// WithQuotaSyncer attaches the syncer used after a plan change.
+func (m *SubscriptionManager) WithQuotaSyncer(s *QuotaSyncer) *SubscriptionManager {
+	m.quotaSyncer = s
+	return m
+}
+
+// syncQuota updates the running period to planCode's quota. Best-effort: the
+// plan change is already committed, and a sync failure is logged.
+func (m *SubscriptionManager) syncQuota(ctx context.Context, userID uuid.UUID, planCode string) {
+	if m.quotaSyncer == nil {
+		return
+	}
+	if err := m.quotaSyncer.SyncRunningPeriod(ctx, userID, planCode); err != nil {
+		logger.Warn("subscription manager: quota sync failed",
+			zap.String("user_id", userID.String()),
+			zap.String("plan_code", planCode), zap.Error(err))
+	}
 }
 
 // NewSubscriptionManager builds the manager.
@@ -193,5 +218,8 @@ func (m *SubscriptionManager) ApplyScheduledDowngrade(ctx context.Context, userI
 	if m.lifecycle != nil && m.lifecycle.invalidate != nil {
 		m.lifecycle.invalidate(ctx, userID)
 	}
+	// The plan changed: push it into the running token period, or the downgraded
+	// user keeps the higher plan's quota until the cycle lapses.
+	m.syncQuota(ctx, userID, newPlan.Code)
 	return nil
 }

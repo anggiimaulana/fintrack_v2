@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -284,11 +285,15 @@ func (h *AIHandler) Chat(c *gin.Context) {
 
 		data, _ := json.Marshal(event)
 		fmt.Fprintf(w, "data: %s\n\n", data)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		} else if f, ok := c.Writer.(http.Flusher); ok {
+			f.Flush()
+		}
 
 		if event.Done {
 			return false
 		}
-
 		return true
 	})
 }
@@ -404,6 +409,32 @@ func (h *AIHandler) ListMessages(c *gin.Context) {
 	response.OK(c, "Messages retrieved", messages)
 }
 
+func (h *AIHandler) CreateMessage(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "Invalid session ID", err.Error())
+		return
+	}
+
+	var req struct {
+		Role    string  `json:"role" binding:"required"`
+		Content string  `json:"content" binding:"required"`
+		Mode    *string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Role and content are required", err.Error())
+		return
+	}
+
+	msg, err := h.aiUC.CreateMessage(c.Request.Context(), userID, sessionID, req.Role, req.Content, req.Mode)
+	if err != nil {
+		response.InternalError(c, "Failed to create message")
+		return
+	}
+
+	response.Created(c, "Message created", msg)
+}
 // ─── Receipt Analysis ──────────────────────────────────────────
 
 func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
@@ -478,7 +509,7 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		return
 	}
 
-	response.OK(c, "Receipt analyzed", result)
+	response.Created(c, "Receipt analyzed", result)
 }
 
 // settleVision commits the real vision token usage on success and releases the
@@ -611,7 +642,26 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 	}
 
 	if err != nil {
-		response.InternalError(c, "Failed to process voice")
+		c.JSON(http.StatusBadGateway, gin.H{
+			"success": false,
+			"error":   "voice_provider_unavailable",
+			"message": "Gagal memproses audio. Silakan coba lagi.",
+			"data":    result,
+		})
+		return
+	}
+
+	if ok, _ := result["success"].(bool); !ok {
+		msg := "Gagal memproses audio. Silakan coba lagi."
+		if m, _ := result["message"].(string); m != "" {
+			msg = m
+		}
+		c.JSON(http.StatusBadGateway, gin.H{
+			"success": false,
+			"error":   "voice_provider_unavailable",
+			"message": msg,
+			"data":    result,
+		})
 		return
 	}
 
@@ -633,7 +683,7 @@ func (h *AIHandler) ProcessVoice(c *gin.Context) {
 	emitUsageChanged(c.Request.Context(), h.usageEmitter, userID, "ai_voice",
 		UsageKeyAITokens, UsageKeyAIRequests, UsageKeyVoicePerDay)
 
-	response.OK(c, "Voice processed", result)
+	response.Created(c, "Voice processed", result)
 }
 
 // recordVoiceHistory stores a successful server-mode transcription and claims a

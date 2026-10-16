@@ -86,7 +86,7 @@ func (s *CheckoutService) Checkout(ctx context.Context, req CheckoutRequest) (*C
 		created, err := s.invoices.Create(txCtx, CreateInvoiceDTO{
 			UserID:      req.UserID,
 			SubtotalIDR: req.AmountIDR,
-			Notes:       req.PlanCode,
+			PlanCode:    req.PlanCode,
 		})
 		if err != nil {
 			return err
@@ -113,11 +113,13 @@ func (s *CheckoutService) Checkout(ctx context.Context, req CheckoutRequest) (*C
 	// Initiate the gateway transaction.
 	txRes, err := gw.CreateTransaction(ctx, CreateTxRequest{
 		InvoiceID:     inv.ID,
+		UserID:        req.UserID,
 		OrderID:       inv.InvoiceNumber,
 		AmountIDR:     inv.TotalIDR,
 		CustomerName:  req.CustomerName,
 		CustomerEmail: req.CustomerEmail,
 		Description:   req.PlanName,
+		SaveCard:      true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gateway create: %w", err)

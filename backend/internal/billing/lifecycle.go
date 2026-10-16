@@ -26,9 +26,14 @@ func NewLifecycleService(subs SubscriptionRepository, tx TxRunner, invalidate In
 }
 
 // allowedTransitions encodes the legal state machine.
+//
+// `active -> expired` is legal because a subscription whose cycle has ended and
+// whose grace window has lapsed must lapse directly: there is nothing to collect
+// (no open invoice) and the user falls back to the default plan. Requiring a
+// detour through past_due would only add a transient state nobody observes.
 var allowedTransitions = map[SubscriptionStatus]map[SubscriptionStatus]bool{
 	StatusTrialing: {StatusActive: true, StatusExpired: true},
-	StatusActive:   {StatusPastDue: true, StatusCanceled: true},
+	StatusActive:   {StatusPastDue: true, StatusCanceled: true, StatusExpired: true},
 	StatusPastDue:  {StatusActive: true, StatusGrace: true, StatusExpired: true},
 	StatusGrace:    {StatusActive: true, StatusExpired: true},
 	StatusCanceled: {StatusExpired: true},
@@ -41,6 +46,29 @@ func CanTransition(from, to SubscriptionStatus) bool {
 		return m[to]
 	}
 	return false
+}
+
+// TransitionByUserID loads the user's subscription and applies a transition.
+// The lifecycle worker works from a due-list (user ids), so it needs this
+// idempotent, load-then-transition entry point. An already-terminal or
+// already-target status is a no-op, not an error: a sweep may observe a
+// subscription another worker just settled.
+func (s *LifecycleService) TransitionByUserID(ctx context.Context, userID uuid.UUID, to SubscriptionStatus, eventType, reason string) error {
+	sub, err := s.subs.GetByUserID(ctx, userID)
+	if err != nil {
+		if err == ErrSubscriptionNotFound {
+			return nil // no row: nothing to transition
+		}
+		return err
+	}
+	if sub == nil || sub.Status == to {
+		return nil
+	}
+	if !CanTransition(sub.Status, to) {
+		// Already moved past this state (e.g. expired by another sweep).
+		return nil
+	}
+	return s.Transition(ctx, sub, to, eventType, reason)
 }
 
 // Transition moves a subscription to a new status, validating the transition and

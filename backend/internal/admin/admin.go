@@ -39,6 +39,9 @@ type Service struct {
 	// plan). Without it a plan or subscription change is invisible until the
 	// resolver's 24h TTL lapses.
 	entInvalidator EntitlementInvalidator
+	// quotaSyncer pushes a plan change into the user's running token period so a
+	// forced plan change is not capped by the previous plan's quota (nil-safe).
+	quotaSyncer QuotaSyncer
 	// emitter publishes realtime domain events (nil-safe: checks before use).
 	emitter RealtimeEmitter
 
@@ -266,6 +269,17 @@ type EntitlementInvalidator interface {
 // WithEntitlementInvalidator installs the entitlement cache invalidator.
 func WithEntitlementInvalidator(inv EntitlementInvalidator) Option {
 	return func(s *Service) { s.entInvalidator = inv }
+}
+
+// QuotaSyncer pushes a plan change into the user's RUNNING token period, so a
+// forced downgrade/upgrade is not capped by the previous plan's quota.
+type QuotaSyncer interface {
+	SyncRunningPeriod(ctx context.Context, userID uuid.UUID, planCode string) error
+}
+
+// WithQuotaSyncer installs the quota syncer used after a plan change.
+func WithQuotaSyncer(q QuotaSyncer) Option {
+	return func(s *Service) { s.quotaSyncer = q }
 }
 
 // RealtimeEmitter publishes domain events to connected clients. Declared

@@ -146,6 +146,26 @@ func TestLedger_ConcurrentCommitNoNegative(t *testing.T) {
 	if period.ReservedTokens != 0 {
 		t.Fatalf("expected reserved=0 after all commits, got %d", period.ReservedTokens)
 	}
+
+	// And the ledger itself must hold exactly one commit/release per
+	// reservation. The balance check above could pass by accident (e.g. two
+	// commits offset by a stray release); this asserts the invariant directly,
+	// which is what the DB trigger also enforces.
+	var dupes int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM (
+			SELECT reservation_id
+			FROM token_ledger
+			WHERE user_id = $1 AND reservation_id IS NOT NULL
+			  AND entry_type IN ('commit','release')
+			GROUP BY reservation_id
+			HAVING count(*) > 1
+		) x`, userID).Scan(&dupes); err != nil {
+		t.Fatalf("duplicate scan: %v", err)
+	}
+	if dupes != 0 {
+		t.Fatalf("expected no double-resolved reservations, got %d", dupes)
+	}
 }
 
 // TestLedger_CommitClampsToQuotaNoNegative is the regression guard for the

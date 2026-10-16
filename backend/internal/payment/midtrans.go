@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // MidtransConfig configures the Midtrans Snap gateway.
@@ -92,7 +94,12 @@ func (g *MidtransGateway) CreateTransaction(ctx context.Context, req CreateTxReq
 	if req.ExpiryMinutes > 0 {
 		payload["expiry"] = map[string]any{"unit": "minutes", "duration": req.ExpiryMinutes}
 	}
-
+	if req.SaveCard && req.UserID != uuid.Nil {
+		payload["credit_card"] = map[string]any{
+			"save_card": true,
+		}
+		payload["user_id"] = req.UserID.String()
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -138,12 +145,17 @@ func (g *MidtransGateway) CreateTransaction(ctx context.Context, req CreateTxReq
 // signature = SHA512(order_id + status_code + gross_amount + server_key)
 func (g *MidtransGateway) VerifyWebhook(_ context.Context, payload []byte, _ map[string]string) (*WebhookResult, error) {
 	var n struct {
-		OrderID           string `json:"order_id"`
-		StatusCode        string `json:"status_code"`
-		GrossAmount       string `json:"gross_amount"`
-		SignatureKey      string `json:"signature_key"`
-		TransactionStatus string `json:"transaction_status"`
-		PaymentType       string `json:"payment_type"`
+		OrderID               string `json:"order_id"`
+		StatusCode            string `json:"status_code"`
+		GrossAmount           string `json:"gross_amount"`
+		SignatureKey          string `json:"signature_key"`
+		TransactionStatus     string `json:"transaction_status"`
+		PaymentType           string `json:"payment_type"`
+		SavedTokenID          string `json:"saved_token_id"`
+		SavedTokenIDExpiredAt string `json:"saved_token_id_expired_at"`
+		MaskedCard            string `json:"masked_card"`
+		CardType              string `json:"card_type"`
+		Bank                  string `json:"bank"`
 	}
 	if err := json.Unmarshal(payload, &n); err != nil {
 		return nil, fmt.Errorf("invalid webhook payload: %w", err)
@@ -156,12 +168,17 @@ func (g *MidtransGateway) VerifyWebhook(_ context.Context, payload []byte, _ map
 
 	amount := parseAmount(n.GrossAmount)
 	return &WebhookResult{
-		OrderID:       n.OrderID,
-		GatewayRef:    n.OrderID,
-		Status:        mapMidtransStatus(n.TransactionStatus),
-		AmountIDR:     amount,
-		PaymentMethod: n.PaymentType,
-		Raw:           map[string]any{"transaction_status": n.TransactionStatus, "payment_type": n.PaymentType},
+		OrderID:               n.OrderID,
+		GatewayRef:            n.OrderID,
+		Status:                mapMidtransStatus(n.TransactionStatus),
+		AmountIDR:             amount,
+		PaymentMethod:         n.PaymentType,
+		SavedTokenID:          n.SavedTokenID,
+		SavedTokenIDExpiredAt: n.SavedTokenIDExpiredAt,
+		MaskedCard:            n.MaskedCard,
+		CardType:              n.CardType,
+		Bank:                  n.Bank,
+		Raw:                   map[string]any{"transaction_status": n.TransactionStatus, "payment_type": n.PaymentType},
 	}, nil
 }
 
@@ -188,18 +205,28 @@ func (g *MidtransGateway) CheckStatus(ctx context.Context, gatewayRef string) (*
 	}
 
 	var parsed struct {
-		OrderID           string `json:"order_id"`
-		TransactionStatus string `json:"transaction_status"`
-		GrossAmount       string `json:"gross_amount"`
+		OrderID               string `json:"order_id"`
+		TransactionStatus     string `json:"transaction_status"`
+		GrossAmount           string `json:"gross_amount"`
+		SavedTokenID          string `json:"saved_token_id"`
+		SavedTokenIDExpiredAt string `json:"saved_token_id_expired_at"`
+		MaskedCard            string `json:"masked_card"`
+		CardType              string `json:"card_type"`
+		Bank                  string `json:"bank"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, err
 	}
 	return &StatusResult{
-		OrderID:   parsed.OrderID,
-		Status:    mapMidtransStatus(parsed.TransactionStatus),
-		AmountIDR: parseAmount(parsed.GrossAmount),
-		Raw:       map[string]any{"transaction_status": parsed.TransactionStatus},
+		OrderID:               parsed.OrderID,
+		Status:                mapMidtransStatus(parsed.TransactionStatus),
+		AmountIDR:             parseAmount(parsed.GrossAmount),
+		SavedTokenID:          parsed.SavedTokenID,
+		SavedTokenIDExpiredAt: parsed.SavedTokenIDExpiredAt,
+		MaskedCard:            parsed.MaskedCard,
+		CardType:              parsed.CardType,
+		Bank:                  parsed.Bank,
+		Raw:                   map[string]any{"transaction_status": parsed.TransactionStatus},
 	}, nil
 }
 
@@ -278,5 +305,87 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// compile-time assertion.
-var _ Gateway = (*MidtransGateway)(nil)
+// ChargeSavedCard charges a previously tokenized card via the Midtrans Core API.
+// Card numbers never touch this application: only the token_id is submitted.
+func (g *MidtransGateway) ChargeSavedCard(ctx context.Context, req ChargeSavedCardRequest) (*ChargeCardResponse, error) {
+	if g.cfg.ServerKey == "" {
+		return nil, ErrGatewayNotConfigured
+	}
+	if req.TokenID == "" {
+		return nil, ErrCardTokenNotFound
+	}
+
+	payload := map[string]any{
+		"payment_type": "credit_card",
+		"transaction_details": map[string]any{
+			"order_id":     req.OrderID,
+			"gross_amount": req.AmountIDR,
+		},
+		"credit_card": map[string]any{
+			"token_id": req.TokenID,
+			"user_id":  req.UserID.String(),
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.CoreBaseURL+"/charge", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Authorization", g.basicAuth())
+
+	resp, err := g.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("midtrans charge returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var parsed struct {
+		StatusCode        string `json:"status_code"`
+		TransactionStatus string `json:"transaction_status"`
+		FraudStatus       string `json:"fraud_status"`
+		OrderID           string `json:"order_id"`
+		PaymentType       string `json:"payment_type"`
+		MaskedCard        string `json:"masked_card"`
+		Bank              string `json:"bank"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, err
+	}
+
+	status := mapMidtransStatus(parsed.TransactionStatus)
+	// If marked challenge, do not settle automatically without manual 3DS check
+	if parsed.FraudStatus == "challenge" {
+		status = PaymentPending
+	}
+
+	return &ChargeCardResponse{
+		GatewayRef:    parsed.OrderID,
+		Status:        status,
+		PaymentMethod: parsed.PaymentType,
+		MaskedCard:    parsed.MaskedCard,
+		Bank:          parsed.Bank,
+		Raw: map[string]any{
+			"status_code":        parsed.StatusCode,
+			"transaction_status": parsed.TransactionStatus,
+			"fraud_status":       parsed.FraudStatus,
+		},
+	}, nil
+}
+
+// compile-time assertions.
+var (
+	_ Gateway     = (*MidtransGateway)(nil)
+	_ CardCharger = (*MidtransGateway)(nil)
+)

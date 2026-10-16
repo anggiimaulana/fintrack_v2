@@ -73,6 +73,14 @@ func (g *DynamicMidtransGateway) CancelTransaction(ctx context.Context, gatewayR
 	return NewMidtransGateway(g.config(ctx)).CancelTransaction(ctx, gatewayRef)
 }
 
+func (g *DynamicMidtransGateway) ChargeSavedCard(ctx context.Context, req ChargeSavedCardRequest) (*ChargeCardResponse, error) {
+	return NewMidtransGateway(g.config(ctx)).ChargeSavedCard(ctx, req)
+}
+
+var (
+	_ Gateway     = (*DynamicMidtransGateway)(nil)
+	_ CardCharger = (*DynamicMidtransGateway)(nil)
+)
 // DynamicManualGateway resolves the bank-transfer instructions on every call so
 // an operator can correct the account details without a restart.
 type DynamicManualGateway struct {

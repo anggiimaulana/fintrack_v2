@@ -352,3 +352,113 @@ func (h *PaymentHandler) ServeProof(c *gin.Context) {
 func isMultipart(ct string) bool {
 	return len(ct) >= 19 && ct[:19] == "multipart/form-data"
 }
+
+// ─── Saved Card Management & Auto-Charge ───────────────────────
+
+// ListMyCards handles GET /api/v1/payments/cards (authenticated user).
+func (h *PaymentHandler) ListMyCards(c *gin.Context) {
+	if h.payRepo == nil {
+		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	cards, err := h.payRepo.ListCardTokensByUser(c.Request.Context(), userID)
+	if err != nil {
+		response.InternalError(c, "Gagal memuat daftar kartu tersimpan")
+		return
+	}
+	if cards == nil {
+		cards = []*payment.CardToken{}
+	}
+	response.OK(c, "Daftar kartu tersimpan berhasil dimuat", cards)
+}
+
+// DeleteMyCard handles DELETE /api/v1/payments/cards/:id (authenticated user).
+func (h *PaymentHandler) DeleteMyCard(c *gin.Context) {
+	if h.payRepo == nil {
+		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "ID kartu tidak valid", "invalid_id")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	if err := h.payRepo.DeleteCardToken(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, payment.ErrCardTokenNotFound) {
+			response.NotFound(c, "Kartu tersimpan tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal menghapus kartu tersimpan")
+		return
+	}
+	response.OK(c, "Kartu tersimpan berhasil dihapus", nil)
+}
+
+// SetMyDefaultCard handles POST /api/v1/payments/cards/:id/default (authenticated user).
+func (h *PaymentHandler) SetMyDefaultCard(c *gin.Context) {
+	if h.payRepo == nil {
+		response.InternalError(c, "Layanan pembayaran belum dikonfigurasi")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "ID kartu tidak valid", "invalid_id")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	if err := h.payRepo.SetDefaultCardToken(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, payment.ErrCardTokenNotFound) {
+			response.NotFound(c, "Kartu tersimpan tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal mengatur kartu utama")
+		return
+	}
+	response.OK(c, "Kartu utama berhasil diperbarui", nil)
+}
+
+// AutoChargeInvoice handles POST /api/v1/invoices/:id/auto-charge (authenticated user).
+func (h *PaymentHandler) AutoChargeInvoice(c *gin.Context) {
+	if h.autoCharger == nil || h.invoices == nil {
+		response.InternalError(c, "Layanan auto-charge belum dikonfigurasi")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "ID tagihan tidak valid", "invalid_id")
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	inv, err := h.invoices.Get(c.Request.Context(), id)
+	if err != nil || inv == nil {
+		response.NotFound(c, "Tagihan tidak ditemukan")
+		return
+	}
+	if inv.UserID != userID {
+		response.Forbidden(c, "Akses ditolak")
+		return
+	}
+	if !inv.Status.IsOpen() {
+		response.BadRequest(c, "Tagihan sudah tidak dalam status aktif atau menunggu pembayaran", "invalid_state")
+		return
+	}
+
+	res, err := h.autoCharger.ChargeInvoice(c.Request.Context(), inv, nil)
+	if err != nil {
+		if errors.Is(err, payment.ErrCardTokenNotFound) {
+			response.BadRequest(c, "Tidak ada kartu tersimpan untuk akun Anda", "no_card_token")
+			return
+		}
+		response.InternalError(c, "Gagal memproses pembayaran otomatis")
+		return
+	}
+
+	if res.Settled {
+		response.OK(c, "Pembayaran berhasil diproses menggunakan kartu tersimpan", res)
+		return
+	}
+
+	response.BadRequest(c, "Pembayaran kartu tersimpan tidak dapat diselesaikan secara otomatis", "charge_not_settled")
+}

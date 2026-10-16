@@ -233,10 +233,10 @@ func SetupRouter(
 		// Billing mutations are expensive (they issue invoices and call the
 		// gateway), so they get their own tight per-user budget to stop a user
 		// (or a stuck retry loop) from hammering them.
-		"/api/v1/payments/checkout":     {Period: 1 * time.Minute, Limit: 5},
-		"/api/v1/invoices/:id/cancel":   {Period: 1 * time.Minute, Limit: 10},
-		"/api/v1/payments/:id/proof":    {Period: 1 * time.Minute, Limit: 10},
-		// Browser-mode voice history is a cheap write, but it also increments the
+		"/api/v1/payments/checkout":      {Period: 1 * time.Minute, Limit: 5},
+		"/api/v1/invoices/:id/auto-charge": {Period: 1 * time.Minute, Limit: 5},
+		"/api/v1/invoices/:id/cancel":    {Period: 1 * time.Minute, Limit: 10},
+		"/api/v1/payments/:id/proof":     {Period: 1 * time.Minute, Limit: 10},
 		// daily counter, so a tight per-user budget stops a retry loop (or a
 		// scripted client) from inflating the counter faster than a human speaks.
 		"/api/v1/me/voice-history": {Period: 1 * time.Minute, Limit: 30},
@@ -364,7 +364,10 @@ func SetupRouter(
 					// A user may cancel their own unpaid invoice to free the
 					// one-open-invoice slot for a new checkout.
 					userRoutes.POST("/invoices/:id/cancel", paymentH.CancelMyInvoice)
-
+					userRoutes.POST("/invoices/:id/auto-charge", paymentH.AutoChargeInvoice)
+					userRoutes.GET("/payments/cards", paymentH.ListMyCards)
+					userRoutes.DELETE("/payments/cards/:id", paymentH.DeleteMyCard)
+					userRoutes.POST("/payments/cards/:id/default", paymentH.SetMyDefaultCard)
 					userRoutes.GET("/subscriptions/me", paymentH.MySubscription)
 					userRoutes.GET("/subscriptions/me/events", paymentH.MySubscriptionEvents)
 					userRoutes.POST("/subscriptions/me/downgrade", paymentH.ScheduleDowngrade)
@@ -402,6 +405,7 @@ func SetupRouter(
 					ai.PUT("/sessions/:id", aiH.UpdateSession)
 					ai.DELETE("/sessions/:id", aiH.DeleteSession)
 					ai.GET("/sessions/:id/messages", aiH.ListMessages)
+					ai.POST("/sessions/:id/messages", aiH.CreateMessage)
 					// OCR: Pro/Business only, bounded by ocr_scans_per_cycle AND the
 					// shared token quota — a scan consumes vision tokens, so it must
 					// respect ai_tokens_per_cycle exactly like chat does.

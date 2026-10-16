@@ -142,7 +142,7 @@ func TestInvoiceService_Create(t *testing.T) {
 	svc := NewInvoiceService(repo, s, tc)
 
 	inv, err := svc.Create(context.Background(), CreateInvoiceDTO{
-		UserID: uuid.New(), SubtotalIDR: 39000, Notes: "pro",
+		UserID: uuid.New(), SubtotalIDR: 39000, PlanCode: "pro",
 	})
 	if err != nil {
 		t.Fatalf("create invoice: %v", err)
@@ -212,7 +212,7 @@ func TestManualService_UploadAndApprove(t *testing.T) {
 	invID := uuid.New()
 	userID := uuid.New()
 	note := "pro"
-	_ = repo.CreateInvoice(ctx, &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, Notes: &note})
+	_ = repo.CreateInvoice(ctx, &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, PlanCode: &note})
 	ref := "INV-1"
 	pay := &Payment{ID: uuid.New(), InvoiceID: invID, UserID: userID, Gateway: "manual", GatewayRef: &ref, AmountIDR: 39000, Status: PaymentPending, IdempotencyKey: "mk1"}
 	_ = repo.CreatePayment(ctx, pay)

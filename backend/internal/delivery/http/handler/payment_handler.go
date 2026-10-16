@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,9 +27,12 @@ type PaymentHandler struct {
 	// P0/P1 user self-service surface.
 	userSvc *payment.UserService
 	catalog *payment.CatalogService
-	subSvc  *payment.SubscriptionService
-	subRepo billing.SubscriptionRepository
-	proofs  *storage.ProofStore
+	subSvc      *payment.SubscriptionService
+	subRepo     billing.SubscriptionRepository
+	proofs      *storage.ProofStore
+	autoCharger *payment.AutoCharger
+	payRepo     payment.Repository
+	invoices    *payment.InvoiceService
 }
 
 // NewPaymentHandler builds the handler.
@@ -50,6 +54,13 @@ func (h *PaymentHandler) WithCheckout(c *payment.CheckoutService, plans billing.
 	return h
 }
 
+// WithAutoCharge attaches the auto-charger and card token repository.
+func (h *PaymentHandler) WithAutoCharge(ac *payment.AutoCharger, repo payment.Repository, inv *payment.InvoiceService) *PaymentHandler {
+	h.autoCharger = ac
+	h.payRepo = repo
+	h.invoices = inv
+	return h
+}
 // MidtransWebhook handles POST /payments/webhook/midtrans (public, no auth).
 // The raw body is capped at 1 MB; the gateway verifies the signature.
 func (h *PaymentHandler) MidtransWebhook(c *gin.Context) {
@@ -111,11 +122,31 @@ func (h *PaymentHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// Prorated upgrade: when the user is switching plans mid-cycle, credit the
+	// unused portion of the current plan so they only pay the difference for the
+	// remaining days. A same-plan renewal (or no active subscription) is charged
+	// the full price.
+	amount := plan.PriceMonthlyIDR
+	if h.subRepo != nil {
+		if cur, cerr := h.subRepo.GetByUserID(c.Request.Context(), userID); cerr == nil && cur != nil {
+			var curPlan *billing.Plan
+			if cur.PlanID != uuid.Nil {
+				curPlan, _ = h.planRepo.GetPlanByID(c.Request.Context(), cur.PlanID)
+			}
+			if curPlan != nil && curPlan.ID != plan.ID {
+				pr := billing.CalculateUpgradeProration(cur, curPlan, plan, time.Now().UTC())
+				if pr.AmountDueIDR > 0 {
+					amount = pr.AmountDueIDR
+				}
+			}
+		}
+	}
+
 	res, err := h.checkout.Checkout(c.Request.Context(), payment.CheckoutRequest{
 		UserID:        userID,
 		PlanCode:      plan.Code,
 		PlanName:      plan.Name,
-		AmountIDR:     plan.PriceMonthlyIDR,
+		AmountIDR:     amount,
 		CustomerName:  userProfile.FullName,
 		CustomerEmail: userProfile.Email,
 	})

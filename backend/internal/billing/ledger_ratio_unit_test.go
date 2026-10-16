@@ -16,6 +16,10 @@ type fakeTokens struct {
 	ledger   []*TokenLedgerEntry
 	byKey    map[string]*TokenLedgerEntry
 	resolved map[uuid.UUID]bool
+	// onLock runs inside GetPeriodByIDForUpdate, i.e. AFTER the caller's
+	// pre-transaction resolved-check but BEFORE the in-transaction one. Tests
+	// use it to simulate a concurrent commit winning the race in that window.
+	onLock func()
 }
 
 func newFakeTokens(quota, ratio int64) *fakeTokens {
@@ -29,14 +33,31 @@ func newFakeTokens(quota, ratio int64) *fakeTokens {
 	}
 }
 
-func (f *fakeTokens) GetOrCreatePeriod(_ context.Context, _ uuid.UUID, _, _ int64, quota, ratio int64) (*TokenPeriod, error) {
-	f.period.QuotaTokens, f.period.QuotaRatio = quota, ratio
+func (f *fakeTokens) GetOrCreatePeriod(_ context.Context, _ uuid.UUID, start, end int64, quota, ratio int64) (*TokenPeriod, error) {
+	// Mirror the repository: insert-or-return the row for this exact window.
+	// A row for a different window does not satisfy this one.
+	ps := time.Unix(start, 0).UTC()
+	pe := time.Unix(end, 0).UTC()
+	if f.period != nil && f.period.PeriodStart.Equal(ps) {
+		return f.period, nil
+	}
+	f.period = &TokenPeriod{ID: uuid.New(), PeriodStart: ps, PeriodEnd: pe, QuotaTokens: quota, QuotaRatio: ratio}
 	return f.period, nil
 }
-func (f *fakeTokens) GetPeriodForUpdate(context.Context, uuid.UUID, int64) (*TokenPeriod, error) {
+
+// GetPeriodForUpdate mirrors the real query: it only returns a row whose
+// [period_start, period_end] covers `nowUnix`, so a stale window yields nil.
+func (f *fakeTokens) GetPeriodForUpdate(_ context.Context, _ uuid.UUID, nowUnix int64) (*TokenPeriod, error) {
+	now := time.Unix(nowUnix, 0).UTC()
+	if f.period == nil || f.period.PeriodStart.After(now) || f.period.PeriodEnd.Before(now) {
+		return nil, nil
+	}
 	return f.period, nil
 }
 func (f *fakeTokens) GetPeriodByIDForUpdate(_ context.Context, id uuid.UUID) (*TokenPeriod, error) {
+	if f.onLock != nil {
+		f.onLock()
+	}
 	if f.period != nil && f.period.ID == id {
 		return f.period, nil
 	}
@@ -50,12 +71,21 @@ func (f *fakeTokens) AdjustPeriod(_ context.Context, _ uuid.UUID, usedDelta, res
 	f.period.ReservedTokens += reservedDelta
 	return nil
 }
+func (f *fakeTokens) UpdatePeriodQuota(_ context.Context, _ uuid.UUID, quota, ratio int64) error {
+	f.period.QuotaTokens, f.period.QuotaRatio = quota, ratio
+	return nil
+}
 func (f *fakeTokens) InsertLedger(_ context.Context, e *TokenLedgerEntry) error {
 	if _, ok := f.byKey[e.IdempotencyKey]; ok {
 		return ErrDuplicateIdempotencyKey
 	}
 	f.ledger = append(f.ledger, e)
 	f.byKey[e.IdempotencyKey] = e
+	// Mirror the DB trigger: a commit/release resolves its reservation, so a
+	// later resolution attempt is detected.
+	if e.ReservationID != nil && (e.EntryType == EntryCommit || e.EntryType == EntryRelease) {
+		f.resolved[*e.ReservationID] = true
+	}
 	return nil
 }
 func (f *fakeTokens) GetLedgerByIdempotencyKey(_ context.Context, key string) (*TokenLedgerEntry, error) {
@@ -259,5 +289,184 @@ func TestLedger_MinChargeCoversFloorRounding(t *testing.T) {
 	}
 	if res.Amount != 1 {
 		t.Fatalf("min charge must bill 1 unit: got %d", res.Amount)
+	}
+}
+
+// A reservation must be committed at most once, even when two commits race
+// between the caller's pre-transaction check and the period lock. Regression
+// guard for the double-charge bug: the old code checked `resolved` only BEFORE
+// the transaction, so both commits charged and the ledger ended up with two
+// commit rows for one reservation.
+func TestLedger_CommitResolvesReservationOnce(t *testing.T) {
+	svc, tokens := newTestLedger(10000, 1)
+	ctx := context.Background()
+	user := uuid.New()
+
+	res, err := svc.Reserve(ctx, user, 100, ModalityChat, "r1")
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	// Simulate the loser of the race: while this commit is inside the
+	// transaction (holding the period lock), another commit for the SAME
+	// reservation lands and resolves it first.
+	var onLockOnce bool
+	tokens.onLock = func() {
+		if onLockOnce {
+			return
+		}
+		onLockOnce = true
+		tokens.resolved[res.ID] = true
+		tokens.period.UsedTokens += 100
+		tokens.period.ReservedTokens -= 100
+	}
+
+	err = svc.Commit(ctx, user, res.ID, 100, "c-loser")
+	if err != ErrReservationAlreadyResolved {
+		t.Fatalf("want ErrReservationAlreadyResolved, got %v", err)
+	}
+	// The losing commit must not have charged a second time.
+	if tokens.period.UsedTokens != 100 {
+		t.Fatalf("double charge! used = %d, want 100", tokens.period.UsedTokens)
+	}
+}
+
+// Same guard for Release: it must not return the hold twice.
+func TestLedger_ReleaseResolvesReservationOnce(t *testing.T) {
+	svc, tokens := newTestLedger(10000, 1)
+	ctx := context.Background()
+	user := uuid.New()
+
+	res, err := svc.Reserve(ctx, user, 100, ModalityChat, "r1")
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	var onLockOnce bool
+	tokens.onLock = func() {
+		if onLockOnce {
+			return
+		}
+		onLockOnce = true
+		tokens.resolved[res.ID] = true
+		tokens.period.ReservedTokens -= 100
+	}
+
+	err = svc.Release(ctx, user, res.ID, "rel-loser")
+	if err != ErrReservationAlreadyResolved {
+		t.Fatalf("want ErrReservationAlreadyResolved, got %v", err)
+	}
+	if tokens.period.ReservedTokens != 0 {
+		t.Fatalf("reserved = %d, want 0 (no double release)", tokens.period.ReservedTokens)
+	}
+}
+
+// A lapsed cycle window (subscription still "active" but current_period_end in
+// the past, no renewal yet) must not panic. Regression guard: the resolver
+// returned a PAST window, GetOrCreatePeriod inserted it verbatim, the
+// current-time lookup then found no covering row, and Reserve dereferenced the
+// nil period (nil-pointer panic → HTTP 500).
+func TestLedger_LapsedWindowDoesNotPanic(t *testing.T) {
+	tokens := newFakeTokens(5000, 1)
+	// Start with NO period row: force the resolve+create path.
+	tokens.period = nil
+	now := time.Now().UTC()
+	// Resolver returns a window entirely in the past.
+	quotaFn := QuotaResolverFunc(func(_ context.Context, _ uuid.UUID, _ time.Time) (time.Time, time.Time, int64, int64, error) {
+		return now.Add(-60 * 24 * time.Hour), now.Add(-30 * 24 * time.Hour), 5000, 1, nil
+	})
+	svc := NewLedgerService(tokens, fakeTx{}, quotaFn, nil).
+		WithRounding(staticRounding{mode: RoundCeil, min: 1})
+
+	res, err := svc.Reserve(context.Background(), uuid.New(), 100, ModalityChat, "lapsed-r1")
+	if err != nil {
+		t.Fatalf("reserve on lapsed window must succeed, got %v", err)
+	}
+	if res == nil {
+		t.Fatal("reserve returned nil reservation")
+	}
+	if tokens.period == nil {
+		t.Fatal("period must not be nil after reserve")
+	}
+	// The rolled-forward window must cover now.
+	if tokens.period.PeriodStart.After(now) || tokens.period.PeriodEnd.Before(now) {
+		t.Fatalf("period window must cover now: [%s, %s]",
+			tokens.period.PeriodStart, tokens.period.PeriodEnd)
+	}
+}
+
+// A running period keeps its quota snapshot: the ledger does NOT reopen the
+// cycle on a quota change. Syncing the running period is the activator's job
+// (see QuotaSyncer), so this asserts the ledger leaves it alone.
+func TestLedger_RunningPeriodKeepsSnapshot(t *testing.T) {
+	tokens := newFakeTokens(5000, 1)
+	windowStart := time.Now().UTC().Truncate(time.Hour)
+	quota := int64(5000)
+	quotaFn := QuotaResolverFunc(func(_ context.Context, _ uuid.UUID, _ time.Time) (time.Time, time.Time, int64, int64, error) {
+		return windowStart, windowStart.AddDate(0, 0, 30), quota, 1, nil
+	})
+	svc := NewLedgerService(tokens, fakeTx{}, quotaFn, nil).
+		WithRounding(staticRounding{mode: RoundCeil, min: 1})
+	ctx := context.Background()
+	user := uuid.New()
+
+	if _, err := svc.Reserve(ctx, user, 100, ModalityChat, "s1"); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	firstPeriodID := tokens.period.ID
+	reservedBefore := tokens.period.ReservedTokens
+
+	// The plan quota changes, window unchanged: the ledger must not reopen the
+	// cycle (the activator syncs the running period instead).
+	quota = 150000
+	if _, err := svc.Reserve(ctx, user, 100, ModalityChat, "s2"); err != nil {
+		t.Fatalf("reserve after quota change: %v", err)
+	}
+	if tokens.period.ID != firstPeriodID {
+		t.Fatal("the ledger must not open a new cycle on a quota change")
+	}
+	if tokens.period.QuotaTokens != 5000 {
+		t.Fatalf("cycle quota must stay snapshotted: got %d want 5000", tokens.period.QuotaTokens)
+	}
+	if tokens.period.ReservedTokens <= reservedBefore {
+		t.Fatalf("usage must accumulate on the same period: reserved=%d", tokens.period.ReservedTokens)
+	}
+}
+
+// A new window (renewal) DOES open a new cycle with the new quota.
+func TestLedger_NewWindowOpensNewCycle(t *testing.T) {
+	tokens := newFakeTokens(5000, 1)
+	// A movable clock: the first cycle covers [T0, T0+30d]; after "time passes"
+	// beyond it, the resolver returns the next cycle and the ledger must open it.
+	t0 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	now := t0
+	quotaFn := QuotaResolverFunc(func(_ context.Context, _ uuid.UUID, at time.Time) (time.Time, time.Time, int64, int64, error) {
+		// The window containing `at`: either the first or the second cycle.
+		if at.Before(t0.AddDate(0, 0, 30)) {
+			return t0, t0.AddDate(0, 0, 30), 5000, 1, nil
+		}
+		return t0.AddDate(0, 0, 30), t0.AddDate(0, 0, 60), 150000, 1, nil
+	})
+	svc := NewLedgerService(tokens, fakeTx{}, quotaFn, nil).
+		WithRounding(staticRounding{mode: RoundCeil, min: 1}).
+		WithClock(func() time.Time { return now })
+	ctx := context.Background()
+	user := uuid.New()
+
+	if _, err := svc.Reserve(ctx, user, 100, ModalityChat, "n1"); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	firstPeriodID := tokens.period.ID
+
+	// Time passes beyond the first cycle: a renewal opens the second.
+	now = t0.AddDate(0, 0, 31)
+	if _, err := svc.Reserve(ctx, user, 100, ModalityChat, "n2"); err != nil {
+		t.Fatalf("reserve after rollover: %v", err)
+	}
+	if tokens.period.ID == firstPeriodID {
+		t.Fatal("a new window must open a new period")
+	}
+	if tokens.period.QuotaTokens != 150000 {
+		t.Fatalf("new cycle quota = %d, want 150000", tokens.period.QuotaTokens)
 	}
 }

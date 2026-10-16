@@ -154,12 +154,35 @@ func (u *AIUsecase) buildToolsSystemPrompt() string {
 	sb.WriteString("  {\"tool\": \"create_transaction\", \"parameters\": {\"type\": \"savings\", \"amount\": \"500000\", \"category\": \"Tabungan Harian\", \"description\": \"tabungan\", \"date\": \"2026-06-23\"}}\n")
 	sb.WriteString("  </TOOL_CALL>\n")
 	sb.WriteString("  (tunggu TOOL_RESULT, lalu jawab \"Done! Transaksi tabungan tersimpan\")\n")
+	sb.WriteString("- Contoh beberapa transaksi sekaligus (natural language / curhatan transaksi):\n")
+	sb.WriteString("  User: \"saya abis bayar kontrakan 625k, listrik 25k, galon 5k, dan tadi dapat dari kantor 200k\"\n")
+	sb.WriteString("  Kamu panggil tool create_transaction untuk SETIAP item:\n")
+	sb.WriteString("  <TOOL_CALL>\n")
+	sb.WriteString("  {\"tool\": \"create_transaction\", \"parameters\": {\"type\": \"expense\", \"amount\": \"625000\", \"category\": \"Tempat Tinggal\", \"description\": \"Bayar kontrakan\"}}\n")
+	sb.WriteString("  </TOOL_CALL>\n")
+	sb.WriteString("  <TOOL_CALL>\n")
+	sb.WriteString("  {\"tool\": \"create_transaction\", \"parameters\": {\"type\": \"expense\", \"amount\": \"25000\", \"category\": \"Tagihan & Utilitas\", \"description\": \"Listrik\"}}\n")
+	sb.WriteString("  </TOOL_CALL>\n")
+	sb.WriteString("  <TOOL_CALL>\n")
+	sb.WriteString("  {\"tool\": \"create_transaction\", \"parameters\": {\"type\": \"expense\", \"amount\": \"5000\", \"category\": \"Kebutuhan Pokok\", \"description\": \"Galon\"}}\n")
+	sb.WriteString("  </TOOL_CALL>\n")
+	sb.WriteString("  <TOOL_CALL>\n")
+	sb.WriteString("  {\"tool\": \"create_transaction\", \"parameters\": {\"type\": \"income\", \"amount\": \"200000\", \"category\": \"Gaji\", \"description\": \"Dapat dari kantor\"}}\n")
+	sb.WriteString("  </TOOL_CALL>\n")
+	sb.WriteString("  (tunggu semua TOOL_RESULT, lalu jawab dengan rekap ramah rincian pengeluaran & pemasukan)\n")
 	sb.WriteString("- Contoh visualisasi:\n")
 	sb.WriteString("  User: \"tampilkan grafik pengeluaran bulan ini\"\n")
 	sb.WriteString("  Kamu: <TOOL_CALL>\n")
 	sb.WriteString("  {\"tool\": \"generate_chart\", \"parameters\": {\"type\": \"expense\", \"start_date\": \"2026-06-01\", \"end_date\": \"2026-06-24\", \"granularity\": \"week\"}}\n")
 	sb.WriteString("  </TOOL_CALL>\n")
 	sb.WriteString("  (tunggu TOOL_RESULT, lalu tampilkan grafik dan jelaskan insight-nya secara singkat)\n")
+	sb.WriteString("- Contoh pertanyaan analisis / rekomendasi investasi / siklus keuangan:\n")
+	sb.WriteString("  User: \"berikan saya rekomendasi investasi berdasarkan siklus keuangan 1 tahun terakhir\"\n")
+	sb.WriteString("  Kamu bisa langsung analisis dari 'Siklus Keuangan 1 Tahun Terakhir' di DATA PENGGUNA SAAT INI atau panggil:\n")
+	sb.WriteString("  <TOOL_CALL>\n")
+	sb.WriteString("  {\"tool\": \"get_finance_insight\", \"parameters\": {\"topic\": \"investment\"}}\n")
+	sb.WriteString("  </TOOL_CALL>\n")
+	sb.WriteString("  (lalu berikan analisis mendalam dan rekomendasi alokasi investasi bertingkat berbasis angka riil pengguna)\n")
 	sb.WriteString("- Kalo kategori gak ditemukan, auto-create aja kategori barunya\n")
 	sb.WriteString("- Kalo parameter kurang, pake default yg masuk akal (misal date: hari ini, description: nama kategori)\n")
 	sb.WriteString("- Jangan panggil tool yang gak perlu. Tapi kalo user minta catat transaksi, WAJIB panggil tool.\n")
@@ -272,7 +295,7 @@ func (u *AIUsecase) execSpendingSummary(ctx context.Context, userID uuid.UUID, p
 	now := time.Now()
 	var start, end time.Time
 
-	switch period {
+	switch strings.ToLower(strings.TrimSpace(period)) {
 	case "this_month":
 		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		end = now
@@ -282,9 +305,15 @@ func (u *AIUsecase) execSpendingSummary(ctx context.Context, userID uuid.UUID, p
 	case "this_year":
 		start = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
 		end = now
-	case "last_3_months":
+	case "last_3_months", "3_months":
 		start = time.Date(now.Year(), now.Month()-3, 1, 0, 0, 0, 0, now.Location())
 		end = now
+	case "last_12_months", "1_year", "one_year", "1_tahun", "1_tahun_terakhir":
+		start = now.AddDate(-1, 0, 0)
+		end = now
+	case "last_year":
+		start = time.Date(now.Year()-1, 1, 1, 0, 0, 0, 0, now.Location())
+		end = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
 	default:
 		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		end = now
@@ -324,7 +353,7 @@ func (u *AIUsecase) execCategoryExpenses(ctx context.Context, userID uuid.UUID, 
 	now := time.Now()
 	var start, end time.Time
 
-	switch period {
+	switch strings.ToLower(strings.TrimSpace(period)) {
 	case "this_month":
 		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		end = now
@@ -334,6 +363,15 @@ func (u *AIUsecase) execCategoryExpenses(ctx context.Context, userID uuid.UUID, 
 	case "this_year":
 		start = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
 		end = now
+	case "last_3_months", "3_months":
+		start = time.Date(now.Year(), now.Month()-3, 1, 0, 0, 0, 0, now.Location())
+		end = now
+	case "last_12_months", "1_year", "one_year", "1_tahun", "1_tahun_terakhir":
+		start = now.AddDate(-1, 0, 0)
+		end = now
+	case "last_year":
+		start = time.Date(now.Year()-1, 1, 1, 0, 0, 0, 0, now.Location())
+		end = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
 	default:
 		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		end = now
@@ -648,19 +686,37 @@ func (u *AIUsecase) execFinanceInsight(ctx context.Context, userID uuid.UUID, pa
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	stats, _ := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{StartDate: monthStart, EndDate: now})
 
+	oneYearAgo := now.AddDate(-1, 0, 0)
+	yearStats, _ := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{StartDate: oneYearAgo, EndDate: now})
+
 	categories, _ := u.txRepo.GetCategoryExpensesByPeriod(ctx, userID, monthStart, now)
 
 	profile, _ := u.profileRepo.GetByID(ctx, userID)
 
+	hasData := (stats != nil && stats.TotalIncome+stats.TotalExpense+stats.TotalSavings > 0) ||
+		(yearStats != nil && yearStats.TotalIncome+yearStats.TotalExpense+yearStats.TotalSavings > 0)
+
 	data := map[string]interface{}{
 		"topic":    topic,
-		"has_data": stats != nil && stats.TotalIncome+stats.TotalExpense+stats.TotalSavings > 0,
+		"has_data": hasData,
 	}
 	if stats != nil {
 		data["monthly_income"] = stats.TotalIncome
 		data["monthly_expense"] = stats.TotalExpense
 		data["monthly_savings"] = stats.TotalSavings
 		data["net_balance"] = stats.NetBalance
+	}
+	if yearStats != nil {
+		data["yearly_income"] = yearStats.TotalIncome
+		data["yearly_expense"] = yearStats.TotalExpense
+		data["yearly_savings"] = yearStats.TotalSavings
+		data["yearly_net_balance"] = yearStats.NetBalance
+		data["avg_monthly_income"] = yearStats.TotalIncome / 12
+		data["avg_monthly_expense"] = yearStats.TotalExpense / 12
+		data["avg_monthly_savings"] = yearStats.TotalSavings / 12
+		if yearStats.TotalIncome > 0 {
+			data["savings_rate_percent"] = fmt.Sprintf("%.1f", ((yearStats.TotalSavings+yearStats.NetBalance)/yearStats.TotalIncome)*100)
+		}
 	}
 	if len(categories) > 0 {
 		data["top_category"] = categories[0].CategoryName

@@ -533,13 +533,15 @@ func main() {
 	payRegistry := payment.NewRegistry()
 	// Gateways resolve their credentials at call time (DB setting over env), so
 	// Midtrans keys and bank details can change without a redeploy.
-	payRegistry.Register(payment.NewDynamicMidtransGateway(runtimeResolver))
+	midtransDynamic := payment.NewDynamicMidtransGateway(runtimeResolver)
+	payRegistry.Register(midtransDynamic)
 	payRegistry.Register(payment.NewDynamicManualGateway(runtimeResolver))
 	payTax := payment.NewTaxCalculator(settingsRepo)
 	payInvoice := payment.NewInvoiceService(paymentRepo, settingsRepo, payTax)
-	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver)
+	subActivator := usecase.NewSubscriptionActivator(billingRepo, billingRepo, entResolver).
+		WithQuotaSyncer(billing.NewQuotaSyncer(billingRepo, billingRepo))
+	payAutoCharger := payment.NewAutoCharger(paymentRepo, midtransDynamic, subActivator, txManager).WithEmitter(notifEmitter)
 	payWebhook := payment.NewWebhookProcessor(paymentRepo, payRegistry, subActivator, txManager)
-
 	// Proof object storage (P0). Local by default; R2 when configured. The
 	// active driver is read from the `storage_driver` setting at runtime, so an
 	// admin can switch local <-> r2 without a restart. R2 credentials resolve at
@@ -591,8 +593,8 @@ func main() {
 		WithUserService(payUserSvc).
 		WithCatalog(payCatalog).
 		WithSubscriptionService(paySubSvc, billingRepo).
-		WithStorage(proofStore)
-
+		WithStorage(proofStore).
+		WithAutoCharge(payAutoCharger, paymentRepo, payInvoice)
 	// Realtime producers (P07 slice B).
 	payWebhook.SetEmitter(notifEmitter)
 	payManual.SetEmitter(notifEmitter)
@@ -607,17 +609,29 @@ func main() {
 		}
 		return billingRepo.SetSubscriptionStatus(ctx, uid, billing.SubscriptionStatus(status))
 	}
-	dunningWorker := payment.NewDunningWorker(paymentRepo, settingsRepo, nil, time.Hour)
+	dunningWorker := payment.NewDunningWorker(paymentRepo, settingsRepo, dunningNotifier{service: notifService}, time.Hour)
 	graceWorker := payment.NewGraceWorker(paymentRepo, settingsRepo, setSubStatus, 30*time.Minute)
 	// Auto-expire unpaid invoices past their due date (dynamic window set by the
 	// operator as hours + minutes). A 5-minute scan keeps the lag small.
 	expiryWorker := payment.NewExpiryWorker(paymentRepo, 5*time.Minute)
+	// Renewal invoices (H-0): when a subscriber's cycle ends, issue the next
+	// cycle's invoice so they can pay and keep the plan. Skips a subscription the
+	// user asked to cancel and one already invoiced for this cycle (idempotent).
+	renewalWorker := payment.NewRenewalWorker(
+		paymentRepo,
+		paymentRepo,
+		payInvoice,
+		renewalNotifier{emitter: notifEmitter},
+		payment.RenewalConfig{},
+	).WithAutoCharger(payAutoCharger)
 	dunningWorker.Start(bgCtx)
 	graceWorker.Start(bgCtx)
 	expiryWorker.Start(bgCtx)
+	renewalWorker.Start(bgCtx)
 	defer dunningWorker.Stop()
 	defer graceWorker.Stop()
 	defer expiryWorker.Stop()
+	defer renewalWorker.Stop()
 
 	providerUC := usecase.NewProviderUsecase(providerRepo)
 	reportUC := usecase.NewReportUsecase(txRepo)
@@ -731,7 +745,8 @@ func main() {
 	// Scheduled downgrades (F3): applies end-of-cycle downgrades written by
 	// ScheduleDowngrade. Without this worker the schedule was recorded but never
 	// applied, so users kept the higher plan indefinitely.
-	subManager := billing.NewSubscriptionManager(billingRepo, billingRepo, nil, txManager)
+	subManager := billing.NewSubscriptionManager(billingRepo, billingRepo, nil, txManager).
+		WithQuotaSyncer(billing.NewQuotaSyncer(billingRepo, billingRepo))
 	downgradeWorker := billing.NewDowngradeWorker(billingRepo, func(ctx context.Context, uid uuid.UUID) error {
 		if err := subManager.ApplyScheduledDowngrade(ctx, uid); err != nil {
 			return err
@@ -742,6 +757,38 @@ func main() {
 	}, billing.DowngradeConfig{})
 	downgradeWorker.Start(bgCtx)
 	defer downgradeWorker.Stop()
+
+	// Subscription lifecycle (end of cycle): a user who neither renews nor has a
+	// scheduled downgrade would otherwise keep the paid plan forever — nothing
+	// moved the subscription out of `active`. This worker expires such a
+	// subscription (after the grace window) or cancels it at the cycle boundary
+	// when the user asked to stop. Both fall back to the default plan, so a
+	// lapsed subscriber is soft-limited, never locked out.
+	quotaSyncer := billing.NewQuotaSyncer(billingRepo, billingRepo)
+	lifecycleSvc := billing.NewLifecycleService(billingRepo, txManager, func(ctx context.Context, uid uuid.UUID) {
+		entBroadcaster.PublishInvalidate(ctx, uid)
+		// The plan just changed (e.g. Pro -> Free after expiry). Push it into the
+		// RUNNING token period, or the lapsed user keeps the paid quota until the
+		// period ends (a revenue leak). Best-effort: the transition already stuck.
+		if res, rerr := entResolver.Resolve(ctx, uid); rerr == nil && res != nil {
+			if serr := quotaSyncer.SyncRunningPeriod(ctx, uid, res.PlanCode); serr != nil {
+				logger.Warn("lifecycle: quota sync failed",
+					zap.String("user_id", uid.String()), zap.Error(serr))
+			}
+		}
+	})
+	lifecycleWorker := billing.NewLifecycleWorker(
+		billingRepo,
+		func(ctx context.Context, uid uuid.UUID, to billing.SubscriptionStatus, eventType, reason string) error {
+			return lifecycleSvc.TransitionByUserID(ctx, uid, to, eventType, reason)
+		},
+		func(ctx context.Context) int64 {
+			return payment.NewGraceWorker(paymentRepo, settingsRepo, nil, 0).GraceHours(ctx)
+		},
+		billing.LifecycleConfig{},
+	)
+	lifecycleWorker.Start(bgCtx)
+	defer lifecycleWorker.Stop()
 
 	// Wrap the realtime publisher so every user-facing event is also written to
 	// the durable inbox (and emailed when permitted). Payment/billing keep
@@ -782,6 +829,7 @@ func main() {
 		admin.WithEncryptionKey(encryptionKey),
 		admin.WithCache(cacheEngine),
 		admin.WithEntitlementInvalidator(entBroadcaster),
+		admin.WithQuotaSyncer(quotaSyncer),
 		admin.WithRealtimeEmitter(realtimePublisher),
 		admin.WithCatalog(admin.NewCatalogAdapter(catalogStore)),
 		admin.WithStorage(storageProvider, storageProvider),
@@ -840,7 +888,8 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		// 8080 is left free for other local projects; FinTrack's API uses 8081.
+		port = "8081"
 	}
 
 	srv := &http.Server{
@@ -1007,4 +1056,76 @@ func (r runtimeInvalidator) Invalidate() {
 	if r.settingsRepo != nil {
 		applyMeteringSettings(context.Background(), r.settingsRepo)
 	}
+}
+
+// renewalNotifier adapts the renewal worker's notification hook onto the shared
+// realtime/inbox emitter: it publishes an EventInvoiceIssued, which the
+// notification emitter turns into a durable in-app row (and an email when the
+// user allows it).
+type renewalNotifier struct {
+	emitter payment.RealtimeEmitter
+}
+
+func (n renewalNotifier) RenewalInvoiceIssued(ctx context.Context, userID uuid.UUID, inv *payment.Invoice, planName string) error {
+	if n.emitter == nil || inv == nil {
+		return nil
+	}
+	payload := contracts.InvoiceIssuedPayload{
+		InvoiceID:     inv.ID.String(),
+		InvoiceNumber: inv.InvoiceNumber,
+		AmountIDR:     inv.TotalIDR,
+		PlanName:      planName,
+		Renewal:       true,
+	}
+	if inv.DueAt != nil {
+		payload.DueAt = inv.DueAt.Unix()
+	}
+	n.emitter.PublishUser(ctx, userID, contracts.NewEvent(contracts.EventInvoiceIssued, time.Now().Unix(), payload))
+	return nil
+}
+
+func (n renewalNotifier) RenewalAutoCharged(ctx context.Context, userID uuid.UUID, inv *payment.Invoice, maskedCard, planName string) error {
+	if n.emitter == nil || inv == nil {
+		return nil
+	}
+	payload := contracts.InvoiceIssuedPayload{
+		InvoiceID:     inv.ID.String(),
+		InvoiceNumber: inv.InvoiceNumber,
+		AmountIDR:     inv.TotalIDR,
+		PlanName:      planName,
+		Renewal:       true,
+	}
+	n.emitter.PublishUser(ctx, userID, contracts.NewEvent(contracts.EventPaymentReceived, time.Now().Unix(), payload))
+	return nil
+}
+// dunningNotifier persists the pre-expiry reminders the dunning worker emits.
+// Without it the worker was constructed with a nil notifier, so the reminders it
+// "sent" went nowhere.
+type dunningNotifier struct {
+	service *notification.Service
+}
+
+func (n dunningNotifier) Notify(ctx context.Context, msg payment.Notification) error {
+	if n.service == nil {
+		return nil
+	}
+	uid, err := uuid.Parse(msg.UserID)
+	if err != nil {
+		return nil
+	}
+	title := "Langganan akan berakhir"
+	switch msg.Type {
+	case "SUBSCRIPTION_EXPIRING_DUE":
+		title = "Langganan berakhir hari ini"
+	case "SUBSCRIPTION_EXPIRING_URGENT":
+		title = "Langganan berakhir sebentar lagi"
+	}
+	return n.service.Notify(ctx, notification.Message{
+		UserID:  uid,
+		Event:   msg.Type,
+		Title:   title,
+		Body:    msg.Message,
+		Href:    "/user/subscription",
+		Channel: notification.ChannelTransaction,
+	})
 }

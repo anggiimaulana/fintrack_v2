@@ -32,6 +32,10 @@ const (
 	// affected queries immediately instead of waiting for a TTL, so an operator
 	// sees their change take effect at once (P-13).
 	EventConfigChanged = "config_changed"
+	// EventInvoiceIssued announces a newly issued invoice (an automatic renewal
+	// invoice, or one created at checkout). The user is told to pay before the
+	// due date so the subscription does not lapse.
+	EventInvoiceIssued = "invoice_issued"
 )
 
 // Event is the envelope every domain event shares. Field order and names are
@@ -110,6 +114,19 @@ type QuotaResetPayload struct {
 	PeriodStart     int64  `json:"new_cycle_start"`
 	PeriodEnd       int64  `json:"new_cycle_end"`
 	AllocatedTokens int64  `json:"allocated_tokens"`
+}
+
+// InvoiceIssuedPayload accompanies EventInvoiceIssued.
+type InvoiceIssuedPayload struct {
+	InvoiceID     string `json:"invoice_id"`
+	InvoiceNumber string `json:"invoice_number"`
+	AmountIDR     int64  `json:"amount_idr"`
+	PlanName      string `json:"plan_name,omitempty"`
+	// DueAt is the payment deadline (Unix seconds), so the client can render a
+	// countdown without a second fetch.
+	DueAt int64 `json:"due_at,omitempty"`
+	// Renewal marks an automatically issued renewal invoice (vs a checkout).
+	Renewal bool `json:"renewal"`
 }
 
 // ConfigChangedPayload accompanies EventConfigChanged. It names WHAT changed so

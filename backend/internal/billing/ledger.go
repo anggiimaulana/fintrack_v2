@@ -219,6 +219,16 @@ func (s *LedgerService) Commit(ctx context.Context, userID, reservationID uuid.U
 				return ErrSubscriptionNotFound
 			}
 		}
+		// Re-check INSIDE the transaction, now that the period row is locked.
+		// The pre-transaction check above is only a fast path: two concurrent
+		// commits (with different idempotency keys) both pass it, then both
+		// charge. Locking the period serialises them, so the loser sees the
+		// winner's commit here and aborts instead of double-charging.
+		if resolved, rerr := s.tokens.IsReservationResolved(txCtx, reservationID); rerr != nil {
+			return rerr
+		} else if resolved {
+			return ErrReservationAlreadyResolved
+		}
 		// Convert the RAW actual to units for THIS cycle (snapshot ratio).
 		units := s.toUnits(txCtx, rawTokens, period.QuotaRatio)
 		// The reservation is an ESTIMATE; the provider may report more tokens
@@ -297,6 +307,13 @@ func (s *LedgerService) Release(ctx context.Context, userID, reservationID uuid.
 				return ErrSubscriptionNotFound
 			}
 		}
+		// Re-check inside the transaction (see Commit): the unlocked pre-check
+		// lets two concurrent resolutions of the same reservation both proceed.
+		if resolved, rerr := s.tokens.IsReservationResolved(txCtx, reservationID); rerr != nil {
+			return rerr
+		} else if resolved {
+			return ErrReservationAlreadyResolved
+		}
 		if err := s.tokens.AdjustPeriod(txCtx, period.ID, 0, -reserve.Amount); err != nil {
 			return err
 		}
@@ -368,23 +385,56 @@ func (s *LedgerService) Refund(ctx context.Context, userID uuid.UUID, rawTokens 
 	})
 }
 
+// defaultCycleLength is the fallback cycle length when a resolved window is
+// empty or unusable (a healthy plan always supplies billing_period_days).
+const defaultCycleLength = 30 * 24 * time.Hour
+
 // ensurePeriodLocked resolves the current cycle and returns the locked period,
-// creating it if necessary.
+// creating it when a new cycle has begun. It never returns (nil, nil): callers
+// dereference the period, so a missing cycle is an error, not a nil.
+//
+// A period that already covers `now` IS the current cycle and is reused as-is:
+// its quota and ratio are a SNAPSHOT for the cycle's life. A plan change is
+// pushed into the running period by whoever applies it (SubscriptionActivator on
+// payment, the lifecycle worker on expiry — see QuotaSyncer), never inferred
+// here. This keeps quota enforcement a single, deliberate act and preserves the
+// snapshot invariant the domain documents.
 func (s *LedgerService) ensurePeriodLocked(ctx context.Context, userID uuid.UUID) (*TokenPeriod, error) {
-	period, err := s.tokens.GetPeriodForUpdate(ctx, userID, s.now().Unix())
+	now := s.now()
+	period, err := s.tokens.GetPeriodForUpdate(ctx, userID, now.Unix())
 	if err != nil {
 		return nil, err
 	}
 	if period != nil {
 		return period, nil
 	}
-	// No period yet: resolve quota + ratio and create it, then lock again.
-	start, end, quota, ratio, err := s.quota.ResolveQuota(ctx, userID, s.now())
+
+	// No period covers `now`: a new cycle must begin. Resolve its window + quota.
+	start, end, quota, ratio, err := s.quota.ResolveQuota(ctx, userID, now)
 	if err != nil {
 		return nil, err
 	}
 	if ratio < 1 {
 		ratio = 1
+	}
+	// The resolved window must COVER now. It may not: an `active` subscription
+	// whose current_period_end has lapsed keeps granting access (the entitlement
+	// gate keys on status, not period end) and the cycle only advances when a
+	// payment lands. Creating a stale window verbatim inserts a row that never
+	// matches the current-time lookup, so the final lookup returns nil and the
+	// caller panics dereferencing it. Roll the window forward so it always
+	// covers now, preserving the cycle length.
+	if start.After(now) || !end.After(now) {
+		length := end.Sub(start)
+		if length <= 0 {
+			length = defaultCycleLength
+		}
+		logger.Warn("token period window lapsed; rolling forward",
+			zap.String("user_id", userID.String()),
+			zap.Time("resolved_start", start),
+			zap.Time("resolved_end", end))
+		start = now
+		end = now.Add(length)
 	}
 	if _, err := s.tokens.GetOrCreatePeriod(ctx, userID, start.Unix(), end.Unix(), quota, ratio); err != nil {
 		return nil, err
@@ -393,7 +443,16 @@ func (s *LedgerService) ensurePeriodLocked(ctx context.Context, userID uuid.UUID
 	if s.onCycleReset != nil {
 		s.onCycleReset(ctx, userID, start, end, quota)
 	}
-	return s.tokens.GetPeriodForUpdate(ctx, userID, s.now().Unix())
+	locked, err := s.tokens.GetPeriodForUpdate(ctx, userID, now.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if locked == nil {
+		// Defensive: unreachable after the roll-forward, but never hand a nil
+		// period to a caller that will dereference it.
+		return nil, ErrSubscriptionExpired
+	}
+	return locked, nil
 }
 
 // findReservation loads the reserve ledger entry for a reservation id.

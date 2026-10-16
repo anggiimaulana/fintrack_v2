@@ -96,6 +96,24 @@ func messageForUser(userID uuid.UUID, ev contracts.Event) (Message, bool) {
 			Channel: ChannelTransaction,
 		}, true
 
+	case contracts.EventInvoiceIssued:
+		var p contracts.InvoiceIssuedPayload
+		_ = json.Unmarshal(ev.Payload, &p)
+		title := "Tagihan baru"
+		body := "Tagihan " + p.InvoiceNumber + " sebesar " + formatIDR(p.AmountIDR) + " telah diterbitkan."
+		if p.Renewal {
+			title = "Perpanjangan langganan"
+			body = "Tagihan perpanjangan " + p.InvoiceNumber + " sebesar " + formatIDR(p.AmountIDR) + " telah diterbitkan. Bayar sebelum jatuh tempo agar langganan tidak berakhir."
+		}
+		return Message{
+			UserID:  userID,
+			Event:   ev.Event,
+			Title:   title,
+			Body:    body,
+			Href:    "/user/subscription?tab=payment",
+			Channel: ChannelTransaction,
+		}, true
+
 	default:
 		// ai_endpoint_down / manual_approval_needed are admin-facing.
 		return Message{}, false

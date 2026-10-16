@@ -30,12 +30,12 @@ func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
 // ─── Invoices ─────────────────────────────────────────────────
 
 const invoiceSelect = `SELECT id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr,
-    status, notes, issued_at, due_at, paid_at, voided_at, closed_reason, expired_at, created_at, updated_at FROM invoices`
+    status, plan_code, notes, issued_at, due_at, paid_at, voided_at, closed_reason, expired_at, created_at, updated_at FROM invoices`
 
 func (r *PaymentRepo) scanInvoice(row rowScanner) (*payment.Invoice, error) {
 	inv := &payment.Invoice{}
 	err := row.Scan(&inv.ID, &inv.InvoiceNumber, &inv.UserID, &inv.SubscriptionID, &inv.SubtotalIDR,
-		&inv.TaxIDR, &inv.TotalIDR, &inv.Status, &inv.Notes, &inv.IssuedAt, &inv.DueAt, &inv.PaidAt,
+		&inv.TaxIDR, &inv.TotalIDR, &inv.Status, &inv.PlanCode, &inv.Notes, &inv.IssuedAt, &inv.DueAt, &inv.PaidAt,
 		&inv.VoidedAt, &inv.ClosedReason, &inv.ExpiredAt, &inv.CreatedAt, &inv.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, payment.ErrInvoiceNotFound
@@ -51,10 +51,10 @@ func (r *PaymentRepo) CreateInvoice(ctx context.Context, inv *payment.Invoice) e
 		inv.ID = uuid.New()
 	}
 	err := q(ctx, r.pool).QueryRow(ctx,
-		`INSERT INTO invoices (id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr, status, notes, due_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING issued_at, created_at, updated_at`,
+		`INSERT INTO invoices (id, invoice_number, user_id, subscription_id, subtotal_idr, tax_idr, total_idr, status, plan_code, notes, due_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING issued_at, created_at, updated_at`,
 		inv.ID, inv.InvoiceNumber, inv.UserID, inv.SubscriptionID, inv.SubtotalIDR, inv.TaxIDR,
-		inv.TotalIDR, inv.Status, inv.Notes, inv.DueAt).
+		inv.TotalIDR, inv.Status, inv.PlanCode, inv.Notes, inv.DueAt).
 		Scan(&inv.IssuedAt, &inv.CreatedAt, &inv.UpdatedAt)
 	return err
 }
@@ -176,6 +176,57 @@ func (r *PaymentRepo) ListInvoicesDueBefore(ctx context.Context, beforeUnix int6
 }
 
 // ─── Payments ─────────────────────────────────────────────────
+
+// InvoiceExistsByMarker reports whether an invoice already carries the given
+// idempotency marker in its notes. Used by the renewal worker to bill a cycle
+// exactly once.
+func (r *PaymentRepo) InvoiceExistsByMarker(ctx context.Context, marker string) (bool, error) {
+	var exists bool
+	err := q(ctx, r.pool).QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM invoices WHERE notes = $1)`, marker).Scan(&exists)
+	return exists, err
+}
+
+// ListRenewalCandidates returns subscriptions whose cycle has just ended and
+// that should be invoiced for the next one:
+//
+//   - active or past_due (still entitled; expired/canceled are terminal),
+//   - the user did NOT ask to cancel (cancel_at_period_end = false),
+//   - the cycle has ended (current_period_end <= now),
+//   - no scheduled plan change (that path re-bills via its own flow),
+//   - the plan is paid (price > 0),
+//   - and no invoice exists yet for this exact cycle (renewal marker).
+func (r *PaymentRepo) ListRenewalCandidates(ctx context.Context, now time.Time) ([]payment.RenewalCandidate, error) {
+	rows, err := q(ctx, r.pool).Query(ctx,
+		`SELECT s.user_id, s.id, p.code, p.name, p.price_monthly_idr, s.current_period_end
+         FROM subscriptions s
+         JOIN plans p ON p.id = s.plan_id
+         WHERE s.status IN ('active','past_due')
+           AND s.cancel_at_period_end = false
+           AND s.current_period_end IS NOT NULL
+           AND s.current_period_end <= $1
+           AND NOT (s.metadata ? 'scheduled_plan_code')
+           AND p.price_monthly_idr > 0
+           AND NOT EXISTS (
+               SELECT 1 FROM invoices i
+               WHERE i.notes = 'renewal:' || s.id::text || ':' || floor(extract(epoch FROM s.current_period_end))::bigint::text
+           )
+         ORDER BY s.current_period_end ASC
+         LIMIT 200`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []payment.RenewalCandidate
+	for rows.Next() {
+		var c payment.RenewalCandidate
+		if err := rows.Scan(&c.UserID, &c.SubscriptionID, &c.PlanCode, &c.PlanName, &c.PriceIDR, &c.PeriodEnd); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
 
 const paymentSelect = `SELECT id, invoice_id, user_id, gateway, gateway_ref, amount_idr, status,
     payment_method, proof_url, idempotency_key, payload_snapshot, created_at, updated_at FROM payments`
@@ -507,6 +558,118 @@ func (r *PaymentRepo) ListInvoicesByUser(ctx context.Context, userID uuid.UUID, 
 		out = append(out, inv)
 	}
 	return out, total, rows.Err()
+}
+
+// ─── Card Tokens ──────────────────────────────────────────────
+
+const cardTokenSelect = `SELECT id, user_id, gateway, token_id, masked_card, card_type, bank, is_default, expires_at, created_at, updated_at FROM payment_card_tokens`
+
+func (r *PaymentRepo) scanCardToken(row rowScanner) (*payment.CardToken, error) {
+	t := &payment.CardToken{}
+	err := row.Scan(&t.ID, &t.UserID, &t.Gateway, &t.TokenID, &t.MaskedCard, &t.CardType, &t.Bank, &t.IsDefault, &t.ExpiresAt, &t.CreatedAt, &t.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, payment.ErrCardTokenNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (r *PaymentRepo) SaveCardToken(ctx context.Context, token *payment.CardToken) error {
+	if token.ID == uuid.Nil {
+		token.ID = uuid.New()
+	}
+	if token.Gateway == "" {
+		token.Gateway = "midtrans"
+	}
+
+	// If user has no existing cards, make this one default automatically.
+	var count int
+	_ = q(ctx, r.pool).QueryRow(ctx, `SELECT COUNT(*) FROM payment_card_tokens WHERE user_id = $1`, token.UserID).Scan(&count)
+	if count == 0 {
+		token.IsDefault = true
+	}
+
+	if token.IsDefault {
+		_, _ = q(ctx, r.pool).Exec(ctx, `UPDATE payment_card_tokens SET is_default = false WHERE user_id = $1`, token.UserID)
+	}
+
+	err := q(ctx, r.pool).QueryRow(ctx,
+		`INSERT INTO payment_card_tokens (id, user_id, gateway, token_id, masked_card, card_type, bank, is_default, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (user_id, gateway, token_id) DO UPDATE
+         SET masked_card = EXCLUDED.masked_card,
+             card_type = EXCLUDED.card_type,
+             bank = EXCLUDED.bank,
+             is_default = EXCLUDED.is_default,
+             expires_at = EXCLUDED.expires_at,
+             updated_at = now()
+         RETURNING id, created_at, updated_at`,
+		token.ID, token.UserID, token.Gateway, token.TokenID, token.MaskedCard, token.CardType, token.Bank, token.IsDefault, token.ExpiresAt).
+		Scan(&token.ID, &token.CreatedAt, &token.UpdatedAt)
+	return err
+}
+
+func (r *PaymentRepo) GetDefaultCardToken(ctx context.Context, userID uuid.UUID) (*payment.CardToken, error) {
+	t, err := r.scanCardToken(q(ctx, r.pool).QueryRow(ctx, cardTokenSelect+` WHERE user_id = $1 AND is_default = true LIMIT 1`, userID))
+	if errors.Is(err, payment.ErrCardTokenNotFound) {
+		return nil, nil
+	}
+	return t, err
+}
+
+func (r *PaymentRepo) ListCardTokensByUser(ctx context.Context, userID uuid.UUID) ([]*payment.CardToken, error) {
+	rows, err := q(ctx, r.pool).Query(ctx, cardTokenSelect+` WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*payment.CardToken
+	for rows.Next() {
+		t, err := r.scanCardToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (r *PaymentRepo) GetCardTokenByID(ctx context.Context, id uuid.UUID) (*payment.CardToken, error) {
+	return r.scanCardToken(q(ctx, r.pool).QueryRow(ctx, cardTokenSelect+` WHERE id = $1`, id))
+}
+
+func (r *PaymentRepo) SetDefaultCardToken(ctx context.Context, userID, tokenID uuid.UUID) error {
+	_, err := q(ctx, r.pool).Exec(ctx, `UPDATE payment_card_tokens SET is_default = false WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+	tag, err := q(ctx, r.pool).Exec(ctx, `UPDATE payment_card_tokens SET is_default = true WHERE user_id = $1 AND id = $2`, userID, tokenID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return payment.ErrCardTokenNotFound
+	}
+	return nil
+}
+
+func (r *PaymentRepo) DeleteCardToken(ctx context.Context, userID, tokenID uuid.UUID) error {
+	tag, err := q(ctx, r.pool).Exec(ctx, `DELETE FROM payment_card_tokens WHERE user_id = $1 AND id = $2`, userID, tokenID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return payment.ErrCardTokenNotFound
+	}
+	// If the user has other cards and none is default, promote the newest one.
+	var hasDefault bool
+	_ = q(ctx, r.pool).QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM payment_card_tokens WHERE user_id = $1 AND is_default = true)`, userID).Scan(&hasDefault)
+	if !hasDefault {
+		_, _ = q(ctx, r.pool).Exec(ctx, `UPDATE payment_card_tokens SET is_default = true WHERE id = (SELECT id FROM payment_card_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1)`, userID)
+	}
+	return nil
 }
 
 // compile-time assertion.

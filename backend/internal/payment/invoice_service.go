@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,7 +32,11 @@ type CreateInvoiceDTO struct {
 	UserID         uuid.UUID
 	SubscriptionID *uuid.UUID
 	SubtotalIDR    int64
-	Notes          string
+	// PlanCode names the plan this invoice buys. Stored in the dedicated
+	// `plan_code` column (NOT `notes`) so activation never has to parse a note.
+	PlanCode string
+	// Notes carries free-form metadata (e.g. the renewal idempotency marker).
+	Notes string
 	// DueHours overrides the default due window (0 = settings/invoice_due_hours).
 	DueHours int
 }
@@ -39,6 +44,14 @@ type CreateInvoiceDTO struct {
 // Create builds and persists an invoice with a deterministic number and an
 // integer-Rupiah total (subtotal + tax).
 func (s *InvoiceService) Create(ctx context.Context, in CreateInvoiceDTO) (*Invoice, error) {
+	// Guard against allocating an invoice number when the user already has an
+	// open invoice: prevents sequence gaps on redundant create attempts.
+	if in.UserID != uuid.Nil && s.repo != nil {
+		if open, err := s.repo.GetOpenInvoiceForUser(ctx, in.UserID); err == nil && open != nil {
+			return nil, fmt.Errorf("%w: %s", ErrOpenInvoiceExists, open.InvoiceNumber)
+		}
+	}
+
 	now := s.now().In(s.location)
 	number, err := s.repo.NextInvoiceNumber(ctx, now.Format("20060102"))
 	if err != nil {
@@ -96,6 +109,10 @@ func (s *InvoiceService) persistInvoice(ctx context.Context, in CreateInvoiceDTO
 		TotalIDR:       subtotal + taxIDR,
 		Status:         InvoiceIssued,
 		DueAt:          &dueAt,
+	}
+	if in.PlanCode != "" {
+		planCode := in.PlanCode
+		inv.PlanCode = &planCode
 	}
 	if in.Notes != "" {
 		notes := in.Notes

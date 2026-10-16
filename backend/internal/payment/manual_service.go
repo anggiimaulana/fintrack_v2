@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/fintrack/backend/pkg/logger"
 )
 
 // ManualService handles the manual-payment flow: uploading proof and the admin
@@ -115,7 +118,13 @@ func (s *ManualService) review(ctx context.Context, paymentID uuid.UUID, approve
 			if s.activate != nil {
 				inv, ierr := s.repo.GetInvoiceByID(txCtx, pay.InvoiceID)
 				if ierr == nil && inv != nil {
-					if aerr := s.activate.ActivateForUser(txCtx, pay.UserID, planCodeFromInvoice(inv)); aerr != nil {
+					// Never lose an approved payment to a missing plan code: log
+					// and settle, rather than rolling back.
+					if code := planCodeFromInvoice(inv); code == "" {
+						logger.Warn("approved invoice has no plan_code; skipping activation",
+							zap.String("invoice", inv.InvoiceNumber),
+							zap.String("user", pay.UserID.String()))
+					} else if aerr := s.activate.ActivateForUser(txCtx, pay.UserID, code); aerr != nil {
 						return aerr
 					}
 				}

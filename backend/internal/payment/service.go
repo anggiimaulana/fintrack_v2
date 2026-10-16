@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,6 +42,13 @@ type Repository interface {
 	SetPaymentProof(ctx context.Context, id uuid.UUID, proofURL string) error
 	ListPaymentsPendingReview(ctx context.Context, limit int) ([]*Payment, error)
 	ListInvoicesDueBefore(ctx context.Context, beforeUnix int64) ([]*Invoice, error)
+	// InvoiceExistsByMarker reports whether an invoice already carries the given
+	// idempotency marker in its notes (renewal-per-cycle dedupe).
+	InvoiceExistsByMarker(ctx context.Context, marker string) (bool, error)
+
+	// Renewal billing: subscriptions whose cycle just ended and that should be
+	// invoiced for the next one.
+	ListRenewalCandidates(ctx context.Context, now time.Time) ([]RenewalCandidate, error)
 
 	// User-scoped reads (self-service history). Payments are joined with their
 	// invoice so the UI can render one row per attempt without extra queries.
@@ -49,6 +57,14 @@ type Repository interface {
 	// owner so a user can never read another user's payment.
 	GetPaymentForUser(ctx context.Context, userID, paymentID uuid.UUID) (*UserPayment, error)
 	ListInvoicesByUser(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*Invoice, int, error)
+
+	// Card tokens (for recurring and 1-click tokenized payments)
+	SaveCardToken(ctx context.Context, token *CardToken) error
+	GetDefaultCardToken(ctx context.Context, userID uuid.UUID) (*CardToken, error)
+	ListCardTokensByUser(ctx context.Context, userID uuid.UUID) ([]*CardToken, error)
+	GetCardTokenByID(ctx context.Context, id uuid.UUID) (*CardToken, error)
+	SetDefaultCardToken(ctx context.Context, userID, tokenID uuid.UUID) error
+	DeleteCardToken(ctx context.Context, userID, tokenID uuid.UUID) error
 }
 
 // UserPayment is a payment attempt joined with its invoice, for the user-facing

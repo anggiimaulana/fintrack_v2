@@ -102,7 +102,7 @@ func TestP08_002_WebhookReplayIdempotency(t *testing.T) {
 		TaxIDR:        0,
 		TotalIDR:      grossAmountInt,
 		Status:        payment.InvoiceIssued,
-		Notes:         &planCode,
+		PlanCode:      &planCode,
 	}); err != nil {
 		t.Fatalf("create invoice: %v", err)
 	}

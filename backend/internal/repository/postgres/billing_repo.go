@@ -355,6 +355,19 @@ func (r *BillingRepo) AdjustPeriod(ctx context.Context, periodID uuid.UUID, used
 	return err
 }
 
+// UpdatePeriodQuota refreshes a period's quota and ratio in place (see the
+// repository interface for why). Usage counters are left untouched: the cycle
+// continues, only the ceiling changes.
+func (r *BillingRepo) UpdatePeriodQuota(ctx context.Context, periodID uuid.UUID, quota int64, ratio int64) error {
+	if ratio < 1 {
+		ratio = 1
+	}
+	_, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE token_periods SET quota_tokens = $2, quota_ratio = $3, updated_at = now()
+         WHERE id = $1`, periodID, quota, ratio)
+	return err
+}
+
 // CountAIRequestsInPeriod counts AI reserve entries (one per AI call: chat,
 // vision, or voice) for the user's current period. Used as the usage value for
 // the `ai_requests_per_cycle` limit. A user with no current period has made no
@@ -412,8 +425,17 @@ func (r *BillingRepo) InsertLedger(ctx context.Context, e *billing.TokenLedgerEn
 		Scan(&e.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return billing.ErrDuplicateIdempotencyKey
+		if errors.As(err, &pgErr) {
+			switch {
+			case pgErr.Code == "23505":
+				return billing.ErrDuplicateIdempotencyKey
+			case pgErr.Code == "P0001" && pgErr.Hint == "reservation_already_resolved":
+				// Raised by the token_ledger_single_resolution trigger: a
+				// concurrent (or repeated) commit/release for the same
+				// reservation. Surface the same sentinel as the in-transaction
+				// check so callers handle one error shape.
+				return billing.ErrReservationAlreadyResolved
+			}
 		}
 		return err
 	}
@@ -543,12 +565,48 @@ func (r *BillingRepo) ListDueScheduledDowngrades(ctx context.Context, now time.T
 	return out, rows.Err()
 }
 
+// ListSubscriptionsDueForLifecycle returns subscriptions whose cycle has ended
+// and that are NOT scheduled for a plan change (those are the downgrade
+// worker's job). It powers the auto-expire / auto-cancel worker: a user who
+// simply stops paying must not keep the paid plan forever.
+func (r *BillingRepo) ListSubscriptionsDueForLifecycle(ctx context.Context, now time.Time) ([]billing.DueSubscription, error) {
+	rows, err := q(ctx, r.pool).Query(ctx,
+		`SELECT user_id, status, current_period_end, cancel_at_period_end,
+		        (metadata ? 'scheduled_plan_code') AS has_scheduled_plan
+         FROM subscriptions
+         WHERE current_period_end IS NOT NULL
+           AND current_period_end <= $1
+           AND status NOT IN ('expired', 'canceled')`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []billing.DueSubscription
+	for rows.Next() {
+		var d billing.DueSubscription
+		if err := rows.Scan(&d.UserID, &d.Status, &d.PeriodEnd, &d.CancelAtPeriodEnd, &d.HasScheduledPlan); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // SetSubscriptionStatus transitions a user's subscription to a new status. Used
 // by the grace/dunning worker to enforce the lifecycle (F3). A missing
 // subscription is a no-op, not an error: users without a row fall back to the
 // default plan anyway.
+//
+// Terminal states are protected: an `expired` or `canceled` subscription is
+// never moved back to a non-terminal status by a status setter. Without this
+// guard the grace worker (which keys on invoice due dates) could resurrect a
+// subscription the lifecycle worker had just expired, silently restoring paid
+// access. A real re-activation goes through payment (ActivateForUser), which
+// sets `active` explicitly.
 func (r *BillingRepo) SetSubscriptionStatus(ctx context.Context, userID uuid.UUID, status billing.SubscriptionStatus) error {
 	_, err := q(ctx, r.pool).Exec(ctx,
-		`UPDATE subscriptions SET status = $2 WHERE user_id = $1`, userID, status)
+		`UPDATE subscriptions SET status = $2
+         WHERE user_id = $1
+           AND status NOT IN ('expired', 'canceled')`, userID, status)
 	return err
 }

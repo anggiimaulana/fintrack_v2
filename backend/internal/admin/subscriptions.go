@@ -9,7 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 )
 
@@ -251,6 +253,9 @@ func (h *Handler) ForceDowngrade(c *gin.Context) {
 		return
 	}
 	h.invalidateUser(ctx, userID)
+	// The plan changed: push it into the running token period, or the user stays
+	// capped at the previous plan's quota until the cycle lapses.
+	h.syncQuota(ctx, userID, targetCode)
 	h.audit(c, "force_downgrade", "subscription", id.String(), before, after)
 	response.OK(c, "Paket diturunkan", nil)
 }
@@ -335,6 +340,20 @@ func (h *Handler) invalidateUser(ctx contextT, userID uuid.UUID) {
 	if h.svc.cache != nil {
 		h.svc.cache.BumpUserVersion(ctx, userID)
 		h.svc.cache.DeletePattern(ctx, roleKey(userID.String()))
+	}
+}
+
+// syncQuota pushes a plan change into the user's running token period so a
+// forced plan change takes effect immediately instead of waiting for the cycle
+// to lapse. Best-effort: the plan change is already committed.
+func (h *Handler) syncQuota(ctx contextT, userID uuid.UUID, planCode string) {
+	if h.svc.quotaSyncer == nil {
+		return
+	}
+	if err := h.svc.quotaSyncer.SyncRunningPeriod(ctx, userID, planCode); err != nil {
+		logger.Warn("admin: quota sync failed",
+			zap.String("user_id", userID.String()),
+			zap.String("plan_code", planCode), zap.Error(err))
 	}
 }
 

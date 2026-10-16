@@ -15,9 +15,10 @@ import (
 type memRepo struct {
 	mu       sync.Mutex
 	invoices map[uuid.UUID]*Invoice
-	payments map[uuid.UUID]*Payment
-	byRef    map[string]*Payment
-	paidCall int
+	payments   map[uuid.UUID]*Payment
+	byRef      map[string]*Payment
+	savedCards []*CardToken
+	paidCall   int
 }
 
 func newMemRepo() *memRepo {
@@ -194,6 +195,41 @@ func (m *memRepo) ListInvoicesDueBefore(_ context.Context, beforeUnix int64) ([]
 	return out, nil
 }
 
+func (m *memRepo) InvoiceExistsByMarker(_ context.Context, marker string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, inv := range m.invoices {
+		if inv.Notes != nil && *inv.Notes == marker {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *memRepo) ListRenewalCandidates(_ context.Context, now time.Time) ([]RenewalCandidate, error) {
+	return nil, nil
+}
+
+func (m *memRepo) SaveCardToken(_ context.Context, tok *CardToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.savedCards = append(m.savedCards, tok)
+	return nil
+}
+func (m *memRepo) GetDefaultCardToken(_ context.Context, userID uuid.UUID) (*CardToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.savedCards {
+		if c.UserID == userID && c.IsDefault {
+			return c, nil
+		}
+	}
+	return nil, nil
+}
+func (m *memRepo) ListCardTokensByUser(_ context.Context, _ uuid.UUID) ([]*CardToken, error) { return nil, nil }
+func (m *memRepo) GetCardTokenByID(_ context.Context, _ uuid.UUID) (*CardToken, error) { return nil, ErrCardTokenNotFound }
+func (m *memRepo) SetDefaultCardToken(_ context.Context, _, _ uuid.UUID) error { return nil }
+func (m *memRepo) DeleteCardToken(_ context.Context, _, _ uuid.UUID) error { return nil }
 // noopTx runs fn directly (no real transaction in unit tests).
 type noopTx struct{}
 
@@ -254,7 +290,7 @@ func TestWebhookProcessor_IdempotentReplay(t *testing.T) {
 	invID := uuid.New()
 	userID := uuid.New()
 	note := "pro"
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, Notes: &note})
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, PlanCode: &note})
 	refCopy := ref
 	pay := &Payment{ID: uuid.New(), InvoiceID: invID, UserID: userID, Gateway: "midtrans", GatewayRef: &refCopy, AmountIDR: 39000, Status: PaymentPending, IdempotencyKey: "k1"}
 	_ = repo.CreatePayment(context.Background(), pay)
@@ -301,5 +337,72 @@ func TestWebhookProcessor_UnknownGateway(t *testing.T) {
 	proc := NewWebhookProcessor(newMemRepo(), NewRegistry(), nil, noopTx{})
 	if _, err := proc.Process(context.Background(), "nope", []byte("{}"), nil); err != ErrGatewayNotConfigured {
 		t.Fatalf("expected ErrGatewayNotConfigured, got %v", err)
+	}
+}
+
+// TestWebhookProcessor_SavesCardToken tests that tokenized card details in a settled webhook
+// are recorded for recurring/auto-charge use.
+func TestWebhookProcessor_SavesCardToken(t *testing.T) {
+	repo := newMemRepo()
+	ref := "ORDER-CARD-1"
+	invID := uuid.New()
+	userID := uuid.New()
+	note := "pro"
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, PlanCode: &note})
+	refCopy := ref
+	pay := &Payment{
+		ID:             uuid.New(),
+		InvoiceID:      invID,
+		UserID:         userID,
+		Gateway:        "midtrans",
+		GatewayRef:     &refCopy,
+		AmountIDR:      79000,
+		Status:         PaymentPending,
+		IdempotencyKey: "card-test",
+	}
+	_ = repo.CreatePayment(context.Background(), pay)
+
+	gw := &fakeGateway{
+		name: "midtrans",
+		webhookRes: &WebhookResult{
+			OrderID:               ref,
+			GatewayRef:            ref,
+			Status:                PaymentSettled,
+			AmountIDR:             79000,
+			PaymentMethod:         "credit_card",
+			SavedTokenID:          "481111222333-1114",
+			SavedTokenIDExpiredAt: "2028-12-31 23:59:59",
+			MaskedCard:            "481111-1114",
+			CardType:              "credit",
+			Bank:                  "bca",
+		},
+	}
+	reg := NewRegistry()
+	reg.Register(gw)
+	proc := NewWebhookProcessor(repo, reg, nil, noopTx{})
+
+	res, err := proc.Process(context.Background(), "midtrans", []byte("{}"), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != PaymentSettled {
+		t.Fatalf("expected PaymentSettled, got %s", res.Status)
+	}
+
+	if len(repo.savedCards) != 1 {
+		t.Fatalf("expected 1 saved card token recorded, got %d", len(repo.savedCards))
+	}
+	saved := repo.savedCards[0]
+	if saved.TokenID != "481111222333-1114" {
+		t.Errorf("token_id: got %s, want 481111222333-1114", saved.TokenID)
+	}
+	if saved.MaskedCard != "481111-1114" {
+		t.Errorf("masked_card: got %s, want 481111-1114", saved.MaskedCard)
+	}
+	if saved.Bank != "bca" {
+		t.Errorf("bank: got %s, want bca", saved.Bank)
+	}
+	if saved.UserID != userID {
+		t.Errorf("user_id: got %s, want %s", saved.UserID, userID)
 	}
 }

@@ -71,7 +71,11 @@ type Invoice struct {
 	TaxIDR         int64         `json:"tax_idr"`
 	TotalIDR       int64         `json:"total_idr"`
 	Status         InvoiceStatus `json:"status"`
-	Notes          *string       `json:"notes,omitempty"`
+	// PlanCode names the plan this invoice buys. It is the single source of
+	// truth for activation (never `notes`, which carries free-form metadata
+	// such as the renewal idempotency marker).
+	PlanCode *string `json:"plan_code,omitempty"`
+	Notes    *string `json:"notes,omitempty"`
 	IssuedAt       time.Time     `json:"issued_at"`
 	DueAt          *time.Time    `json:"due_at,omitempty"`
 	PaidAt         *time.Time    `json:"paid_at,omitempty"`
@@ -101,16 +105,36 @@ type Payment struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
+// ─── Card Token Entity ─────────────────────────────────────────
+
+// CardToken represents a tokenized payment card (e.g. Midtrans saved_token_id)
+// for recurring/one-click billing. Never stores PAN or CVV (PCI-DSS SAQ-A).
+type CardToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	Gateway    string     `json:"gateway"`
+	TokenID    string     `json:"-"` // sensitive gateway token, omitted from JSON
+	MaskedCard string     `json:"masked_card"`
+	CardType   string     `json:"card_type,omitempty"`
+	Bank       string     `json:"bank,omitempty"`
+	IsDefault  bool       `json:"is_default"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
 // ─── DTOs ─────────────────────────────────────────────────────
 
 // CreateTxRequest initiates a payment at a gateway.
 type CreateTxRequest struct {
 	InvoiceID     uuid.UUID
+	UserID        uuid.UUID
 	OrderID       string
 	AmountIDR     int64
 	CustomerName  string
 	CustomerEmail string
 	Description   string
+	SaveCard      bool
 	// ExpiryMinutes bounds how long the payment is valid (0 = gateway default).
 	ExpiryMinutes int
 }
@@ -128,22 +152,49 @@ type CreateTxResponse struct {
 
 // WebhookResult is the verified outcome of a gateway callback.
 type WebhookResult struct {
-	OrderID       string
-	GatewayRef    string
-	Status        PaymentStatus
-	AmountIDR     int64
-	PaymentMethod string
-	Raw           map[string]any
+	OrderID               string
+	GatewayRef            string
+	Status                PaymentStatus
+	AmountIDR             int64
+	PaymentMethod         string
+	SavedTokenID          string
+	SavedTokenIDExpiredAt string
+	MaskedCard            string
+	CardType              string
+	Bank                  string
+	Raw                   map[string]any
 }
 
 // StatusResult is the outcome of a server-side status pull.
 type StatusResult struct {
-	OrderID   string
-	Status    PaymentStatus
-	AmountIDR int64
-	Raw       map[string]any
+	OrderID               string
+	Status                PaymentStatus
+	AmountIDR             int64
+	SavedTokenID          string
+	SavedTokenIDExpiredAt string
+	MaskedCard            string
+	CardType              string
+	Bank                  string
+	Raw                   map[string]any
 }
 
+// ChargeSavedCardRequest initiates a charge using a tokenized card.
+type ChargeSavedCardRequest struct {
+	UserID    uuid.UUID
+	OrderID   string
+	AmountIDR int64
+	TokenID   string
+}
+
+// ChargeCardResponse is the gateway's response to a card charge.
+type ChargeCardResponse struct {
+	GatewayRef    string
+	Status        PaymentStatus
+	PaymentMethod string
+	MaskedCard    string
+	Bank          string
+	Raw           map[string]any
+}
 // ─── Gateway interface ────────────────────────────────────────
 
 // Gateway abstracts a payment provider. Implementations must never store or
@@ -161,6 +212,11 @@ type Gateway interface {
 	CancelTransaction(ctx context.Context, gatewayRef string) error
 }
 
+// CardCharger is an optional interface implemented by gateways supporting
+// server-side recurring/auto-charges via tokenized cards (e.g. Midtrans Core API).
+type CardCharger interface {
+	ChargeSavedCard(ctx context.Context, req ChargeSavedCardRequest) (*ChargeCardResponse, error)
+}
 // ─── Errors ───────────────────────────────────────────────────
 
 var (
@@ -178,4 +234,6 @@ var (
 	// ErrInvoiceNotCancellable means the invoice is not in a state a user may
 	// cancel (already paid, expired, or previously cancelled).
 	ErrInvoiceNotCancellable = errors.New("invoice cannot be cancelled")
+	ErrCardTokenNotFound     = errors.New("saved card token not found")
+	ErrCardChargeFailed      = errors.New("card charge failed")
 )

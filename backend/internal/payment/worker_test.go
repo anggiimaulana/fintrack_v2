@@ -180,3 +180,58 @@ func (r *recAudit) Record(_ context.Context, e AuditEvent) error {
 	r.events = append(r.events, e)
 	return nil
 }
+
+// TestDunningWorker_EvictsClosedInvoices proves the dedupe map stays bounded:
+// once an invoice leaves the open set, its reminder keys are dropped, so a long
+// running process does not accumulate one entry per invoice forever.
+func TestDunningWorker_EvictsClosedInvoices(t *testing.T) {
+	repo := newMemRepo()
+	notifier := &recNotifier{}
+	w := NewDunningWorker(repo, nil, notifier, time.Hour)
+
+	due := time.Now().UTC().Add(48 * time.Hour)
+	invID := uuid.New()
+	userID := uuid.New()
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
+
+	w.RunOnce(context.Background())
+	if len(w.reminded) == 0 {
+		t.Fatal("expected a reminder key after the first sweep")
+	}
+
+	// The invoice is paid -> it leaves the open set -> its key must be evicted.
+	for _, inv := range repo.invoices {
+		inv.Status = InvoicePaid
+	}
+	w.RunOnce(context.Background())
+	if len(w.reminded) != 0 {
+		t.Fatalf("closed invoice keys must be evicted, got %d entries", len(w.reminded))
+	}
+}
+
+// TestDunningWorker_NextInvoiceStillReminds proves the fix also corrects a
+// correctness bug: with per-user dedupe, a user's SECOND invoice would never be
+// reminded (the user+bucket key was already seen). Per-invoice keys fix that.
+func TestDunningWorker_NextInvoiceStillReminds(t *testing.T) {
+	repo := newMemRepo()
+	notifier := &recNotifier{}
+	w := NewDunningWorker(repo, nil, notifier, time.Hour)
+	userID := uuid.New()
+
+	due := time.Now().UTC().Add(48 * time.Hour)
+	first := uuid.New()
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: first, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
+	w.RunOnce(context.Background())
+
+	// First invoice paid; a new one is issued for the next cycle.
+	for _, inv := range repo.invoices {
+		inv.Status = InvoicePaid
+	}
+	second := uuid.New()
+	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: second, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 2000})
+	w.RunOnce(context.Background())
+
+	if notifier.count() != 2 {
+		t.Fatalf("the next invoice must also be reminded, got %d reminders", notifier.count())
+	}
+}

@@ -27,6 +27,11 @@ type Notifier interface {
 // The reminder offsets are read from `settings` (dunning_hours_due/urgent/soon)
 // so an operator can retune the cadence from the Super Admin portal without a
 // redeploy. When a setting is absent the built-in defaults (0/24/72h) apply.
+//
+// Dedupe is per INVOICE, not per user+bucket: an invoice is reminded at most once
+// per bucket, and the key disappears with the invoice. Keying on the user alone
+// would grow an unbounded set over the process's lifetime (a leak) and would also
+// silence reminders for the user's NEXT invoice, since the bucket label repeats.
 type DunningWorker struct {
 	repo     Repository
 	settings SettingsRepository
@@ -35,7 +40,8 @@ type DunningWorker struct {
 	stop     chan struct{}
 	done     chan struct{}
 
-	// reminded tracks "<userID>:<bucket>" keys already notified to avoid dupes.
+	// reminded tracks "<invoiceID>:<bucket>" keys already notified to avoid
+	// dupes. Entries are evicted once their invoice leaves the open set.
 	reminded map[string]bool
 }
 
@@ -129,7 +135,7 @@ func (w *DunningWorker) RunOnce(ctx context.Context) {
 		if bucket == "" {
 			continue
 		}
-		key := inv.UserID.String() + ":" + bucket
+		key := inv.ID.String() + ":" + bucket
 		if w.reminded[key] {
 			continue
 		}
@@ -140,6 +146,36 @@ func (w *DunningWorker) RunOnce(ctx context.Context) {
 				Type:    bucket,
 				Message: "Langganan Anda akan berakhir. Segera lakukan pembayaran.",
 			})
+		}
+	}
+
+	// Evict dedupe keys for invoices that are no longer open (paid, voided, or
+	// expired), so the map stays bounded over the process's lifetime.
+	w.evictClosed(ctx, now)
+}
+
+// evictClosed drops `reminded` entries whose invoice has left the open set. The
+// scan re-reads the open invoices; anything still open keeps its key, everything
+// else is forgotten (its reminders are moot, and the next invoice starts fresh).
+func (w *DunningWorker) evictClosed(ctx context.Context, now time.Time) {
+	if len(w.reminded) == 0 {
+		return
+	}
+	open, err := w.repo.ListInvoicesDueBefore(ctx, now.Add(w.dunningWindow(ctx)).Unix())
+	if err != nil {
+		// Keep the map as-is on a read error: better a slightly stale entry than
+		// re-notifying a user for an invoice we cannot confirm is closed.
+		return
+	}
+	live := make(map[string]bool, len(open))
+	for _, inv := range open {
+		for _, bucket := range []string{"SUBSCRIPTION_EXPIRING_DUE", "SUBSCRIPTION_EXPIRING_URGENT", "SUBSCRIPTION_EXPIRING_SOON"} {
+			live[inv.ID.String()+":"+bucket] = true
+		}
+	}
+	for key := range w.reminded {
+		if !live[key] {
+			delete(w.reminded, key)
 		}
 	}
 }

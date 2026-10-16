@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/fintrack/backend/pkg/logger"
@@ -98,13 +100,48 @@ func (p *WebhookProcessor) Process(ctx context.Context, gatewayName string, payl
 			if p.activate != nil {
 				inv, ierr := p.repo.GetInvoiceByID(txCtx, pay.InvoiceID)
 				if ierr == nil && inv != nil {
-					// The plan code is stored in invoice notes/metadata by the
-					// checkout flow; here we activate for the user.
-					if aerr := p.activate.ActivateForUser(txCtx, pay.UserID, planCodeFromInvoice(inv)); aerr != nil {
+					// The plan lives in the invoice's dedicated `plan_code`
+					// column (never `notes`, which carries metadata such as the
+					// renewal marker). A blank code means the invoice is not
+					// plan-bound (e.g. a legacy row): record the payment as
+					// settled but skip activation, rather than failing the
+					// transaction and losing a payment the user already made.
+					if code := planCodeFromInvoice(inv); code == "" {
+						logger.Warn("paid invoice has no plan_code; skipping activation",
+							zap.String("invoice", inv.InvoiceNumber),
+							zap.String("user", pay.UserID.String()))
+					} else if aerr := p.activate.ActivateForUser(txCtx, pay.UserID, code); aerr != nil {
 						return fmt.Errorf("activate subscription: %w", aerr)
 					}
 				}
 			}
+			// Tokenized card: persist saved card token for future auto-charges.
+			if res.SavedTokenID != "" && pay.UserID != uuid.Nil {
+				card := &CardToken{
+					UserID:     pay.UserID,
+					Gateway:    gatewayName,
+					TokenID:    res.SavedTokenID,
+					MaskedCard: res.MaskedCard,
+					CardType:   res.CardType,
+					Bank:       res.Bank,
+					IsDefault:  true,
+				}
+				if res.SavedTokenIDExpiredAt != "" {
+					if exp, perr := time.Parse("2006-01-02 15:04:05", res.SavedTokenIDExpiredAt); perr == nil {
+						card.ExpiresAt = &exp
+					}
+				}
+				if serr := p.repo.SaveCardToken(txCtx, card); serr != nil {
+					logger.Warn("webhook: failed to persist saved card token",
+						zap.String("user", pay.UserID.String()),
+						zap.Error(serr))
+				} else {
+					logger.Info("webhook: saved card token recorded",
+						zap.String("user", pay.UserID.String()),
+						zap.String("masked_card", res.MaskedCard))
+				}
+			}
+
 			pay.Status = PaymentSettled
 			settled = pay
 		}
@@ -123,12 +160,14 @@ func (p *WebhookProcessor) Process(ctx context.Context, gatewayName string, payl
 	return &result, nil
 }
 
-// planCodeFromInvoice extracts the plan code recorded on the invoice notes.
+// planCodeFromInvoice returns the plan an invoice buys. It reads the dedicated
+// `plan_code` column: `notes` is free-form metadata (e.g. the renewal marker) and
+// must never be interpreted as a plan name.
 func planCodeFromInvoice(inv *Invoice) string {
-	if inv == nil || inv.Notes == nil {
+	if inv == nil || inv.PlanCode == nil {
 		return ""
 	}
-	return *inv.Notes
+	return *inv.PlanCode
 }
 
 var _ = errors.New

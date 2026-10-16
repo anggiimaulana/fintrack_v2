@@ -64,6 +64,10 @@ type TokenRepository interface {
 	GetCurrentPeriod(ctx context.Context, userID uuid.UUID, nowUnix int64) (*TokenPeriod, error)
 	// AdjustPeriod applies deltas to used/reserved tokens atomically.
 	AdjustPeriod(ctx context.Context, periodID uuid.UUID, usedDelta, reservedDelta int64) error
+	// UpdatePeriodQuota refreshes a period's quota and ratio in place. Used when
+	// a plan changes without starting a new window (e.g. an operator raising a
+	// limit mid-cycle), where insert-or-ignore would silently keep the old quota.
+	UpdatePeriodQuota(ctx context.Context, periodID uuid.UUID, quota int64, ratio int64) error
 	// InsertLedger appends a ledger entry; duplicate idempotency keys return
 	// ErrDuplicateIdempotencyKey.
 	InsertLedger(ctx context.Context, e *TokenLedgerEntry) error

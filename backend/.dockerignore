@@ -1,0 +1,28 @@
+# ============================================================
+# Backend build context exclusions.
+#
+# Without this file the context is ~38 MB and, worse, it ships the
+# host's `.env` into the image. The binary calls `godotenv.Load()` at
+# startup, so a baked-in `.env` would silently override compose's
+# `DATABASE_URL`/`REDIS_URL` and point the container at `localhost`
+# (i.e. itself) instead of the `db`/`redis` services.
+# ============================================================
+
+# Secrets — MUST stay out of the image. compose injects these at runtime.
+.env
+.env.*
+!.env.example
+
+# Scratch / build leftovers (compiled test binaries etc.).
+tmp/
+*.exe
+
+# Local proof-storage uploads (dev driver: local).
+uploads/
+
+# Editor / OS noise.
+.git
+.gitignore
+*.log
+.DS_Store
+Thumbs.db
