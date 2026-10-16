@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { User, CreditCard, LogOut } from "lucide-react";
+import { User, CreditCard, LogOut, ShieldCheck, LayoutDashboard } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -26,6 +26,8 @@ interface ProfileMenuProps {
  */
 export function ProfileMenu({ onLogout }: ProfileMenuProps) {
   const { user } = useSession();
+  const role = user?.role || "user";
+  const roleLabel = role === "super_admin" ? "Super Admin" : role === "admin" ? "Admin" : "User";
 
   const displayName = user?.full_name || "Pengguna";
   const initials = displayName
@@ -35,7 +37,6 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -56,22 +57,39 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
         className="w-56 p-1 border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
       >
         <DropdownMenuLabel className="px-2 py-1.5">
-          <span className="block text-sm font-black truncate">{displayName}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="block text-sm font-black truncate">{displayName}</span>
+            <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border border-foreground/30 bg-muted shrink-0">
+              {roleLabel}
+            </span>
+          </div>
           <span className="block text-xs font-bold text-muted-foreground truncate">{user?.email ?? ""}</span>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
 
         <DropdownMenuItem asChild>
           <Link href="/user/profile" className="flex items-center gap-2 cursor-pointer font-bold">
             <User className="w-4 h-4" /> Profil &amp; Pengaturan
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/user/subscription" className="flex items-center gap-2 cursor-pointer font-bold">
-            <CreditCard className="w-4 h-4" /> Langganan &amp; Paket
-          </Link>
-        </DropdownMenuItem>
-
+        {role === "super_admin" ? (
+          <DropdownMenuItem asChild>
+            <Link href="/super-admin/settings" className="flex items-center gap-2 cursor-pointer font-bold">
+              <ShieldCheck className="w-4 h-4" /> Pengaturan Sistem
+            </Link>
+          </DropdownMenuItem>
+        ) : role === "admin" ? (
+          <DropdownMenuItem asChild>
+            <Link href="/admin" className="flex items-center gap-2 cursor-pointer font-bold">
+              <LayoutDashboard className="w-4 h-4" /> Dashboard Admin
+            </Link>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem asChild>
+            <Link href="/user/subscription" className="flex items-center gap-2 cursor-pointer font-bold">
+              <CreditCard className="w-4 h-4" /> Langganan &amp; Paket
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"

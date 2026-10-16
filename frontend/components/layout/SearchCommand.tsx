@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { searchEntries, SEARCH_ENTRIES, type SearchEntry } from "@/lib/search-catalog";
-
+import { useSession } from "@/lib/session-context";
 interface SearchCommandProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -25,13 +25,19 @@ function groupResults(entries: SearchEntry[]): { group: string; items: SearchEnt
  */
 export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
   const router = useRouter();
+  const { user } = useSession();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [query, setQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
 
+  const role = user?.role || "user";
+  const eligibleEntries = React.useMemo(
+    () => SEARCH_ENTRIES.filter((e) => !e.roles || e.roles.includes(role as "user" | "admin" | "super_admin")),
+    [role]
+  );
   const results = React.useMemo(
-    () => (query.trim() ? searchEntries(query) : SEARCH_ENTRIES),
-    [query]
+    () => (query.trim() ? searchEntries(query, eligibleEntries, role) : eligibleEntries),
+    [query, eligibleEntries, role]
   );
   const groups = React.useMemo(() => groupResults(results), [results]);
   const flat = React.useMemo(() => groups.flatMap((g) => g.items), [groups]);

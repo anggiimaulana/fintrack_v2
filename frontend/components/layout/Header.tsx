@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Moon, Sun, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Search, Moon, Sun, Laptop, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTheme } from "@/providers/theme-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,23 +21,37 @@ import { NotificationBell } from "@/components/layout/NotificationBell";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 
 function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
-    // The theme is only known after hydration; flipping this once avoids a
-    // server/client icon mismatch without a render-cascading write.
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
+  const cycleTheme = () => {
+    if (theme === "light") setTheme("dark");
+    else if (theme === "dark") setTheme("system");
+    else setTheme("light");
+  };
+
+  const getThemeInfo = () => {
+    if (!mounted) return { icon: <Sun className="w-5 h-5" />, label: "Tema: Terang" };
+    if (theme === "dark") return { icon: <Moon className="w-5 h-5 text-blue-400" />, label: "Tema: Gelap (Klik untuk Sistem)" };
+    if (theme === "system") return { icon: <Laptop className="w-5 h-5 text-primary" />, label: "Tema: Sistem (Klik untuk Terang)" };
+    return { icon: <Sun className="w-5 h-5 text-amber-500" />, label: "Tema: Terang (Klik untuk Gelap)" };
+  };
+
+  const { icon, label } = getThemeInfo();
+
   return (
     <button
       type="button"
-      aria-label="Ganti tema terang/gelap"
-      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-      className="p-2 text-muted-foreground hover:text-foreground cursor-pointer"
+      aria-label={label}
+      title={label}
+      onClick={cycleTheme}
+      className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
     >
-      {mounted && resolvedTheme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+      {icon}
     </button>
   );
 }
@@ -73,6 +87,7 @@ export function Header() {
   };
 
   const getPageTitle = () => {
+    // User routes
     if (pathname === "/user") return "Dashboard";
     if (pathname.startsWith("/user/transactions")) return "Transaksi";
     if (pathname.startsWith("/user/reports")) return "Laporan";
@@ -80,6 +95,31 @@ export function Header() {
     if (pathname.startsWith("/user/profile")) return "Profil & Pengaturan";
     if (pathname.startsWith("/user/usage")) return "Penggunaan";
     if (pathname.startsWith("/user/subscription")) return "Langganan";
+    if (pathname.startsWith("/user/notifications")) return "Notifikasi";
+
+    // Admin routes
+    if (pathname === "/admin") return "Dashboard Admin";
+    if (pathname.startsWith("/admin/users")) return "Manajemen Pengguna";
+    if (pathname.startsWith("/admin/providers")) return "Monitoring Provider";
+    if (pathname.startsWith("/admin/categories/expense")) return "Kategori Pengeluaran";
+    if (pathname.startsWith("/admin/categories/income")) return "Kategori Pemasukan";
+    if (pathname.startsWith("/admin/categories/savings")) return "Kategori Tabungan";
+
+    // Super Admin routes
+    if (pathname === "/super-admin/tokens") return "Token & Kuota AI";
+    if (pathname.startsWith("/super-admin/subscriptions")) return "Manajemen Langganan";
+    if (pathname.startsWith("/super-admin/payments/review")) return "Review Pembayaran Manual";
+    if (pathname.startsWith("/super-admin/payments")) return "Pembayaran & Transaksi";
+    if (pathname.startsWith("/super-admin/plans")) return "Katalog & Manajemen Paket";
+    if (pathname.startsWith("/super-admin/audit")) return "Jejak Audit (Audit Log)";
+    if (pathname.startsWith("/super-admin/ai-gateway")) return "Operasional AI Gateway";
+    if (pathname.startsWith("/super-admin/settings")) return "Pengaturan Platform Global";
+    if (pathname.startsWith("/super-admin/metrics")) return "Metrik & Performa Sistem";
+    if (pathname.startsWith("/super-admin/kuota") || pathname.startsWith("/super-admin/quota-monitor")) return "Monitoring Kuota AI";
+    if (pathname.startsWith("/super-admin/pricing")) return "Konfigurasi Harga & Token";
+    if (pathname.startsWith("/super-admin/spk-metrics")) return "Metrik SPK";
+    if (pathname === "/super-admin") return "Dashboard Super Admin";
+
     return "Dashboard";
   };
 
@@ -99,7 +139,23 @@ export function Header() {
           {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
         </button>
 
-        <h1 className="text-base font-black uppercase tracking-wide text-foreground">{getPageTitle()}</h1>
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm font-black uppercase tracking-wide">
+          {pathname.startsWith("/super-admin") && pathname !== "/super-admin" ? (
+            <>
+              <span className="text-muted-foreground hidden sm:inline">Super Admin</span>
+              <span className="text-muted-foreground/60 hidden sm:inline">/</span>
+              <h1 className="text-foreground inline truncate">{getPageTitle()}</h1>
+            </>
+          ) : pathname.startsWith("/admin") && pathname !== "/admin" ? (
+            <>
+              <span className="text-muted-foreground hidden sm:inline">Admin</span>
+              <span className="text-muted-foreground/60 hidden sm:inline">/</span>
+              <h1 className="text-foreground inline truncate">{getPageTitle()}</h1>
+            </>
+          ) : (
+            <h1 className="text-foreground truncate">{getPageTitle()}</h1>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">

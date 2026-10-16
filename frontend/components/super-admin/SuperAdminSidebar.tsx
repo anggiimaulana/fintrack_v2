@@ -23,18 +23,6 @@ import {
   Gauge,
   ChevronDown,
 } from 'lucide-react'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent,
-} from '@/components/ui/sidebar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Dialog,
@@ -49,6 +37,8 @@ import { Button } from '@/components/ui/button'
 import { logout } from '@/lib/auth-client'
 import { useSession } from '@/lib/session-context'
 import { useHash } from '@/hooks/use-hash'
+import { useSidebarCollapsed } from '@/hooks/use-sidebar-collapsed'
+import { cn } from '@/lib/utils'
 
 // Sidebar menu, grouped for manageability. Every group is a collapsible
 // section (all open by default). Ordering here is the display order.
@@ -100,14 +90,15 @@ export function SuperAdminSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user } = useSession()
+  const { collapsed: isRailCollapsed } = useSidebarCollapsed()
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
 
   // Which groups are collapsed, keyed by label. All groups start OPEN (false),
   // and a group is never auto-closed: the operator decides.
-  const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({})
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({})
   const toggleGroup = (label: string) => {
-    setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }))
+    setCollapsedGroups((prev) => ({ ...prev, [label]: !prev[label] }))
   }
 
   const handleSignOut = async () => {
@@ -117,9 +108,7 @@ export function SuperAdminSidebar() {
   }
 
   // Two entries can share a pathname (Pengaturan vs. Estimasi Token AI, which
-  // deep-links to a tab). The active one is decided by the hash: an entry with
-  // a hash wins only when that hash is present, and an entry without one is
-  // inactive while another entry claims the current hash.
+  // deep-links to a tab). The active one is decided by the hash.
   const currentHash = useHash()
   const isItemActive = (href: string, exact: boolean) => {
     const [path, hash] = href.split('#')
@@ -132,116 +121,154 @@ export function SuperAdminSidebar() {
     if (!exact && pathname !== path && !pathname.startsWith(`${path}/`)) {
       return false
     }
-    // The bare path is inactive when a hashed sibling owns the current hash.
     const claimedByHash = superAdminMenuItems.some(
       (m) => m.href.startsWith(`${path}#`) && m.href.split('#')[1] === currentHash,
     )
     return !claimedByHash
   }
 
+  const displayName = user?.full_name || 'Super Admin'
+  const initials = displayName
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
   return (
-    <Sidebar className="border-r-2 border-foreground bg-sidebar text-sidebar-foreground">
-      <SidebarHeader className="p-6 border-b-2 border-sidebar-border">
-        <div className="flex items-center gap-2 text-xl font-black tracking-tight">
-          <ShieldCheck className="w-6 h-6 text-primary" />
-          Fin<span className="text-primary">Track</span>
-        </div>
-        <div className="text-[10px] text-sidebar-foreground/60 mt-1 font-black uppercase tracking-widest">
-          Super Admin
-        </div>
-      </SidebarHeader>
-      <SidebarContent>
+    <aside
+      data-collapsed={isRailCollapsed}
+      className={cn(
+        "hidden md:flex flex-col bg-sidebar text-sidebar-foreground h-screen sticky top-0 border-r-2 border-foreground shrink-0",
+        "transition-[width] duration-300 ease-in-out",
+        isRailCollapsed ? "w-[76px]" : "w-[240px]"
+      )}
+    >
+      {/* Brand Header */}
+      <div className={cn("border-b-2 border-sidebar-border flex items-center", isRailCollapsed ? "p-3 justify-center" : "p-4")}>
+        <Link href="/super-admin" className="flex items-center gap-2 text-xl font-black tracking-tight overflow-hidden">
+          <ShieldCheck className="w-6 h-6 text-primary shrink-0" />
+          <div
+            className={cn(
+              "flex flex-col transition-all duration-200",
+              isRailCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100"
+            )}
+          >
+            <span className="whitespace-nowrap leading-none">
+              Fin<span className="text-primary">Track</span>
+            </span>
+            <span className="text-[10px] text-sidebar-foreground/60 font-black uppercase tracking-widest mt-1">
+              Super Admin
+            </span>
+          </div>
+        </Link>
+      </div>
+
+      {/* Nav Groups */}
+      <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto overflow-x-hidden">
         {superAdminMenuGroups.map((group) => {
-          const isOpen = !collapsed[group.label]
+          const isOpen = !collapsedGroups[group.label]
           const groupHasActive = group.items.some((item) => isItemActive(item.href, item.exact))
+
           return (
-            <SidebarGroup key={group.label} className="py-1">
-              <SidebarGroupLabel asChild>
+            <div key={group.label} className="space-y-1">
+              {!isRailCollapsed && (
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.label)}
                   aria-expanded={isOpen}
-                  className="cursor-pointer flex w-full items-center justify-between gap-2 px-4 mb-1 text-xs font-black uppercase tracking-widest text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+                  className="cursor-pointer flex w-full items-center justify-between gap-2 px-3 py-1 text-xs font-black uppercase tracking-widest text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
                 >
                   <span className="flex items-center gap-2 truncate">
                     {group.label}
                     {groupHasActive && (
-                      <span
-                        className="h-1.5 w-1.5 rounded-full bg-primary shrink-0"
-                        aria-hidden="true"
-                      />
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden="true" />
                     )}
                   </span>
                   <ChevronDown
                     size={14}
-                    className={`shrink-0 transition-transform duration-200 ${
-                      isOpen ? 'rotate-0' : '-rotate-90'
-                    }`}
+                    className={cn("shrink-0 transition-transform duration-200", isOpen ? "rotate-0" : "-rotate-90")}
                   />
                 </button>
-              </SidebarGroupLabel>
-              {isOpen && (
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {group.items.map((item) => {
-                      const active = isItemActive(item.href, item.exact)
-                      return (
-                        <SidebarMenuItem key={item.href}>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={active}
-                            className={`flex items-center gap-3 px-4 py-3 text-sm font-bold transition-all ${
-                              active
-                                ? 'bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[2px_2px_0px_0px] shadow-foreground'
-                                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                            }`}
-                          >
-                            <Link href={item.href}>
-                              <item.icon size={20} />
-                              <span>{item.title}</span>
-                            </Link>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      )
-                    })}
-                  </SidebarMenu>
-                </SidebarGroupContent>
               )}
-            </SidebarGroup>
+
+              {(isRailCollapsed || isOpen) && (
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const active = isItemActive(item.href, item.exact)
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={isRailCollapsed ? item.title : undefined}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 text-sm font-bold transition-all rounded-md",
+                          isRailCollapsed ? "justify-center" : "",
+                          active
+                            ? "bg-primary text-primary-foreground border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                        )}
+                      >
+                        <item.icon className="w-5 h-5 shrink-0" />
+                        <span
+                          className={cn(
+                            "truncate transition-all duration-200",
+                            isRailCollapsed ? "w-0 opacity-0 overflow-hidden hidden" : "w-auto opacity-100 inline-block"
+                          )}
+                        >
+                          {item.title}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
-      </SidebarContent>
-      <SidebarFooter className="p-4 border-t-2 border-sidebar-border">
-        <div className="flex items-center gap-3 mb-4 px-2">
-          <Avatar className="h-9 w-9 border-2 rounded-md border-foreground">
+      </nav>
+
+      {/* Footer Profile & Logout */}
+      <div className={cn("border-t-2 border-sidebar-border", isRailCollapsed ? "p-3" : "p-4")}>
+        <div className={cn("flex items-center gap-3 mb-3", isRailCollapsed ? "justify-center" : "px-1")}>
+          <Avatar className="h-8 w-8 border-2 rounded-md border-foreground shrink-0">
             <AvatarImage src={user?.avatar_url ?? undefined} />
-            <AvatarFallback className="bg-primary text-primary-foreground font-bold">
-              {user?.full_name?.substring(0, 2).toUpperCase() || 'SA'}
+            <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
+              {initials || 'SA'}
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm font-black truncate text-sidebar-foreground">
-              {user?.full_name || 'Super Admin'}
-            </span>
-            <span className="text-xs font-bold text-sidebar-foreground/60 truncate">
-              {user?.email || 'superadmin@fintrack.id'}
-            </span>
-          </div>
+          {!isRailCollapsed && (
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-black truncate text-sidebar-foreground">
+                {displayName}
+              </span>
+              <span className="text-xs font-bold text-sidebar-foreground/60 truncate">
+                {user?.email || 'superadmin@fintrack.id'}
+              </span>
+            </div>
+          )}
         </div>
+
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <button
-              className="cursor-pointer flex items-center gap-3 w-full px-4 py-2 text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all"
+              type="button"
+              title={isRailCollapsed ? "Keluar" : undefined}
+              className={cn(
+                "cursor-pointer flex items-center gap-3 w-full py-2 text-sm font-bold text-sidebar-foreground/70 hover:text-red-400 hover:bg-sidebar-accent transition-all rounded-md",
+                isRailCollapsed ? "justify-center px-0" : "px-3"
+              )}
             >
-              <LogOut size={18} />
-              <span>Keluar</span>
+              <LogOut className="w-4 h-4 shrink-0" />
+              {!isRailCollapsed && <span>Keluar</span>}
             </button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>Konfirmasi Logout</DialogTitle>
               <DialogDescription>
-                Apakah Anda yakin ingin logout?
+                Apakah Anda yakin ingin keluar dari Super Admin Panel?
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -254,7 +281,7 @@ export function SuperAdminSidebar() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </SidebarFooter>
-    </Sidebar>
+      </div>
+    </aside>
   )
 }
