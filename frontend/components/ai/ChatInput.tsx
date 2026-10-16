@@ -9,7 +9,7 @@ interface ChatInputProps {
   onStop?: () => void;
   isSending: boolean;
   isStreaming?: boolean;
-  onReceiptResult?: (result: ReceiptResult) => void;
+  onReceiptResult?: (result: ReceiptResult, previewUrl?: string) => void;
 }
 
 export function ChatInput({ onSend, onStop, isSending, isStreaming, onReceiptResult }: ChatInputProps) {
@@ -38,9 +38,9 @@ export function ChatInput({ onSend, onStop, isSending, isStreaming, onReceiptRes
       <div className="flex items-end gap-2">
         <div className="flex gap-1 pb-1">
           <VoiceInput onTranscript={(t: string) => setText((prev) => prev ? prev + " " + t : t)} disabled={isBusy} />
-          <ReceiptUpload onResult={(res) => {
+          <ReceiptUpload onResult={(res, previewUrl) => {
             if (onReceiptResult) {
-              onReceiptResult(res);
+              onReceiptResult(res, previewUrl);
             } else {
               onSend(`Struk berhasil dicatat: Total Rp ${res?.total || 0}`);
             }

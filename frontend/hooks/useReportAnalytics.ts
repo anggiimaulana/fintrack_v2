@@ -125,7 +125,8 @@ export function useReportAnalytics(params: AnalyticsParams, options?: { enabled?
       const res = await api.get(`/reports/analytics?${query}`);
       return res.data?.data as ReportAnalytics;
     },
-    staleTime: staleTimeConfig.dashboard,
+    staleTime: staleTimeConfig.reports,
+    placeholderData: (prev) => prev,
   });
 }
 

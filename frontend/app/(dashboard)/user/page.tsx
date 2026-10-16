@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, PiggyBank, Wallet } from "lucide-react";
 import { StatCard, StatCardSkeleton } from "@/components/dashboard/StatCard";
 import { ChartContainerSkeleton } from "@/components/charts/ChartContainer";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { ChartContainer, parseChartFromParams, chartToParams, type ChartState } from "@/components/charts/ChartContainer";
 import { SpkWidgetSkeleton } from "@/components/dashboard/SpkWidget";
 import { SpkWidget } from "@/components/dashboard/SpkWidget";
 import { TransactionTable } from "@/components/transactions/TransactionTable";
@@ -54,13 +54,22 @@ function UserDashboardContent() {
   const now = useMemo(() => new Date(), []);
 
   const [dateFilter, setDateFilterState] = useState<DateRangeValue>(() => parseFilterFromParams(searchParams, now));
+  // Chart state lives in the URL (chart / period / group) so every switch is shareable & bookmarkable.
+  const chartState = useMemo(() => parseChartFromParams(searchParams), [searchParams]);
+
+  const replaceParams = useCallback((dateParams: Record<string, string>, chartParams: Record<string, string>) => {
+    const qs = new URLSearchParams({ ...dateParams, ...chartParams }).toString();
+    router.replace(qs ? `/user?${qs}` : "/user", { scroll: false });
+  }, [router]);
 
   const setDateFilter = useCallback((val: DateRangeValue) => {
     setDateFilterState(val);
-    const params = filterToParams(val);
-    const qs = new URLSearchParams(params).toString();
-    router.replace(`/user?${qs}`, { scroll: false });
-  }, [router]);
+    replaceParams(filterToParams(val), chartToParams(chartState));
+  }, [replaceParams, chartState]);
+
+  const setChartStateAndUrl = useCallback((val: ChartState) => {
+    replaceParams(filterToParams(dateFilter), chartToParams(val));
+  }, [replaceParams, dateFilter]);
 
   const overviewParams = dateFilter.startDate && dateFilter.endDate
     ? {
@@ -162,7 +171,7 @@ function UserDashboardContent() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
-          {overviewLoading ? <ChartContainerSkeleton /> : <ChartContainer dateRange={chartDateRange} />}
+          {overviewLoading ? <ChartContainerSkeleton /> : <ChartContainer dateRange={chartDateRange} value={chartState} onChange={setChartStateAndUrl} />}
         </div>
         <div className="xl:col-span-1">
           {spkLoading ? (

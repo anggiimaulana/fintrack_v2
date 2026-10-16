@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   parseTableParams,
@@ -37,6 +37,10 @@ export interface UseDataTableUrlState extends TableState {
   setFilters: (filters: Record<string, string>) => void;
   /** Remove all filters and search. */
   reset: () => void;
+  /** Immediate optimistic state for instant UI controls. */
+  immediate: TableState;
+  /** Debounced state (300ms default) for feeding data queries. */
+  debounced: TableState;
 }
 
 /**
@@ -54,12 +58,29 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const prefix = defaults.prefix;
+  const debounceMs = defaults.debounceMs ?? 300;
 
-  const state = useMemo(
+  const searchString = searchParams.toString();
+  const parsedState = useMemo(
     () => parseTableParams(searchParams, defaults),
-    // Recompute whenever the query string changes.
-    [searchParams, defaults.sort, defaults.order, defaults.perPage, defaults.prefix]
+    [searchString, defaults.sort, defaults.order, defaults.perPage, defaults.prefix]
   );
+
+  const [immediateState, setImmediateState] = useState<TableState>(parsedState);
+  const [debouncedState, setDebouncedState] = useState<TableState>(parsedState);
+  const timerRef = useRef<NodeJS.Timeout | number | null>(null);
+  const prevSearchRef = useRef(searchString);
+
+  useEffect(() => {
+    if (prevSearchRef.current !== searchString) {
+      prevSearchRef.current = searchString;
+      setImmediateState(parsedState);
+      setDebouncedState(parsedState);
+    }
+  }, [searchString, parsedState]);
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current as number);
+  }, []);
 
   const commit = useCallback(
     (next: TableState) => {
@@ -77,32 +98,55 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
       const tableParams = buildTableParams(next, defaults);
       tableParams.forEach((v, k) => current.set(k, v));
       const qs = current.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      if (qs !== searchParams.toString()) {
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      }
     },
     [router, pathname, defaults, searchParams, prefix]
   );
 
+  const scheduleCommit = useCallback(
+    (next: TableState) => {
+      setImmediateState(next);
+      clearTimeout(timerRef.current as number);
+      timerRef.current = setTimeout(() => {
+        setDebouncedState(next);
+        commit(next);
+      }, debounceMs);
+    },
+    [commit, debounceMs]
+  );
+
+  const immediateCommit = useCallback(
+    (next: TableState) => {
+      clearTimeout(timerRef.current as number);
+      setImmediateState(next);
+      setDebouncedState(next);
+      commit(next);
+    },
+    [commit]
+  );
+
   const setPage = useCallback(
-    (page: number) => commit(updateTableState(state, { page }, { resetPage: false })),
-    [commit, state]
+    (page: number) => immediateCommit(updateTableState(immediateState, { page }, { resetPage: false })),
+    [immediateCommit, immediateState]
   );
 
   const setPerPage = useCallback(
-    (perPage: number) => commit(updateTableState(state, { perPage })),
-    [commit, state]
+    (perPage: number) => immediateCommit(updateTableState(immediateState, { perPage })),
+    [immediateCommit, immediateState]
   );
 
   const setSorts = useCallback(
-    (sorts: SortSpec[]) => commit(updateTableState(state, { sorts })),
-    [commit, state]
+    (sorts: SortSpec[]) => scheduleCommit(updateTableState(immediateState, { sorts })),
+    [scheduleCommit, immediateState]
   );
 
   const setSort = useCallback(
     (sort: string, order?: SortOrder, opts?: { additive?: boolean }) => {
-      const active = state.sorts ?? [];
+      const active = immediateState.sorts ?? [];
 
       if (opts?.additive) {
-        // Shift-click: toggle the column inside the multi-sort list.
         const idx = active.findIndex((s) => s.column === sort);
         let nextSorts: SortSpec[];
         if (idx === -1) {
@@ -110,49 +154,46 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
         } else if (order) {
           nextSorts = active.map((s, i) => (i === idx ? { column: s.column, order } : s));
         } else {
-          // Flip the existing column's direction, then move it to the end.
           const flipped: SortSpec = {
             column: sort,
             order: active[idx].order === "asc" ? "desc" : "asc",
           };
           nextSorts = [...active.slice(0, idx), ...active.slice(idx + 1), flipped];
         }
-        commit(updateTableState(state, { sorts: nextSorts }));
+        scheduleCommit(updateTableState(immediateState, { sorts: nextSorts }));
         return;
       }
 
-      // Plain click: replace the whole sort with this single column, toggling
-      // direction when the column is already the active primary sort.
       const nextOrder: SortOrder =
-        order ?? (state.sort === sort && state.order === "asc" ? "desc" : "asc");
-      commit(updateTableState(state, { sorts: [{ column: sort, order: nextOrder }] }));
+        order ?? (immediateState.sort === sort && immediateState.order === "asc" ? "desc" : "asc");
+      scheduleCommit(updateTableState(immediateState, { sorts: [{ column: sort, order: nextOrder }] }));
     },
-    [commit, state]
+    [scheduleCommit, immediateState]
   );
 
   const setSearch = useCallback(
-    (q: string) => commit(updateTableState(state, { q })),
-    [commit, state]
+    (q: string) => scheduleCommit(updateTableState(immediateState, { q })),
+    [scheduleCommit, immediateState]
   );
 
   const setFilter = useCallback(
     (key: string, value: string) => {
-      commit(updateTableState(state, { filters: { [key]: value } }));
+      scheduleCommit(updateTableState(immediateState, { filters: { [key]: value } }));
     },
-    [commit, state]
+    [scheduleCommit, immediateState]
   );
 
   const setFilters = useCallback(
     (filters: Record<string, string>) => {
-      commit(updateTableState(state, { filters }));
+      scheduleCommit(updateTableState(immediateState, { filters }));
     },
-    [commit, state]
+    [scheduleCommit, immediateState]
   );
 
   const reset = useCallback(() => {
-    commit({
+    immediateCommit({
       page: 1,
-      perPage: defaults.perPage ?? state.perPage,
+      perPage: defaults.perPage ?? immediateState.perPage,
       sort: defaults.sort ?? "",
       order: defaults.order ?? "desc",
       sorts: defaults.sort
@@ -161,10 +202,12 @@ export function useDataTableUrlState(defaults: TableDefaults = {}): UseDataTable
       q: "",
       filters: {},
     });
-  }, [commit, defaults, state.perPage]);
+  }, [immediateCommit, defaults, immediateState.perPage]);
 
   return {
-    ...state,
+    ...immediateState,
+    immediate: immediateState,
+    debounced: debouncedState,
     setPage,
     setPerPage,
     setSort,

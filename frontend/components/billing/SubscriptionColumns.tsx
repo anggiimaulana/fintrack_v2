@@ -155,20 +155,47 @@ export const INVOICE_STATUS_OPTIONS = [
   { value: "expired", label: "Kedaluwarsa" },
 ];
 
-/** A "Batalkan" action cell that owns its own confirmation dialog. */
-function InvoiceActionCell({ invoice, onCancel }: { invoice: Invoice; onCancel: (id: string) => void }) {
+/** A "Batalkan" and optional "Bayar (1-Klik)" action cell. */
+function InvoiceActionCell({
+  invoice,
+  onCancel,
+  onAutoCharge,
+  hasSavedCard,
+  isCharging,
+}: {
+  invoice: Invoice;
+  onCancel?: (id: string) => void;
+  onAutoCharge?: (id: string) => void;
+  hasSavedCard?: boolean;
+  isCharging?: boolean;
+}) {
   if (!isCancellable(invoice.status)) {
     return <span className="text-xs font-bold text-muted-foreground">—</span>;
   }
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="cursor-pointer text-red-600"
-      onClick={() => onCancel(invoice.id)}
-    >
-      <Ban className="mr-1.5 h-3.5 w-3.5" /> Batalkan
-    </Button>
+    <div className="flex items-center justify-center gap-1.5">
+      {hasSavedCard && onAutoCharge && (
+        <Button
+          variant="default"
+          size="sm"
+          className="cursor-pointer text-xs font-bold"
+          disabled={isCharging}
+          onClick={() => onAutoCharge(invoice.id)}
+        >
+          <CreditCard className="mr-1.5 h-3.5 w-3.5" /> Bayar (1-Klik)
+        </Button>
+      )}
+      {onCancel && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="cursor-pointer text-red-600"
+          onClick={() => onCancel(invoice.id)}
+        >
+          <Ban className="mr-1.5 h-3.5 w-3.5" /> Batalkan
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -176,10 +203,16 @@ export function invoiceColumns({
   page = 1,
   perPage = 20,
   onCancel,
+  onAutoCharge,
+  hasSavedCard,
+  isCharging,
 }: {
   page?: number;
   perPage?: number;
   onCancel?: (id: string) => void;
+  onAutoCharge?: (id: string) => void;
+  hasSavedCard?: boolean;
+  isCharging?: boolean;
 } = {}): ColumnDef<Invoice, unknown>[] {
   return [
     {
@@ -267,7 +300,13 @@ export function invoiceColumns({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex justify-center">
-          <InvoiceActionCell invoice={row.original} onCancel={(id) => onCancel?.(id)} />
+          <InvoiceActionCell
+            invoice={row.original}
+            onCancel={(id) => onCancel?.(id)}
+            onAutoCharge={(id) => onAutoCharge?.(id)}
+            hasSavedCard={hasSavedCard}
+            isCharging={isCharging}
+          />
         </div>
       ),
     },

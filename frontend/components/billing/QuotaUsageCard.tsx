@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import { Gauge, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { UsageEntry } from '@/hooks/use-entitlements'
@@ -8,9 +9,22 @@ import type { UsageEntry } from '@/hooks/use-entitlements'
 const LIMIT_LABELS: Record<string, string> = {
   ai_tokens_per_cycle: 'Kuota AI',
   ai_requests_per_cycle: 'Permintaan AI',
-  max_transactions: 'Transaksi',
   ocr_scans_per_cycle: 'Pindai struk',
+  voice_requests_per_day: 'Input suara (per hari)',
+  max_transactions: 'Transaksi',
 }
+
+/**
+ * Display order for the quota bars. Keys absent here fall back to their
+ * backend order, so a newly enforced limit still appears without a code change.
+ */
+const LIMIT_ORDER: string[] = [
+  'ai_tokens_per_cycle',
+  'ai_requests_per_cycle',
+  'ocr_scans_per_cycle',
+  'voice_requests_per_day',
+  'max_transactions',
+]
 
 /** Threshold (percent) at which a bar turns to a warning colour. */
 const WARN_PERCENT = 80
@@ -31,7 +45,15 @@ interface QuotaUsageCardProps {
  * still answers 402/429.
  */
 export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
-  const keys = Object.keys(usage).filter((k) => LIMIT_LABELS[k])
+  const keys = React.useMemo(() => {
+    const known = Object.keys(usage).filter((k) => LIMIT_LABELS[k])
+    const rank = (k: string) => {
+      const i = LIMIT_ORDER.indexOf(k)
+      return i === -1 ? LIMIT_ORDER.length : i
+    }
+    return known.sort((a, b) => rank(a) - rank(b))
+  }, [usage])
+
   if (keys.length === 0) return null
 
   return (
@@ -43,7 +65,8 @@ export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
         <CardDescription>
           Sisa kuota Anda pada siklus ini.
           {period ? ` Periode berakhir ${new Date(period.end).toLocaleDateString('id-ID')}.` : ''}
-          {' '}Kuota diukur dalam unit, bukan token mentah.
+          {' '}Kuota diukur dalam unit, bukan token mentah. Kuota harian (mis. input suara)
+          direset setiap hari.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -56,6 +79,11 @@ export function QuotaUsageCard({ usage, period }: QuotaUsageCardProps) {
               <div className="flex items-center justify-between text-sm font-bold">
                 <span className="flex items-center gap-1.5">
                   {LIMIT_LABELS[key]}
+                  {entry.unit ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      ({entry.unit})
+                    </span>
+                  ) : null}
                   {warn && <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" aria-label="Kuota menipis" />}
                 </span>
                 <span className="font-mono text-xs">

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState, useMemo, useCallback } from "react";
+import { useSearchParams, usePathname } from "next/navigation";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { RowSelectionState } from "@tanstack/react-table";
 import { Download } from "lucide-react";
@@ -14,7 +15,7 @@ import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { useUsageHistory, type UsageEvent } from "@/hooks/use-usage";
 import { QuotaUsageCard } from "@/components/billing/QuotaUsageCard";
-import { UsageChart, type UsageRange } from "@/components/usage/UsageChart";
+import { UsageChart, USAGE_CHART_TYPES, type UsageRange, type UsageChartType } from "@/components/usage/UsageChart";
 import { usageHistoryColumns } from "@/components/usage/UsageHistoryColumns";
 import { downloadCsv, toCsv } from "@/lib/csv";
 
@@ -39,62 +40,99 @@ export default function UsagePage() {
 
 function UsageContent() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
-  // The chart range keeps its own params (range/start/end) so it does not
-  // collide with the history table's page/sort/filter namespace.
-  const rangeFromUrl = React.useMemo(() => {
-    const raw = searchParams.get("range") ?? "";
-    return (RANGE_KEYS as string[]).includes(raw) ? (raw as UsageRange) : "7d";
-  }, [searchParams]);
+  // All chart + history-date controls live in the URL, so the page is fully
+  // shareable and back/forward works. The URL is the single source of truth;
+  // there is no mirrored React state to drift out of sync.
 
-  const [range, setRange] = React.useState<UsageRange>(rangeFromUrl);
-  const [chartStart, setChartStart] = React.useState<string>(() => searchParams.get("start") ?? "");
-  const [chartEnd, setChartEnd] = React.useState<string>(() => searchParams.get("end") ?? "");
+  // Range preset (range=24h|7d|30d|3m|1y|custom).
+  const rawRange = searchParams.get("range") ?? "";
+  const initialRange: UsageRange = (RANGE_KEYS as string[]).includes(rawRange)
+    ? (rawRange as UsageRange)
+    : "7d";
+  const [range, setRange] = useState<UsageRange>(initialRange);
+  const [chartStart, setChartStart] = useState(searchParams.get("start") ?? "");
+  const [chartEnd, setChartEnd] = useState(searchParams.get("end") ?? "");
 
-  React.useEffect(() => {
-    setRange(rangeFromUrl);
-    setChartStart(searchParams.get("start") ?? "");
-    setChartEnd(searchParams.get("end") ?? "");
-  }, [rangeFromUrl, searchParams]);
+  const rawChart = searchParams.get("chart") ?? "";
+  const initialChartType: UsageChartType = (USAGE_CHART_TYPES as string[]).includes(rawChart)
+    ? (rawChart as UsageChartType)
+    : "bar";
+  const [chartType, setChartType] = useState<UsageChartType>(initialChartType);
 
-  // Persist the chart range in the URL (replace, no scroll) so it is shareable.
-  const setChartParams = (next: URLSearchParams) => {
-    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    for (const k of ["range", "start", "end"]) params.delete(k);
-    next.forEach((v, k) => params.set(k, v));
-    const qs = params.toString();
-    const target = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    window.history.replaceState(null, "", target);
-  };
+  const initialHidden = useMemo(
+    () => (searchParams.get("hide") ?? "").split(",").filter(Boolean),
+    [searchParams]
+  );
+  const [hiddenSeries, setHiddenSeries] = useState<string[]>(initialHidden);
+
+  const [histStart, setHistStart] = useState(searchParams.get("start_date") ?? "");
+  const [histEnd, setHistEnd] = useState(searchParams.get("end_date") ?? "");
+  // Rewrite the URL with the given overrides, preserving every other param
+  // (including the history table's page/sort/filter namespace). Uses
+  // router.replace so Next keeps its own state in sync, with no scroll jump.
+  const syncUrl = useCallback(
+    (over: Record<string, string | undefined>) => {
+      if (typeof window === "undefined") return;
+      const next = new URLSearchParams(window.location.search);
+      for (const [k, v] of Object.entries(over)) {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      }
+      const qs = next.toString();
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname]
+  );
 
   const handleRangeChange = (r: UsageRange) => {
     setRange(r);
-    const next = new URLSearchParams();
-    next.set("range", r);
-    setChartParams(next);
+    syncUrl({ range: r, start: undefined, end: undefined });
   };
 
   const handleCustomChange = (start: string, end: string) => {
     setRange("custom");
     setChartStart(start);
     setChartEnd(end);
-    const next = new URLSearchParams();
-    next.set("range", "custom");
-    if (start) next.set("start", start);
-    if (end) next.set("end", end);
-    setChartParams(next);
+    syncUrl({ range: "custom", start, end });
   };
+
+  const handleChartTypeChange = (t: UsageChartType) => {
+    setChartType(t);
+    syncUrl({ chart: t });
+  };
+
+  const handleToggleSeries = (key: string) => {
+    const nextHidden = hiddenSeries.includes(key)
+      ? hiddenSeries.filter((k) => k !== key)
+      : [...hiddenSeries, key];
+    setHiddenSeries(nextHidden);
+    syncUrl({ hide: nextHidden.length > 0 ? nextHidden.join(",") : undefined });
+  };
+
+  const setHistoryDateParams = (start: string, end: string) => {
+    setHistStart(start);
+    setHistEnd(end);
+    syncUrl({ start_date: start || undefined, end_date: end || undefined });
+  };
+
   const table = useDataTableUrlState({ perPage: 20 });
   const filterKind = table.filters.kind || "";
 
   const { usage, period } = useEntitlements();
 
+  const debouncedHistStart = useDebounce(histStart, 300);
+  const debouncedHistEnd = useDebounce(histEnd, 300);
+
   const { events, total, isLoading, isError, refetch } = useUsageHistory({
-    page: table.page,
-    perPage: table.perPage,
-    sorts: table.sorts,
-    q: table.q,
-    filters: table.filters,
+    page: table.debounced.page,
+    perPage: table.debounced.perPage,
+    sorts: table.debounced.sorts,
+    q: table.debounced.q,
+    filters: table.debounced.filters,
+    startDate: debouncedHistStart || undefined,
+    endDate: debouncedHistEnd || undefined,
   });
 
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
@@ -134,7 +172,6 @@ function UsageContent() {
       ),
     };
     return [selectColumn, ...usageHistoryColumns({ page: table.page, perPage: table.perPage })];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table.page, table.perPage]);
 
   const selectedRows = React.useMemo(
@@ -171,8 +208,12 @@ function UsageContent() {
         range={range}
         start={chartStart || undefined}
         end={chartEnd || undefined}
+        chartType={chartType}
+        hiddenSeries={hiddenSeries}
         onRangeChange={handleRangeChange}
         onCustomChange={handleCustomChange}
+        onChartTypeChange={handleChartTypeChange}
+        onToggleSeries={handleToggleSeries}
       />
 
       {/* Full usage history ledger. */}
@@ -195,6 +236,38 @@ function UsageContent() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="hist-from" className="text-[11px] font-bold uppercase text-muted-foreground">Dari</label>
+              <input
+                id="hist-from"
+                type="date"
+                value={histStart}
+                onChange={(e) => setHistoryDateParams(e.target.value, histEnd)}
+                className="rounded-md border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="hist-to" className="text-[11px] font-bold uppercase text-muted-foreground">Ke</label>
+              <input
+                id="hist-to"
+                type="date"
+                value={histEnd}
+                onChange={(e) => setHistoryDateParams(histStart, e.target.value)}
+                className="rounded-md border-2 border-foreground bg-background px-2 py-1 text-xs font-bold focus:outline-none"
+              />
+            </div>
+            {(histStart || histEnd) && (
+              <button
+                type="button"
+                onClick={() => setHistoryDateParams("", "")}
+                className="cursor-pointer rounded-md border-2 border-transparent px-2 py-1 text-xs font-bold text-muted-foreground hover:border-foreground hover:text-foreground"
+              >
+                Reset
+              </button>
+            )}
           </div>
 
           <DataTableToolbar

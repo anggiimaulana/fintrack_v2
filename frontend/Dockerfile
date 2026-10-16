@@ -16,7 +16,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Build-time env: same-origin API path + backend origin for the rewrite proxy.
-ARG BACKEND_ORIGIN=http://backend:8080
+ARG BACKEND_ORIGIN=http://backend:8081
 ENV BACKEND_ORIGIN=${BACKEND_ORIGIN}
 ENV NEXT_PUBLIC_API_URL=/api/v1
 ENV CI=true

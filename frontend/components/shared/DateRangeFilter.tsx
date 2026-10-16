@@ -65,8 +65,9 @@ export function computePresetDates(preset: PresetKey, now: Date): { start: strin
       break;
     }
     case "this_month": {
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      end = now;
+      const tm = getMonthRange(now, 0);
+      start = tm.start;
+      end = tm.end;
       break;
     }
     case "last_month": {

@@ -56,14 +56,14 @@ export function SubscriptionsView() {
     cancelSubscription,
     isCanceling,
   } = useSuperAdminSubscriptions({
-    page,
-    per_page: perPage,
-    q: q || undefined,
-    sort: sort || 'created_at',
-    order: (order as 'asc' | 'desc') || 'desc',
-    status: statusFilter || undefined,
-    plan_code: planCodeFilter || undefined,
-    user_id: userIdFilter || undefined,
+    page: urlState.debounced.page,
+    per_page: urlState.debounced.perPage,
+    q: urlState.debounced.q || undefined,
+    sort: urlState.debounced.sort || 'created_at',
+    order: (urlState.debounced.order as 'asc' | 'desc') || 'desc',
+    status: urlState.debounced.filters.status || undefined,
+    plan_code: urlState.debounced.filters.plan_code || undefined,
+    user_id: urlState.debounced.filters.user_id || undefined,
   })
 
   const [activeSub, setActiveSub] = React.useState<AdminSubscription | null>(null)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useDebounce } from '@/hooks/use-debounce'
 import {
   Table,
   TableBody,
@@ -56,12 +57,16 @@ export function TokenBalancesTable({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [searchInput, setSearchInput] = useState(search)
 
+  const debouncedSearch = useDebounce(search, 300)
+  const debouncedSort = useDebounce(sort, 300)
+  const debouncedOrder = useDebounce(order, 300)
+
   const { data, isLoading, error } = useTokenBalances({
     page,
     per_page: perPage,
-    q: search || undefined,
-    sort: sort || undefined,
-    order,
+    q: debouncedSearch || undefined,
+    sort: debouncedSort || undefined,
+    order: debouncedOrder,
   })
 
   const rows = data?.data ?? []

@@ -13,8 +13,7 @@ import { useRecordBrowserHistory } from "@/hooks/useVoiceHistory";
 import { startRecording, type RecorderHandle } from "@/lib/voice-recorder";
 import { blobToBase64, isAudioTooLarge } from "@/lib/voice-audio";
 import { classifyVoiceError } from "@/lib/voice-errors";
-import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/cache-keys";
+
 
 // ─── Web Speech API typings (browser-only, not in the TS lib) ──────
 
@@ -63,7 +62,7 @@ function speechLang(lang: string): string {
  */
 function voiceDebug(event: string, detail?: Record<string, unknown>): void {
   if (process.env.NODE_ENV === "production") return;
-  // eslint-disable-next-line no-console
+
   console.debug(`[voice] ${event}`, detail ?? "");
 }
 
@@ -88,11 +87,10 @@ export interface VoiceInputProps {
  *   - a denied microphone stops rather than retrying.
  */
 export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputProps) {
-  const { mode, canRecord, dailyRemaining } = useVoiceMode();
+  const { mode, dailyRemaining } = useVoiceMode();
   const { config } = useVoiceConfig();
   const { language } = useVoiceLanguage(config);
   const recordHistory = useRecordBrowserHistory();
-  const queryClient = useQueryClient();
 
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -131,10 +129,7 @@ export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputP
     };
   }, []);
 
-  const refreshUsage = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
-    queryClient.invalidateQueries({ queryKey: queryKeys.voice.config });
-  }, [queryClient]);
+
 
   // ─── on-device (browser) mode ──────────────────────────────────
 
@@ -231,32 +226,6 @@ export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputP
   }, [language, onTranscript, recordHistory, releaseBrowserStream]);
 
   // ─── server mode ───────────────────────────────────────────────
-
-  const startServer = useCallback(async () => {
-    let handle: RecorderHandle;
-    try {
-      handle = await startRecording((config?.max_duration_seconds ?? 60) * 1000);
-    } catch (err) {
-      const kind = classifyVoiceError(err);
-      if (kind === "permission") {
-        toast.error("Izin mikrofon ditolak. Aktifkan di pengaturan browser Anda.");
-        return;
-      }
-      // Recorder unavailable → degrade to on-device if possible.
-      if (!fallbackUsedRef.current) {
-        fallbackUsedRef.current = true;
-        startBrowser();
-        return;
-      }
-      toast.error("Gagal mengakses mikrofon.");
-      return;
-    }
-
-    recorderRef.current = handle;
-    setStream(handle.stream);
-    setIsListening(true);
-  }, [config?.max_duration_seconds, startBrowser]);
-
   const stopServer = useCallback(async () => {
     const handle = recorderRef.current;
     if (!handle) return;
@@ -275,14 +244,18 @@ export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputP
       const res = await api.post("/ai/voice", { audio: base64, language }, {
         headers: { "X-Request-Id": crypto.randomUUID() },
       });
+      if (res.data?.data?.success === false) {
+        throw new Error(res.data?.data?.message || "voice_processing_failed");
+      }
       const text = (res.data?.data?.transcript ?? "").trim();
-      if (text) onTranscript(text);
-      refreshUsage();
+      if (!text) {
+        throw new Error("empty_transcript");
+      }
+      onTranscript(text);
     } catch (err) {
       const kind = classifyVoiceError(err);
       if (kind === "daily_limit") {
         toast.error("Batas suara harian tercapai. Reset besok.");
-        refreshUsage();
         return;
       }
       if (kind === "permission") {
@@ -301,11 +274,11 @@ export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputP
       setIsTranscribing(false);
       setStream(null);
     }
-  }, [config?.fallback_to_browser, language, onTranscript, refreshUsage, startBrowser]);
+  }, [config?.fallback_to_browser, language, onTranscript, startBrowser]);
 
   // ─── toggle ────────────────────────────────────────────────────
 
-  const handleToggle = useCallback(() => {
+  const handleToggle = () => {
     if (isTranscribing) return;
 
     if (isListening) {
@@ -331,11 +304,30 @@ export function VoiceInput({ onTranscript, disabled, onModeChange }: VoiceInputP
       return;
     }
     if (mode === "server") {
-      void startServer();
+      void (async () => {
+        try {
+          const handle = await startRecording((config?.max_duration_seconds ?? 60) * 1000);
+          recorderRef.current = handle;
+          setStream(handle.stream);
+          setIsListening(true);
+        } catch (err) {
+          const kind = classifyVoiceError(err);
+          if (kind === "permission") {
+            toast.error("Izin mikrofon ditolak. Aktifkan di pengaturan browser Anda.");
+            return;
+          }
+          if (!fallbackUsedRef.current) {
+            fallbackUsedRef.current = true;
+            startBrowser();
+            return;
+          }
+          toast.error("Gagal mengakses mikrofon.");
+        }
+      })();
       return;
     }
     startBrowser();
-  }, [isListening, isTranscribing, mode, startServer, stopServer, startBrowser, releaseBrowserStream]);
+  };
 
   if (mode === "unavailable" && !isListening) {
     return (

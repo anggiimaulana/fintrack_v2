@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Legend, Area, AreaChart } from "recharts";
+import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Area, AreaChart } from "recharts";
 
 interface MultiSeriesChartProps {
   labels: string[];
@@ -55,58 +55,71 @@ export function MultiSeriesChart({ labels, series, type }: MultiSeriesChartProps
     return <div className="flex items-center justify-center h-full text-xs font-bold text-muted-foreground">Tidak ada data</div>;
   }
 
-  const commonProps = {
-    width: "100%" as const,
-    height: "100%" as const,
+  const renderChart = () => {
+    switch (type) {
+      case "bar":
+        return (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
+              <YAxis hide />
+              <Tooltip content={<CustomTooltip />} />
+              {safeSeries.map((s) => (
+                <Bar key={s.name} dataKey={s.name} name={s.name} fill={s.color} stackId="a" />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        );
+
+      case "line":
+        return (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
+              <YAxis hide domain={["dataMin", "auto"]} />
+              <Tooltip content={<CustomTooltip />} />
+              {safeSeries.map((s) => (
+                <Line key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        );
+
+      case "area":
+        return (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
+              <YAxis hide domain={["dataMin", "auto"]} />
+              <Tooltip content={<CustomTooltip />} />
+              {safeSeries.map((s) => (
+                <Area key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} fill={s.color} fillOpacity={0.15} strokeWidth={2} />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        );
+    }
   };
 
-  switch (type) {
-    case "bar":
-      return (
-        <ResponsiveContainer {...commonProps}>
-          <BarChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={8} />
-            <YAxis hide />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {safeSeries.map((s) => (
-              <Bar key={s.name} dataKey={s.name} name={s.name} fill={s.color} stackId="a" />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
-      );
+  return (
+    <div className="flex flex-col h-full w-full min-h-0 min-w-0">
+      <div className="flex-1 w-full min-h-0 min-w-0 relative">
+        {renderChart()}
+      </div>
 
-    case "line":
-      return (
-        <ResponsiveContainer {...commonProps}>
-          <LineChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={8} />
-            <YAxis hide domain={["dataMin", "auto"]} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {safeSeries.map((s) => (
-              <Line key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      );
-
-    case "area":
-      return (
-        <ResponsiveContainer {...commonProps}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={8} />
-            <YAxis hide domain={["dataMin", "auto"]} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} iconType="circle" />
-            {safeSeries.map((s) => (
-              <Area key={s.name} type="monotone" dataKey={s.name} name={s.name} stroke={s.color} fill={s.color} fillOpacity={0.15} strokeWidth={2} />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      );
-  }
+      <div className="mt-1 pt-2 border-t border-border/40 shrink-0 max-h-24 sm:max-h-28 overflow-y-auto pr-1">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 sm:gap-x-4 gap-y-1 px-1 text-[10px] sm:text-[11px] font-bold">
+          {safeSeries.map((s) => (
+            <div key={s.name} className="inline-flex items-center gap-1.5 whitespace-nowrap py-0.5">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+              <span className="text-foreground truncate max-w-[130px] sm:max-w-[180px]">{s.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }

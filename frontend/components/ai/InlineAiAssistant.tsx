@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { TransactionData } from "@/components/transactions/TransactionRow";
+
 import { Sparkles, Loader2, CheckCircle2, Send, X, ChevronDown, ChevronUp, Plus, Camera, MessageSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "./ChatMessage";
@@ -17,7 +17,6 @@ import { buildReceiptTransaction, formatRupiahIDR, normalizeReceiptType, receipt
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useCreateTransaction } from "@/hooks/useTransactions";
-import { useInvalidateQueries } from "@/lib/cache-invalidation";
 
 const toolLabels: Record<string, string> = {
   analyzing: "Menganalisis perintah...",
@@ -49,7 +48,6 @@ export function InlineAiAssistant() {
   const { categories: incomeCategories } = useAdminCategories("income");
   const { categories: expenseCategories } = useAdminCategories("expense");
   const { categories: savingsCategories } = useAdminCategories("savings");
-  const { invalidateTransactions } = useInvalidateQueries();
   const { mutateAsync: createTransaction } = useCreateTransaction();
 
   const { data: sessionMessages } = useQuery({
@@ -202,23 +200,34 @@ export function InlineAiAssistant() {
         // Can't build a valid transaction (no amount / no matching category):
         // show the analysis so the user can record it manually.
         const typeLabel = receiptTypeLabel(normalizeReceiptType(data.type));
-        const msg = `📋 Hasil scan foto\n\n**Deskripsi:** ${data.description || data.merchant || "-"}\n**Tanggal:** ${data.date || "-"}\n**Kategori:** ${data.category || "-"} (${typeLabel})\n**Total:** ${formatted}\n\n*${(err as Error).message}*`;
-        handleSend(msg);
+        const msg = `📋 **Hasil scan foto**\n\n- **Deskripsi:** ${data.description || data.merchant || "-"}\n- **Tanggal:** ${data.date || "-"}\n- **Kategori:** ${data.category || "-"} (${typeLabel})\n- **Total:** ${formatted}\n\n*${(err as Error).message}*`;
+        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+        if (sessionId) {
+          api.post(`/ai/sessions/${sessionId}/messages`, { role: "assistant", content: msg }).catch(() => {});
+        }
         return;
       }
 
       try {
         await createTransaction(payload as unknown as Parameters<typeof createTransaction>[0]);
-        invalidateTransactions();
         toast.success("Struk berhasil dicatat sebagai transaksi!");
 
         const typeLabel = receiptTypeLabel(normalizeReceiptType(data.type));
-        const msg = `✅ Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Deskripsi:** ${data.description || data.merchant || "-"}\n**Kategori:** ${data.category || "-"}\n**Tanggal:** ${data.date || "-"}`;
-        handleSend(msg);
+        let assistantMsg = `✅ **Struk berhasil dicatat sebagai transaksi ${typeLabel}!**\n\n- **Deskripsi:** ${data.description || data.merchant || "-"}\n- **Kategori:** ${data.category || "-"}\n- **Total:** ${formatted}\n- **Tanggal:** ${data.date || "-"}`;
+        if (data.items && data.items.length > 0) {
+          assistantMsg += `\n\n**Rincian Item:**\n` + data.items.map((it: { name: string; quantity?: number; total?: number; unit_price?: number }, idx: number) => `${idx + 1}. ${it.name} (${it.quantity || 1}x) - ${formatRupiahIDR(it.total || it.unit_price || 0)}`).join("\n");
+        }
+        setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg }]);
+        if (sessionId) {
+          api.post(`/ai/sessions/${sessionId}/messages`, { role: "assistant", content: assistantMsg }).catch(() => {});
+        }
       } catch (err: unknown) {
         toast.error("Gagal menyimpan: " + ((err as Error).message || "Error"));
         const msg = `⚠️ Gagal menyimpan struk: ${(err as Error).message}\n\nHasil analisis: **${data.description || data.merchant || "-"}** - ${formatted}`;
-        handleSend(msg);
+        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+        if (sessionId) {
+          api.post(`/ai/sessions/${sessionId}/messages`, { role: "assistant", content: msg }).catch(() => {});
+        }
       }
     },
     onError: (err: unknown) => {
@@ -234,9 +243,15 @@ export function InlineAiAssistant() {
       toast.error("Ukuran file maksimal 10MB.");
       return;
     }
+    const previewUrl = URL.createObjectURL(file);
+    const userMsg = `![Foto Struk](${previewUrl})\n\n📷 *Mengunggah foto struk belanja...*`;
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    if (sessionId) {
+      api.post(`/ai/sessions/${sessionId}/messages`, { role: "user", content: userMsg }).catch(() => {});
+    }
     analyzePhotoMutation.mutate(file);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, [analyzePhotoMutation]);
+  }, [analyzePhotoMutation, sessionId]);
 
   const renderChartResult = (result: Record<string, unknown>): React.ReactNode => {
     const labels: string[] = (result.labels as string[]) || [];

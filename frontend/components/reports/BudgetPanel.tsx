@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { RupiahInput } from "@/components/shared/RupiahInput";
 import { useBudgets, useDeleteBudget, useUpsertBudget, type BudgetStatus } from "@/hooks/useBudgets";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 
@@ -37,7 +37,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
   const remove = useDeleteBudget();
 
   const [categoryId, setCategoryId] = React.useState("");
-  const [amount, setAmount] = React.useState("");
+  const [amount, setAmount] = React.useState<number | undefined>(undefined);
 
   if (!enabled) {
     return (
@@ -51,15 +51,14 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
   }
 
   const handleAdd = async () => {
-    const idr = Number(amount.replace(/[^\d]/g, ""));
-    if (!categoryId || !idr) {
+    if (!categoryId || !amount || amount <= 0) {
       toast.error("Pilih kategori dan isi nominal anggaran");
       return;
     }
     try {
-      await upsert.mutateAsync({ category_id: categoryId, amount_idr: idr });
+      await upsert.mutateAsync({ category_id: categoryId, amount_idr: amount });
       toast.success("Anggaran disimpan");
-      setAmount("");
+      setAmount(undefined);
     } catch {
       toast.error("Gagal menyimpan anggaran");
     }
@@ -104,14 +103,13 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
           </div>
           <div className="flex-1">
             <label htmlFor="budget-amount" className="text-[10px] font-black uppercase text-muted-foreground">
-              Nominal (Rp)
+              Nominal
             </label>
-            <Input
+            <RupiahInput
               id="budget-amount"
-              inputMode="numeric"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="500000"
+              onChange={setAmount}
+              placeholder="50.000"
             />
           </div>
           <Button type="button" className="cursor-pointer" onClick={handleAdd} disabled={upsert.isPending}>

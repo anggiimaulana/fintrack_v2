@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useDebounce } from '@/hooks/use-debounce'
 import {
   Table,
   TableBody,
@@ -64,16 +65,24 @@ export function TokenLedgerTable({
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [userInput, setUserInput] = useState(userId)
 
+  const debouncedEntryType = useDebounce(entryType, 300)
+  const debouncedModality = useDebounce(modality, 300)
+  const debouncedUserId = useDebounce(userId, 300)
+  const debouncedStartDate = useDebounce(startDate, 300)
+  const debouncedEndDate = useDebounce(endDate, 300)
+  const debouncedSort = useDebounce(sort, 300)
+  const debouncedOrder = useDebounce(order, 300)
+
   const { data, isLoading, error } = useTokenLedger({
     page,
     per_page: perPage,
-    entry_type: entryType || undefined,
-    modality: modality || undefined,
-    user_id: userId || undefined,
-    start_date: startDate || undefined,
-    end_date: endDate || undefined,
-    sort: sort || undefined,
-    order,
+    entry_type: debouncedEntryType || undefined,
+    modality: debouncedModality || undefined,
+    user_id: debouncedUserId || undefined,
+    start_date: debouncedStartDate || undefined,
+    end_date: debouncedEndDate || undefined,
+    sort: debouncedSort || undefined,
+    order: debouncedOrder,
   })
 
   const rows = data?.data ?? []

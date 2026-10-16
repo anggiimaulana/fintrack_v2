@@ -8,11 +8,17 @@ import { PieChartView } from "./PieChartView";
 import { AreaChartView } from "./AreaChartView";
 import { MultiSeriesChart } from "./MultiSeriesChart";
 import { useDashboardCharts, useCategoryChart, type ChartDataPoint } from "@/hooks/useDashboard";
+import {
+  CHART_TYPES,
+  DEFAULT_CHART_STATE,
+  type ChartState,
+  type ChartType,
+  type GroupBy,
+  type PeriodType,
+} from "@/lib/chart-params";
 
-export type ChartType = "line" | "bar" | "pie" | "area";
-export type PeriodType = "week" | "month" | "3months" | "6months" | "year";
-
-const CHART_TYPES: ChartType[] = ["line", "bar", "pie", "area"];
+export type { ChartState, ChartType, GroupBy, PeriodType };
+export { DEFAULT_CHART_STATE, parseChartFromParams, chartToParams } from "@/lib/chart-params";
 
 const periodToApi: Record<PeriodType, string> = {
   week: "week",
@@ -24,8 +30,8 @@ const periodToApi: Record<PeriodType, string> = {
 
 export function ChartContainerSkeleton() {
   return (
-    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
-      <div className="flex justify-between items-center mb-5">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 sm:p-5 flex flex-col min-h-[460px] sm:h-[420px]">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-3 sm:mb-5">
         <Skeleton className="h-5 w-32 border-2 rounded-md border-foreground" />
         <div className="flex gap-2">
           {CHART_TYPES.map((t) => (
@@ -38,14 +44,24 @@ export function ChartContainerSkeleton() {
   );
 }
 
-interface ChartContainerProps {
+export interface ChartContainerProps {
   dateRange?: { startDate: string; endDate: string };
+  value?: ChartState;
+  onChange?: (value: ChartState) => void;
 }
 
-export function ChartContainer({ dateRange }: ChartContainerProps) {
-  const [chartType, setChartType] = useState<ChartType>("line");
-  const [period, setPeriod] = useState<PeriodType>("month");
-  const [groupBy, setGroupBy] = useState<"summary" | "category">("summary");
+export function ChartContainer({ dateRange, value, onChange }: ChartContainerProps) {
+  const [internal, setInternal] = useState<ChartState>(DEFAULT_CHART_STATE);
+  const { chartType, period, groupBy } = value ?? internal;
+
+  const updateChart = (patch: Partial<ChartState>) => {
+    const next: ChartState = { ...(value ?? internal), ...patch };
+    if ((next.chartType === "bar" || next.chartType === "pie") && next.groupBy !== "summary") {
+      next.groupBy = "summary";
+    }
+    if (onChange) onChange(next);
+    else setInternal(next);
+  };
 
   const chartParams = dateRange
     ? { startDate: dateRange.startDate, endDate: dateRange.endDate }
@@ -126,8 +142,8 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
   };
 
   return (
-    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col h-[420px]">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+    <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-4 sm:p-5 flex flex-col min-h-[460px] sm:h-[420px]">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-3 sm:mb-5">
         <div>
           <h3 className="text-xs font-black uppercase tracking-wide text-foreground">Grafik Transaksi</h3>
           {!dateRange && (
@@ -135,7 +151,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
               <select
                 className="text-xs border-2 rounded-md border-foreground bg-background font-bold text-muted-foreground focus:outline-none cursor-pointer px-2 py-0.5"
                 value={period}
-                onChange={(e) => setPeriod(e.target.value as PeriodType)}
+                onChange={(e) => updateChart({ period: e.target.value as PeriodType })}
               >
                 {Object.entries(periodLabels).map(([key, label]) => (
                   <option key={key} value={key}>{label}</option>
@@ -149,7 +165,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
           {(chartType === "line" || chartType === "area") && (
             <div className="flex border-2 rounded-md border-foreground bg-background p-0.5">
               <button
-                onClick={() => setGroupBy("summary")}
+                onClick={() => updateChart({ groupBy: "summary" })}
                 className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
                   groupBy === "summary"
                     ? "bg-card text-foreground shadow-[1px_1px_0px_0px] shadow-foreground border-x-2 border-foreground"
@@ -159,7 +175,7 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
                 Ringkasan
               </button>
               <button
-                onClick={() => setGroupBy("category")}
+                onClick={() => updateChart({ groupBy: "category" })}
                 className={`px-2 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
                   groupBy === "category"
                     ? "bg-card text-foreground shadow-[1px_1px_0px_0px] shadow-foreground border-x-2 border-foreground"
@@ -174,8 +190,8 @@ export function ChartContainer({ dateRange }: ChartContainerProps) {
             {CHART_TYPES.map((type) => (
               <button
                 key={type}
-                onClick={() => { setChartType(type); if (type === "bar" || type === "pie") setGroupBy("summary"); }}
-                className={`px-3 py-1 text-xs font-bold uppercase cursor-pointer transition-all ${
+                onClick={() => updateChart({ chartType: type })}
+                className={`px-2.5 sm:px-3 py-1 text-xs font-bold uppercase cursor-pointer transition-all ${
                   chartType === type
                     ? "bg-card text-foreground shadow-[2px_2px_0px_0px] shadow-foreground border-x-2 border-foreground"
                     : "text-muted-foreground hover:text-foreground"

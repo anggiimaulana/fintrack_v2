@@ -5,13 +5,14 @@ import { useAiChat } from "@/hooks/useAiChat";
 import { ChatMessage } from "@/components/ai/ChatMessage";
 import { ChatInput } from "@/components/ai/ChatInput";
 import { VoiceHistoryPanel } from "@/components/ai/VoiceHistoryPanel";
+import { AiQuotaDialog } from "@/components/ai/AiQuotaDialog";
 import { TypingIndicator } from "@/components/ai/TypingIndicator";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Trash2, Plus, MessageSquare, Loader2, CheckCircle2, Search, PenLine, BarChart3, X, Zap, Brain, PanelLeftClose, PanelLeft, Gauge, AlertTriangle } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/cache-keys";
+
 import api from "@/lib/api";
 import { notifyEntitlementError } from "@/lib/entitlement-errors";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
@@ -54,10 +55,11 @@ export default function ChatWindow() {
   const { usage: entitlementUsage } = useEntitlements();
 
   const [messages, setMessages] = useState<Array<{ role: string; content: string; mode?: "fast" | "reasoning" | null; modelUsed?: string | null }>>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return new URLSearchParams(window.location.search).get("session");
-  });
+  // Initialised to null, NOT from `location.search`: the server has no window,
+  // so reading the URL during the first render made the client tree differ from
+  // the server one (the "Hapus" button rendered client-only) and triggered a
+  // hydration mismatch. The URL is read after mount instead (effect below).
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const lastLoadedSessionIdRef = useRef<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   // Focus the rename field when it appears. Programmatic focus rather than the
@@ -85,17 +87,11 @@ export default function ChatWindow() {
     if (isMobile) setMobileSidebarOpen((v) => !v);
     else setDesktopSidebarOpen((v) => !v);
   }, [isMobile]);
-  const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const q = new URLSearchParams(window.location.search).get("q");
-    if (q) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("q");
-      window.history.replaceState({}, "", url.toString());
-    }
-    return q;
-  });
+  // Also null on the server: reading `?q=` during the first render would make
+  // the client tree differ from the server one. Resolved in the mount effect.
+  const [pendingAutoSend, setPendingAutoSend] = useState<string | null>(null);
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
+  const [quotaModalOpen, setQuotaModalOpen] = useState(false);
   // Store chart data per assistant message index so they persist across new messages
   const [chartDataMap, setChartDataMap] = useState<Record<number, { tool: string; status: string; result?: unknown; error?: string }[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -115,6 +111,26 @@ export default function ChatWindow() {
     enabled: !!currentSessionId,
   });
 
+  // Hydrate the active session and any pending auto-send from the URL AFTER
+  // mount. Doing this in the initialiser read `location.search` during the
+  // first render, which the server cannot do — the resulting mismatch made
+  // React throw "Hydration failed" and regenerate the whole tree on the client.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session");
+    if (session) {
+      lastLoadedSessionIdRef.current = session;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentSessionId(session);
+    }
+    const q = params.get("q");
+    if (q) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("q");
+      window.history.replaceState({}, "", url.toString());
+      setPendingAutoSend(q);
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentSessionId) {
@@ -359,42 +375,88 @@ export default function ChatWindow() {
   };
 
   const createFromReceiptMutation = useMutation({
-    mutationFn: async (result: ReceiptResult) => {
-      // Shared matcher: handles income/expense/savings and snaps the model's
-      // category onto a real one, so this path cannot fail where the scanner
-      // succeeds.
+    mutationFn: async ({ result, sessionId }: { result: ReceiptResult; sessionId: string | null }) => {
       const { payload } = buildReceiptTransaction(result, {
         income: incomeCategories,
         expense: expenseCategories,
         savings: savingsCategories,
       });
       const res = await api.post("/ai/receipt/transaction", payload);
-      return res.data?.data;
+      return { tx: res.data?.data, result, sessionId };
     },
-    onSuccess: (tx, result) => {
-      // OCR consumed a scan + tokens, and a transaction was created — refresh
-      // the quota bars (entitlements only; the transaction lists are refreshed
-      // when the user opens them).
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+    onSuccess: ({ tx, result, sessionId }) => {
       const formatted = formatRupiahIDR(result.total || 0);
       const typeLabel = receiptTypeLabel(normalizeReceiptType(result.type));
-      const msg = `\u2705 Struk berhasil dicatat sebagai transaksi **${typeLabel}** sebesar ${formatted}\n\n**Deskripsi:** ${result.description || result.merchant || "-"}\n**Kategori:** ${result.category || "-"}\n**Tanggal:** ${result.date || "-"}\n**ID Transaksi:** ${tx?.id || "-"}`;
-      handleSend(msg);
+      let assistantMsg = `✅ **Struk berhasil dicatat sebagai transaksi ${typeLabel}!**\n\n- **Deskripsi:** ${result.description || result.merchant || "-"}\n- **Kategori:** ${result.category || "-"}\n- **Total:** ${formatted}\n- **Tanggal:** ${result.date || "-"}\n- **ID Transaksi:** \`${tx?.id || "-"}\``;
+      if (result.items && result.items.length > 0) {
+        assistantMsg += `\n\n**Rincian Item:**\n` + result.items.map((it, idx) => `${idx + 1}. ${it.name} (${it.quantity || 1}x) - ${formatRupiahIDR(it.total || it.unit_price || 0)}`).join("\n");
+      }
+      setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg, mode: aiMode }]);
+      shouldAutoScroll.current = true;
+      if (sessionId) {
+        api.post(`/ai/sessions/${sessionId}/messages`, {
+          role: "assistant",
+          content: assistantMsg,
+          mode: aiMode,
+        }).catch(() => {});
+      }
     },
-    onError: (err: unknown, result: ReceiptResult) => {
+    onError: (err: unknown, { result, sessionId }) => {
       const formatted = formatRupiahIDR(result.total || 0);
-      handleSend(`\u26A0\uFE0F Gagal menyimpan struk: ${(err instanceof Error ? err.message : String(err))}\n\nHasil analisis: ${result.description || result.merchant || "-"} - ${formatted}`);
+      const errorMsg = `⚠️ Gagal menyimpan struk: ${(err instanceof Error ? err.message : String(err))}\n\nHasil analisis: ${result.description || result.merchant || "-"} - ${formatted}`;
+      setMessages((prev) => [...prev, { role: "assistant", content: errorMsg, mode: aiMode }]);
+      shouldAutoScroll.current = true;
+      if (sessionId) {
+        api.post(`/ai/sessions/${sessionId}/messages`, {
+          role: "assistant",
+          content: errorMsg,
+          mode: aiMode,
+        }).catch(() => {});
+      }
     },
   });
 
-  const handleReceiptResult = (result: ReceiptResult) => {
-    if (result?.success && result?.total) {
-      if (result.category) {
-        createFromReceiptMutation.mutate(result);
-      } else {
-        const formatted = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(result.total || 0);
-        handleSend(`\uD83D\uDCCB Hasil scan struk: **${result.merchant || "-"}** - ${formatted}\n\n*Tidak dapat menentukan kategori otomatis. Silakan catat manual di menu Transaksi.*`);
+  const handleReceiptResult = async (result: ReceiptResult, previewUrl?: string) => {
+    if (!result?.success || !result?.total) return;
+
+    let sessionId: string | null = currentSessionId;
+    if (!sessionId && sessions && sessions.length > 0) {
+      sessionId = sessions[0].id;
+      setCurrentSessionId(sessionId);
+      updateUrlSession(sessionId);
+    }
+    if (!sessionId) {
+      const created = await ensureSession(result.merchant ? `Struk: ${result.merchant}` : "Struk Belanja");
+      sessionId = created?.id ?? null;
+    }
+
+    const userMsgContent = previewUrl
+      ? `![Foto Struk](${previewUrl})\n\n📷 *Mengunggah foto struk belanja: ${result.merchant || result.description || "Struk"}*`
+      : `📷 *Mengunggah foto struk belanja: ${result.merchant || result.description || "Struk"}*`;
+
+    setMessages((prev) => [...prev, { role: "user", content: userMsgContent }]);
+    shouldAutoScroll.current = true;
+
+    if (sessionId) {
+      api.post(`/ai/sessions/${sessionId}/messages`, {
+        role: "user",
+        content: userMsgContent,
+      }).catch(() => {});
+    }
+
+    if (result.category) {
+      createFromReceiptMutation.mutate({ result, sessionId });
+    } else {
+      const formatted = formatRupiahIDR(result.total || 0);
+      const assistantMsg = `📋 **Hasil scan struk: ${result.merchant || "-"}** - ${formatted}\n\n*Tidak dapat menentukan kategori otomatis. Silakan catat manual di menu Transaksi.*`;
+      setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg, mode: aiMode }]);
+      shouldAutoScroll.current = true;
+      if (sessionId) {
+        api.post(`/ai/sessions/${sessionId}/messages`, {
+          role: "assistant",
+          content: assistantMsg,
+          mode: aiMode,
+        }).catch(() => {});
       }
     }
   };
@@ -708,70 +770,89 @@ export default function ChatWindow() {
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between gap-2 p-3 border-b-2 border-foreground bg-card">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2 p-2 sm:p-3 border-b-2 border-foreground bg-card min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
             <button
               onClick={toggleSidebar}
-              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer shrink-0 border-2 rounded-md border-transparent hover:border-foreground transition-colors"
               aria-label={sidebarOpen ? "Tutup daftar sesi" : "Buka daftar sesi"}
               title={sidebarOpen ? "Tutup daftar sesi" : "Buka daftar sesi"}
             >
               {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
             </button>
             <MessageSquare className="w-4 h-4 text-primary shrink-0" />
-            {/* The title yields to the mode switch on narrow screens: it is the
-                only purely decorative element in this row. */}
-            <h2 className="hidden sm:block text-xs font-black uppercase tracking-wide text-foreground truncate">AI Assistant</h2>
+            {/* The title yields to actions when sidebar is open or screen is narrow */}
+            <h2 className={`text-xs font-black uppercase tracking-wide text-foreground truncate ${desktopSidebarOpen ? "hidden 2xl:block" : "hidden md:block"}`}>
+              AI Assistant
+            </h2>
           </div>
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <VoiceHistoryPanel />
             <div className="flex border-2 rounded-md border-foreground p-0.5 bg-muted">
               <button
                 onClick={() => setAiMode("fast")}
                 aria-label="Mode cepat"
+                title="Mode Cepat (Respons kilat, hemat kuota)"
                 aria-pressed={aiMode === "fast"}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
-                  aiMode === "fast" ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
+                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 transition-all ${
+                  aiMode === "fast"
+                    ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Zap className="w-3 h-3" /> <span className="hidden sm:inline">CEPAT</span>
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span className={desktopSidebarOpen ? "hidden xl:inline" : "hidden sm:inline"}>CEPAT</span>
               </button>
               <button
                 onClick={() => setAiMode("reasoning")}
                 aria-label="Mode penalaran"
+                title="Mode Penalaran (Analisis mendalam)"
                 aria-pressed={aiMode === "reasoning"}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 ${
-                  aiMode === "reasoning" ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground" : "text-muted-foreground hover:text-foreground"
+                className={`px-1.5 sm:px-2 py-1 text-[10px] font-black cursor-pointer flex items-center gap-1 transition-all ${
+                  aiMode === "reasoning"
+                    ? "bg-primary text-primary-foreground border-2 rounded-md border-foreground shadow-[1px_1px_0px_0px] shadow-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Brain className="w-3 h-3" /> <span className="hidden sm:inline">PENALARAN</span>
+                <Brain className="w-3.5 h-3.5 shrink-0" />
+                <span className={desktopSidebarOpen ? "hidden xl:inline" : "hidden sm:inline"}>PENALARAN</span>
               </button>
             </div>
-            {isStreaming && (
-              <Button variant="ghost" size="sm" className="text-xs text-red-500 px-2" onClick={cancelStream} aria-label="Hentikan respons">
-                <X className="w-3.5 h-3.5 sm:mr-1" /> <span className="hidden sm:inline">Stop</span>
-              </Button>
-            )}
-            {tokenQuota && !tokenQuota.unlimited && (
-              <span
-                title={`Sisa kuota AI siklus ini: ${tokenQuota.remaining.toLocaleString("id-ID")} dari ${tokenQuota.limit.toLocaleString("id-ID")}`}
-                className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase tracking-wide border-2 rounded-md border-foreground ${
+            {tokenQuota && (
+              <button
+                type="button"
+                onClick={() => setQuotaModalOpen(true)}
+                title={`Sisa kuota AI: ${tokenQuota.unlimited ? "Unlimited" : `${tokenQuota.remaining.toLocaleString("id-ID")} / ${tokenQuota.limit.toLocaleString("id-ID")}`} (Klik untuk detail)`}
+                aria-label="Lihat informasi kuota AI"
+                className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase tracking-wide border-2 rounded-md border-foreground cursor-pointer transition-transform hover:scale-105 active:scale-95 shadow-[1px_1px_0px_0px] shadow-foreground ${
                   tokenQuota.exhausted
                     ? "bg-destructive text-primary-foreground"
                     : tokenQuota.low
                       ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                      : "bg-muted text-foreground"
+                      : "bg-muted text-foreground hover:bg-muted/80"
                 }`}
               >
-                <Gauge className="w-3 h-3" />
-                <span className="hidden sm:inline">
-                  {tokenQuota.exhausted ? "Kuota habis" : `Sisa kuota ${tokenQuota.remaining.toLocaleString("id-ID")}`}
+                <Gauge className="w-3.5 h-3.5 shrink-0" />
+                <span className={desktopSidebarOpen ? "hidden 2xl:inline" : "hidden xl:inline"}>
+                  {tokenQuota.exhausted
+                    ? "Kuota habis"
+                    : tokenQuota.unlimited
+                      ? "Kuota Unlimited"
+                      : `Sisa kuota ${tokenQuota.remaining.toLocaleString("id-ID")}`}
                 </span>
-              </span>
+              </button>
             )}
             {(messages.length > 0 || currentSessionId) && (
-              <Button variant="ghost" size="sm" className="text-red-500 text-xs px-2" onClick={() => { setMessages([]); }} aria-label="Bersihkan pesan">
-                <Trash2 className="w-3.5 h-3.5 sm:mr-1" /> <span className="hidden sm:inline">Hapus</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-500 text-xs px-2 cursor-pointer hover:bg-red-50 dark:hover:bg-red-950/20"
+                onClick={() => { setMessages([]); }}
+                aria-label="Bersihkan pesan"
+                title="Bersihkan pesan"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className={desktopSidebarOpen ? "hidden xl:inline ml-1" : "hidden sm:inline ml-1"}>Hapus</span>
               </Button>
             )}
           </div>
@@ -893,6 +974,7 @@ export default function ChatWindow() {
         message="Yakin ingin menghapus sesi percakapan ini?"
         confirmText="Ya, Hapus"
       />
+      <AiQuotaDialog open={quotaModalOpen} onOpenChange={setQuotaModalOpen} />
     </div>
   );
 }

@@ -32,12 +32,12 @@ function NotificationsContent() {
   const status = table.filters.status || "all";
 
   const { data, isLoading } = useNotifications({
-    page: table.page,
-    perPage: table.perPage,
-    sort: table.sort || "created_at",
-    order: table.order,
-    search: table.q,
-    status: status as "all" | "read" | "unread",
+    page: table.debounced.page,
+    perPage: table.debounced.perPage,
+    sort: table.debounced.sort || "created_at",
+    order: table.debounced.order,
+    search: table.debounced.q,
+    status: (table.debounced.filters.status || "all") as "all" | "read" | "unread",
   });
   const { data: stats } = useNotificationStats();
 

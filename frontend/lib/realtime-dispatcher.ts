@@ -41,7 +41,7 @@ export interface QueryInvalidator {
 }
 
 /** Query keys invalidated by each event. Empty array = deliberately no-op. */
-export function keysForEvent(event: string): readonly (readonly unknown[])[] {
+export function keysForEvent(event: string, payload?: unknown): readonly (readonly unknown[])[] {
   switch (event) {
     case "payment_received":
       // The payment row flips to settled, plan/quota and usage counters update.
@@ -80,16 +80,22 @@ export function keysForEvent(event: string): readonly (readonly unknown[])[] {
         queryKeys.billing.subscription,
       ];
 
-    case "usage_changed":
+    case "usage_changed": {
       // Consumption moved (transaction created/deleted, AI tokens/requests, a
-      // voice recording). Refresh entitlements, usage charts/ledger, voice config
-      // (daily counter), and voice history.
-      return [
+      // voice recording). Refresh entitlements and usage charts/ledger.
+      const keys: (readonly unknown[])[] = [
         queryKeys.entitlements.me,
         queryKeys.usage.all,
-        queryKeys.voice.config,
-        queryKeys.voice.historyAll,
       ];
+      // Only invalidate voice config & history if voice quota specifically moved
+      // (or if limit_keys is omitted for backward compatibility).
+      const p = payload as { limit_keys?: string[] } | undefined;
+      const touchesVoice = !p || !p.limit_keys || p.limit_keys.length === 0 || p.limit_keys.includes("voice_requests_per_day");
+      if (touchesVoice) {
+        keys.push(queryKeys.voice.config, queryKeys.voice.historyAll);
+      }
+      return keys;
+    }
     case "config_changed":
       // The configuration catalog changed (setting/metric/feature/plan/pricing).
       // Reload ONLY the catalog queries plus entitlements and the settings
@@ -136,7 +142,7 @@ export function keysForEvent(event: string): readonly (readonly unknown[])[] {
  * makes the behaviour assertable in tests.
  */
 export function dispatchDomainEvent(queryClient: QueryInvalidator, event: DomainEvent): readonly (readonly unknown[])[] {
-  const keys = keysForEvent(event.event);
+  const keys = keysForEvent(event.event, event.payload);
   for (const key of keys) {
     queryClient.invalidateQueries({ queryKey: key });
   }

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useCreateTransaction } from "@/hooks/useTransactions";
-import { useInvalidateQueries } from "@/lib/cache-invalidation";
 import api, { aiRequestTimeout } from "@/lib/api";
 import { buildReceiptTransaction, normalizeReceiptType, receiptTypeLabel, type ReceiptResult, type ReceiptTransactionPayload } from "@/lib/receipt";
 
@@ -61,7 +60,6 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
   const { categories: expenseCategories } = useAdminCategories("expense");
   const { categories: savingsCategories } = useAdminCategories("savings");
 
-  const { invalidateTransactions } = useInvalidateQueries();
   const { mutateAsync: createTransaction } = useCreateTransaction();
 
   const resetAll = () => {
@@ -152,7 +150,6 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
       setStep("saving");
       try {
         await doAutoSave(data);
-        invalidateTransactions();
         setStep("success");
       } catch (saveErr: unknown) {
         setError(saveErr instanceof Error ? saveErr.message : "Gagal menyimpan transaksi.");
@@ -222,12 +219,19 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
           {/* Upload dropzone: a real <button className="cursor-pointer"> so it is reachable and activatable
               by keyboard (Enter/Space) as well as pointer and drag-and-drop. */}
           {step === "upload" && (
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
               className={`w-full p-12 text-center cursor-pointer transition-all ${
                 dragOver ? "bg-primary/5 scale-[1.01]" : "hover:bg-muted/30"
               }`}
@@ -248,7 +252,7 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
               <Button variant="outline" size="sm" className="mt-5 pointer-events-none">
                 <Camera className="w-4 h-4 mr-2" /> Pilih File
               </Button>
-            </button>
+            </div>
           )}
 
           {/* ── STEP: Preview (before analyze) ── */}
@@ -268,12 +272,9 @@ export function ReceiptScanner({ open, onClose }: ReceiptScannerProps) {
               <div className="lg:w-3/5 p-5 flex flex-col items-center justify-center py-8 text-center">
                 <Receipt className="w-12 h-12 text-muted-foreground mb-4" />
                 <p className="text-sm font-bold text-foreground mb-1">Siap untuk analisis</p>
-                <p className="text-xs font-bold text-muted-foreground mb-6 max-w-xs">
-                  Klik tombol di bawah untuk mulai mengekstrak data struk menggunakan AI.
+                <p className="text-xs font-bold text-muted-foreground max-w-xs">
+                  Klik tombol <strong>Analisis Struk</strong> di bawah untuk mulai mengekstrak data struk menggunakan AI.
                 </p>
-                <Button onClick={handleStartAnalyze} size="lg" className="shadow-[3px_3px_0px_0px] shadow-foreground">
-                  <Camera className="w-4 h-4 mr-2" /> Analisis Struk
-                </Button>
               </div>
             </div>
           )}

@@ -34,7 +34,7 @@ interface TransactionFilter {
   order?: "asc" | "desc";
 }
 
-export function useTransactions(filter: TransactionFilter = {}) {
+export function useTransactions(filter: TransactionFilter = {}, options?: { enabled?: boolean }) {
   const params = new URLSearchParams();
   if (filter.type && filter.type !== "all") params.set("type", filter.type);
   if (filter.page) params.set("page", filter.page.toString());
@@ -66,6 +66,7 @@ export function useTransactions(filter: TransactionFilter = {}) {
     },
     staleTime: staleTimeConfig.transactions,
     placeholderData: (previousData) => previousData,
+    enabled: options?.enabled,
   });
 }
 export interface TransactionStatsData {

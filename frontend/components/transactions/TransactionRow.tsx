@@ -4,13 +4,18 @@ import { Pencil, Trash2, Mic, Camera, Sparkles, User } from "lucide-react";
 
 export interface TransactionData {
   id: string;
-  type: "income" | "expense";
+  type: "income" | "expense" | "savings";
   amount: number;
-  category: string;
+  category?: string;
+  category_name?: string;
   subcategory?: string;
   description?: string;
-  date: string;
-  source: "manual" | "ai" | "voice" | "receipt";
+  date?: string;
+  transaction_date?: string;
+  source?: "manual" | "ai" | "voice" | "receipt";
+  expense_category_id?: string | null;
+  income_category_id?: string | null;
+  savings_category_id?: string | null;
 }
 
 interface TransactionRowProps {
@@ -29,7 +34,7 @@ export function TransactionRow({ transaction }: TransactionRowProps) {
     maximumFractionDigits: 0,
   }).format(transaction.amount);
 
-  const getSourceBadge = (source: string) => {
+  const getSourceBadge = (source?: string) => {
     switch(source) {
       case "ai": return <div className="flex items-center gap-1 px-1.5 py-0.5 border rounded-md border-foreground text-[10px] font-bold bg-primary/10 text-primary-strong"><Sparkles className="w-3 h-3" /> AI</div>;
       case "voice": return <div className="flex items-center gap-1 px-1.5 py-0.5 border rounded-md border-foreground text-[10px] font-bold bg-secondary text-secondary-foreground"><Mic className="w-3 h-3" /> Voice</div>;

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Search, Moon, Sun, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/providers/theme-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -24,8 +24,8 @@ function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
-    // next-themes only knows the resolved theme after hydration; flipping this
-    // once avoids a server/client icon mismatch without a render-cascading write.
+    // The theme is only known after hydration; flipping this once avoids a
+    // server/client icon mismatch without a render-cascading write.
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);

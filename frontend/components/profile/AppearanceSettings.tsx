@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/providers/theme-provider";
 import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS: { value: "light" | "dark" | "system"; label: string }[] = [
@@ -11,15 +11,15 @@ const THEME_OPTIONS: { value: "light" | "dark" | "system"; label: string }[] = [
 ];
 
 /**
- * Appearance (theme) and language. Theme drives next-themes directly so the
- * choice takes effect immediately and the active option is visibly highlighted.
- * Language is fixed to Indonesian until an i18n layer exists.
+ * Appearance (theme) and language. Theme drives the theme provider directly so
+ * the choice takes effect immediately and the active option is visibly
+ * highlighted. Language is fixed to Indonesian until an i18n layer exists.
  */
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  // next-themes only knows the theme after hydration; render the buttons as
+  // The stored theme is only known after hydration; render the buttons as
   // inactive until then to avoid a server/client mismatch.
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));

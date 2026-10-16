@@ -61,6 +61,18 @@ describe("keysForEvent", () => {
     expect(keys).not.toContainEqual(queryKeys.dashboard.all);
   });
 
+  it("does not invalidate voice config when usage_changed is only for ai_chat or transactions", () => {
+    const chatKeys = keysForEvent("usage_changed", { limit_keys: ["ai_tokens_per_cycle", "ai_requests_per_cycle"] });
+    expect(chatKeys).toContainEqual(queryKeys.entitlements.me);
+    expect(chatKeys).toContainEqual(queryKeys.usage.all);
+    expect(chatKeys).not.toContainEqual(queryKeys.voice.config);
+    expect(chatKeys).not.toContainEqual(queryKeys.voice.historyAll);
+    expect(chatKeys).toHaveLength(2);
+
+    const txKeys = keysForEvent("usage_changed", { limit_keys: ["max_transactions"] });
+    expect(txKeys).not.toContainEqual(queryKeys.voice.config);
+    expect(txKeys).toHaveLength(2);
+  });
   it("resyncs notifications on stream_reconnected", () => {
     const keys = keysForEvent("stream_reconnected");
     expect(keys).toContainEqual(queryKeys.notifications.all);

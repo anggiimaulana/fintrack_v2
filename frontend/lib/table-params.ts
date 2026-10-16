@@ -47,6 +47,8 @@ export interface TableDefaults {
    * are unaffected — the page reads this state and maps it to API params.
    */
   prefix?: string;
+  /** Debounce delay in ms for filter, sort, and search commits (default 300). */
+  debounceMs?: number;
 }
 
 /** Clamp a per-page value into the allowed range. */

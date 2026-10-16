@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendOrigin = process.env.BACKEND_ORIGIN || "http://localhost:8080";
+const backendOrigin = process.env.BACKEND_ORIGIN || "http://localhost:8081";
 
 // Next's rewrite proxy aborts a request after 30s by default — the exact
 // symptom users hit on receipt scanning. Raise it well above the slowest AI

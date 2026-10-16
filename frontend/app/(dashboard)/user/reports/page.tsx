@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useDebounce } from "@/hooks/use-debounce";
 import { Download, Sparkles, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { DateRangeFilter, type DateRangeValue } from "@/components/shared/DateRangeFilter";
+import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/components/shared/DateRangeFilter";
 import { useReports, type CategoryReport, type MonthlyComparison } from "@/hooks/useReports";
 import { useCategoryChart } from "@/hooks/useDashboard";
 import { useEntitlements } from "@/hooks/use-entitlements";
@@ -58,7 +59,6 @@ export default function ReportsPage() {
 }
 
 function ReportsContent() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const now = React.useMemo(() => new Date(), []);
@@ -67,17 +67,20 @@ function ReportsContent() {
   // ── URL-backed state ─────────────────────────────────────────
   // tab / type / date range / table state all live in the query string so the
   // page is bookmarkable and every interaction is a shallow replace.
-  const tab = parseTab(searchParams.get("tab"));
-  const reportType = parseReportType(searchParams.get("type"));
+  const [tab, setTabState] = React.useState(() => parseTab(searchParams.get("tab")));
+  const [reportType, setReportTypeState] = React.useState<ReportTypeId>(() => parseReportType(searchParams.get("type")));
 
-  const [dateFilter, setDateFilterState] = React.useState<DateRangeValue>(() => ({
-    preset: "this_month",
-    startDate: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`,
-    endDate: today,
-    compareStart: "",
-    compareEnd: "",
-    enableCompare: false,
-  }));
+  const [dateFilter, setDateFilterState] = React.useState<DateRangeValue>(() => {
+    const d = computePresetDates("this_month", now);
+    return {
+      preset: "this_month",
+      startDate: d.start,
+      endDate: d.end,
+      compareStart: "",
+      compareEnd: "",
+      enableCompare: false,
+    };
+  });
 
   const query: TableQuery = {
     page: Math.max(1, Number(searchParams.get("page")) || 1),
@@ -90,22 +93,29 @@ function ReportsContent() {
     },
   };
 
-  /** Applies a shallow URL update, preserving unrelated params. */
+  /** Applies a shallow URL update without RSC navigation overhead. */
   const updateParams = React.useCallback(
     (patch: Record<string, string | null>) => {
-      const p = new URLSearchParams(searchParams.toString());
+      if (typeof window === "undefined") return;
+      const p = new URLSearchParams(window.location.search);
       for (const [k, v] of Object.entries(patch)) {
         if (v === null || v === "") p.delete(k);
         else p.set(k, v);
       }
       const qs = p.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
     },
-    [router, pathname, searchParams]
+    [pathname]
   );
 
-  const setTab = (t: string) => updateParams({ tab: t });
-  const setType = (t: ReportTypeId) => updateParams({ type: t, page: null });
+  const setTab = (t: string) => {
+    setTabState(parseTab(t));
+    updateParams({ tab: t });
+  };
+  const setType = (t: ReportTypeId) => {
+    setReportTypeState(t);
+    updateParams({ type: t, page: null });
+  };
 
   // ── Table state writers (reset page on anything but page/per_page) ──
   const setPage = (page: number) => updateParams({ page: page > 1 ? String(page) : null });
@@ -115,20 +125,23 @@ function ReportsContent() {
   const setFilter = (key: string, value: string) => updateParams({ [`filter_${key}`]: value || null, page: null });
   const resetTable = () => updateParams({ q: null, sort: null, order: null, page: null, filter_min_pct: null });
 
+  const debouncedReportType = useDebounce(reportType, 300);
+  const debouncedDateFilter = useDebounce(dateFilter, 300);
+  const debouncedQuery = useDebounce(query, 300);
   // ── Data ─────────────────────────────────────────────────────
   const { hasFeature, isLoading: entLoading } = useEntitlements();
   const canViewReports = hasFeature("reports_export");
   const canBudget = hasFeature("advanced_budgeting");
   const reportsEnabled = !entLoading && canViewReports;
 
-  const reportParams = dateFilter.startDate && dateFilter.endDate
-    ? { type: reportType, startDate: dateFilter.startDate, endDate: dateFilter.endDate }
+  const reportParams = debouncedDateFilter.startDate && debouncedDateFilter.endDate
+    ? { type: debouncedReportType, startDate: debouncedDateFilter.startDate, endDate: debouncedDateFilter.endDate }
     : undefined;
 
   const { data: report, isLoading } = useReports(reportParams, { enabled: reportsEnabled });
-  const { data: catChart } = useCategoryChart(dateFilter.startDate, dateFilter.endDate, { enabled: reportsEnabled });
+  const { data: catChart } = useCategoryChart(debouncedDateFilter.startDate, debouncedDateFilter.endDate, { enabled: reportsEnabled });
   const { data: analytics, isLoading: analyticsLoading } = useReportAnalytics(
-    { type: reportType, startDate: dateFilter.startDate, endDate: dateFilter.endDate },
+    { type: debouncedReportType, startDate: debouncedDateFilter.startDate, endDate: debouncedDateFilter.endDate },
     { enabled: reportsEnabled }
   );
   const exportReport = useExportReport();
@@ -293,7 +306,7 @@ function ReportsContent() {
             <CategoryTable
               categories={categories}
               type={reportType}
-              query={query}
+              query={debouncedQuery}
               onPageChange={setPage}
               onPerPageChange={setPerPage}
               onSort={setSort}

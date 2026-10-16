@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Suspense } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ShieldCheck,
@@ -35,10 +35,16 @@ import {
   useScheduleDowngrade,
   useCancelDowngrade,
   useCancelInvoice,
+  useMyCards,
+  useAutoChargeInvoice,
   type CheckoutResult,
   type PublicPlan,
+  type Invoice,
+  type UserPayment,
 } from "@/hooks/use-billing";
 import { PlanCard } from "@/components/billing/PlanCard";
+import { LifecycleCountdown } from "@/components/billing/LifecycleCountdown";
+import { SavedCardsCard } from "@/components/billing/SavedCardsCard";
 import { CheckoutDialog } from "@/components/billing/CheckoutDialog";
 import { CheckoutConfirmDialog } from "@/components/billing/CheckoutConfirmDialog";
 import {
@@ -85,19 +91,22 @@ export default function SubscriptionPage() {
 }
 
 function SubscriptionContent() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const [tabOverride, setTabOverride] = React.useState<TabKey | null>(null);
   const tabFromUrl = normalizeTab(searchParams.get("tab"));
-  const [tab, setTabState] = React.useState<TabKey>(tabFromUrl);
+  const [prevUrlTab, setPrevUrlTab] = React.useState<string | null>(searchParams.get("tab"));
 
-  React.useEffect(() => {
-    setTabState(normalizeTab(searchParams.get("tab")));
-  }, [searchParams]);
+  if (searchParams.get("tab") !== prevUrlTab) {
+    setPrevUrlTab(searchParams.get("tab"));
+    setTabOverride(null);
+  }
+
+  const tab = tabOverride ?? tabFromUrl;
 
   const setTab = React.useCallback((next: TabKey) => {
-    setTabState(next);
+    setTabOverride(next);
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     params.set("tab", next);
     const qs = params.toString();
@@ -192,11 +201,17 @@ function SubscriptionContent() {
                 </Badge>
               </div>
               {subscription?.current_period_end && (
-                <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                  <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-                  Periode berakhir {formatTanggal(subscription.current_period_end)}
-                  {subscription.cancel_at_period_end && !scheduledPlanCode && " · tidak diperpanjang"}
-                </p>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                    <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+                    Periode berakhir {formatTanggal(subscription.current_period_end)}
+                  </p>
+                  <LifecycleCountdown
+                    status={status}
+                    periodEnd={subscription.current_period_end}
+                    cancelAtPeriodEnd={subscription.cancel_at_period_end && !scheduledPlanCode}
+                  />
+                </div>
               )}
               {scheduledPlanCode && (
                 <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-amber-500 bg-amber-50 p-2 dark:bg-amber-950/30">
@@ -298,11 +313,11 @@ function PaymentTab({ active }: { active: boolean }) {
 
   const { payments, total, isLoading, isError, refetch } = useMyPaymentsPaged(
     {
-      page: table.page,
-      perPage: table.perPage,
-      sorts: table.sorts,
-      q: table.q,
-      filters: table.filters,
+      page: table.debounced.page,
+      perPage: table.debounced.perPage,
+      sorts: table.debounced.sorts,
+      q: table.debounced.q,
+      filters: table.debounced.filters,
     },
     { enabled: active }
   );
@@ -310,11 +325,11 @@ function PaymentTab({ active }: { active: boolean }) {
   const { invoices, total: invoiceTotal, isLoading: invoicesLoading, refetch: refetchInvoices } =
     useMyInvoicesPaged(
       {
-        page: table.page,
-        perPage: table.perPage,
-        sorts: table.sorts,
-        q: table.q,
-        filters: table.filters,
+        page: table.debounced.page,
+        perPage: table.debounced.perPage,
+        sorts: table.debounced.sorts,
+        q: table.debounced.q,
+        filters: table.debounced.filters,
       },
       { enabled: active }
     );
@@ -329,18 +344,32 @@ function PaymentTab({ active }: { active: boolean }) {
     refetchInvoices();
   };
 
-  const paymentCols = React.useMemo<ColumnDef<import("@/hooks/use-billing").UserPayment, unknown>[]>(
+  const paymentCols = React.useMemo<ColumnDef<UserPayment, unknown>[]>(
     () => paymentColumns({ page: table.page, perPage: table.perPage }),
     [table.page, table.perPage]
   );
 
-  const invoiceCols = React.useMemo<ColumnDef<import("@/hooks/use-billing").Invoice, unknown>[]>(
-    () => invoiceColumns({ page: table.page, perPage: table.perPage, onCancel: (id) => setCancelId(id) }),
-    [table.page, table.perPage]
+  const { data: cards } = useMyCards();
+  const autoCharge = useAutoChargeInvoice();
+
+  const invoiceCols = React.useMemo<ColumnDef<Invoice, unknown>[]>(
+    () =>
+      invoiceColumns({
+        page: table.page,
+        perPage: table.perPage,
+        onCancel: (id) => setCancelId(id),
+        onAutoCharge: (id) => autoCharge.mutate(id),
+        hasSavedCard: (cards?.length ?? 0) > 0,
+        isCharging: autoCharge.isPending,
+      }),
+    [table.page, table.perPage, cards, autoCharge]
   );
 
   return (
     <div className="space-y-6">
+      {/* Saved cards and recurring billing */}
+      <SavedCardsCard />
+
       {/* Payments */}
       <div className="flex flex-col overflow-hidden rounded-md border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
         <div className="flex flex-col justify-between gap-4 border-b-2 border-foreground bg-muted p-4 md:flex-row md:items-center">
@@ -460,11 +489,11 @@ function HistoryTab({ active }: { active: boolean }) {
 
   const { events, total, isLoading, isError, refetch } = useMySubscriptionEvents(
     {
-      page: table.page,
-      perPage: table.perPage,
-      sorts: table.sorts,
-      q: table.q,
-      filters: table.filters,
+      page: table.debounced.page,
+      perPage: table.debounced.perPage,
+      sorts: table.debounced.sorts,
+      q: table.debounced.q,
+      filters: table.debounced.filters,
     },
     { enabled: active }
   );

@@ -43,15 +43,15 @@ export function PaymentHistoryTable() {
     isError,
     error,
   } = useSuperAdminPayments({
-    page: urlState.page,
-    per_page: urlState.perPage,
-    sort: urlState.sort,
-    order: urlState.order,
-    q: urlState.q,
-    status: urlState.filters.status,
-    gateway: urlState.filters.gateway,
-    start_date: urlState.filters.start_date,
-    end_date: urlState.filters.end_date,
+    page: urlState.debounced.page,
+    per_page: urlState.debounced.perPage,
+    sort: urlState.debounced.sort,
+    order: urlState.debounced.order,
+    q: urlState.debounced.q,
+    status: urlState.debounced.filters.status,
+    gateway: urlState.debounced.filters.gateway,
+    start_date: urlState.debounced.filters.start_date,
+    end_date: urlState.debounced.filters.end_date,
   })
 
   const { refundPayment, isRefunding } = useSuperAdminPaymentMutations()

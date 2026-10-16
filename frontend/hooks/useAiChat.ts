@@ -309,10 +309,8 @@ export function useAiChat(source?: string) {
         setIsStreaming(false);
         throw err;
       } finally {
-        // Every settled turn consumed AI tokens/requests, so refresh the quota
-        // bars. Runs on success, abort, and error alike; the backend event
-        // (usage_changed) covers other tabs.
-        queryClient.invalidateQueries({ queryKey: queryKeys.entitlements.me });
+        setIsStreaming(false);
+        abortRef.current = null;
       }
     },
     [queryClient, queryKey, source],

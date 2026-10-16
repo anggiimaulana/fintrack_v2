@@ -38,20 +38,31 @@ export function AreaChartView({ data }: AreaChartViewProps) {
   ];
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-        <defs>
-          <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3b5bdb" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#3b5bdb" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} dy={10} />
-        <YAxis hide domain={["dataMin", "auto"]} />
-        <Tooltip content={<CustomTooltip />} />
-        <Area type="monotone" dataKey="balance" name="Saldo" stroke="#3b5bdb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
-      </AreaChart>
-    </ResponsiveContainer>
+    <div className="flex flex-col h-full w-full min-h-0">
+      <div className="flex-1 w-full min-h-0 relative">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 8 }}>
+            <defs>
+              <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3b5bdb" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#3b5bdb" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
+            <YAxis hide domain={["dataMin", "auto"]} />
+            <Tooltip content={<CustomTooltip />} />
+            <Area type="monotone" dataKey="balance" name="Saldo" stroke="#3b5bdb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-1 pt-2 border-t border-border/40 shrink-0">
+        <div className="flex items-center justify-center gap-1.5 text-[11px] sm:text-xs font-bold py-0.5">
+          <span className="h-2 w-2 rounded-full shrink-0 bg-[#3b5bdb]" />
+          <span className="text-foreground">Saldo (Pemasukan - Pengeluaran)</span>
+        </div>
+      </div>
+    </div>
   );
 }

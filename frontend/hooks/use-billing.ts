@@ -492,3 +492,76 @@ export function useCancelSubscription() {
     },
   });
 }
+
+export interface SavedCard {
+  id: string;
+  gateway: string;
+  masked_card: string;
+  card_type?: string;
+  bank?: string;
+  is_default: boolean;
+  expires_at?: string;
+  created_at: string;
+}
+
+export function useMyCards() {
+  return useQuery({
+    queryKey: ["billing", "cards"],
+    queryFn: async () => {
+      const res = await api.get("/payments/cards");
+      return (res.data?.data ?? []) as SavedCard[];
+    },
+  });
+}
+
+export function useDeleteCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cardId: string) => {
+      const res = await api.delete(`/payments/cards/${cardId}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Kartu tersimpan berhasil dihapus.");
+      qc.invalidateQueries({ queryKey: ["billing", "cards"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(billingErrorMessage(err, "Gagal menghapus kartu tersimpan"));
+    },
+  });
+}
+
+export function useSetDefaultCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cardId: string) => {
+      const res = await api.post(`/payments/cards/${cardId}/default`);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Kartu utama berhasil diperbarui.");
+      qc.invalidateQueries({ queryKey: ["billing", "cards"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(billingErrorMessage(err, "Gagal mengatur kartu utama"));
+    },
+  });
+}
+
+export function useAutoChargeInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const res = await api.post(`/invoices/${invoiceId}/auto-charge`);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Pembayaran berhasil diproses menggunakan kartu tersimpan!");
+      invalidateBilling(qc);
+      invalidatePaymentHistory(qc);
+    },
+    onError: (err: unknown) => {
+      toast.error(billingErrorMessage(err, "Gagal memproses pembayaran dengan kartu tersimpan"));
+    },
+  });
+}

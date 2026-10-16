@@ -74,4 +74,5 @@ export const staleTimeConfig = {
   usage: 1000 * 60 * 5,
   billing: 1000 * 60 * 5,
   entitlements: 1000 * 60 * 5,
+  reports: 1000 * 60 * 5,
 };

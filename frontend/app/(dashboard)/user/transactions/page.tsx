@@ -22,6 +22,7 @@ import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { notifyEntitlementError } from "@/lib/entitlement-errors";
+import { useDebounce } from "@/hooks/use-debounce";
 import api from "@/lib/api";
 
 
@@ -103,20 +104,21 @@ function TransactionsContent() {
     const qs = p.toString();
     router.replace(qs ? `/user/transactions?${qs}` : `/user/transactions`, { scroll: false });
   }, [router]);
+  const debouncedDateFilter = useDebounce(dateFilter, 300);
 
   const { data: txData, isLoading } = useTransactions({
-    type: filterType as "income" | "expense" | "savings" | "all" | undefined,
-    page,
-    perPage: table.perPage,
-    search,
-    dateFrom: dateFilter.startDate,
-    dateTo: dateFilter.endDate,
-    sort: table.sort || undefined,
-    order: table.order,
+    type: (table.debounced.filters.type || "all") as "income" | "expense" | "savings" | "all" | undefined,
+    page: table.debounced.page,
+    perPage: table.debounced.perPage,
+    search: table.debounced.q,
+    dateFrom: debouncedDateFilter.startDate,
+    dateTo: debouncedDateFilter.endDate,
+    sort: table.debounced.sort || undefined,
+    order: table.debounced.order,
   });
   const { data: statsData, isLoading: isStatsLoading } = useTransactionStats({
-    startDate: dateFilter.startDate,
-    endDate: dateFilter.endDate,
+    startDate: debouncedDateFilter.startDate,
+    endDate: debouncedDateFilter.endDate,
   });
   const { mutateAsync: createTransaction, isPending: isCreating } = useCreateTransaction();
   const { mutateAsync: updateTransaction, isPending: isUpdating } = useUpdateTransaction();

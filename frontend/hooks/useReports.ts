@@ -81,6 +81,7 @@ export function useReports(
       const res = await api.get(`${url}?${queryParams.toString()}`);
       return normalizeReport(res.data?.data);
     },
-    staleTime: staleTimeConfig.dashboard,
+    staleTime: staleTimeConfig.reports,
+    placeholderData: (prev) => prev,
   });
 }

@@ -38,7 +38,7 @@ async function compressImage(file: File): Promise<File> {
 export type { ReceiptResult };
 
 interface ReceiptUploadProps {
-  onResult: (result: ReceiptResult) => void;
+  onResult: (result: ReceiptResult, previewUrl?: string) => void;
   disabled?: boolean;
 }
 
@@ -84,9 +84,10 @@ export function ReceiptUpload({ onResult, disabled }: ReceiptUploadProps) {
       const res = await api.post("/ai/receipt", formData, {
         timeout: aiRequestTimeout.ms,
       });
-      onResult(res.data?.data || res.data);
+      const analyzed = res.data?.data || res.data;
+      const previewUrl = preview;
+      onResult(analyzed, previewUrl || undefined);
       handleCancel();
-    } catch {
       toast.error("Gagal menganalisis struk. Pastikan file terbaca dengan baik.");
     } finally {
       setIsAnalyzing(false);

@@ -55,7 +55,7 @@ export function PaymentMethodsDonut({ data, isLoading }: PaymentMethodsDonutProp
         ) : (
           <div className="flex-1 flex flex-col">
             <div className="h-[220px] w-full">
-              <PieChartView data={chartData} />
+              <PieChartView data={chartData} showLegend={false} />
             </div>
 
             <div className="mt-4 border-t-2 border-foreground pt-3 space-y-2">
