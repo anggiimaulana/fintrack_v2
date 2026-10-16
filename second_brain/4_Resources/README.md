@@ -27,12 +27,12 @@ yang sudah disetujui (BRD/PRD/Diagram), kredensial (tanpa secret mentah), dan do
 | **BRD FinTrack v2** | `Dokumen-Spesifikasi/BRD/BRD - FinTrack v2.md` | ✅ Aktif | Kebutuhan bisnis platform berlangganan + AI gateway |
 | **PRD FinTrack v2** | `Dokumen-Spesifikasi/PRD/PRD - FinTrack v2.md` | ✅ Aktif | Kebutuhan produk, alur, API, NFR |
 | **Diagram** | `Dokumen-Spesifikasi/PRD/Diagram/` | ✅ Aktif | Use Case, Flowchart, Sequence, Activity, ERD |
-| Ide & analisis awal | `../0_Inbox/ide/2026-10-11_Subscription-AI-Gateway/` | ✅ Aktif | Ringkasan, analisis, kritik, keputusan, peta jalan |
-| Brief awal & 7 keputusan terkunci P01 | `../0_Inbox/brief_awal.md` | ✅ Aktif | Acuan keputusan migrasi P01 |
+| Ide & analisis awal | `../5_Archives/ide/2026-10-11_Subscription-AI-Gateway/` | 📦 Arsip | Ringkasan, analisis, kritik, keputusan, peta jalan |
+| Brief awal & 7 keputusan terkunci P01 | `../5_Archives/ide/brief_awal.md` | 📦 Arsip | Acuan keputusan migrasi P01 |
 | Plan migrasi lengkap P01 | `Dokumen-Plan/` (durable copy) | ✅ Aktif | Path durable: `local://fintrack-v2-migration-plan.md` |
 | Dokumentasi DB | `../../database/README.md` | ✅ Aktif | Skema, migrasi, scripts |
-| Roadmap & HUD P01 | `../2_Projects/P01_FinTrack_v2/roadmap.md` | ✅ Aktif | Milestones FASE 0–6 |
-| Rencana fase P02–P08 | `../2_Projects/` | ✅ Aktif | Perencanaan & tracking platform berlangganan |
+| Roadmap & HUD P01 | `../5_Archives/phases/P01_FinTrack_v2/roadmap.md` | 📦 Arsip | Milestones FASE 0–6 |
+| Rencana fase P02–P08 | `../2_Projects/` & `../5_Archives/phases/` | ✅ Aktif | Perencanaan & tracking platform berlangganan |
 | Standar & SOP | `../3_Areas/` | ✅ Aktif | Keamanan, operasional, billing, AI gateway, dll |
 
 ## Aturan

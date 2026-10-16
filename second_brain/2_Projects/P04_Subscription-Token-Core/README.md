@@ -39,7 +39,9 @@ Fase P04 adalah fondasi inti monetisasi dan pembatasan fitur FinTrack v2. Fase i
    - `internal/entitlement/middleware/`: Gin middleware `RequireFeature` & `WithinLimit`.
    - `internal/billing/handler/`: Endpoint `/api/v1/plans`, `/api/v1/subscriptions/me`, `/api/v1/me/entitlements`.
 3. Unit tests dan integration test konkurensi (pembuktian zero double-spending token ledger & cache invalidation latency < 50ms).
-4. Dokumentasi teknis komprehensif pada direktori `second_brain/2_Projects/P04_Subscription-Token-Core/`.
+4. Dokumentasi teknis komprehensif pada direktori [`../../5_Archives/phases/P04_Subscription-Token-Core/`](../../5_Archives/phases/P04_Subscription-Token-Core/).
+
+> 📦 **Arsip Detail P04:** Seluruh dokumen analisis, planning, rules, teknis (pricing, token ledger, lifecycle), dan tracking tersimpan lengkap di [`../../5_Archives/phases/P04_Subscription-Token-Core/`](../../5_Archives/phases/P04_Subscription-Token-Core/).
 
 ## Kriteria Sukses (Success Criteria)
 1. [x] **Integritas Finansial & Token:** Zero double-spending / saldo negatif. *(diuji: 40 reserve paralel kuota 1000 → tepat 10 sukses; 10 commit ganda → 1 efek; reserved ≤ quota)*

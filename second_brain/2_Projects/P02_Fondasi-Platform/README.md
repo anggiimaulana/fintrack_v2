@@ -30,7 +30,9 @@ Fase ini menjadi pondasi mutlak bagi fase P03 (AI Gateway), P04 (Subscription En
    - `components/data-table/data-table-pagination.tsx`: Kontrol pagination dan limit 20.
    - `components/data-table/data-table-toolbar.tsx`: Global search dan dynamic filter chips.
    - `hooks/use-data-table-url-state.ts`: Hook sinkronisasi URL search params.
-5. Dokumentasi teknis lengkap di folder `second_brain/2_Projects/P02_Fondasi-Platform/teknis/`.
+5. Dokumentasi teknis lengkap di folder [`../../5_Archives/phases/P02_Fondasi-Platform/teknis/`](../../5_Archives/phases/P02_Fondasi-Platform/teknis/).
+
+> 📦 **Arsip Detail P02:** Seluruh dokumen analisis, planning (tasks, timeline, sprint-plan), rules, teknis, dan tracking tersimpan lengkap di [`../../5_Archives/phases/P02_Fondasi-Platform/`](../../5_Archives/phases/P02_Fondasi-Platform/).
 
 ## 4. Kriteria Sukses (Success Criteria)
 - [x] Redis beroperasi normal di container Docker, terintegrasi healthcheck dengan backend Go. *(TASK-P02-001)*

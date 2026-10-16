@@ -31,14 +31,16 @@ FinTrack v2 adalah aplikasi keuangan pribadi (B2C) berbasis Go + Gin di backend,
    - Feature flags dinamis berbasis Redis untuk gradual rollout dan instan circuit kill switch.
 
 ## Deliverables
-- **Dokumentasi Teknis Inti**:
+> 📦 **Arsip Detail P07:** Seluruh dokumen analisis keputusan (K-P07-01 s/d K-P07-16), planning, rules, teknis (RBAC, SSE, cache invalidation, cursor pointer, zero-downtime, entitlement mirror), dan tracking tersimpan lengkap di [`../../5_Archives/phases/P07_Rollout-RBAC-Realtime/`](../../5_Archives/phases/P07_Rollout-RBAC-Realtime/).
+
+- **Dokumentasi Teknis Inti (Diarsipkan)**:
   - `teknis/rbac-rollout.md`: Spesifikasi audit endpoint, middleware Go, dan matriks role/entitlement seluruh rute.
   - `teknis/sse-strategy.md`: Arsitektur hub SSE, protokol koneksi, reconnect, auth cookie, dan spesifikasi event domain.
   - `teknis/cache-invalidation.md`: Desain invalidasi Redis pub/sub, TanStack Query cache key registry, dan pola surgical update.
   - `teknis/cursor-pointer-audit.md`: Laporan audit interaktivitas UI, perbaikan pointer class, dan standar interaktivitas token styling.
   - `teknis/zero-downtime-deploy.md`: Prosedur migrasi expand/contract, rolling deploy, health checks, dan arsitektur feature flag.
   - `teknis/frontend-entitlement-mirror.md`: Panduan implementasi client mirror UX, guard component, menu filtering, dan fallback banner.
-- **Dokumentasi Perencanaan & Kontrak**:
+- **Dokumentasi Perencanaan & Kontrak (Diarsipkan)**:
   - `analisis/hasil-analisis-teknis.md`: Keputusan teknis arsitektur P07 (K-P07-01 hingga K-P07-16).
   - `planning/sprint-plan.md`: Alokasi sprint 2 minggu, milestone, dan resource plan.
   - `planning/tasks.md`: Rincian task backlog komprehensif (TASK-P07-001 hingga TASK-P07-018).

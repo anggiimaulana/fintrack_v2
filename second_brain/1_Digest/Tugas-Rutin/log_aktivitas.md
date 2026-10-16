@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-10-16 — Pengorganisasian & Pengarsipan second_brain (0_Inbox & 2_Projects)
+- **Konteks**: Permintaan user untuk merapikan `second_brain/0_Inbox` dan menyederhanakan `second_brain/2_Projects`:
+  1. Memindahkan seluruh konten `0_Inbox/audit`, `0_Inbox/ide` (sisakan `.gitkeep`), dan `0_Inbox/brief_awal.md` ke folder arsip baru `second_brain/5_Archives/ide/`.
+  2. Memindahkan seluruh artefak detail `second_brain/2_Projects/` ke `second_brain/5_Archives/phases/`, dengan menyisakan struktur folder fase (`P01` s/d `P08`) serta file `README.md` pada masing-masing fase dan `second_brain/2_Projects/README.md`.
+- **Aksi**:
+  - Membuat folder baru `second_brain/5_Archives/ide/`.
+  - Memindahkan `brief_awal.md`, `2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi`, dan 6 folder eksplorasi ide (`2026-10-11` s/d `2026-10-15`) ke `second_brain/5_Archives/ide/`.
+  - Mempertahankan file `.gitkeep` di `second_brain/0_Inbox/ide/` dan menghapus folder kosong `second_brain/0_Inbox/audit/`.
+  - Membuat `second_brain/5_Archives/ide/README.md` sebagai katalog arsip dokumen ide, riset, dan audit.
+  - Memindahkan `IMPLEMENTATION-PLAN.md` ke `second_brain/5_Archives/phases/IMPLEMENTATION-PLAN.md`.
+  - Memindahkan seluruh artefak mendalam (`analisis/`, `planning/`, `rules/`, `teknis/`, `tracking/`, `roadmap.md`, `skenario_pengujian.md`) dari masing-masing folder fase `P01_FinTrack_v2` s/d `P08_Hardening-GoLive` ke `second_brain/5_Archives/phases/PXX_*/`.
+  - Mempertahankan `README.md` pada setiap fase `2_Projects/PXX_*/README.md` serta menyelaraskan isinya dengan tautan ke arsip detail.
+  - Menyelaraskan isi `second_brain/2_Projects/README.md` menjadi indeks eksekutif yang ramping (*lean*) dengan pointer tautan ke master plan dan artefak arsip.
+  - Memperbarui dokumentasi terkait di `second_brain/README.md`, `second_brain/0_Inbox/README.md`, `second_brain/4_Resources/README.md`, dan `second_brain/5_Archives/README.md`.
+
+---
+
 ## 2026-10-16 — Eksekusi Migrasi Database & Verifikasi Skema Lengkap
 - **Konteks**: Permintaan user untuk menjalankan migrasi database dan memastikan seluruh tabel/skema up-to-date.
 - **Aksi**:
@@ -1984,3 +2001,20 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - Backend: 37 paket `go test ./...` lulus 100%.
   - Frontend: 56 file test vitest (401 test) lulus 100% termasuk pengujian selektivitas `realtime-dispatcher.test.ts`.
   - `npx next build`: 36 rute sukses terkompilasi bersih tanpa error TypeScript.
+
+## 2026-10-16 (Admin & Super Admin Parity) — Paket Spesifikasi Teknis Standarisasi Tampilan, Data Table, Realtime & Performa
+- **Konteks & Kebutuhan**:
+  - Permintaan standarisasi menyeluruh tampilan dan kemampuan portal Admin dan Super Admin agar setara dengan portal User.
+  - Mencakup: Shared layout shell, sticky header dengan breadcrumb, pencarian modul `Ctrl+K` (RBAC-aware), notifikasi realtime, theme toggle (dark/light/system), menu profil, kontrol collapse sidebar desktop, data table layout ber-KPI, server pagination 20 data bernomor, multi-parameter URL state sync, debounce 300ms, grafik analitik interaktif Recharts dengan Smart Insight card, parser otomatis Rupiah (`50000` -> `50.000`), penegakan batas minimum angka $\ge 1$, validasi form reaktif guard disabled button, modal konfirmasi aksi destruktif (`ConfirmActionModal`), arsitektur realtime SSE bebas polling dengan hybrid caching (in-memory patch + surgical invalidation), dan zero downtime deployment.
+- **Dokumen yang Dihasilkan**:
+  - Paket spesifikasi modular komprehensif di `second_brain/0_Inbox/ide/admin-superadmin-parity-spec/`:
+    1. `README.md`: Master index dan ringkasan arsitektur.
+    2. `01-arsitektur-shell-header.md`: Spesifikasi DashboardShell, DashboardHeader, SearchCommand RBAC, dan Sidebar state.
+    3. `02-datatable-url-state-engine.md`: Spesifikasi DataTableLayout, URL state sync, debounce, dan pagination bernomor.
+    4. `03-analytics-charts-insights.md`: Spesifikasi visualisasi Recharts, parameter URL grafik, dan Smart Insight Card.
+    5. `04-form-controls-validasi-guards.md`: Spesifikasi RupiahInput, min=1, validasi reaktif tombol simpan, dan ConfirmActionModal.
+    6. `05-realtime-caching-rbac-bus.md`: Spesifikasi SSE hub, bus klien, hybrid cache patch, dan dynamic RBAC.
+    7. `06-implementation-plan.md`: Rencana implementasi 6 fase bertahap dari foundation hingga rollout.
+    8. `07-testing-matrix-qa.md`: Matriks pengujian L1-L5, unit test, DOM test, integration test, dan smoke test checklist.
+    9. `08-mitigasi-resiko.md`: Analisis risiko R-01 s/d R-08, strategi failover, dan zero downtime deployment.
+- **Status**: Spesifikasi lengkap tersimpan dan siap ditinjau oleh pengguna sebelum transisi ke tahap rencana eksekusi implementasi.

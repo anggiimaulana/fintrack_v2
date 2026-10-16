@@ -37,14 +37,16 @@ Sesuai arsitektur sistem, backend Go/Gin bertindak sebagai otoritas tunggal pene
 - Multi-tenancy atau delegasi peran admin granular (sistem mengunci peran hanya `super_admin` dan `user` sesuai K-02).
 
 ## Deliverables
-1. **Dokumentasi Analisis, Keputusan & Perencanaan**:
+> 📦 **Arsip Detail P06:** Seluruh dokumen analisis keputusan, planning, rules, teknis, dan tracking tersimpan lengkap di [`../../5_Archives/phases/P06_Super-Admin-Dashboard/`](../../5_Archives/phases/P06_Super-Admin-Dashboard/).
+
+1. **Dokumentasi Analisis, Keputusan & Perencanaan (Diarsipkan)**:
    - `analisis/hasil-analisis-teknis.md` (Keputusan K-P06-01 s/d K-P06-12).
    - `planning/sprint-plan.md` (Rencana sprint 2 minggu 4 milestone).
    - `planning/tasks.md` (Daftar rincian TASK-P06-001 s/d TASK-P06-020).
    - `planning/timeline.md` (Timeline sekuensial, critical path, matriks dependensi).
    - `rules/implementation-rules.md` (Aturan ketat arsitektur, UI/UX, audit, dan zero downtime).
    - `tracking/tracking.md` (Matriks status kesiapan task).
-2. **Dokumentasi Teknis Arsitektur & Antarmuka**:
+2. **Dokumentasi Teknis Arsitektur & Antarmuka (Diarsipkan)**:
    - `teknis/superadmin-architecture.md` (Arsitektur modul, flow otorisasi, keamanan session & CSRF).
    - `teknis/admin-menu.md` (Struktur navigasi, breadcrumb, routing hierarchy Next.js App Router).
    - `teknis/metrics-dashboard.md` (Spesifikasi query agregasi KPI, formula MRR, performa query & caching Redis).

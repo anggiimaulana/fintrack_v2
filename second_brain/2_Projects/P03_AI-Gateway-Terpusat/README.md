@@ -34,7 +34,9 @@ FinTrack v2 mengalihkan seluruh pemrosesan AI (chat, vision, voice, embedding) d
 4. `backend/internal/usecase/ai_usecase.go` (adapter tipis penghubung usecase lama ke gateway terpusat).
 5. `backend/internal/infrastructure/embedding/embedder.go` (konektor embedder 768d via gateway).
 6. `frontend/` (pembersihan halaman/komponen BYOK API key user).
-7. Dokumen teknis dan operasional lengkap di `second_brain/2_Projects/P03_AI-Gateway-Terpusat/`.
+7. Dokumen teknis dan operasional lengkap di folder [`../../5_Archives/phases/P03_AI-Gateway-Terpusat/`](../../5_Archives/phases/P03_AI-Gateway-Terpusat/).
+
+> 📦 **Arsip Detail P03:** Seluruh dokumen analisis keputusan (K-P03-NN), planning, rules, spesifikasi teknis gateway, dan tracking tersimpan lengkap di [`../../5_Archives/phases/P03_AI-Gateway-Terpusat/`](../../5_Archives/phases/P03_AI-Gateway-Terpusat/).
 
 ## Success Criteria
 1. [x] Tidak ada panggilan LLM langsung dari client atau via BYOK user; trafik AI melewati internal AI Gateway saat flag ON. *(adapter wired + diuji; BYOK endpoint → 410 Gone)*

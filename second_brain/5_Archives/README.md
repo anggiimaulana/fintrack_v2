@@ -7,7 +7,8 @@
 4. **Struktur folder mengikuti sumber aslinya:**
    ```
    5_Archives/
-   ├── phases/          # Proyek/fase yang sudah complete (dari 2_Projects/)
+   ├── phases/          # Arsip lengkap artefak fase P01–P08 & master plan (dari 2_Projects/)
+   ├── ide/             # Arsip ide, riset, analisis, temuan audit & brief awal (dari 0_Inbox/)
    ├── sprint-logs/     # Checklist & log lama (dari 1_Digest/Tugas-Rutin/)
    └── misc/            # Item lain-lain dari 0_Inbox yang sudah diproses
    ```

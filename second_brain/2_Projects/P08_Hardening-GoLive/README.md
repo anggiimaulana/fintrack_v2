@@ -37,6 +37,8 @@ FinTrack v2 mengelola data transaksi keuangan sensitif, model langganan berbayar
    - Checklist gerbang peluncuran (*gate criteria*) tanpa toleransi kompromi.
 
 ## Deliverables
+> 📦 **Arsip Detail P08:** Seluruh dokumen analisis, planning, rules, teknis (load-test, security-review, chaos-failover, pdp-compliance, runbooks, backup-dr, go-live checklist), dan tracking tersimpan lengkap di [`../../5_Archives/phases/P08_Hardening-GoLive/`](../../5_Archives/phases/P08_Hardening-GoLive/).
+
 - Dokumen load test suite k6 dan laporan benchmark performa (`teknis/load-test.md`).
 - Dokumen security review, postur PCI-DSS SAQ A, dan arsitektur enkripsi (`teknis/security-review.md`).
 - Dokumen metodologi chaos engineering dan matriks failover (`teknis/chaos-failover.md`).

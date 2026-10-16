@@ -19,18 +19,18 @@
 ## Struktur PARA
 | Folder | Fungsi |
 |--------|--------|
-| `0_Inbox/` | Brief & catatan mentah (`brief_awal.md`) |
+| `0_Inbox/` | Quick capture zone (kredensial demo, catatan baru) |
 | `1_Digest/Tugas-Rutin/` | Audit trail (`log_aktivitas.md`) |
-| `2_Projects/` | Proyek aktif (`P01_FinTrack_v2/`) |
+| `2_Projects/` | Ringkasan fase proyek aktif (`P01`–`P08`) |
 | `3_Areas/` | Standar & SOP jangka panjang |
 | `4_Resources/` | Aset terdistilasi, kredensial, dokumentasi API |
-| `5_Archives/` | Riwayat proyek selesai |
+| `5_Archives/` | Riwayat proyek selesai, detail fase, ide & audit (`phases/`, `ide/`, `sprint-logs/`) |
 
 ## Proyek Aktif
 - **P01_FinTrack_v2** — Migrasi stack Go + PostgreSQL + Next.js (monorepo baru).
-  - Roadmap: `2_Projects/P01_FinTrack_v2/roadmap.md`
-  - Pengujian: `2_Projects/P01_FinTrack_v2/skenario_pengujian.md`
-  - Brief: `0_Inbox/brief_awal.md`
+  - Ringkasan: `2_Projects/P01_FinTrack_v2/README.md`
+  - Arsip Detail (Roadmap & Skenario): `5_Archives/phases/P01_FinTrack_v2/`
+  - Brief awal: `5_Archives/ide/brief_awal.md`
 
 ## Aturan Emas
 1. Kode hanya di `frontend/`, `backend/`, `database/`.

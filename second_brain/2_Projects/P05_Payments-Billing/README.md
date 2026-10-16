@@ -55,22 +55,13 @@ Modul ini diimplementasikan di `internal/payment/` dengan pola antarmuka Go yang
 
 ## 3. Hasil Kerja (Deliverables)
 
-1. **Struktur Folder Dokumentasi Fase P05**:
-   - `second_brain/2_Projects/P05_Payments-Billing/`
-     - `README.md`
-     - `analisis/hasil-analisis-teknis.md`
-     - `planning/sprint-plan.md`
-     - `planning/tasks.md`
-     - `planning/timeline.md`
-     - `rules/implementation-rules.md`
-     - `tracking/tracking.md`
-     - `teknis/payment-integration.md`
-     - `teknis/midtrans-webhook.md`
-     - `teknis/manual-payment.md`
-     - `teknis/invoice.md`
-     - `teknis/proration.md`
-     - `teknis/dunning-grace.md`
-     - `teknis/payment-gateway-switch.md`
+1. **Dokumentasi Detail Fase P05 (Diarsipkan)**:
+   > 📦 **Arsip Detail P05:** Seluruh dokumen teknis dan perencanaan tersimpan lengkap di [`../../5_Archives/phases/P05_Payments-Billing/`](../../5_Archives/phases/P05_Payments-Billing/).
+   - `analisis/hasil-analisis-teknis.md` (Keputusan K-P05-01 s/d K-P05-14)
+   - `planning/` (sprint-plan, tasks, timeline)
+   - `rules/implementation-rules.md`
+   - `tracking/tracking.md`
+   - `teknis/` (payment-integration, midtrans-webhook, manual-payment, invoice, proration, dunning-grace, payment-gateway-switch)
 2. **Artefak Kode Backend yang Dirancang**:
    - Migrasi SQL tabel `invoices`, `payments`, dan indeks pendukung.
    - Antarmuka `internal/payment/gateway.go` beserta concrete struct Midtrans dan Manual.

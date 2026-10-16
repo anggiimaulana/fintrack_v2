@@ -44,12 +44,15 @@ Akun bawaan hasil seed database (`database/seeds/0001_demo.sql`):
 > ```
 
 ## Isi Saat Ini
-- `brief_awal.md` — brief awal & 7 keputusan terkunci migrasi FinTrack v2 (belum dipindah, masih jadi acuan).
 - `2026-10-14_kredensial-login-demo.md` — catatan lengkap akun login demo & instruksi pengujian.
-- `ide/2026-10-11_Subscription-AI-Gateway/` — hasil analisis mendalam permintaan platform berlangganan &
-  AI gateway terpusat (8 file: ringkasan, analisis, kritik & saran, keputusan, pertanyaan terbuka,
-  peta jalan, jawaban+rekomendasi, konfigurasi seed awal).
-  Acuan untuk BRD/PRD di `../4_Resources/Dokumen-Spesifikasi/` dan fase `../2_Projects/P02..P08/`.
+- `ide/` — folder penampung ide mentah (saat ini kosong; file lama diarsipkan).
+
+> 📦 **Arsip Dokumen Mentah & Ide:**
+> Seluruh analisis awal, ide, audit komprehensif, dan brief awal proyek telah diarsipkan ke:
+> [`../5_Archives/ide/`](../5_Archives/ide/)
+> - Brief awal & keputusan migrasi: [`../5_Archives/ide/brief_awal.md`](../5_Archives/ide/brief_awal.md)
+> - Ide & analisis platform: [`../5_Archives/ide/2026-10-11_Subscription-AI-Gateway/`](../5_Archives/ide/2026-10-11_Subscription-AI-Gateway/)
+> - Dokumen audit keamanan: [`../5_Archives/ide/2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi/`](../5_Archives/ide/2026-10-12_Audit-Komprehensif-Keamanan-Logic-Regulasi/)
 
 ## Status
-Folder ini harus **kosong atau hampir kosong** setelah setiap sesi triage. File aktif yang bernilai tinggi segera dipindah ke zona yang tepat.
+Folder ini sekarang **bersih** setelah sesi triage. File baru yang masuk dapat ditampung di sini sebelum diproses.
