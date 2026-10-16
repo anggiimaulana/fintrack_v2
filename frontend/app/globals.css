@@ -68,7 +68,7 @@
   --secondary-foreground: oklch(0.15 0.02 260);
   --muted: oklch(0.95 0 0);
   --muted-foreground: oklch(0.53 0 0);
-  --accent: oklch(0.75 0.18 80);
+  --accent: oklch(0.94 0.01 260);
   --accent-foreground: oklch(0.15 0.02 260);
   --destructive: oklch(0.58 0.24 25);
   --border: oklch(0.15 0.02 260);
@@ -102,13 +102,13 @@
   --popover: oklch(0.15 0.02 260);
   --popover-foreground: oklch(0.95 0 0);
   --primary: oklch(0.65 0.24 260);
-  --primary-foreground: oklch(0.12 0.01 260);
+  --primary-foreground: oklch(0.98 0 0);
   --primary-strong: oklch(0.72 0.2 260);
   --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.2 0 0);
   --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.35 0 0);
+  --accent: oklch(0.25 0.01 260);
   --accent-foreground: oklch(0.95 0 0);
   --destructive: oklch(0.65 0.24 25);
   --border: oklch(0.35 0 0);
@@ -219,6 +219,14 @@
   text-transform: uppercase;
   letter-spacing: 0.025em;
 }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 
 button, a, select, input[type="submit"], input[type="button"], input[type="reset"], [role="button"], .cursor-pointer {
   cursor: pointer;

@@ -13,7 +13,7 @@ import {
   Cpu,
   History,
   Settings,
-  ShieldCheck,
+  Wallet,
   LogOut,
   Tag,
   Activity,
@@ -148,7 +148,7 @@ export function SuperAdminSidebar() {
       {/* Brand Header */}
       <div className={cn("border-b-2 border-sidebar-border flex items-center", isRailCollapsed ? "p-3 justify-center" : "p-4")}>
         <Link href="/super-admin" className="flex items-center gap-2 text-xl font-black tracking-tight overflow-hidden">
-          <ShieldCheck className="w-6 h-6 text-primary shrink-0" />
+          <Wallet className="w-6 h-6 text-primary shrink-0" />
           <div
             className={cn(
               "flex flex-col transition-all duration-200",
@@ -166,7 +166,7 @@ export function SuperAdminSidebar() {
       </div>
 
       {/* Nav Groups */}
-      <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto overflow-x-hidden no-scrollbar">
         {superAdminMenuGroups.map((group) => {
           const isOpen = !collapsedGroups[group.label]
           const groupHasActive = group.items.some((item) => isItemActive(item.href, item.exact))
@@ -232,7 +232,7 @@ export function SuperAdminSidebar() {
       {/* Footer Profile & Logout */}
       <div className={cn("border-t-2 border-sidebar-border", isRailCollapsed ? "p-3" : "p-4")}>
         <div className={cn("flex items-center gap-3 mb-3", isRailCollapsed ? "justify-center" : "px-1")}>
-          <Avatar className="h-8 w-8 border-2 rounded-md border-foreground shrink-0">
+          <Avatar className="h-8 w-8 rounded-full shrink-0">
             <AvatarImage src={user?.avatar_url ?? undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
               {initials || 'SA'}

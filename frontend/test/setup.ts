@@ -11,5 +11,13 @@ expect.extend(matchers);
 // not registered — do it explicitly, otherwise each test sees the previous
 // test's DOM (which makes queries match more than one element).
 afterEach(cleanup);
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 
 export { axe };

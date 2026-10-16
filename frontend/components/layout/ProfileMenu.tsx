@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSession } from "@/lib/session-context";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 interface ProfileMenuProps {
   /** Called after the user confirms logout (the header owns the confirm dialog). */
@@ -26,9 +27,14 @@ interface ProfileMenuProps {
  */
 export function ProfileMenu({ onLogout }: ProfileMenuProps) {
   const { user } = useSession();
+  const { planName, planCode } = useEntitlements();
   const role = user?.role || "user";
-  const roleLabel = role === "super_admin" ? "Super Admin" : role === "admin" ? "Admin" : "User";
-
+  const planLabel =
+    role === "super_admin"
+      ? "Super Admin"
+      : role === "admin"
+      ? "Admin"
+      : (planName || planCode || "Free");
   const displayName = user?.full_name || "Pengguna";
   const initials = displayName
     .split(" ")
@@ -54,16 +60,23 @@ export function ProfileMenu({ onLogout }: ProfileMenuProps) {
 
       <DropdownMenuContent
         align="end"
-        className="w-56 p-1 border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
+        className="w-60 p-1 border-2 rounded-md border-foreground shadow-[4px_4px_0px_0px] shadow-foreground bg-card"
       >
         <DropdownMenuLabel className="px-2 py-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="block text-sm font-black truncate">{displayName}</span>
-            <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border border-foreground/30 bg-muted shrink-0">
-              {roleLabel}
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <span className="text-sm font-black truncate flex-1 min-w-0" title={displayName}>
+              {displayName}
+            </span>
+            <span
+              className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border border-foreground/30 bg-muted shrink-0 max-w-[84px] truncate"
+              title={planLabel}
+            >
+              {planLabel}
             </span>
           </div>
-          <span className="block text-xs font-bold text-muted-foreground truncate">{user?.email ?? ""}</span>
+          <span className="block text-xs font-bold text-muted-foreground truncate" title={user?.email ?? ""}>
+            {user?.email ?? ""}
+          </span>
         </DropdownMenuLabel>
 
         <DropdownMenuItem asChild>

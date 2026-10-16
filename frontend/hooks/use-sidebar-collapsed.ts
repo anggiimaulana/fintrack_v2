@@ -2,7 +2,8 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "fintrack.sidebar.collapsed";
+const PRIMARY_STORAGE_KEY = "fintrack_sidebar_collapsed";
+const LEGACY_STORAGE_KEY = "fintrack.sidebar.collapsed";
 
 // A tiny external store over localStorage. Reading through useSyncExternalStore
 // (instead of setState in an effect) keeps the server and first client render
@@ -21,7 +22,11 @@ function subscribe(onStoreChange: () => void) {
 
 function getSnapshot(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "1";
+    const val = window.localStorage.getItem(PRIMARY_STORAGE_KEY);
+    if (val !== null) {
+      return val === "true" || val === "1";
+    }
+    return window.localStorage.getItem(LEGACY_STORAGE_KEY) === "1";
   } catch {
     // localStorage can be unavailable (private mode); default to expanded.
     return false;
@@ -42,8 +47,10 @@ export function useSidebarCollapsed() {
 
   const toggle = useCallback(() => {
     try {
-      const next = !(window.localStorage.getItem(STORAGE_KEY) === "1");
-      window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+      const current = getSnapshot();
+      const next = !current;
+      window.localStorage.setItem(PRIMARY_STORAGE_KEY, next ? "true" : "false");
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, next ? "1" : "0");
     } catch {
       // Ignore persistence failures; notify anyway so the UI still updates.
     }

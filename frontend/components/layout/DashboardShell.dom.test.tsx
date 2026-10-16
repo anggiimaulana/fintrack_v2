@@ -134,4 +134,35 @@ describe("DashboardShell", () => {
 
     expect(mockReplace).toHaveBeenCalledWith("/login")
   })
+
+  it("renders with role=user and bottomNav without authorization errors", () => {
+    vi.spyOn(sessionContext, "useSession").mockReturnValue({
+      user: {
+        id: "1",
+        email: "user@test.com",
+        full_name: "Normal User",
+        role: "user",
+        is_active: true,
+      },
+      isLoading: false,
+      isAuthenticated: true,
+      isAdmin: false,
+      isSuperAdmin: false,
+    })
+
+    renderWithClient(
+      <DashboardShell
+        sidebar={<div data-testid="sidebar">Sidebar</div>}
+        bottomNav={<nav data-testid="bottom-nav">Bottom Nav</nav>}
+        role="user"
+      >
+        <div data-testid="user-content">User Page</div>
+      </DashboardShell>
+    )
+
+    expect(screen.getByTestId("sidebar")).toBeInTheDocument()
+    expect(screen.getByTestId("bottom-nav")).toBeInTheDocument()
+    expect(screen.getByTestId("user-content")).toBeInTheDocument()
+    expect(mockReplace).not.toHaveBeenCalled()
+  })
 })

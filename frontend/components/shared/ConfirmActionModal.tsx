@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Trash2, ShieldAlert, PowerOff, Loader2 } from "lucide-react"
+import { Trash2, ShieldAlert, PowerOff, Loader2, CheckCircle } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 export interface ConfirmActionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  actionType: "delete" | "suspend" | "deactivate"
+  actionType: "delete" | "suspend" | "deactivate" | "activate"
   title: string
   description: string
   entityName?: string
@@ -57,6 +57,12 @@ export function ConfirmActionModal({
           icon: <PowerOff className="w-5 h-5 text-muted-foreground shrink-0" />,
           defaultConfirmLabel: "Nonaktifkan",
           btnClass: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        }
+      case "activate":
+        return {
+          icon: <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />,
+          defaultConfirmLabel: "Aktifkan",
+          btnClass: "bg-emerald-600 text-white hover:bg-emerald-700",
         }
     }
   }

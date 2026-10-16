@@ -19,6 +19,7 @@ import { logout } from "@/lib/auth-client";
 import { useSession } from "@/lib/session-context";
 import { USER_NAV_ITEMS, isNavItemActive } from "@/lib/nav";
 import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
+import { useEntitlements } from "@/hooks/use-entitlements";
 import { cn } from "@/lib/utils";
 
 const navItems = USER_NAV_ITEMS;
@@ -27,8 +28,9 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useSession();
+  const { planName, planCode } = useEntitlements();
   const { collapsed } = useSidebarCollapsed();
-
+  const activePlan = user?.role && user.role !== "user" ? user.role : (planName || planCode || "Free");
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
   const handleSignOut = async () => {
@@ -72,7 +74,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden no-scrollbar">
         {navItems.map((item) => {
           const isActive = isNavItemActive(pathname, item.href);
           return (
@@ -112,20 +114,20 @@ export function Sidebar() {
       <div className={cn("border-t-2 border-sidebar-border", collapsed ? "p-2" : "p-4")}>
         {collapsed ? (
           <div className="flex justify-center mb-2" title={displayName}>
-            <Avatar className="w-9 h-9 border-2 rounded-md border-foreground">
+            <Avatar className="w-9 h-9 rounded-full">
               {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
               <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
             </Avatar>
           </div>
         ) : (
           <div className="flex items-center gap-3 px-3 py-2 border-2 rounded-md border-sidebar-border bg-sidebar-accent mb-2">
-            <Avatar className="w-8 h-8 border-2 rounded-md border-foreground">
+            <Avatar className="w-8 h-8 rounded-full">
               {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={displayName} /> : null}
               <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-sidebar-foreground truncate">{displayName}</p>
-              <p className="text-xs text-sidebar-foreground/60 font-bold truncate uppercase">{user?.role ?? "user"}</p>
+              <p className="text-xs text-sidebar-foreground/60 font-bold truncate uppercase">{activePlan}</p>
             </div>
           </div>
         )}

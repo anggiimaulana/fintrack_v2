@@ -47,6 +47,12 @@ describe("SearchCommand", () => {
     expect(screen.getByText(/Tidak ada hasil/)).toBeInTheDocument();
   });
 
+  it("does not list super-admin exclusive modules to regular user", () => {
+    render(<SearchCommand open onOpenChange={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Kata kunci pencarian"), { target: { value: "token" } });
+    expect(screen.queryByText("Token & Kuota AI")).not.toBeInTheDocument();
+  });
+
   it("has no accessibility violations", async () => {
     const { container } = render(<SearchCommand open onOpenChange={() => {}} />);
     expect(await axe(container)).toHaveNoViolations();

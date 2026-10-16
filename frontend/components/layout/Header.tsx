@@ -104,6 +104,7 @@ export function Header() {
     if (pathname.startsWith("/admin/categories/expense")) return "Kategori Pengeluaran";
     if (pathname.startsWith("/admin/categories/income")) return "Kategori Pemasukan";
     if (pathname.startsWith("/admin/categories/savings")) return "Kategori Tabungan";
+    if (pathname.startsWith("/admin/categories")) return "Kategori Transaksi";
 
     // Super Admin routes
     if (pathname === "/super-admin/tokens") return "Token & Kuota AI";
@@ -208,3 +209,6 @@ export function Header() {
     </header>
   );
 }
+
+export const DashboardHeader = Header;
+export default Header;

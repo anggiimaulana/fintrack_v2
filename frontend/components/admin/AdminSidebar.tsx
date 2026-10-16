@@ -90,7 +90,7 @@ export function AdminSidebar() {
       </div>
 
       {/* Nav Content */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden no-scrollbar">
         {!collapsed && (
           <div className="text-sidebar-foreground/60 px-3 mb-2 text-xs font-black uppercase tracking-widest">
             Menu Utama
@@ -128,7 +128,7 @@ export function AdminSidebar() {
       {/* Footer Profile & Logout */}
       <div className={cn("border-t-2 border-sidebar-border", collapsed ? "p-3" : "p-4")}>
         <div className={cn("flex items-center gap-3 mb-3", collapsed ? "justify-center" : "px-1")}>
-          <Avatar className="h-8 w-8 border-2 rounded-md border-foreground shrink-0">
+          <Avatar className="h-8 w-8 rounded-full shrink-0">
             <AvatarImage src={user?.avatar_url ?? undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
               {initials || 'AD'}

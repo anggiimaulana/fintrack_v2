@@ -13,6 +13,14 @@ vi.mock("@/lib/session-context", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-entitlements", () => ({
+  useEntitlements: () => ({
+    planName: "Pro",
+    planCode: "pro",
+    status: "active",
+  }),
+}));
+
 /** Radix menus open on pointerdown, not click. */
 function openMenu(label: string) {
   const trigger = screen.getByLabelText(label);
@@ -27,6 +35,7 @@ describe("ProfileMenu", () => {
     expect(screen.getByText("Budi Santoso")).toBeInTheDocument();
     expect(screen.getByText("budi@example.com")).toBeInTheDocument();
     expect(screen.getByText("Profil & Pengaturan")).toBeInTheDocument();
+    expect(screen.getByText("Pro")).toBeInTheDocument();
     expect(screen.getByText(/Langganan/)).toBeInTheDocument();
   });
 
