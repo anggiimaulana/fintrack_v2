@@ -79,8 +79,9 @@ type RouterConfig struct {
 	// UsageHandler exposes the signed-in user's own consumption (time series +
 	// history ledger). Nil omits those routes.
 	UsageHandler *handler.UsageHandler
+	// QuotaHandler exposes the user's dual-cycle quota snapshot (/me/quota). Nil omits.
+	QuotaHandler *handler.QuotaHandler
 	// AIConfig exposes the effective AI timeout budget to the client so the
-	// browser waits as long as the server allows. Nil omits the route.
 	AIConfig *handler.AIConfigHandler
 }
 
@@ -209,6 +210,9 @@ func SetupRouter(
 	if config.Estimates != nil {
 		aiH.WithEstimates(config.Estimates)
 	}
+	if config.Storage != nil {
+		aiH.WithStorage(config.Storage)
+	}
 	ah := handler.NewAuthHandler(authUC, config.CookieSecure)
 	if config.Pool != nil {
 		ah.WithAnonymize(user.NewAnonymizeService(config.Pool))
@@ -316,6 +320,9 @@ func SetupRouter(
 				uh := config.UsageHandler
 				protected.GET("/me/usage/timeseries", uh.Timeseries)
 				protected.GET("/me/usage/history", uh.History)
+			}
+			if config.QuotaHandler != nil {
+				protected.GET("/me/quota", config.QuotaHandler.GetUserQuotaSnapshot)
 			}
 
 			userRoutes := protected.Group("")
@@ -530,6 +537,8 @@ func SetupRouter(
 	// filename embeds an unguessable user UUID, so this is served unauthenticated
 	// (the handler still verifies the profile points at the requested file).
 	r.GET("/api/v1/avatars/:file", ah.ServeAvatar)
+	// Public receipt images: served for chat message previews without cookies.
+	r.GET("/api/v1/receipts/:file", aiH.ServeReceipt)
 
 	if config.Metrics != nil {
 		r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(config.Metrics.Registry(), promhttp.HandlerOpts{})))

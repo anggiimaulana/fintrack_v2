@@ -6,15 +6,16 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/entitlement"
+	"github.com/fintrack/backend/internal/quota"
 	"github.com/fintrack/backend/pkg/logger"
 	"github.com/fintrack/backend/pkg/response"
 )
-
 // UsageResolver returns the current numeric usage for a limit key (e.g. count
 // of transactions). Used by WithinLimit middleware.
 type UsageResolver func(ctx context.Context, userID uuid.UUID, limitKey string) (int64, error)
@@ -24,8 +25,18 @@ const UpgradeURL = "/user/subscription"
 
 // EntitlementMiddleware enforces feature flags and numeric limits at the
 // backend (the authoritative layer). super_admin bypasses all checks.
+type DualCycleEnforcer interface {
+	Evaluate(ctx context.Context, p quota.EvalParams) (*quota.EvalResult, error)
+}
+
+type SubscriptionPeriodProvider interface {
+	GetSubscriptionPeriod(ctx context.Context, userID uuid.UUID) (start, end time.Time, weeklyAnchor *time.Time, err error)
+}
+
 type EntitlementMiddleware struct {
-	resolver *entitlement.Resolver
+	resolver  *entitlement.Resolver
+	dualCycle DualCycleEnforcer
+	periods   SubscriptionPeriodProvider
 	// enabled is false when ENTITLEMENT_ENFORCEMENT=off: the middleware becomes a
 	// no-op (incident rollback valve, see the P07 entitlement spec §3.5).
 	enabled bool
@@ -38,6 +49,13 @@ type EntitlementMiddleware struct {
 // ENTITLEMENT_ENFORCEMENT is explicitly "off"/"false"/"0".
 func NewEntitlementMiddleware(resolver *entitlement.Resolver) *EntitlementMiddleware {
 	return &EntitlementMiddleware{resolver: resolver, enabled: EnforcementEnabled()}
+}
+
+// WithDualCycle attaches the dual cycle enforcer and period provider to the middleware.
+func (m *EntitlementMiddleware) WithDualCycle(enforcer DualCycleEnforcer, periods SubscriptionPeriodProvider) *EntitlementMiddleware {
+	m.dualCycle = enforcer
+	m.periods = periods
+	return m
 }
 
 // EnforcementEnabled reads ENTITLEMENT_ENFORCEMENT (default on).
@@ -145,7 +163,6 @@ func (m *EntitlementMiddleware) WithinLimit(limitKey string, usage UsageResolver
 			c.Next() // unlimited
 			return
 		}
-
 		var current int64
 		if usage != nil {
 			cur, uerr := usage(c.Request.Context(), userID, limitKey)
@@ -156,6 +173,62 @@ func (m *EntitlementMiddleware) WithinLimit(limitKey string, usage UsageResolver
 			}
 			current = cur
 		}
+
+		if m.dualCycle != nil && m.periods != nil {
+			var planID uuid.UUID
+			if res.PlanID != "" {
+				planID, _ = uuid.Parse(res.PlanID)
+			}
+			pStart, pEnd, wAnchor, _ := m.periods.GetSubscriptionPeriod(c.Request.Context(), userID)
+			evalRes, evalErr := m.dualCycle.Evaluate(c.Request.Context(), quota.EvalParams{
+				UserID:              userID,
+				PlanID:              planID,
+				LimitKey:            limitKey,
+				MonthlyLimit:        limit,
+				CurrentMonthlyUsage: current,
+				WeeklyAnchor:        wAnchor,
+				MonthlyPeriodStart:  pStart,
+				MonthlyPeriodEnd:    pEnd,
+				Now:                 time.Now().UTC(),
+			})
+			if evalErr != nil {
+				response.InternalError(c, "Failed to evaluate dual-cycle quota")
+				c.Abort()
+				return
+			}
+			if !evalRes.Allowed && !evalRes.Degraded {
+				msg := "Anda telah mencapai batas paket Anda. Silakan tingkatkan paket."
+				if evalRes.BlockReason == quota.BlockReasonWeeklyExhausted {
+					msg = "Kuota mingguan Anda telah habis."
+				}
+				c.JSON(402, gin.H{
+					"success":       false,
+					"error":         "limit_exceeded",
+					"message":       msg,
+					"limit_key":     limitKey,
+					"block_reason":  evalRes.BlockReason,
+					"weekly_used":   evalRes.WeeklyUsed,
+					"weekly_limit":  evalRes.WeeklyLimit,
+					"monthly_used":  evalRes.MonthlyUsed,
+					"monthly_limit": evalRes.MonthlyLimit,
+					"reset_at":      evalRes.ResetAt.Format(time.RFC3339),
+					"upgrade_hint":  true,
+					"upgrade_url":   UpgradeURL,
+				})
+				c.Abort()
+				return
+			}
+			if evalRes.Degraded {
+				c.Set("quota_degraded", true)
+				c.Set("quota_degraded_mode", evalRes.DegradedMode)
+				if evalRes.FallbackModel != "" {
+					c.Set("quota_fallback_model", evalRes.FallbackModel)
+				}
+			}
+			c.Next()
+			return
+		}
+
 
 		if current >= limit {
 			c.JSON(402, gin.H{

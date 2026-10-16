@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ import (
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/entitlement"
+	"github.com/fintrack/backend/internal/storage"
 	"github.com/fintrack/backend/internal/usecase"
 	"github.com/fintrack/backend/internal/voice"
 	"github.com/fintrack/backend/pkg/logger"
@@ -44,6 +46,7 @@ type AIHandler struct {
 	// entResolver resolves the plan limit for the daily-slot claim. Nil skips the
 	// conditional claim (the middleware gate still applies).
 	entResolver *entitlement.Resolver
+	store       *storage.Provider
 }
 
 func NewAIHandler(aiUC *usecase.AIUsecase, transactionUC *usecase.TransactionUsecase) *AIHandler {
@@ -62,6 +65,12 @@ func (h *AIHandler) WithVoice(repo domain.VoiceTranscriptionRepository, cfg voic
 // successful server-mode transcription (R-14 + concurrency safety).
 func (h *AIHandler) WithVoiceDailyCounter(fn func(ctx context.Context, userID uuid.UUID, limit int64) (bool, int64, error)) *AIHandler {
 	h.voiceDaily = fn
+	return h
+}
+
+// WithStorage attaches the object store for persisting scanned receipt images.
+func (h *AIHandler) WithStorage(p *storage.Provider) *AIHandler {
+	h.store = p
 	return h
 }
 
@@ -170,6 +179,12 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	if req.Message == "" {
 		response.BadRequest(c, "Message is required", "validation_error")
 		return
+	}
+	if fallbackModel, ok := c.Get("quota_fallback_model"); ok {
+		if modelStr, isStr := fallbackModel.(string); isStr && modelStr != "" {
+			// Degraded model downgrade sets mode to fast
+			req.Mode = domain.LLMFast
+		}
 	}
 
 	var reservation *billing.Reservation
@@ -509,7 +524,48 @@ func (h *AIHandler) AnalyzeReceipt(c *gin.Context) {
 		return
 	}
 
+	if h.store != nil && len(imageData) > 0 {
+		store, serr := h.store.Active(c.Request.Context())
+		if serr == nil && store != nil {
+			ext := storage.ExtensionFor(contentType)
+			receiptFilename := uuid.New().String() + ext
+			if perr := store.Put(c.Request.Context(), storage.ReceiptKey(receiptFilename), imageData, contentType); perr == nil {
+				result["image_url"] = "/api/v1/receipts/" + receiptFilename
+			}
+		}
+	}
+
 	response.Created(c, "Receipt analyzed", result)
+}
+
+// ServeReceipt handles GET /api/v1/receipts/:file.
+func (h *AIHandler) ServeReceipt(c *gin.Context) {
+	if h.store == nil {
+		response.NotFound(c, "Berkas tidak ditemukan")
+		return
+	}
+	filename := c.Param("file")
+	obj, err := h.store.Open(c.Request.Context(), storage.ReceiptKey(filename))
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			response.NotFound(c, "Berkas tidak ditemukan")
+			return
+		}
+		response.InternalError(c, "Gagal membaca berkas")
+		return
+	}
+	defer obj.Body.Close()
+
+	if obj.ContentType != "" {
+		c.Header("Content-Type", obj.ContentType)
+	}
+	if obj.Size > 0 {
+		c.Header("Content-Length", strconv.FormatInt(obj.Size, 10))
+	}
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.Header("Content-Disposition", "inline")
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, obj.Body)
 }
 
 // settleVision commits the real vision token usage on success and releases the

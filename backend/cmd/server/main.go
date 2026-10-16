@@ -36,6 +36,7 @@ import (
 	"github.com/fintrack/backend/internal/mail"
 	"github.com/fintrack/backend/internal/notification"
 	"github.com/fintrack/backend/internal/payment"
+	"github.com/fintrack/backend/internal/quota"
 	"github.com/fintrack/backend/internal/realtime"
 	"github.com/fintrack/backend/internal/repository/postgres"
 	"github.com/fintrack/backend/internal/runtimeconfig"
@@ -790,6 +791,14 @@ func main() {
 	lifecycleWorker.Start(bgCtx)
 	defer lifecycleWorker.Stop()
 
+	// Dual-cycle quota enforcement & persistence.
+	quotaRepo := postgres.NewQuotaRepo(pool)
+	payCatalog.WithCycles(quotaRepo)
+	dualCycleEnforcer := quota.NewDualCycleEnforcer(quotaRepo, quotaRepo)
+	if entMiddleware != nil {
+		entMiddleware.WithDualCycle(dualCycleEnforcer, billingRepo)
+	}
+
 	// Wrap the realtime publisher so every user-facing event is also written to
 	// the durable inbox (and emailed when permitted). Payment/billing keep
 	// emitting to the same interface, unaware of persistence.
@@ -817,9 +826,9 @@ func main() {
 		},
 		EntitlementResolver: entResolver,
 		UsageHandler:  usageHandler,
+		QuotaHandler:  handler.NewQuotaHandler(quotaRepo, dualCycleEnforcer, realtimePublisher),
 		AIConfig:      handler.NewAIConfigHandler(runtimeResolver),
 	}
-
 	// Super Admin portal (P06): one service + handler shared by every route.
 	adminSvc := admin.NewService(pool, auditSvc,
 		admin.WithManualService(payManual),

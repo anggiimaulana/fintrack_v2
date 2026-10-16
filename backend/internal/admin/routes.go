@@ -22,8 +22,10 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 		plans.DELETE("/:id", h.DeactivatePlan)
 		// Quota estimator (P-9): read-only "how many chats / what cost" preview.
 		plans.POST("/estimate", h.PlanEstimate)
+		// Plan dual-cycle quota configs (weekly + monthly).
+		plans.GET("/:id/cycles", h.GetPlanCycles)
+		plans.PUT("/:id/cycles", h.PutPlanCycles)
 	}
-
 	// Subscriptions
 	subs := rg.Group("/subscriptions")
 	{

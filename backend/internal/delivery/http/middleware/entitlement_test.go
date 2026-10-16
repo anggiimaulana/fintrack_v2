@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/entitlement"
+	"github.com/fintrack/backend/internal/quota"
 )
 
 type entSource struct {
@@ -266,4 +268,84 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+type fakeDualEnforcer struct {
+	res *quota.EvalResult
+	err error
+}
+
+func (f *fakeDualEnforcer) Evaluate(context.Context, quota.EvalParams) (*quota.EvalResult, error) {
+	return f.res, f.err
+}
+
+type fakePeriods struct {
+	start, end time.Time
+	anchor     *time.Time
+}
+
+func (f *fakePeriods) GetSubscriptionPeriod(context.Context, uuid.UUID) (time.Time, time.Time, *time.Time, error) {
+	return f.start, f.end, f.anchor, nil
+}
+
+func TestWithinLimit_DualCycle_DegradedSetsContext(t *testing.T) {
+	r, mw := setupEntRouter("user", entSource{limits: map[string]int64{"ai_tokens_per_cycle": 50000}})
+	enforcer := &fakeDualEnforcer{
+		res: &quota.EvalResult{
+			Allowed:       true,
+			Degraded:      true,
+			DegradedMode:  "model_downgrade",
+			FallbackModel: "gpt-4o-mini",
+		},
+	}
+	now := time.Now().UTC()
+	mw.WithDualCycle(enforcer, &fakePeriods{start: now, end: now.Add(24 * time.Hour)})
+
+	var capturedModel string
+	var isDegraded bool
+	r.GET("/ai", mw.WithinLimit("ai_tokens_per_cycle", nil), func(c *gin.Context) {
+		if d, ok := c.Get("quota_degraded"); ok && d == true {
+			isDegraded = true
+		}
+		capturedModel = c.GetString("quota_fallback_model")
+		c.String(200, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ai", nil))
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !isDegraded {
+		t.Errorf("expected isDegraded=true")
+	}
+	if capturedModel != "gpt-4o-mini" {
+		t.Errorf("expected capturedModel=gpt-4o-mini, got %s", capturedModel)
+	}
+}
+
+func TestWithinLimit_DualCycle_BlockedReturns402(t *testing.T) {
+	r, mw := setupEntRouter("user", entSource{limits: map[string]int64{"ocr_scans_per_cycle": 30}})
+	enforcer := &fakeDualEnforcer{
+		res: &quota.EvalResult{
+			Allowed:     false,
+			BlockReason: "weekly_exhausted",
+			ResetAt:     time.Now().Add(24 * time.Hour),
+		},
+	}
+	now := time.Now().UTC()
+	mw.WithDualCycle(enforcer, &fakePeriods{start: now, end: now.Add(24 * time.Hour)})
+
+	r.GET("/ocr", mw.WithinLimit("ocr_scans_per_cycle", nil), func(c *gin.Context) {
+		c.String(200, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ocr", nil))
+	if w.Code != 402 {
+		t.Fatalf("expected 402, got %d", w.Code)
+	}
+	if !contains(w.Body.String(), "weekly_exhausted") {
+		t.Errorf("expected weekly_exhausted in response body, got %s", w.Body.String())
+	}
 }
