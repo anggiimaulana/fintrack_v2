@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SubcategoryManager } from '@/components/admin/SubcategoryManager'
+import { ConfirmActionModal } from '@/components/shared/ConfirmActionModal'
 import api from '@/lib/api'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -46,6 +47,7 @@ export default function SubcategoriesPage() {
   const queryClient = useQueryClient()
   
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [editingSub, setEditingSub] = useState<AdminSubcategory | null>(null)
   const [name, setName] = useState('')
   const [isActive, setIsActive] = useState(true)
@@ -127,10 +129,12 @@ export default function SubcategoriesPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus sub-kategori ini?')) {
-      await deleteMutation.mutateAsync(id)
-    }
+  const deleteTarget = subcategories?.find((s: AdminSubcategory) => s.id === deleteId)
+
+  const handleConfirmDelete = async () => {
+    if (!deleteId) return
+    await deleteMutation.mutateAsync(deleteId)
+    setDeleteId(null)
   }
 
   return (
@@ -160,7 +164,7 @@ export default function SubcategoriesPage() {
       <SubcategoryManager 
         subcategories={subcategories || []}
         onEdit={handleOpenEdit}
-        onDelete={handleDelete}
+        onDelete={setDeleteId}
         isLoading={isLoading}
       />
 
@@ -212,6 +216,16 @@ export default function SubcategoriesPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <ConfirmActionModal
+        open={Boolean(deleteId)}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        actionType="delete"
+        title="Hapus Sub-kategori"
+        description="Apakah Anda yakin ingin menghapus sub-kategori ini secara permanen?"
+        entityName={deleteTarget?.name}
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

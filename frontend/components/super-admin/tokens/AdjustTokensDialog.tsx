@@ -52,7 +52,7 @@ export function AdjustTokensDialog({
   }
 
   const parsedAmount = parseInt(amountStr, 10)
-  const isAmountValid = !isNaN(parsedAmount) && parsedAmount !== 0
+  const isAmountValid = !isNaN(parsedAmount) && Math.abs(parsedAmount) >= 1
   const isReasonValid = reason.trim().length > 0
   const canSubmit = isAmountValid && isReasonValid && !adjustMutation.isPending
 

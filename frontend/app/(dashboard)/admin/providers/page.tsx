@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { Plus, Search, Pencil, Power, PowerOff } from 'lucide-react'
+import { ConfirmActionModal } from '@/components/shared/ConfirmActionModal'
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -33,7 +35,7 @@ export default function AdminProvidersPage() {
   const [formDisplayName, setFormDisplayName] = useState('')
   const [formSupportsFast, setFormSupportsFast] = useState(true)
   const [formSupportsReasoning, setFormSupportsReasoning] = useState(false)
-
+  const [confirmToggleProvider, setConfirmToggleProvider] = useState<ProviderItem | null>(null)
   const { data: providers, isLoading } = useQuery({
     queryKey: ['admin', 'providers'],
     queryFn: async () => {
@@ -125,6 +127,17 @@ export default function AdminProvidersPage() {
         </Button>
       </div>
 
+      <SmartInsightCard
+        title="Insight Status Provider AI"
+        summaryText={`Terdapat ${providers?.length || 0} provider AI terkonfigurasi, dengan ${providers?.filter((p: ProviderItem) => p.is_active).length || 0} provider dalam status aktif siap melayani request user.`}
+        deltaPercent={0}
+        deltaDirection="flat"
+        isPositiveDelta={true}
+        metricsSummary={[
+          { label: "Total Provider", value: providers?.length || 0 },
+          { label: "Provider Aktif", value: providers?.filter((p: ProviderItem) => p.is_active).length || 0 },
+        ]}
+      />
       <div className="flex items-center gap-2 max-w-md">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
@@ -177,7 +190,7 @@ export default function AdminProvidersPage() {
                       <Button variant="outline" size="sm" onClick={() => handleOpenEdit(p)} className="cursor-pointer">
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleToggleActive(p)} className="cursor-pointer">
+                      <Button variant="outline" size="sm" onClick={() => setConfirmToggleProvider(p)} className="cursor-pointer">
                         {p.is_active ? <PowerOff className="w-3.5 h-3.5 text-red-500" /> : <Power className="w-3.5 h-3.5 text-green-500" />}
                       </Button>
                     </div>
@@ -227,13 +240,36 @@ export default function AdminProvidersPage() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="cursor-pointer">Batal</Button>
-              <Button type="submit" disabled={isMutating} className="cursor-pointer">
+              <Button
+                type="submit"
+                disabled={!formName.trim() || !formDisplayName.trim() || isMutating}
+                className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+              >
                 {isMutating ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
+      <ConfirmActionModal
+        open={Boolean(confirmToggleProvider)}
+        onOpenChange={(open) => !open && setConfirmToggleProvider(null)}
+        actionType={confirmToggleProvider?.is_active ? "deactivate" : "suspend"}
+        title={confirmToggleProvider?.is_active ? "Nonaktifkan Provider" : "Aktifkan Provider"}
+        description={
+          confirmToggleProvider?.is_active
+            ? "Apakah Anda yakin ingin menonaktifkan provider ini? User tidak akan dapat memilih model dari provider ini."
+            : "Apakah Anda yakin ingin mengaktifkan provider ini?"
+        }
+        entityName={confirmToggleProvider?.display_name || confirmToggleProvider?.name}
+        confirmLabel={confirmToggleProvider?.is_active ? "Nonaktifkan" : "Aktifkan"}
+        isPending={isMutating}
+        onConfirm={async () => {
+          if (!confirmToggleProvider) return
+          await handleToggleActive(confirmToggleProvider)
+          setConfirmToggleProvider(null)
+        }}
+      />
     </div>
   )
 }

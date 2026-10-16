@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { CategoryTable } from '@/components/admin/CategoryTable'
 import { CategoryForm } from '@/components/admin/CategoryForm'
 import { useAdminCategories, AdminCategory } from '@/hooks/useAdminCategories'
+import { ConfirmActionModal } from '@/components/shared/ConfirmActionModal'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ export default function IncomeCategoriesPage() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   const filteredCategories = categories?.filter((c: AdminCategory) => 
@@ -57,13 +59,15 @@ export default function IncomeCategoriesPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus kategori ini?')) {
-      try {
-        await deleteCategory(id)
-      } catch (error) {
-        console.error('Failed to delete category:', error)
-      }
+  const deleteTarget = categories?.find((c: AdminCategory) => c.id === deleteId)
+
+  const handleConfirmDelete = async () => {
+    if (!deleteId) return
+    try {
+      await deleteCategory(deleteId)
+      setDeleteId(null)
+    } catch (error) {
+      console.error('Failed to delete category:', error)
     }
   }
 
@@ -99,7 +103,7 @@ export default function IncomeCategoriesPage() {
         <CategoryTable
           categories={filteredCategories}
           onEdit={handleOpenEdit}
-          onDelete={handleDelete}
+          onDelete={setDeleteId}
         />
       )}
 
@@ -119,6 +123,17 @@ export default function IncomeCategoriesPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionModal
+        open={Boolean(deleteId)}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        actionType="delete"
+        title="Hapus Kategori Pemasukan"
+        description="Apakah Anda yakin ingin menghapus kategori ini? Data yang terhubung mungkin akan terdampak."
+        entityName={deleteTarget?.name}
+        isPending={isMutating}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

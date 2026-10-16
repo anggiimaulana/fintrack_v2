@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
 import { toast } from 'sonner'
 import { RotateCw, LayoutDashboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,8 +9,8 @@ import { OverviewKpiCards, OverviewKpiCardsSkeleton } from '@/components/super-a
 import { CircuitBreakerBanner } from '@/components/super-admin/dashboard/CircuitBreakerBanner'
 import { TimeseriesCharts, TimeseriesChartsSkeleton } from '@/components/super-admin/dashboard/TimeseriesCharts'
 import { PaymentMethodsDonut, PaymentMethodsDonutSkeleton } from '@/components/super-admin/dashboard/PaymentMethodsDonut'
-
-export default function SuperAdminDashboardPage() {
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
+function SuperAdminDashboardContent() {
   const {
     period,
     setPeriod,
@@ -97,6 +97,30 @@ export default function SuperAdminDashboardPage() {
         </div>
       ) : null}
 
+      {/* Smart Insight Card */}
+      {overview && (
+        <SmartInsightCard
+          title="Insight Operasional Finansial & AI"
+          summaryText={`Pertumbuhan MRR berada di level ${overview.mrr_growth_percentage >= 0 ? '+' : ''}${overview.mrr_growth_percentage.toFixed(1)}% dengan total ${overview.active_users_30d.toLocaleString('id-ID')} pengguna aktif dalam 30 hari terakhir.`}
+          deltaPercent={overview.mrr_growth_percentage}
+          deltaDirection={overview.mrr_growth_percentage > 0 ? 'up' : overview.mrr_growth_percentage < 0 ? 'down' : 'flat'}
+          isPositiveDelta={overview.mrr_growth_percentage >= 0}
+          metricsSummary={[
+            { label: 'Token 24 Jam', value: `${(overview.tokens_consumed_24h / 1000).toFixed(1)}k` },
+            { label: 'Success Rate Bayar', value: `${overview.payment_success_rate.toFixed(1)}%` },
+            { label: 'Antrean Review', value: `${overview.pending_manual_payments} trx` },
+          ]}
+          actionRecommendation={
+            overview.pending_manual_payments > 0
+              ? {
+                  text: `Terdapat ${overview.pending_manual_payments} pembayaran manual menunggu verifikasi bukti transfer.`,
+                  actionLabel: 'Review Pembayaran',
+                  href: '/super-admin/payments/review',
+                }
+              : undefined
+          }
+        />
+      )}
       {/* Grid: Timeseries & Donut */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 space-y-6">
@@ -125,5 +149,13 @@ export default function SuperAdminDashboardPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SuperAdminDashboardPage() {
+  return (
+    <Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
+      <SuperAdminDashboardContent />
+    </Suspense>
   )
 }

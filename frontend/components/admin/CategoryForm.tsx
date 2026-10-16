@@ -43,6 +43,7 @@ interface CategoryFormProps {
 export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: CategoryFormProps) {
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),
+    mode: 'onChange',
     defaultValues: {
       name: initialValues?.name || '',
       icon: initialValues?.icon || 'Wallet',
@@ -133,7 +134,11 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
           <Button type="button" variant="ghost" onClick={onCancel} disabled={isLoading}>
             Batal
           </Button>
-          <Button type="submit" className="bg-primary-500 hover:bg-primary-600" disabled={isLoading}>
+          <Button
+            type="submit"
+            disabled={!form.formState.isValid || isLoading}
+            className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed font-bold border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+          >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Simpan Kategori
           </Button>

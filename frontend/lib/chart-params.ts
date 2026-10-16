@@ -1,3 +1,8 @@
+"use client";
+
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useCallback } from "react";
+
 export type ChartType = "line" | "bar" | "pie" | "area";
 export type PeriodType = "week" | "month" | "3months" | "6months" | "year";
 export type GroupBy = "summary" | "category";
@@ -32,4 +37,26 @@ export function parseChartFromParams(sp: URLSearchParams): ChartState {
 
 export function chartToParams(c: ChartState): Record<string, string> {
   return { chart: c.chartType, period: c.period, group: c.groupBy };
+}
+
+/** Hook for two-way synchronization between chart state and URL search params. */
+export function useChartUrlState(defaults?: Partial<ChartState>) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const chartState = parseChartFromParams(searchParams);
+
+  const setChartState = useCallback(
+    (next: Partial<ChartState>) => {
+      const sp = new URLSearchParams(searchParams.toString());
+      const updated = { ...chartState, ...next };
+      const params = chartToParams(updated);
+      Object.entries(params).forEach(([k, v]) => sp.set(k, v));
+      router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
+    },
+    [chartState, pathname, router, searchParams]
+  );
+
+  return { chartState, setChartState };
 }

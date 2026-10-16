@@ -606,7 +606,18 @@ export function PlanFormDialog({
             >
               Batal
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={
+                !code.trim() ||
+                !name.trim() ||
+                billingPeriodDays <= 0 ||
+                (priceMonthly ?? 0) < 0 ||
+                (priceYearly ?? 0) < 0 ||
+                isSubmitting
+              }
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+            >
               {isSubmitting ? 'Menyimpan...' : isEdit ? 'Simpan Perubahan' : 'Buat Paket'}
             </Button>
           </DialogFooter>

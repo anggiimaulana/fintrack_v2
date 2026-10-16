@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useCallback } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import api from '@/lib/api'
 import { staleTimeConfig } from '@/lib/cache-invalidation'
 
@@ -47,10 +48,27 @@ export const superAdminQueryKeys = {
 }
 
 export function useSuperAdminMetrics(initialPeriod: MetricsPeriod = '30d') {
-  const [period, setPeriod] = useState<MetricsPeriod>(initialPeriod)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const paramPeriod = searchParams.get('period') as MetricsPeriod
+  const period =
+    paramPeriod === '7d' || paramPeriod === '30d' || paramPeriod === '90d'
+      ? paramPeriod
+      : initialPeriod
+
+  const setPeriod = useCallback(
+    (next: MetricsPeriod) => {
+      const sp = new URLSearchParams(searchParams.toString())
+      sp.set('period', next)
+      router.replace(`${pathname}?${sp.toString()}`, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
+
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
-
   const overviewQuery = useQuery({
     queryKey: superAdminQueryKeys.overview(false),
     queryFn: async () => {
