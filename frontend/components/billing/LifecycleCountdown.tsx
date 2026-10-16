@@ -69,11 +69,14 @@ export function lifecycleCountdown(
 const CLOCK_INTERVAL_MS = 60_000;
 const clockListeners = new Set<() => void>();
 let clockTimer: number | null = null;
+let currentClientNow = Date.now();
 
 function subscribeClock(onChange: () => void) {
   clockListeners.add(onChange);
   if (clockTimer === null) {
+    currentClientNow = Date.now();
     clockTimer = window.setInterval(() => {
+      currentClientNow = Date.now();
       for (const listener of clockListeners) listener();
     }, CLOCK_INTERVAL_MS);
   }
@@ -87,9 +90,8 @@ function subscribeClock(onChange: () => void) {
 }
 
 function getClientNow(): number {
-  return Date.now();
+  return currentClientNow;
 }
-
 function getServerNow(): number | null {
   return null;
 }

@@ -79,6 +79,23 @@ describe("keysForEvent", () => {
     // A reconnect is a resync hint only — it must not storm every cache.
     expect(keys).toHaveLength(1);
   });
+  it("invalidates admin user and stats for user_status_updated", () => {
+    const keys = keysForEvent("user_status_updated");
+    expect(keys).toContainEqual(queryKeys.admin.users);
+    expect(keys).toContainEqual(queryKeys.admin.stats);
+  });
+
+  it("invalidates super-admin token balances for tokens_adjusted", () => {
+    const keys = keysForEvent("tokens_adjusted");
+    expect(keys).toContainEqual(queryKeys.superAdmin.tokensUsers());
+    expect(keys).toContainEqual(queryKeys.superAdmin.tokensLedger());
+  });
+
+  it("invalidates payment lists for payment_status_changed", () => {
+    const keys = keysForEvent("payment_status_changed");
+    expect(keys).toContainEqual(queryKeys.superAdmin.payments());
+    expect(keys).toContainEqual(queryKeys.superAdmin.paymentsReview());
+  });
 
   it("returns nothing for an unknown event", () => {
     expect(keysForEvent("some_future_event")).toEqual([]);
@@ -127,5 +144,33 @@ describe("dispatchDomainEvent", () => {
     const applied = dispatchDomainEvent(fakeClient, { event: "unmapped" });
     expect(applied).toEqual([]);
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("patches user status in-memory for user_status_updated event", () => {
+    const invalidate = vi.fn();
+    let cachedUsers = [
+      { id: "u-1", full_name: "John", is_active: true },
+      { id: "u-2", full_name: "Jane", is_active: false },
+    ];
+
+    const setQueriesData = vi.fn((_filters: unknown, updater: (old: unknown) => unknown) => {
+      cachedUsers = updater(cachedUsers) as typeof cachedUsers;
+    });
+
+    const fakeClient: QueryInvalidator = {
+      invalidateQueries: invalidate,
+      setQueriesData,
+    };
+
+    const event: DomainEvent = {
+      event: "user_status_updated",
+      payload: { id: "u-1", is_active: false },
+    };
+
+    dispatchDomainEvent(fakeClient, event);
+
+    expect(setQueriesData).toHaveBeenCalled();
+    expect(cachedUsers[0].is_active).toBe(false);
+    expect(cachedUsers[1].is_active).toBe(false);
   });
 });

@@ -19,11 +19,12 @@ export type DomainEventName =
   | "ai_route_quarantined"
   | "manual_approval_needed"
   | "config_changed"
-  // Client-synthesised: emitted by the stream hook when the SSE connection is
-  // re-established after a drop, so consumers can resync anything missed. It is
-  // never sent by the server.
+  | "user_status_updated"
+  | "user_created"
+  | "role_updated"
+  | "tokens_adjusted"
+  | "payment_status_changed"
   | "stream_reconnected";
-
 export interface DomainEvent {
   event: DomainEventName | string;
   timestamp?: number;
@@ -38,6 +39,7 @@ export interface DomainEvent {
  */
 export interface QueryInvalidator {
   invalidateQueries: (filters: { queryKey: readonly unknown[] }) => void;
+  setQueriesData?: <T>(filters: { queryKey: readonly unknown[] }, updater: (old: T | undefined) => T | undefined) => void;
 }
 
 /** Query keys invalidated by each event. Empty array = deliberately no-op. */
@@ -131,6 +133,24 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
     case "manual_approval_needed":
       // Admin dashboard: the review queue gains an item.
       return [queryKeys.superAdmin.paymentsReview(), queryKeys.superAdmin.metricsOverview()];
+    case "user_status_updated":
+      return [queryKeys.admin.users, queryKeys.admin.stats];
+
+    case "user_created":
+      return [queryKeys.admin.users, queryKeys.admin.stats, queryKeys.admin.recentUsers];
+
+    case "role_updated":
+      return [queryKeys.admin.users, queryKeys.entitlements.me];
+
+    case "tokens_adjusted":
+      return [queryKeys.superAdmin.tokensUsers(), queryKeys.superAdmin.tokensLedger(), queryKeys.superAdmin.metricsOverview()];
+    case "payment_status_changed":
+      return [
+        queryKeys.superAdmin.payments(),
+        queryKeys.superAdmin.paymentsReview(),
+        queryKeys.superAdmin.metricsOverview(),
+        queryKeys.superAdmin.metricsTimeseries(),
+      ];
 
     default:
       return [];
@@ -141,7 +161,50 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
  * Applies the invalidation for one event. Returns the keys it invalidated, which
  * makes the behaviour assertable in tests.
  */
+interface UserCacheRow {
+  id: string;
+  is_active: boolean;
+  [key: string]: unknown;
+}
+
+interface UserPaginatedCache {
+  users?: UserCacheRow[];
+  data?: UserCacheRow[];
+}
+
 export function dispatchDomainEvent(queryClient: QueryInvalidator, event: DomainEvent): readonly (readonly unknown[])[] {
+  if (event.event === "user_status_updated" && queryClient.setQueriesData && event.payload && typeof event.payload === "object" && "id" in event.payload && "is_active" in event.payload) {
+    const targetId = event.payload.id;
+    const nextActive = Boolean(event.payload.is_active);
+
+    if (typeof targetId === "string") {
+      queryClient.setQueriesData({ queryKey: queryKeys.admin.users }, (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        if (Array.isArray(old)) {
+          return old.map((u: unknown) => {
+            if (u && typeof u === "object" && "id" in u && u.id === targetId) {
+              return { ...u, is_active: nextActive };
+            }
+            return u;
+          });
+        }
+        const obj = old as UserPaginatedCache;
+        if (Array.isArray(obj.users)) {
+          return {
+            ...obj,
+            users: obj.users.map((u) => (u.id === targetId ? { ...u, is_active: nextActive } : u)),
+          };
+        }
+        if (Array.isArray(obj.data)) {
+          return {
+            ...obj,
+            data: obj.data.map((u) => (u.id === targetId ? { ...u, is_active: nextActive } : u)),
+          };
+        }
+        return old;
+      });
+    }
+  }
   const keys = keysForEvent(event.event, event.payload);
   for (const key of keys) {
     queryClient.invalidateQueries({ queryKey: key });

@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { me, type AuthUser } from "@/lib/auth-client";
+import { subscribeDomainEvents } from "@/lib/realtime-bus";
 
 type SessionContextValue = {
   user: AuthUser | null;
@@ -21,6 +22,8 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery({
     queryKey: ["session", "me"],
     queryFn: me,
@@ -29,6 +32,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   const user = data ?? null;
+
+  // Realtime dynamic RBAC sync: refetch session when role or status updates
+  useEffect(() => {
+    return subscribeDomainEvents((event) => {
+      if (
+        event.event === "role_updated" ||
+        event.event === "user_status_updated" ||
+        event.event === "user_suspended"
+      ) {
+        queryClient.invalidateQueries({ queryKey: ["session", "me"] });
+      }
+    });
+  }, [queryClient]);
 
   return (
     <SessionContext.Provider
