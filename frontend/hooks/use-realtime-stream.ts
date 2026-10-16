@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { dispatchDomainEvent, type DomainEvent } from "@/lib/realtime-dispatcher";
 import { publishDomainEvent } from "@/lib/realtime-bus";
+import { handleQuotaToast } from "@/lib/quota-toast-handler";
 import { refreshSession } from "@/lib/api";
 
 /** Reconnect delays in ms: 1s, 2s, 4s, 8s, then capped at 16s. */
@@ -54,6 +55,7 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
   // cascading render).
   const [streamStatus, setStreamStatus] = useState<StreamStatus>("connecting");
   const lastEventIdRef = useRef<string>("");
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
   const attemptRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
   // `undefined` (not null) so clearTimeout accepts it without a guard.
@@ -71,12 +73,21 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
       } catch {
         return; // ignore malformed frames rather than breaking the stream
       }
-      if (parsed?.id) lastEventIdRef.current = parsed.id;
+      if (parsed?.id) {
+        if (seenEventIdsRef.current.has(parsed.id)) return;
+        seenEventIdsRef.current.add(parsed.id);
+        if (seenEventIdsRef.current.size > 50) {
+          const first = seenEventIdsRef.current.values().next().value;
+          if (first) seenEventIdsRef.current.delete(first);
+        }
+        lastEventIdRef.current = parsed.id;
+      }
       if (parsed?.event) {
         // Cache invalidation (data freshness) and the notification bus (UI
         // side-effects) both consume the same event — one stream, two sinks.
         dispatchDomainEvent(queryClient, parsed);
         publishDomainEvent(parsed);
+        handleQuotaToast(parsed.event, parsed.payload);
       }
     },
     [queryClient]
@@ -132,17 +143,24 @@ export function useRealtimeStream(options: UseRealtimeStreamOptions = {}) {
         "payment_received",
         "plan_updated",
         "quota_reset",
-        // Consumption moved: refreshes the entitlements query only, so the
-        // quota bars stay live without touching the data lists.
         "usage_changed",
         "ai_endpoint_down",
         "ai_route_quarantined",
         "manual_approval_needed",
-        // Notification-inbox lifecycle: the notifications page patches its
-        // cache in place from these (no full refetch).
         "notification_created",
         "notification_read",
         "notification_deleted",
+        "config_changed",
+        "invoice_issued",
+        "user_status_updated",
+        "user_suspended",
+        "user_created",
+        "role_updated",
+        "tokens_adjusted",
+        "payment_status_changed",
+        "quota_degraded",
+        "quota_blocked",
+        "cycle_config_changed",
       ]) {
         es.addEventListener(name, handleEvent as EventListener);
       }

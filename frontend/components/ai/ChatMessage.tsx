@@ -141,14 +141,17 @@ export function ChatMessage({ author, content, mode, modelUsed }: ChatMessagePro
               hr: ({ node, ...props }: React.ComponentPropsWithoutRef<"hr"> & { node?: unknown }) => (
                 <hr className="my-3 border-t-2 border-foreground/20" {...props} />
               ),
-              img: ({ src, alt, node, ...props }: React.ComponentPropsWithoutRef<"img"> & { node?: unknown }) => (
-                <img
-                  src={src}
-                  alt={alt || "Foto"}
-                  className="max-h-64 max-w-full rounded-md border-2 border-foreground object-contain my-2 bg-muted shadow-[2px_2px_0px_0px] shadow-foreground"
-                  {...props}
-                />
-              ),
+              img: ({ src, alt, node, ...props }: React.ComponentPropsWithoutRef<"img"> & { node?: unknown }) => {
+                if (!src) return null;
+                return (
+                  <img
+                    src={src}
+                    alt={alt || "Foto"}
+                    className="max-h-64 max-w-full rounded-md border-2 border-foreground object-contain my-2 bg-muted shadow-[2px_2px_0px_0px] shadow-foreground"
+                    {...props}
+                  />
+                );
+              },
               a: ({ children, href, node, ...props }: React.ComponentPropsWithoutRef<"a"> & { node?: unknown }) => {
                 const safeHref = isSafeUrl(href) ? href : "#";
                 return (

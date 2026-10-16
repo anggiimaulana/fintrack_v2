@@ -59,4 +59,33 @@ describe("searchEntries", () => {
       expect(e.keywords.length).toBeGreaterThan(0);
     }
   });
+
+  describe("RBAC role-based filtering", () => {
+    it("hides admin and super-admin modules from user role", () => {
+      const userResults = searchEntries("users", SEARCH_ENTRIES, "user");
+      expect(userResults.some((e) => e.href === "/admin/users")).toBe(false);
+
+      const tokenResults = searchEntries("token", SEARCH_ENTRIES, "user");
+      expect(tokenResults.some((e) => e.href === "/super-admin/tokens")).toBe(false);
+    });
+
+    it("allows admin role to search admin modules", () => {
+      const adminResults = searchEntries("users", SEARCH_ENTRIES, "admin");
+      expect(adminResults.some((e) => e.href === "/admin/users")).toBe(true);
+
+      const providerResults = searchEntries("provider", SEARCH_ENTRIES, "admin");
+      expect(providerResults.some((e) => e.href === "/admin/providers")).toBe(true);
+    });
+
+    it("allows super_admin role to search both admin and super-admin modules", () => {
+      const saTokens = searchEntries("token", SEARCH_ENTRIES, "super_admin");
+      expect(saTokens.some((e) => e.href === "/super-admin/tokens")).toBe(true);
+
+      const saAdminUsers = searchEntries("users", SEARCH_ENTRIES, "super_admin");
+      expect(saAdminUsers.some((e) => e.href === "/admin/users")).toBe(true);
+
+      const saGateway = searchEntries("gateway", SEARCH_ENTRIES, "super_admin");
+      expect(saGateway.some((e) => e.href === "/super-admin/ai-gateway")).toBe(true);
+    });
+  });
 });

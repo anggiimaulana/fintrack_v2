@@ -45,6 +45,7 @@ export function useBudgets(
       return res.data?.data ?? [];
     },
     staleTime: staleTimeConfig.dashboard,
+    placeholderData: (prev) => prev,
   });
 }
 

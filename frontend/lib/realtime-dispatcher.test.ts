@@ -49,6 +49,7 @@ describe("keysForEvent", () => {
   it("refreshes entitlements, usage cache, voice config and voice history on usage_changed", () => {
     const keys = keysForEvent("usage_changed");
     expect(keys).toContainEqual(queryKeys.entitlements.me);
+    expect(keys).toContainEqual(queryKeys.quota.snapshot);
     expect(keys).toContainEqual(queryKeys.usage.all);
     // The voice config carries the live daily counter, so it must refresh too.
     expect(keys).toContainEqual(queryKeys.voice.config);
@@ -56,7 +57,7 @@ describe("keysForEvent", () => {
     // pick it up without a manual refresh.
     expect(keys).toContainEqual(queryKeys.voice.historyAll);
     // Must not refetch data lists — only quota/usage surfaces moved.
-    expect(keys).toHaveLength(4);
+    expect(keys).toHaveLength(5);
     expect(keys).not.toContainEqual(queryKeys.transactions.all);
     expect(keys).not.toContainEqual(queryKeys.dashboard.all);
   });
@@ -64,14 +65,33 @@ describe("keysForEvent", () => {
   it("does not invalidate voice config when usage_changed is only for ai_chat or transactions", () => {
     const chatKeys = keysForEvent("usage_changed", { limit_keys: ["ai_tokens_per_cycle", "ai_requests_per_cycle"] });
     expect(chatKeys).toContainEqual(queryKeys.entitlements.me);
+    expect(chatKeys).toContainEqual(queryKeys.quota.snapshot);
     expect(chatKeys).toContainEqual(queryKeys.usage.all);
     expect(chatKeys).not.toContainEqual(queryKeys.voice.config);
     expect(chatKeys).not.toContainEqual(queryKeys.voice.historyAll);
-    expect(chatKeys).toHaveLength(2);
+    expect(chatKeys).toHaveLength(3);
 
     const txKeys = keysForEvent("usage_changed", { limit_keys: ["max_transactions"] });
     expect(txKeys).not.toContainEqual(queryKeys.voice.config);
-    expect(txKeys).toHaveLength(2);
+    expect(txKeys).toHaveLength(3);
+  });
+
+  it("invalidates entitlements, quota snapshot, and usage on quota_degraded and quota_blocked", () => {
+    const degKeys = keysForEvent("quota_degraded");
+    expect(degKeys).toContainEqual(queryKeys.entitlements.me);
+    expect(degKeys).toContainEqual(queryKeys.quota.snapshot);
+    expect(degKeys).toContainEqual(queryKeys.usage.all);
+
+    const blkKeys = keysForEvent("quota_blocked");
+    expect(blkKeys).toContainEqual(queryKeys.entitlements.me);
+    expect(blkKeys).toContainEqual(queryKeys.quota.snapshot);
+    expect(blkKeys).toContainEqual(queryKeys.usage.all);
+  });
+
+  it("invalidates plans on cycle_config_changed", () => {
+    const keys = keysForEvent("cycle_config_changed");
+    expect(keys).toContainEqual(queryKeys.superAdmin.plans);
+    expect(keys).toContainEqual(queryKeys.quota.snapshot);
   });
   it("resyncs notifications on stream_reconnected", () => {
     const keys = keysForEvent("stream_reconnected");
@@ -172,5 +192,32 @@ describe("dispatchDomainEvent", () => {
     expect(setQueriesData).toHaveBeenCalled();
     expect(cachedUsers[0].is_active).toBe(false);
     expect(cachedUsers[1].is_active).toBe(false);
+  });
+
+  it("patches user status in-memory to false for user_suspended event", () => {
+    const invalidate = vi.fn();
+    let cachedUsers = [
+      { id: "u-1", full_name: "John", is_active: true },
+    ];
+
+    const setQueriesData = vi.fn((_filters: unknown, updater: (old: unknown) => unknown) => {
+      cachedUsers = updater(cachedUsers) as typeof cachedUsers;
+    });
+
+    const fakeClient: QueryInvalidator = {
+      invalidateQueries: invalidate,
+      setQueriesData,
+    };
+
+    const event: DomainEvent = {
+      event: "user_suspended",
+      payload: { user_id: "u-1" },
+    };
+
+    dispatchDomainEvent(fakeClient, event);
+
+    expect(setQueriesData).toHaveBeenCalled();
+    expect(cachedUsers[0].is_active).toBe(false);
+    expect(invalidate).toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query";
+import type { PlanLimitCycle } from "@/hooks/usePlanCycles";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
@@ -38,6 +39,8 @@ export interface PublicPlan {
   limits: Record<string, number>;
   /** Per-limit label/unit/enforced, from the backend entitlement catalog. */
   limit_meta?: Record<string, PlanLimitMeta>;
+  /** Cycle configurations (e.g. weekly/monthly, degraded mode) per limit key. */
+  cycles?: Record<string, PlanLimitCycle>;
   /** PPN rate applied at checkout (0 when tax is off). */
   tax_rate_percent?: number;
   /** Tax amount for one billing period at the current rate. */

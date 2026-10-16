@@ -1,3 +1,5 @@
+import { computePresetDates, type DateRangeValue, type PresetKey } from "@/components/shared/DateRangeFilter";
+
 /**
  * The report page's tab structure and URL contract.
  *
@@ -20,6 +22,23 @@ export type ReportTabId = (typeof REPORT_TABS)[number]["id"];
 
 export const DEFAULT_REPORT_TAB: ReportTabId = "ringkasan";
 
+const TAB_ALIASES: Record<string, ReportTabId> = {
+  ringkasan: "ringkasan",
+  summary: "ringkasan",
+  spk: "spk",
+  kategori: "kategori",
+  category: "kategori",
+  categories: "kategori",
+  tren: "tren",
+  trend: "tren",
+  trends: "tren",
+  budget: "budget",
+  budgets: "budget",
+  anggaran: "budget",
+  kalender: "kalender",
+  calendar: "kalender",
+};
+
 /** The report "type" dimension (which slice of transactions is analysed). */
 export const REPORT_TYPES = [
   { id: "expense", label: "Pengeluaran" },
@@ -34,9 +53,11 @@ export function isReportTabId(v: string | null | undefined): v is ReportTabId {
   return !!v && REPORT_TABS.some((t) => t.id === v);
 }
 
-/** parseTab resolves a raw query value to a valid tab, defaulting safely. */
+/** parseTab resolves a raw query value to a valid tab, accepting English aliases and defaulting safely. */
 export function parseTab(v: string | null | undefined): ReportTabId {
-  return isReportTabId(v) ? v : DEFAULT_REPORT_TAB;
+  if (!v) return DEFAULT_REPORT_TAB;
+  const lower = v.toLowerCase();
+  return TAB_ALIASES[lower] ?? (isReportTabId(v) ? v : DEFAULT_REPORT_TAB);
 }
 
 /** parseReportType resolves a raw query value to a valid type. */
@@ -59,4 +80,91 @@ export function trendIsGood(type: ReportTypeId, change: number): boolean {
   if (change === 0) return true;
   const upIsGood = type === "income" || type === "savings";
   return upIsGood ? change > 0 : change < 0;
+}
+
+const PRESET_ALIASES: Record<string, PresetKey> = {
+  today: "today",
+  hari_ini: "today",
+  this_week: "this_week",
+  minggu_ini: "this_week",
+  this_month: "this_month",
+  bulan_ini: "this_month",
+  last_month: "last_month",
+  bulan_lalu: "last_month",
+  "3months": "3months",
+  "3_bulan": "3months",
+  this_year: "this_year",
+  tahun_ini: "this_year",
+  custom: "custom",
+  kustom: "custom",
+};
+
+export function parseReportFilterParams(
+  sp: URLSearchParams | { get: (k: string) => string | null },
+  now: Date
+): DateRangeValue {
+  const presetParam = sp.get("preset");
+  const startDate = sp.get("start") || "";
+  const endDate = sp.get("end") || "";
+  const compareStart = sp.get("cs") || "";
+  const compareEnd = sp.get("ce") || "";
+  const enableCompare = sp.get("cmp") === "1";
+
+  const presetKey = presetParam ? PRESET_ALIASES[presetParam.toLowerCase()] : undefined;
+
+  if (presetKey && presetKey !== "custom") {
+    const dates = computePresetDates(presetKey, now);
+    return {
+      preset: presetKey,
+      startDate: dates.start,
+      endDate: dates.end,
+      compareStart,
+      compareEnd,
+      enableCompare,
+    };
+  }
+
+  if (startDate && endDate) {
+    return {
+      preset: "custom",
+      startDate,
+      endDate,
+      compareStart,
+      compareEnd,
+      enableCompare,
+    };
+  }
+
+  const fallback = computePresetDates("this_month", now);
+  return {
+    preset: "this_month",
+    startDate: fallback.start,
+    endDate: fallback.end,
+    compareStart,
+    compareEnd,
+    enableCompare,
+  };
+}
+
+export function reportFilterToParams(f: DateRangeValue): Record<string, string | null> {
+  const p: Record<string, string | null> = {};
+  if (f.preset !== "custom") {
+    p.preset = f.preset;
+    p.start = null;
+    p.end = null;
+  } else {
+    p.preset = "custom";
+    p.start = f.startDate || null;
+    p.end = f.endDate || null;
+  }
+  if (f.enableCompare) {
+    p.cmp = "1";
+    p.cs = f.compareStart || null;
+    p.ce = f.compareEnd || null;
+  } else {
+    p.cmp = null;
+    p.cs = null;
+    p.ce = null;
+  }
+  return p;
 }

@@ -124,17 +124,56 @@ export function PlanCard({
         </ul>
         {limitEntries.length > 0 && (
           <div className="border-t-2 border-foreground/20 pt-2">
-            <p className="mb-1 text-xs font-black uppercase tracking-wide text-muted-foreground">Kuota</p>
-            <ul className="space-y-1">
-              {limitEntries.map(([key, value]) => (
-                <li key={key} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">{limitLabel(plan, key, LIMIT_LABELS)}</span>
-                  <span className="flex items-center gap-1 font-mono font-bold">
-                    {value < 0 && <InfinityIcon className="h-3 w-3" aria-hidden="true" />}
-                    {formatLimit(value)}
-                  </span>
-                </li>
-              ))}
+            <p className="mb-1.5 text-xs font-black uppercase tracking-wide text-muted-foreground">Kuota &amp; Siklus</p>
+            <ul className="space-y-2">
+              {limitEntries.map(([key, value]) => {
+                const cycle = plan.cycles?.[key]
+                const isWeekly =
+                  cycle?.cycle_type === 'weekly_monthly' ||
+                  (typeof cycle?.weekly_limit === 'number' && cycle.weekly_limit > 0)
+                const isUnlimited = value < 0
+                return (
+                  <li key={key} className="p-2 rounded-md border border-border/70 bg-muted/20 text-xs space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-foreground">{limitLabel(plan, key, LIMIT_LABELS)}</span>
+                      <span className="flex items-center gap-1 font-mono font-bold shrink-0">
+                        {isUnlimited && <InfinityIcon className="h-3 w-3" aria-hidden="true" />}
+                        {isUnlimited ? 'Tak Terbatas' : `${value.toLocaleString('id-ID')} / bln`}
+                      </span>
+                    </div>
+                    {isWeekly ? (
+                      <div className="space-y-0.5 text-[11px] text-muted-foreground font-medium pt-1 border-t border-border/40">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-primary">Reset Mingguan</span>
+                          <span className="font-mono font-bold text-foreground">
+                            {(cycle.weekly_limit ?? 0).toLocaleString('id-ID')} / mgg
+                          </span>
+                        </div>
+                        {cycle.degraded_mode === 'model_downgrade' && (
+                          <p className="text-[10px] text-muted-foreground leading-tight">
+                            Saat mingguan habis: dialihkan ke mode hemat
+                          </p>
+                        )}
+                        {cycle.degraded_mode === 'throttle' && (
+                          <p className="text-[10px] text-muted-foreground leading-tight">
+                            Saat mingguan habis: kecepatan request dibatasi
+                          </p>
+                        )}
+                        {cycle.degraded_mode === 'hard_block' && (
+                          <p className="text-[10px] text-muted-foreground leading-tight">
+                            Saat mingguan habis: diblokir sampai minggu depan
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-muted-foreground font-medium flex items-center justify-between pt-1 border-t border-border/40">
+                        <span>Reset Bulanan</span>
+                        <span>Maksimal {isUnlimited ? 'tanpa batas' : `${value.toLocaleString('id-ID')} / bln`}</span>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

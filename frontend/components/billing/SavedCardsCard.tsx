@@ -91,7 +91,7 @@ export function SavedCardsCard({ className }: SavedCardsCardProps) {
                     key={card.id}
                     className={`flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border-2 ${
                       isDefault
-                        ? "border-foreground bg-accent/40 shadow-[2px_2px_0px_0px] shadow-foreground"
+                        ? "border-foreground bg-primary/10 shadow-[2px_2px_0px_0px] shadow-foreground"
                         : "border-border bg-card"
                     }`}
                   >

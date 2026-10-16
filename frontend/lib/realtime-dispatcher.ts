@@ -24,6 +24,9 @@ export type DomainEventName =
   | "role_updated"
   | "tokens_adjusted"
   | "payment_status_changed"
+  | "quota_degraded"
+  | "quota_blocked"
+  | "cycle_config_changed"
   | "stream_reconnected";
 export interface DomainEvent {
   event: DomainEventName | string;
@@ -73,6 +76,7 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
       // move, and usage charts/history reset for the new window.
       return [
         queryKeys.entitlements.me,
+        queryKeys.quota.snapshot,
         queryKeys.transactions.all,
         queryKeys.dashboard.all,
         queryKeys.reports.all,
@@ -81,12 +85,12 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
         queryKeys.usage.all,
         queryKeys.billing.subscription,
       ];
-
     case "usage_changed": {
       // Consumption moved (transaction created/deleted, AI tokens/requests, a
       // voice recording). Refresh entitlements and usage charts/ledger.
       const keys: (readonly unknown[])[] = [
         queryKeys.entitlements.me,
+        queryKeys.quota.snapshot,
         queryKeys.usage.all,
       ];
       // Only invalidate voice config & history if voice quota specifically moved
@@ -98,6 +102,21 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
       }
       return keys;
     }
+    case "quota_degraded":
+    case "quota_blocked":
+      return [
+        queryKeys.entitlements.me,
+        queryKeys.quota.snapshot,
+        queryKeys.usage.all,
+      ];
+
+    case "cycle_config_changed":
+      return [
+        queryKeys.entitlements.me,
+        queryKeys.quota.snapshot,
+        queryKeys.superAdmin.plans,
+        queryKeys.usage.all,
+      ];
     case "config_changed":
       // The configuration catalog changed (setting/metric/feature/plan/pricing).
       // Reload ONLY the catalog queries plus entitlements and the settings
@@ -134,6 +153,7 @@ export function keysForEvent(event: string, payload?: unknown): readonly (readon
       // Admin dashboard: the review queue gains an item.
       return [queryKeys.superAdmin.paymentsReview(), queryKeys.superAdmin.metricsOverview()];
     case "user_status_updated":
+    case "user_suspended":
       return [queryKeys.admin.users, queryKeys.admin.stats];
 
     case "user_created":
@@ -173,10 +193,15 @@ interface UserPaginatedCache {
 }
 
 export function dispatchDomainEvent(queryClient: QueryInvalidator, event: DomainEvent): readonly (readonly unknown[])[] {
-  if (event.event === "user_status_updated" && queryClient.setQueriesData && event.payload && typeof event.payload === "object" && "id" in event.payload && "is_active" in event.payload) {
-    const targetId = event.payload.id;
-    const nextActive = Boolean(event.payload.is_active);
-
+  if (
+    (event.event === "user_status_updated" || event.event === "user_suspended") &&
+    queryClient.setQueriesData &&
+    event.payload &&
+    typeof event.payload === "object"
+  ) {
+    const payload = event.payload as Record<string, unknown>;
+    const targetId = typeof payload.id === "string" ? payload.id : typeof payload.user_id === "string" ? payload.user_id : undefined;
+    const nextActive = event.event === "user_suspended" ? false : Boolean(payload.is_active);
     if (typeof targetId === "string") {
       queryClient.setQueriesData({ queryKey: queryKeys.admin.users }, (old: unknown) => {
         if (!old || typeof old !== "object") return old;

@@ -27,6 +27,19 @@ export interface Entitlements {
   period?: Period | null;
   version: number;
 }
+export interface UseEntitlementsResult {
+  entitlements: Entitlements | null;
+  isLoading: boolean;
+  isError: boolean;
+  planCode: string;
+  planName: string;
+  status: string;
+  usage: Record<string, UsageEntry>;
+  period: Period | null;
+  hasFeature: (featureKey: string) => boolean;
+  withinLimit: (limitKey: string, current: number) => boolean;
+  limitValue: (limitKey: string) => number | undefined;
+}
 
 /** UsageEntry is the consumption for one limit key. */
 export interface UsageEntry {

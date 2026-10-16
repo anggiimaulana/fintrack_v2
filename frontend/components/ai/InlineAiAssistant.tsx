@@ -186,6 +186,13 @@ export function InlineAiAssistant() {
         return;
       }
 
+      if (sessionId) {
+        const permImg = (data?.image_url as string) || "";
+        const savedMsg = permImg
+          ? `![Foto Struk](${permImg})\n\n📷 *Mengunggah foto struk belanja: ${data?.merchant || data?.description || "Struk"}*`
+          : `📷 *Mengunggah foto struk belanja: ${data?.merchant || data?.description || "Struk"}*`;
+        api.post(`/ai/sessions/${sessionId}/messages`, { role: "user", content: savedMsg }).catch(() => {});
+      }
       const formatted = formatRupiahIDR(data.total || 0);
 
       // Try to auto-save to DB using the shared matcher (same as ReceiptScanner).
@@ -246,9 +253,6 @@ export function InlineAiAssistant() {
     const previewUrl = URL.createObjectURL(file);
     const userMsg = `![Foto Struk](${previewUrl})\n\n📷 *Mengunggah foto struk belanja...*`;
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    if (sessionId) {
-      api.post(`/ai/sessions/${sessionId}/messages`, { role: "user", content: userMsg }).catch(() => {});
-    }
     analyzePhotoMutation.mutate(file);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [analyzePhotoMutation, sessionId]);

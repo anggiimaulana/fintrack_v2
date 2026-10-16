@@ -153,6 +153,8 @@ function invalidateTransactionViews(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
   queryClient.invalidateQueries({ queryKey: queryKeys.spk.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
   // A create/delete moves the `max_transactions` usage counter, so refresh the
   // quota bars immediately in this tab (the SSE usage_changed event covers
   // other tabs).

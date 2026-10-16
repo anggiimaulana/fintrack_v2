@@ -69,6 +69,7 @@ export function useMySpkModel() {
       return res.data?.data as SpkMetricResponse;
     },
     staleTime: staleTimeConfig.spk,
+    placeholderData: (prev) => prev,
   });
 }
 

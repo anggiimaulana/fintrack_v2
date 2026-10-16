@@ -93,6 +93,7 @@ export const queryKeys = {
     metricsTimeseries: (period?: string) => ["super-admin", "metrics-timeseries", period] as const,
     metricsPaymentMethods: ["super-admin", "metrics-payment-methods"] as const,
     plans: ["super-admin", "plans"] as const,
+    planCycles: (planId: string) => ["super-admin", "plans", planId, "cycles"] as const,
     subscriptions: (params?: unknown) => ["super-admin", "subscriptions", params] as const,
     payments: (params?: unknown) => ["super-admin", "payments", params] as const,
     paymentsReview: (params?: unknown) => ["super-admin", "payments-review", params] as const,
@@ -113,5 +114,8 @@ export const queryKeys = {
     metricDefinitions: ["admin", "metric-definitions"] as const,
     featureDefinitions: ["admin", "feature-definitions"] as const,
     resolvers: ["admin", "resolvers"] as const,
+  },
+  quota: {
+    snapshot: ["me", "quota"] as const,
   },
 };

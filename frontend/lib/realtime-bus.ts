@@ -23,7 +23,13 @@ export function subscribeDomainEvents(listener: Listener): () => void {
   };
 }
 
-/** publishDomainEvent fans one event out to every current listener. */
+/** publishDomainEvent fans one event out to every current listener with error isolation. */
 export function publishDomainEvent(event: DomainEvent): void {
-  for (const listener of listeners) listener(event);
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error("[RealtimeBus] Listener callback error:", err);
+    }
+  }
 }

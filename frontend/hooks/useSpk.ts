@@ -29,7 +29,7 @@ interface RawSpk {
   calculated_at?: string;
 }
 
-function mapSpk(data: unknown): SpkResult {
+export function mapSpk(data: unknown): SpkResult {
   if (!data) {
     return {
       score: 0,
@@ -87,6 +87,7 @@ export function useSpkLatest() {
       return mapSpk(res.data?.data);
     },
     staleTime: staleTimeConfig.spk,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -130,5 +131,6 @@ export function useSpkHistory(limit = 12) {
       return mapSpkHistory(res.data?.data);
     },
     staleTime: staleTimeConfig.spk,
+    placeholderData: (prev) => prev,
   });
 }

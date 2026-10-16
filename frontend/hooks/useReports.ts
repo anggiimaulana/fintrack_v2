@@ -1,6 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { subscribeDomainEvents } from "@/lib/realtime-bus";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
 import { staleTimeConfig } from "@/lib/cache-invalidation";
@@ -84,4 +86,32 @@ export function useReports(
     staleTime: staleTimeConfig.reports,
     placeholderData: (prev) => prev,
   });
+}
+
+/**
+ * Subscribes to the realtime SSE stream to keep reports, deep-dive analytics,
+ * budgets, and SPK refreshed when mutations occur without manual fetching.
+ */
+export function useReportsRealtime() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    return subscribeDomainEvents((event) => {
+      const payload = event.payload as { limit_keys?: string[]; reason?: string } | undefined;
+      const isTxEvent =
+        event.event === "quota_reset" ||
+        event.event === "stream_reconnected" ||
+        (event.event === "usage_changed" &&
+          (!payload?.limit_keys ||
+            payload.limit_keys.length === 0 ||
+            payload.limit_keys.includes("max_transactions") ||
+            Boolean(payload.reason?.startsWith("transaction_"))));
+
+      if (isTxEvent) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.spk.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      }
+    });
+  }, [queryClient]);
 }

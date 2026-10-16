@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useSession } from "@/lib/session-context";
 import { useRealtimeStream } from "@/hooks/use-realtime-stream";
 import { useNotificationsRealtime } from "@/hooks/useNotifications";
+import { useReportsRealtime } from "@/hooks/useReports";
 import { useAIConfig } from "@/hooks/useAIConfig";
 
 /**
@@ -24,6 +25,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   // per-page), so the header bell and the notifications page both stay live
   // without polling. Safe when unauthenticated: no events arrive.
   useNotificationsRealtime();
+  // Keep reports, budgets, SPK, and dashboard caches live on SSE events.
+  useReportsRealtime();
 
   // Install the Super-Admin-configured AI request timeout for the whole app, so
   // a slow receipt/voice call is not aborted by the browser before the server

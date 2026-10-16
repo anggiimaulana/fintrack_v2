@@ -430,8 +430,9 @@ export default function ChatWindow() {
       sessionId = created?.id ?? null;
     }
 
-    const userMsgContent = previewUrl
-      ? `![Foto Struk](${previewUrl})\n\n📷 *Mengunggah foto struk belanja: ${result.merchant || result.description || "Struk"}*`
+    const imageUrl = (result.image_url as string) || previewUrl;
+    const userMsgContent = imageUrl
+      ? `![Foto Struk](${imageUrl})\n\n📷 *Mengunggah foto struk belanja: ${result.merchant || result.description || "Struk"}*`
       : `📷 *Mengunggah foto struk belanja: ${result.merchant || result.description || "Struk"}*`;
 
     setMessages((prev) => [...prev, { role: "user", content: userMsgContent }]);
