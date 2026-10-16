@@ -36,6 +36,10 @@ const (
 	// invoice, or one created at checkout). The user is told to pay before the
 	// due date so the subscription does not lapse.
 	EventInvoiceIssued = "invoice_issued"
+	EventUserStatusUpdated = "user_status_updated"
+	EventUserCreated       = "user_created"
+	EventRoleUpdated       = "role_updated"
+	EventTokensAdjusted    = "tokens_adjusted"
 )
 
 // Event is the envelope every domain event shares. Field order and names are

@@ -217,6 +217,11 @@ func SetupRouter(
 		ah.WithStorage(config.Storage)
 	}
 	adminH := handler.NewAdminHandler(userUC)
+	if config.Realtime != nil {
+		if adminEmitter, ok := config.Realtime.(handler.AdminRealtimeEmitter); ok {
+			adminH.WithRealtime(adminEmitter)
+		}
+	}
 	providerH := handler.NewProviderHandler(providerUC)
 	rh := handler.NewReportHandler(reportUC)
 
