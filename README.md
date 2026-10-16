@@ -108,13 +108,13 @@ fintrack_v2/
 4. **Verifikasi Kesiapan Layanan**:
    ```bash
    # Cek status kesehatan backend (harus mengembalikan HTTP 200)
-   curl -i http://localhost:8080/health/ready
+   curl -i http://localhost:8081/health/ready
    ```
 
 5. **Akses Aplikasi**:
    - **Frontend UI**: [http://localhost:3001](http://localhost:3001)
-   - **Backend API**: [http://localhost:8080/api/v1](http://localhost:8080/api/v1)
-   - **Prometheus Metrics**: [http://localhost:8080/metrics](http://localhost:8080/metrics)
+   - **Backend API**: [http://localhost:8081/api/v1](http://localhost:8081/api/v1)
+   - **Prometheus Metrics**: [http://localhost:8081/metrics](http://localhost:8081/metrics)
    - **Database PostgreSQL**: `localhost:5435` (User: `postgres`, DB: `fintrack`)
    - **Redis**: `localhost:6380`
 
@@ -139,7 +139,7 @@ bash database/scripts/migrate.sh --seed
 cd backend
 go run ./cmd/server
 ```
-Backend akan aktif di `http://localhost:8080`.
+Backend akan aktif di `http://localhost:8081`.
 
 #### 4. Jalankan Frontend (Next.js)
 Buka terminal baru:
@@ -196,7 +196,7 @@ pnpm build
 | Port | Layanan | Deskripsi |
 |---|---|---|
 | `3001` / `3000` | Frontend Next.js | Antarmuka Pengguna & Dasbor Super Admin |
-| `8080` | Backend API Go | REST API Utama (`/api/v1`) |
+| `8081` | Backend API Go | REST API Utama (`/api/v1`) — `8080` disisakan untuk proyek lokal lain |
 | `5435` | PostgreSQL 17 | Basis Data Relasional + pgvector (port container `5432`) |
 | `6380` | Redis 7 | Caching, Pub/Sub, Buffer SSE (port container `6379`) |
 

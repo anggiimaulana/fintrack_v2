@@ -19,6 +19,7 @@ Area tanggung jawab berkelanjutan untuk **keandalan & operasional** FinTrack v2.
 | `RUNBOOK_BACKUP_RESTORE.md` | Backup & restore |
 | `MONITORING_OBSERVABILITY.md` | Metrik, alert, dashboard |
 | `RUNBOOK_INCIDENTS.md` | Penanganan insiden operasional |
+| `RUNBOOK_MODE_LOKAL.md` | Mode run lokal (hybrid vs Docker) + pencegahan bentrok port |
 
 ## Prinsip
 

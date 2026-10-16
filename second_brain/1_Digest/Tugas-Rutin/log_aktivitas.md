@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-10-16 — Eksekusi Migrasi Database & Verifikasi Skema Lengkap
+- **Konteks**: Permintaan user untuk menjalankan migrasi database dan memastikan seluruh tabel/skema up-to-date.
+- **Aksi**:
+  - Mengeksekusi `database/scripts/migrate.sh` untuk database utama `fintrack` dan database pengetesan `fintrack_test`.
+  - Memastikan seluruh 35 berkas migrasi (`0001_extensions.sql` s/d `0035_payment_card_tokens.sql`) teraplikasi dengan status sukses (idempoten).
+  - Memverifikasi keberadaan 41 tabel di skema `public` PostgreSQL (termasuk `payment_card_tokens`, constraint `token_periods_no_overlap`, trigger `token_ledger_single_resolution`, dan kolom `invoices.plan_code`).
+  - Menjalankan `verify.sql` dan verifikasi bahwa seluruh relasi tabel, data transaksi, dan akun demo utuh tanpa anomali.
+  - Menjalankan `database/scripts/dump.sh` untuk regenerasi dump final `fintrack_v2.dump` dan `fintrack_v2.sql`.
+  - Menjalankan `go test ./...` di backend (100% passed).
+
+---
+
 ## 2026-10-15 — Akun Demo Super Admin Disediakan & Terverifikasi
 - **Konteks**: User menanyakan peran `super_admin` dan kredensialnya untuk pengujian fitur portal Super Admin (`/super-admin`).
 - **Aksi**: 
@@ -1677,3 +1689,298 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
 - **Verifikasi**:
   - Backend `go build ./...`, `go vet ./...` bersih; `go test -count=1 ./...` **semua ok**; `go test ./tests/` (e2e) ok.
   - Frontend `pnpm test` **356 passed (46 files)**; `pnpm build` sukses.
+
+## 2026-10-15 (Operasional) — Pencegahan Bentrok Mode Hybrid vs Docker
+- **Temuan**: `/user` 404 bukan bug kode, melainkan route table dev server host yang basi. Saat investigasi ditemukan kondisi nyata mesin dev: `fintrack_v2_frontend`/`backend` **exited 3 hari lalu**; :3001/:8080 dipegang proses host (`next dev`, `go run`), sementara :5435/:6380 dilayani container. Jadi setup berjalan = **hybrid** (Docker hanya db+redis), bukan full Docker.
+- **Akar masalah berulang**: `docker compose up` akan gagal bind :3001/:8080 selama dev host hidup (dibuktikan: `docker run -p 3001:3001` → "Only one usage of each socket address"). Ditambah image tertinggal **52 commit** (`fintrack_v2-frontend`/`backend` dibuild 2026-10-11) dan `JWT_SECRET` berbeda antar file env per mode.
+- **Guardrail yang dipasang**:
+  - `scripts/preflight.sh` + `scripts/preflight.cmd` — cek pemilik port (:3001/:8080/:5435/:6380), status container, konsistensi `JWT_SECRET` (root `.env` vs `backend/.env` vs `frontend/.env.local`), kesegaran image (commit di belakang HEAD), dan kesiapan mode (`--mode hybrid|docker|auto`). Guard menolak jalan di WSL bash (tak punya `netstat`/`powershell` → hasil palsu "semua port free").
+  - `backend/.dockerignore` — context turun **36.87 MB → 1.94 MB**; `.env`/`.env.bak`/`tmp/`/`uploads/` terbukti **excluded** dari image, `.env.example` tetap ada. Penting karena `godotenv.Load()` akan memakai `.env` yang ter-bake dan menimpa `DATABASE_URL`/`REDIS_URL` compose (menunjuk `localhost`, bukan service `db`/`redis`).
+  - `JWT_SECRET` disamakan di ketiga file env ke satu nilai (access token TTL 1 jam; refresh token opaque/hash DB → aman, tanpa perlu hapus `refresh_tokens`).
+  - `second_brain/3_Areas/operasional/RUNBOOK_MODE_LOKAL.md` — dua mode, gejala, cara berpindah, pencegahan.
+- **Verifikasi**:
+  - `preflight.sh --mode docker` → **2 blocker** (host pegang :3001/:8080) sesuai harapan; `--mode hybrid` → **0 blocker**.
+  - Setelah `JWT_SECRET` disamakan, warning konsistensi hilang; aplikasi tetap sehat (`/` 200, `/login` 200, `/user` 307, backend `/health/ready` 200).
+  - `bash` polos (WSL) → script menolak jalan dengan pesan jelas (bukan hasil palsu).
+- **Catatan**: `scripts/preflight.sh` memakai Git Bash; jangan dijalankan dengan `bash` telanjang di mesin ini.
+
+## 2026-10-15 (Port) — Backend Pindah 8080 → 8081
+- **Permintaan**: port 8080 disisakan untuk proyek lokal lain; frontend tetap 3001 (port 3000 juga bebas).
+- **Perubahan (seragam di kedua mode, hybrid & docker)**:
+  - `backend/cmd/server/main.go` — default port `8080` → `8081`.
+  - `backend/.env` — tambah `PORT=8081`; `backend/.env.example` — `PORT=8081` + catatan.
+  - `docker-compose.yml` — `PORT`, `ports: 8081:8081`, healthcheck, dan `BACKEND_ORIGIN` (build-arg + env) → 8081.
+  - `backend/Dockerfile` — `EXPOSE 8081`; `frontend/Dockerfile` — `ARG BACKEND_ORIGIN=http://backend:8081`.
+  - `frontend/next.config.ts` — fallback default → `http://localhost:8081`; `frontend/.env.local` + `.env.example` → 8081.
+  - `scripts/preflight.sh`, `scripts/loadtest/*.js`, `tester/p06_smoke.sh` → 8081.
+  - Dokumentasi hidup: `README.md` (termasuk tabel Port & Endpoints), `CLAUDE.md`, `3_Areas/operasional/{DEPLOYMENT,RUNBOOK_ZERO_DOWNTIME,RUNBOOK_MODE_LOKAL}.md`, `3_Areas/ai-gateway/RUNBOOK_AKTIVASI_GATEWAY.md`, `0_Inbox/2026-10-14_kredensial-login-demo.md`.
+- **Tidak diubah**: dokumen historis (log/planning P07/P08, spec) yang menyebut 8080 sebagai catatan masa lalu.
+- **Verifikasi**:
+  - `go build ./...` & `go vet ./cmd/...` bersih.
+  - Backend host restart → `Server listening on :8081`; `/health/ready` 200, `/health/live` 200; **:8080 bebas**.
+  - Frontend dev server restart (env dibaca saat start) → proxy `3001/api/v1/*` tembus ke 8081: login **200** + cookie `ft_at`/`ft_rt` ter-set; `/user` **200**; `/api/v1/me` **200**.
+  - `preflight.sh --mode hybrid` → 0 blocker, backend terdeteksi di :8081.
+- **Catatan operasional**: setelah ganti port, **restart** `go run` & `pnpm dev` (keduanya membaca env saat start). Image Docker perlu `docker compose build` ulang agar ikut 8081.
+
+## 2026-10-16 (Billing & Gateway) — Auto-Charge Kartu Tersimpan (Midtrans Tokenization) + Migrasi 0032-0035 + Pencegahan Gap Faktur
+- **Tugas**:
+  1. Jalankan migrasi schema dan regenerate database dump.
+  2. Perbaiki celah nomor faktur (gap) saat terjadi invoice ganda.
+  3. Implementasikan auto-charge kartu tersimpan (tokenisasi Midtrans) untuk perpanjangan langganan otomatis tanpa redirect manual.
+- **Perubahan Database**:
+  - Migrasi `0032_ledger_reservation_resolution_unique.sql`, `0033_token_period_no_overlap.sql`, `0034_invoice_plan_code.sql`, dan migrasi baru `0035_payment_card_tokens.sql` diterapkan di database `fintrack` dan `fintrack_test`.
+  - Tabel baru `payment_card_tokens` (id, user_id, gateway, token_id, masked_card, card_type, bank, is_default, expires_at) dengan indeks unik `(user_id, gateway, token_id)` dan partial unique default. Sesuai PCI-DSS SAQ-A (PAN/CVV tidak pernah menyentuh server).
+  - Database dump di-regenerate via `database/scripts/dump.sh` (`database/dump/fintrack_v2.dump` dan `fintrack_v2.sql`).
+- **Backend (`backend/`)**:
+  - `internal/payment/invoice_service.go`: Ditambahkan guard pengecekan faktur terbuka (`GetOpenInvoiceForUser`) sebelum memanggil alokasi counter `NextInvoiceNumber` untuk mencegah gap nomor faktur.
+  - `internal/payment/gateway.go`: Ditambahkan `CardToken` entity, `CardCharger` interface, serta parameter tokenisasi pada `CreateTxRequest`, `WebhookResult`, dan `StatusResult`.
+  - `internal/payment/midtrans.go`: Snap checkout mengaktifkan `save_card: true` + `user_id`; Webhook & status pull menangkap `saved_token_id`, `masked_card`, dsb.; Ditambahkan `ChargeSavedCard` ke Midtrans Core API `POST /v2/charge`.
+  - `internal/payment/webhook.go`: Saat pembayaran kartu kredit selesai (`settled`), token kartu otomatis disimpan ke `payment_card_tokens` sebagai kartu default pengguna.
+  - `internal/payment/autocharge.go`: Layanan `AutoCharger` untuk memproses pembayaran faktur menggunakan kartu tersimpan secara transaksional (marking invoice paid + settle payment + aktivasi langganan).
+  - `internal/payment/renewal_worker.go`: Diintegrasikan dengan `AutoCharger` sehingga kandidat perpanjangan langganan pada `H-0` otomatis ditagih ke kartu tersimpan jika tersedia.
+  - `internal/delivery/http/handler/payment_user_handler.go` & `router.go`: Endpoint baru `GET /api/v1/payments/cards`, `DELETE /api/v1/payments/cards/:id`, `POST /api/v1/payments/cards/:id/default`, dan `POST /api/v1/invoices/:id/auto-charge` (rate-limited).
+- **Frontend (`frontend/`)**:
+  - `hooks/use-billing.ts`: Hook `useMyCards`, `useDeleteCard`, `useSetDefaultCard`, dan `useAutoChargeInvoice`.
+  - `components/billing/SavedCardsCard.tsx`: Komponen UI manajemen kartu tersimpan dengan indikator status Auto-Charge, badge bank, kartu utama, set default, dan hapus kartu.
+  - `components/billing/SubscriptionColumns.tsx`: Tombol aksi 1-klik "Bayar (1-Klik)" pada tabel faktur jika ada faktur terbuka dan pengguna memiliki kartu tersimpan.
+  - `app/(dashboard)/user/subscription/page.tsx`: Integrasi komponen `SavedCardsCard` pada tab pembayaran.
+- **Verifikasi**:
+  - Backend: `go build ./...` dan `go vet ./...` bersih; **37 paket lolos pengujian** (`go test ./...`) di `fintrack` dan `fintrack_test`.
+  - Frontend: `SavedCardsCard.dom.test.tsx` (4 test lulus); seluruh suite vitest **50 file test (383 test) lulus 100%**; ESLint bersih; `next build` sukses mengompilasi 36 route.
+
+
+## 2026-10-16 (Reports) — Kalender Full Month & Modal Detail Transaksi + Format Rupiah Input Budget
+- **Tugas**:
+  1. Kalender laporan (`/user/reports?tab=kalender`): menampilkan bulan berjalan penuh 1 bulan (bukan terpotong hari ini), serta klik tanggal membuka popup/modal detail harian dan riwayat transaksi.
+  2. Input nominal anggaran (`/user/reports?tab=budget`): nominal otomatis terformat satuan rupiah dengan pemisah ribuan (contoh: `50000` -> `50.000`).
+- **Frontend (`frontend/`)**:
+  - `components/shared/DateRangeFilter.tsx`: Preset `this_month` dikomputasi menggunakan `getMonthRange(now, 0)` sehingga mencakup awal hingga akhir bulan penuh.
+  - `app/(dashboard)/user/reports/page.tsx`: Inisialisasi `dateFilter` menggunakan `computePresetDates("this_month", now)` agar default rentang laporan satu bulan penuh.
+  - `hooks/useTransactions.ts`: Menambahkan opsi `enabled` opsional pada hook `useTransactions`.
+  - `components/reports/CalendarHeatmap.tsx`:
+    - Render grid 1 bulan penuh secara konsisten (`fullDaily`) dengan header judul nama bulan dan tahun.
+    - Implementasi `DayDetailModal` menggunakan Radix/Shadcn `Dialog`: menampilkan ringkasan arus kas (Pemasukan, Pengeluaran, Tabungan, Bersih) dan daftar transaksi harian lengkap dengan kategori, deskripsi, dan badge sumber.
+  - `components/reports/BudgetPanel.tsx`: Mengganti `Input` standar dengan `RupiahInput` untuk pemformatan dinamis angka ribuan (e.g. `50000` -> `50.000`).
+  - `lib/date-range-filter.test.ts`, `components/reports/CalendarHeatmap.dom.test.tsx`, `components/reports/BudgetPanel.dom.test.tsx`: Pengujian unit dan interaksi DOM.
+- **Verifikasi**:
+  - `pnpm vitest run lib/date-range-filter.test.ts components/reports/CalendarHeatmap.dom.test.tsx components/reports/BudgetPanel.dom.test.tsx`: 3 file (7 test) lulus 100%.
+  - `pnpm build`: Berhasil mengompilasi seluruh rute statis & dinamis tanpa error tipe TypeScript.
+
+## 2026-10-16 (AI Chatbot) — Perbaikan Penolakan Kurang Tepat "dapat" & Dukungan Multi-Transaksi Otomatis + SSE Flusher
+- **Masalah yang Dilaporkan**:
+  - Input: `"saya abis bayar kontrakan 625k, listrik 25k, galon 5k, dan tadi dapat dari kantor 200k"`
+  - Ditolak dengan template kaku: *"Maaf, saya adalah asisten keuangan FinTrack..."*
+  - EventStream devtools tampak kosong saat stream ditutup cepat.
+  - Pertanyaan status code POST 200 vs 201 pada SSE streaming.
+- **Akar Masalah**:
+  1. Pengecekan kata tanya pada `isContentAllowed` menggunakan `strings.Contains(msg, "apa")` tanpa batas kata. Kata `"dapat"` (da-**apa**-t) keliru dideteksi sebagai kata tanya `"apa"`. Karena bukan pertanyaan dengan 7 kata kunci keuangan terbatas, pesan langsung ditolak.
+  2. Daftar `allowedTopics` belum mencakup kata sehari-hari seperti `bayar`, `kontrakan`, `listrik`, `galon`, `kantor`, `dapat`, dsb.
+  3. Pada SSE handler, tidak ada pemanggilan `Flusher.Flush()` setelah setiap write, sehingga buffer stream sempat tertahan pada proxy Next.js saat koneksi berakhir cepat.
+  4. Terkait 200 vs 201: REST umum menggunakan 201 untuk create entity non-streaming; namun standar W3C Server-Sent Events (`text/event-stream`) mewajibkan `HTTP 200 OK` agar browser EventSource/parser SSE tidak membatalkan streaming.
+- **Perbaikan**:
+  - `backend/internal/usecase/ai_usecase.go`:
+    - Pengecekan kata tanya diganti menggunakan word-boundary (`hasWholeWord`), sehingga `"dapat"` tidak memicu `"apa"`.
+    - Menambahkan deteksi nominal mata uang via regex `amountPattern` (`\d+k`, `\d+rb`, `\d+jt`, `Rp...`) agar input nominal selalu diizinkan.
+    - Memperluas `allowedTopics` dengan kata aksi transaksi (`bayar`, `beli`, `dapat`, `kontrakan`, `listrik`, `galon`, `gaji`, dsb.).
+    - Memperbarui `buildSystemPrompt` untuk mengarahkan model AI melakukan auto-klasifikasi mandiri multi-transaksi (expense/income/savings), nominal, dan kategori.
+  - `backend/internal/usecase/agent_tools.go`:
+    - Menambahkan contoh eksplisit multi-transaksi natural language pada `buildToolsSystemPrompt` agar AI memanggil `create_transaction` untuk setiap item pengeluaran dan pemasukan.
+  - `backend/internal/delivery/http/handler/ai_handler.go`:
+    - Menambahkan `http.Flusher.Flush()` setelah setiap event SSE ditulis ke writer.
+  - `backend/internal/usecase/ai_usecase_test.go`:
+    - Unit test `TestAIUsecase_IsContentAllowed` memverifikasi kalimat user dan variasi natural language diizinkan.
+- **Verifikasi**:
+  - Backend: `TestAIUsecase_IsContentAllowed` (7 subtest lulus); 37 paket `go test ./...` lulus bersih.
+  - Frontend: 53 file test vitest (390 test) lulus 100%.
+
+## 2026-10-16 (Scan Struk) — Perbaikan Hydration Error Button, Tombol Ganda Preview, Status Code 201, & Reduksi Hit Endpoint
+- **Masalah yang Dilaporkan**:
+  1. Hydration error console: `<button> cannot be a descendant of <button>` di `ReceiptScanner.tsx:225`.
+  2. Step preview struk menampilkan 2 tombol "Analisis Struk" yang membingungkan.
+  3. Status code `POST /api/v1/ai/receipt` mengembalikan 200 alih-alih 201.
+  4. Sekali proses struk (sukses/gagal) memicu refetch query berlebihan (storm) ke endpoint transaksi, stats, dan entitlements.
+- **Akar Masalah**:
+  1. Komponen dropzone upload menggunakan elemen `<button>` yang membungkus komponen `<Button>` anak (nested `<button>`).
+  2. Step `"preview"` memiliki tombol aksi di tengah kartu dan di modal footer secara bersamaan.
+  3. Handler `AnalyzeReceipt` di backend menggunakan `response.OK` (200).
+  4. Invalidation redundan: `createTransaction` onSuccess sudah memanggil `invalidateTransactionViews`, namun `ReceiptScanner.tsx` dan `InlineAiAssistant.tsx` memanggil `invalidateTransactions()` lagi tepat setelahnya. Selain itu, `refetchOnWindowFocus: true` pada `QueryClient` memicu refetch semua query aktif saat dialog file picker OS ditutup/fokus browser kembali.
+- **Perbaikan**:
+  - `frontend/components/ai/ReceiptScanner.tsx`:
+    - Ganti outer dropzone `<button>` menjadi `<div role="button" tabIndex={0}>` dengan keyboard listener Enter/Space.
+    - Hapus tombol duplikat di bagian tengah `step === "preview"` (hanya sisakan tombol utama di modal footer).
+    - Hapus pemanggilan manual `invalidateTransactions()` setelah `createTransaction`.
+  - `frontend/components/ai/InlineAiAssistant.tsx`:
+    - Hapus pemanggilan manual `invalidateTransactions()` setelah `createTransaction`.
+  - `frontend/app/providers.tsx`:
+    - Set `refetchOnWindowFocus: false` untuk mematikan query storm saat window focus kembali dari OS file picker.
+  - `backend/internal/delivery/http/handler/ai_handler.go`:
+    - Ubah response `AnalyzeReceipt` dari `response.OK` (200) menjadi `response.Created` (201).
+- **Verifikasi**:
+  - Frontend: `pnpm build` sukses (36 route terkompilasi, 0 hydration error).
+  - Backend: `go build ./cmd/server` sukses tanpa error.
+
+## 2026-10-16 (AI Voice & Chat UX) — Perbaikan Error Voice Server, Fallback Otomatis Browser, Status Code 201, Reduksi Double Hit API, & Penghapusan Tombol Batal Ganda
+- **Masalah yang Dilaporkan**:
+  1. Input suara server gagal dengan pesan: `Gagal memproses audio. Silakan coba lagi.`, namun response HTTP tetap `200 OK` dengan `{success: false}`.
+  2. Sekali kirim aksi suara memicu hit ganda berlebihan ke endpoint `GET /api/v1/me/entitlements` dan `GET /api/v1/me/voice-config`.
+  3. Permintaan agar response code POST sesuai REST global (201 Created pada pembuatan/pemrosesan berhasil, dan status error 502/503 saat provider gagal).
+  4. Pada chat AI, pembatalan jawaban cukup berupa tombol kirim yang berubah menjadi icon stop, tanpa ada tombol "batal/stop" ganda di header atas.
+- **Akar Masalah**:
+  1. Upstream OpenAI Whisper pada 9router mengalami kehabisan kuota (`You have no credits remaining`). Namun adapter `processVoiceViaGateway` menelan error upstream dan mengembalikan `nil`, sehingga `ProcessVoice` di HTTP handler memanggil `response.OK` (200). Akibatnya, `api.post` di frontend tidak melempar exception dan alur fallback ke mikrofon browser (`fallback_to_browser: true`) tidak pernah terpicu.
+  2. Komponen `VoiceInput.tsx` memanggil `refreshUsage()` secara manual tepat saat backend juga memancarkan event SSE `usage_changed`. Hal ini memicu dua kali invalidasi query bersamaan ke `entitlements.me` dan `voice.config`.
+  3. Header `ChatWindow.tsx` menampilkan tombol stop kedua di header atas di samping tombol stop utama pada `ChatInput.tsx`.
+- **Perbaikan**:
+  - `backend/internal/delivery/http/handler/ai_handler.go`:
+    - Saat pemrosesan suara gagal (`!resultSucceeded(result)` atau `err != nil`), handler kini mengembalikan `HTTP 502 Bad Gateway` dengan payload error jelas alih-alih 200 OK.
+    - Saat pemrosesan suara berhasil, handler mengembalikan `HTTP 201 Created` via `response.Created(c, "Voice processed", result)`.
+  - `frontend/components/ai/VoiceInput.tsx`:
+    - Jika response dari server memiliki `success === false` atau transcript kosong, frontend melempar error agar ditangkap oleh blok `catch`.
+    - Dengan status error 502/503, `classifyVoiceError` langsung mengidentifikasi `fallback`, memunculkan notifikasi *"Layanan suara premium tidak tersedia — beralih ke mode dasar."*, dan otomatis mengaktifkan pengenalan suara bawaan browser (`startBrowser()`).
+    - Hapus pemanggilan manual `refreshUsage()` di `VoiceInput.tsx` karena invalidasi sudah ditangani secara tersinkronisasi via event SSE `usage_changed`.
+  - `frontend/components/ai/ChatWindow.tsx`:
+    - Hapus tombol stop duplikat di header atas chat window. Kontrol stop kini berfokus tunggal pada tombol kirim di `ChatInput.tsx` yang berubah menjadi ikon kotak Stop saat streaming aktif.
+- **Verifikasi**:
+  - Backend: `go test ./...` 37 paket lulus 100%.
+  - Frontend: `npx vitest run` 53 file (390 test) lulus 100%.
+  - ESLint bersih (0 error, 0 warning) dan `npx next build` sukses mengompilasi 36 rute.
+
+## 2026-10-16 (Performance & UX) — Caching Realtime Usage & Reports, Eliminasi RSC Fetch, dan Debounce Filtering & Sorting Tabel
+- **Masalah yang Dilaporkan**:
+  1. Halaman `/user/usage` selalu fetch ulang data setiap pergantian tab waktu, jenis chart, dan variabel visualisasi (input, ai, struk, token, transaksi), serta terasa berat/laggy.
+  2. Halaman `/user/reports` terasa berat dan memicu fetch ulang di setiap pergantian tab dan kondisi filter.
+  3. Halaman `/user/transactions` dan semua halaman bertabel lainnya belum menerapkan debounce pada aksi filtering dan sorting sehingga langsung memicu hit API berlebihan.
+- **Akar Masalah**:
+  1. Pada `/user/usage` dan `/user/reports`, setiap pergantian visual chart, toggle series, dan pergantian tab memanggil `router.replace()`, yang di Next.js App Router memicu HTTP fetch RSC ke server (`GET /user/...`) serta concurrent transition yang membekukan UI.
+  2. `useReports` dan `useReportAnalytics` tidak memiliki `placeholderData: keepPreviousData` dan `staleTime` hanya 2 menit.
+  3. Hook `useDataTableUrlState` dan filter input/select memanggil `commit` dan fetch data secara instan tanpa debounce delay pada event filtering dan sorting.
+- **Perbaikan**:
+  - `frontend/hooks/use-debounce.ts`: Buat hook universal `useDebounce` untuk primitive dan deep object.
+  - `frontend/hooks/use-data-table-url-state.ts`:
+    - Tambahkan state `debounced` (delay 300ms untuk sort, filters, search) dan `immediate` (optimistis untuk kontrol UI).
+    - Debounce pemanggilan URL commit (`router.replace`) saat filter/sort berubah, sementara navigasi page/perPage tetap instan (0ms).
+  - `frontend/app/(dashboard)/user/transactions/page.tsx`:
+    - Sambungkan `useTransactions` dan `useTransactionStats` ke `table.debounced` dan `debouncedDateFilter` (300ms delay).
+    - UI tombol tab filter dan indikator sort tetap reaktif seketika menggunakan state immediate.
+  - `frontend/app/(dashboard)/user/usage/page.tsx`:
+    - Ganti `router.replace` pada opsi visualisasi chart (`chartType`, `hiddenSeries`, `range`) dengan state lokal + sinkronisasi URL shallow `window.history.replaceState` tanpa RSC fetch.
+    - Terapkan debounced filter dan date pada `useUsageHistory`.
+  - `frontend/app/(dashboard)/user/reports/page.tsx`:
+    - Simpan tab dan reportType di state lokal dengan shallow URL sync (0ms perpindahan tab, tanpa request server).
+    - Terapkan `useDebounce` pada parameter query `useReports`, `useCategoryChart`, `useReportAnalytics`, dan `CategoryTable`.
+  - `frontend/lib/cache-invalidation.ts`, `frontend/hooks/useReports.ts`, `frontend/hooks/useReportAnalytics.ts`:
+    - Tambahkan `staleTimeConfig.reports = 5 menit` dan `placeholderData: (prev) => prev`.
+  - `frontend/app/(dashboard)/user/notifications/page.tsx`, `frontend/app/(dashboard)/user/subscription/page.tsx`, `frontend/components/super-admin/payments/PaymentHistoryTable.tsx`, `frontend/components/super-admin/subscriptions/SubscriptionsView.tsx`, `frontend/app/(dashboard)/super-admin/audit/page.tsx`, `frontend/components/super-admin/tokens/TokenBalancesTable.tsx`, `frontend/components/super-admin/tokens/TokenLedgerTable.tsx`:
+    - Sambungkan parameter query ke `table.debounced` agar semua tabel menerapkan debounce pada sorting dan filtering.
+- **Verifikasi**:
+  - `pnpm test`: 55 file (397 test) lulus 100%.
+  - `pnpm build`: 36 route terkompilasi sukses tanpa error.
+  - Backend: `go test ./...` 37 paket lulus 100%.
+
+## 2026-10-16 (AI Chat & Receipt UX) — Tampilan Foto Struk di Bubble User, Konfirmasi Asisten Langsung, Eliminasi Chat Storm Redundan, & Penjelasan Status 502 Voice Upstream
+- **Masalah yang Dilaporkan**:
+  1. Upload struk belanja di antarmuka chat membuat bubble pengguna (kanan, warna biru) berisi konfirmasi teks *"✅ Struk berhasil dicatat sebagai transaksi..."*, seolah pengguna yang melaporkan pencatatan selesai. Harusnya bubble pengguna menampilkan preview foto struk yang diunggah, sedangkan asisten AI yang merespons konfirmasi pencatatan transaksi.
+  2. Sekali unggah struk memicu rentetan request berulang yang boros: `/ai/receipt` -> `/ai/receipt/transaction` -> `/ai/chat` -> refetch berulang `/me/entitlements` dan `/me/voice-config` (hingga 4-6x berturut-turut).
+  3. Pertanyaan kenapa `POST /api/v1/ai/voice` mengembalikan status `502 Bad Gateway` padahal pengguna berlangganan paket Pro.
+- **Akar Masalah**:
+  1. `ChatWindow.tsx` dan `InlineAiAssistant.tsx` pada callback `onSuccess` mutasi struk memanggil `handleSend(msg)`. Fungsi `handleSend` selalu memperlakukan input sebagai pesan dari pengguna (`role: "user"`) lalu mengirimkannya kembali ke LLM via `POST /api/v1/ai/chat`. LLM yang menerima prompt *"✅ Struk berhasil dicatat..."* membalas bingung: *"Transaksi Rp 47.000 Berkaa Shop tersimpan. Ada transaksi lain mau dicatat?"*.
+  2. Pemanggilan `handleSend(msg)` tersebut tidak perlu karena struk sudah berhasil dianalisis oleh OCR dan disimpan ke database oleh `/ai/receipt/transaction`. Pemanggilan tambahan ke `/ai/chat` membakar kuota token AI dan memicu gelombang invalidasi SSE `usage_changed` beruntun ke `entitlements` dan `voice-config`.
+  3. Terkait `502 Bad Gateway` pada Voice: Plan Pro pada aplikasi FinTrack berstatus aktif dan kuota valid (`voice_input: true`). Namun upstream AI gateway yang dikonfigurasi pada dev server (9router dengan model `whisper-1`) mengalami kehabisan saldo/kredit API dari akun OpenAI upstream (`You have no credits remaining. Add credits to continue using the API...`). Backend FinTrack menangkap kegagalan penyedia upstream ini dan merespons `502 Bad Gateway (voice_provider_unavailable)` agar client secara transparan beralih (fallback) ke Web Speech API bawaan browser.
+- **Perbaikan**:
+  - `backend/internal/usecase/ai_usecase.go` & `backend/internal/delivery/http/handler/ai_handler.go` & `router.go`:
+    - Tambahkan endpoint REST `POST /api/v1/ai/sessions/:id/messages` (`201 Created`) untuk menyimpan pesan percakapan (user atau assistant) secara langsung ke sesi chat tanpa perlu mengeksekusi LLM.
+  - `frontend/components/ai/ChatMessage.tsx`:
+    - Tambahkan dukungan rendering elemen markdown gambar (`img`) pada `ReactMarkdown` dengan styling container `max-h-64 rounded-md border-2 border-foreground`.
+  - `frontend/components/ai/ReceiptUpload.tsx` & `frontend/components/ai/ChatInput.tsx`:
+    - Teruskan URL preview gambar struk yang dipilih ke callback `onResult(result, previewUrl)`.
+  - `frontend/components/ai/ChatWindow.tsx` & `frontend/components/ai/InlineAiAssistant.tsx`:
+    - Saat struk dikonfirmasi:
+      1. Bubble pengguna langsung menampilkan foto struk belanja yang diunggah (`![Foto Struk](previewUrl)`).
+      2. OCR memproses struk dan menyimpan transaksi ke database.
+      3. Bubble asisten (kiri) menampilkan konfirmasi: `✅ Struk berhasil dicatat sebagai transaksi <Tipe>!` disertai rincian total, kategori, deskripsi, tanggal, ID transaksi, serta daftar per item.
+      4. Kedua pesan disimpan ke database sesi via `POST /api/v1/ai/sessions/:id/messages`.
+      5. Tidak ada lagi pemanggilan `handleSend` atau `POST /api/v1/ai/chat`, menghemat kuota token dan memangkas request ganda.
+- **Verifikasi**:
+  - Backend: `go test ./...` 37 paket lulus 100%.
+  - Frontend: `npx vitest run` 55 file (397 test) lulus 100%.
+  - `npx next build`: 36 rute sukses terkompilasi, ESLint bersih (0 error).
+
+## 2026-10-16 (AI Chat Responsif & Kuota Modal) — Perbaikan Tabrakan Header Sesi & Modal Detail Kuota AI
+- **Masalah yang Dilaporkan**:
+  1. Header chat bertabrakan/tumpang tindih (`MessageSquare`, `PanelLeftClose`, `VoiceHistory`, tombol model, kuota) saat sidebar sesi dibuka pada layar responsif/tablet/laptop medium.
+  2. Pada tampilan mobile, badge kuota hanya menampilkan ikon gauge tanpa teks; ketika diklik belum memunculkan modal/popup informatif.
+  3. Belum ada tombol/link cepat dari popup kuota untuk menavigasi ke halaman detail penggunaan (`/user/usage`).
+- **Akar Masalah**:
+  1. Komponen header `ChatWindow.tsx` menggunakan breakpoint `sm:inline` dan `sm:block` (640px) untuk seluruh teks tombol (`CEPAT`, `PENALARAN`, `SISA KUOTA ...`, `Hapus`, `AI Assistant`). Saat sidebar desktop terbuka (`md:w-64`, 256px), lebar chat pane berkurang drastis sehingga teks-teks tersebut memakan >470px dan menabrak tombol navigasi kiri yang terdorong hingga saling menimpa.
+  2. Badge kuota sebelumnya dibungkus elemen non-interaktif `<span>` tanpa handler klik.
+- **Perbaikan**:
+  - `frontend/components/ai/AiQuotaDialog.tsx`:
+    - Komponen dialog baru `AiQuotaDialog` berbasis Radix UI/Shadcn Neo-brutalist.
+    - Menampilkan paket aktif, batas siklus reset, rincian kuota token AI (sisa, terpakai, batas, progress bar dengan indikator warna status), rincian permintaan AI, dan penjelasan perbedaan konsumsi Mode Cepat vs Mode Penalaran.
+    - Menyediakan tombol navigasi langsung ke halaman detail penggunaan (`/user/usage`) via Next.js `Link`.
+  - `frontend/components/ai/ChatWindow.tsx`:
+    - Adaptif terhadap status sidebar (`desktopSidebarOpen`):
+      - Mode switch (`CEPAT` & `PENALARAN`): hanya tampilkan teks jika layar ekstra lebar (`xl:inline` saat sidebar buka, `sm:inline` saat sidebar tutup); di layar lebih kecil menampilkan ikon rapi `⚡` dan `🧠`.
+      - Judul `AI Assistant`: disembunyikan saat sidebar buka di bawah breakpoint `2xl`, mencegah tabrakan dengan tombol riwayat suara.
+      - Tombol kuota: diubah dari `span` pasif menjadi `<button>` interaktif dengan hover scale dan neo-brutalist shadow, membuka `AiQuotaDialog` saat diklik di mobile maupun desktop.
+      - Tombol `Hapus`: adaptif menyembunyikan teks label di bawah `xl` saat sidebar buka.
+  - `frontend/components/ai/AiQuotaDialog.dom.test.tsx`:
+    - Unit test memverifikasi rendering modal kuota, breakdown token, link ke `/user/usage`, dan penutupan modal.
+- **Verifikasi**:
+  - Vitest: `pnpm vitest run components/ai/AiQuotaDialog.dom.test.tsx` (3 test lulus 100%).
+  - Build: `pnpm build` sukses tanpa error TypeScript (36 rute terkompilasi).
+
+## 2026-10-16 (Mobile Chart UX) — Perbaikan Legenda dan Indikator Variabel Analisis pada Tampilan Mobile & Kategori Banyak
+- **Masalah yang Dilaporkan**:
+  1. Pada rute `/user` (misal `chart=pie&group=summary` atau `chart=area&group=category`), indikator/nama variabel analisis (legenda) tidak responsif pada mobile.
+  2. Pada grafik area/garis kategori dengan data banyak (13+ kategori), legenda menumpuk dan bertabrakan langsung dengan label angka sumbu X (tanggal), menjadi gumpalan tidak beraturan dan meluber keluar dari kartu.
+  3. Pada grafik lingkaran (pie chart) di mobile, legenda 3 variabel (Pemasukan, Pengeluaran, Tabungan) terdorong ke bawah hingga menabrak/meluber ke border bawah kartu.
+- **Akar Masalah**:
+  1. `PieChartView.tsx` dan `MultiSeriesChart.tsx` mengandalkan elemen bawaan Recharts `<Legend />` di dalam kontainer SVG ResponsiveContainer. Recharts tidak mampu mengukur ketinggian teks yang membungkus (wrapped text) ke 4–8 baris pada layar sempit secara akurat, sehingga koordinat SVG bertabrakan langsung dengan X-Axis dan tepi bawah kontainer SVG.
+  2. `ChartContainer.tsx` memiliki tinggi kaku `h-[420px]`. Di mobile, header kartu membungkus menjadi 3 baris (~120px), menyisakan ruang vertikal yang terlalu sempit untuk grafik + puluhan legenda.
+- **Perbaikan**:
+  1. `frontend/components/charts/PieChartView.tsx`:
+     - Hapus `<Legend>` internal Recharts dan prop `height={36}` yang kaku.
+     - Pisahkan grafik dan legenda ke layout flexbox vertikal murni.
+     - Tambahkan kontainer legenda HTML responsif di bawah garis batas (`border-t border-border/40`) dengan flex-wrap, dot warna serasi, dan `max-h-24 sm:max-h-28 overflow-y-auto pr-1` sehingga aman jika kategori banyak dan tidak pernah menabrak border kartu.
+     - Tambahkan prop `showLegend?: boolean` (default `!compact`).
+  2. `frontend/components/charts/MultiSeriesChart.tsx`:
+     - Hapus `<Legend>` internal Recharts di semua varian (bar, line, area).
+     - Berikan `margin.bottom: 8` dan `dy: 6` pada `XAxis` agar sumbu tanggal memiliki ruang tersendiri tanpa tabrakan.
+     - Tambahkan legenda HTML responsif dengan dot warna, nama kategori terpotong rapi (`truncate max-w-[130px] sm:max-w-[180px]`), dan `max-h-24 sm:max-h-28 overflow-y-auto pr-1` agar tetap rapi saat ada belasan kategori.
+  3. `frontend/components/charts/LineChartView.tsx`, `BarChartView.tsx`, `AreaChartView.tsx`:
+     - Pasang legenda indikator responsif terpadu di bagian bawah agar konsisten di semua jenis chart.
+  4. `frontend/components/charts/ChartContainer.tsx`:
+     - Ganti kelas kaku `h-[420px]` menjadi `min-h-[460px] sm:h-[420px] p-4 sm:p-5 mb-3 sm:mb-5` agar kartu di mobile memiliki ruang bernapas vertikal dan horizontal yang proporsional.
+  5. `frontend/components/super-admin/dashboard/PaymentMethodsDonut.tsx`:
+     - Teruskan `showLegend={false}` ke `PieChartView` untuk menghindari duplikasi daftar breakdown.
+- **Verifikasi**:
+  - Frontend: `pnpm test` (56 file, 401 test lulus 100%).
+  - Frontend: `pnpm build` sukses mengompilasi 36 rute produksi tanpa error.
+
+## 2026-10-16 (AI Chat & RAG) — Dukungan Siklus Keuangan 1 Tahun Terakhir, Backfill Vector Embeddings, & Eliminasi Voice Config Refetch
+- **Masalah yang Dilaporkan**:
+  1. Pengguna menanyakan: *"berikan saya rekomendasi investasi berdasarkan siklus keuangan 1 tahun terakhir"*, namun AI menjawab kaku: *"Data siklus keuangan 1 tahun terakhir belum ada. Rekomendasi investasi belum bisa diberikan."* padahal di database terdapat 140+ riwayat transaksi aktif pengguna selama setahun terakhir.
+  2. Setiap pengiriman pesan baru di chat AI memicu fetch ganda ke `GET /api/v1/me/entitlements` dan fetch tidak relevan ke `GET /api/v1/me/voice-config`.
+  3. Pertanyaan apakah RAG pencarian transaksi berbasis vektor berfungsi pada paket Pro.
+- **Akar Masalah**:
+  1. Pada `buildUserContext` di `ai_usecase.go`, agregasi statistik hanya menghitung bulan berjalan (`monthStart`). Rentang data 1 tahun terakhir (12 bulan) tidak pernah disertakan dalam prompt konteks pengguna. Ditambah lagi, aturan prompt sebelumnya secara kaku memerintahkan: *"Kalo data kosong atau gak ada, JANGAN ngasih rekomendasi atau analisis palsu. Bilang aja datanya belum ada"*. Akibatnya, LLM menolak pertanyaan pengguna.
+  2. Tool `get_spending_summary` dan `get_category_expenses` hanya memetakan parameter `this_month`, `last_month`, `this_year`, `last_3_months`, dan jatuh kembali (*fallback*) ke `this_month` jika diminta periode `1_year` / `1 tahun terakhir`.
+  3. Pada tabel `transaction_embeddings`, hanya 2 transaksi yang memiliki vektor embedding karena 140 transaksi lainnya berasal dari data seed awal yang belum pernah di-embed.
+  4. Pada `realtime-dispatcher.ts`, event SSE `usage_changed` secara tanpa syarat meng-invalidasi `voice.config` dan `voice.historyAll`, meskipun event tersebut hanya dipicu oleh pemakaian token AI (`ai_chat`) atau mutasi transaksi umum. Selain itu, hook `useAiChat.ts` memiliki pemanggilan manual `invalidateQueries` di blok `finally`, memicu refetch kedua bersamaan dengan tibanya event SSE.
+- **Perbaikan**:
+  - `backend/internal/usecase/ai_usecase.go`:
+    - Perluas `buildUserContext`: hitung otomatis siklus keuangan 1 tahun terakhir (12 bulan berjalan) mencakup Total Pemasukan, Pengeluaran, Tabungan/Investasi, Saldo Bersih, rata-rata bulanan, rasio tabungan (*savings rate*), serta 5 kategori pengeluaran terbesar dalam 1 tahun.
+    - Perbarui aturan prompt sistem: jika data transaksi pengguna tersedia (seperti siklus 1 tahun atau bulan ini), AI **diwajibkan** menganalisis data riil tersebut dan memberikan rekomendasi investasi bertingkat berbasis fakta angka (alokasi dana darurat 3–6x pengeluaran bulanan, instrumen likuid/moderat/agresif sesuai kapasitas surplus bulanan).
+  - `backend/internal/usecase/agent_tools.go`:
+    - Tambahkan dukungan periode `1_year`, `last_12_months`, `one_year`, `1_tahun_terakhir` pada `execSpendingSummary` dan `execCategoryExpenses`.
+    - Perluas `execFinanceInsight` agar menyertakan metrik tahunan (`yearly_income`, `yearly_expense`, `yearly_savings`, `avg_monthly_income`, `savings_rate_percent`).
+  - `database / RAG Embeddings`:
+    - Lakukan backfill seluruh transaksi aktif pengguna ke tabel `transaction_embeddings` menggunakan model embedding gateway 768 dimensi (`gemini/gemini-embedding-001`), sehingga RAG pencarian semantik transaksi kini aktif 100%.
+  - `frontend/lib/realtime-dispatcher.ts` & `realtime-dispatcher.test.ts`:
+    - Periksa `limit_keys` pada payload event `usage_changed`. Kunci query `voice.config` dan `voice.historyAll` kini **hanya** di-invalidasi jika event secara spesifik memuat perubahan batas kuota suara (`voice_requests_per_day`).
+  - `frontend/hooks/useAiChat.ts`:
+    - Hapus pemanggilan manual duplikat `invalidateQueries(entitlements.me)` di blok `finally` karena sudah di-handle secara tersinkronisasi via event SSE `usage_changed`.
+- **Verifikasi**:
+  - Backend: 37 paket `go test ./...` lulus 100%.
+  - Frontend: 56 file test vitest (401 test) lulus 100% termasuk pengujian selektivitas `realtime-dispatcher.test.ts`.
+  - `npx next build`: 36 rute sukses terkompilasi bersih tanpa error TypeScript.

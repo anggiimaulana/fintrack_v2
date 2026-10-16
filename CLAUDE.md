@@ -52,7 +52,7 @@ database/scripts/restore.sh --db fintrack_restore_test     # restore dump
 database/scripts/backup.sh                                 # backup bertimestamp (gitignored)
 ```
 
-Full stack: `docker compose up --build -d`, lalu cek `curl -i http://localhost:8080/health/ready`.
+Full stack: `docker compose up --build -d`, lalu cek `curl -i http://localhost:8081/health/ready`.
 
 Load test (k6, `scripts/loadtest/`): `gateway_sustained_benchmark.js`, `token_quota_concurrency.js`, `webhook_replay.js`.
 

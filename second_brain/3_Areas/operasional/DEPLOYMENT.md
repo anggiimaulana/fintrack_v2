@@ -4,7 +4,7 @@
 
 | Lingkungan | Tujuan | Catatan |
 |---|---|---|
-| Lokal | Pengembangan | Docker Compose (db 5435, backend 8080, frontend 3001) |
+| Lokal | Pengembangan | Docker Compose (db 5435, backend 8081, frontend 3001) |
 | Staging | Verifikasi | Mirip produksi; Midtrans **sandbox** |
 | Produksi | Live | Midtrans produksi; Redis; multi-instance backend |
 
@@ -13,7 +13,7 @@
 ```
 db        PostgreSQL 17 + pgvector   (5435 -> 5432)
 redis     Redis 7                    (6379)   [BARU di P02]
-backend   Go API (Gin)               (8080)
+backend   Go API (Gin)               (8081)
 frontend  Next.js                    (3001 -> 3000)
 ```
 

@@ -30,7 +30,7 @@ docker compose up -d --no-deps --build backend
 docker compose up -d --no-deps --build frontend
 
 # 3) Health gate
-curl -fsS localhost:8080/health        # harus 200
+curl -fsS localhost:8081/health        # harus 200
 
 # 4) Aktifkan fitur bertahap
 # set feature_flags.rollout naik perlahan

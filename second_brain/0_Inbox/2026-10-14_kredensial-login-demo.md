@@ -34,12 +34,12 @@ Endpoint autentikasi backend menggunakan cookie `HttpOnly` (`ft_at` untuk Access
 
 ```bash
 # Login sebagai User (Budi)
-curl -i -X POST http://localhost:8080/api/v1/auth/login \
+curl -i -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"budi@example.com","password":"User@123456"}'
 
 # Login sebagai Admin
-curl -i -X POST http://localhost:8080/api/v1/auth/login \
+curl -i -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@fintrack.id","password":"Admin@123456"}'
 ```

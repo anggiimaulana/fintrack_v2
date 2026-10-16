@@ -74,18 +74,18 @@ di-seed langsung diprobe dan gateway bisa naik di boot yang sama.
 
 ```bash
 # 1) Health endpoint backend
-curl -s http://localhost:8080/health/ready | jq .
+curl -s http://localhost:8081/health/ready | jq .
 
 # 2) Log startup harus memuat:
 #    "AI gateway centralized: ENABLED"
 
 # 3) Status endpoint (super_admin)
-curl -s -b jar.txt http://localhost:8080/api/v1/admin/ai-gateway/endpoints
+curl -s -b jar.txt http://localhost:8081/api/v1/admin/ai-gateway/endpoints
 #    → "health":"healthy", "breaker_state":"closed", "has_api_key":true
 
 # 4) Uji chat nyata (login user biasa lebih dulu)
 curl -s -N -b jar.txt -X POST \
-  "http://localhost:8080/api/v1/ai/chat?source=chatbot" \
+  "http://localhost:8081/api/v1/ai/chat?source=chatbot" \
   -H 'Content-Type: application/json' \
   -d '{"message":"Berapa total pengeluaran saya bulan ini?"}'
 #    → event "done" memuat "model":"<model yang melayani>"
@@ -93,7 +93,7 @@ curl -s -N -b jar.txt -X POST \
 # 5) UJI RUTE (super_admin): probe model ASLI di setiap rute aktif.
 #    Menangkap "endpoint sehat tapi model mati" (mis. 503 untuk model tak dikenal)
 #    yang TIDAK terdeteksi oleh health check reachability.
-curl -s -b jar.txt http://localhost:8080/api/v1/admin/ai-gateway/verify-routes | jq .
+curl -s -b jar.txt http://localhost:8081/api/v1/admin/ai-gateway/verify-routes | jq .
 #    → { "results":[{...,"ok":true|false,"error":...}], "broken_count":N, "broken":[...] }
 ```
 
