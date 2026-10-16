@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Search } from 'lucide-react'
+import * as React from 'react'
+import { Plus, Layers, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
 import { CategoryTable } from '@/components/admin/CategoryTable'
 import { CategoryForm } from '@/components/admin/CategoryForm'
 import { useAdminCategories, AdminCategory } from '@/hooks/useAdminCategories'
+import { useDataTableUrlState } from '@/hooks/use-data-table-url-state'
 import { ConfirmActionModal } from '@/components/shared/ConfirmActionModal'
 import {
   Dialog,
@@ -15,25 +17,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Skeleton } from '@/components/ui/skeleton'
 
-export default function ExpenseCategoriesPage() {
-  const { 
-    categories, 
-    isLoading, 
-    createCategory, 
-    updateCategory, 
+function ExpenseCategoriesContent() {
+  const {
+    categories,
+    isLoading,
+    createCategory,
+    updateCategory,
     deleteCategory,
-    isMutating 
+    isMutating,
   } = useAdminCategories('expense')
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const filteredCategories = categories?.filter((c: AdminCategory) => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || []
+  const tableState = useDataTableUrlState({ perPage: 20 })
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false)
+  const [editingCategory, setEditingCategory] = React.useState<AdminCategory | null>(null)
+  const [deleteId, setDeleteId] = React.useState<string | null>(null)
 
   const handleOpenAdd = () => {
     setEditingCategory(null)
@@ -46,93 +44,120 @@ export default function ExpenseCategoriesPage() {
   }
 
   const handleSubmit = async (values: Partial<AdminCategory>) => {
-    try {
-      if (editingCategory) {
-        await updateCategory({ id: editingCategory.id, ...values })
-      } else {
-        await createCategory(values)
-      }
-      setIsDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to save category:', error)
+    if (editingCategory) {
+      await updateCategory({ id: editingCategory.id, ...values })
+    } else {
+      await createCategory(values)
     }
+    setIsDialogOpen(false)
   }
+
   const deleteTarget = categories?.find((c: AdminCategory) => c.id === deleteId)
 
   const handleConfirmDelete = async () => {
     if (!deleteId) return
-    try {
-      await deleteCategory(deleteId)
-      setDeleteId(null)
-    } catch (error) {
-      console.error('Failed to delete category:', error)
-    }
+    await deleteCategory(deleteId)
+    setDeleteId(null)
   }
 
+  const totalCount = categories?.length || 0
+  const activeCount = categories?.filter((c) => c.is_active).length || 0
+  const inactiveCount = categories?.filter((c) => !c.is_active).length || 0
+
+  const statsSection = (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <AdminStatCard label="Total Kategori" value={totalCount} icon={Layers} />
+      <AdminStatCard label="Kategori Aktif" value={activeCount} icon={CheckCircle2} colorClassName="text-green-600" />
+      <AdminStatCard label="Kategori Nonaktif" value={inactiveCount} icon={XCircle} colorClassName="text-rose-600" />
+    </div>
+  )
+
+  const currentStatus = tableState.immediate.filters.status || 'all'
+  const filterSection = (
+    <div className="flex items-center gap-2">
+      <Select
+        value={currentStatus}
+        onValueChange={(val) => tableState.setFilter('status', val === 'all' ? '' : val)}
+      >
+        <SelectTrigger className="w-[140px] h-9 text-xs font-bold border-2 border-foreground">
+          <SelectValue placeholder="Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Semua Status</SelectItem>
+          <SelectItem value="active">Aktif</SelectItem>
+          <SelectItem value="inactive">Nonaktif</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl font-black uppercase tracking-wide text-foreground">Kategori Pengeluaran</h1>
-          <p className="text-xs font-bold text-muted-foreground">Kelola kategori untuk transaksi pengeluaran</p>
+          <h1 className="text-xl font-black uppercase tracking-wide text-foreground">
+            Kategori Pengeluaran
+          </h1>
+          <p className="text-xs font-bold text-muted-foreground">
+            Kelola master kategori pengeluaran dan subkategori sistem
+          </p>
         </div>
-        <Button onClick={handleOpenAdd}>
+        <Button onClick={handleOpenAdd} className="font-bold border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground cursor-pointer">
           <Plus className="mr-2 h-4 w-4" /> Tambah Kategori
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 max-w-md">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-          <Input
-            placeholder="Cari kategori..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-[400px] w-full border-2 rounded-md border-foreground" />
-        </div>
-      ) : (
-        <CategoryTable
-          categories={filteredCategories}
-          type="expense"
-          onEdit={handleOpenEdit}
-          onDelete={setDeleteId}
-        />
-      )}
+      <CategoryTable
+        categories={categories || []}
+        onEdit={handleOpenEdit}
+        onDelete={(id) => setDeleteId(id)}
+        isLoading={isLoading}
+        type="expense"
+        tableState={tableState}
+        stats={statsSection}
+        filters={filterSection}
+      />
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px] border-2 rounded-md border-foreground">
           <DialogHeader>
-            <DialogTitle className="font-black uppercase tracking-wide">{editingCategory ? 'Edit Kategori' : 'Tambah Kategori'}</DialogTitle>
-            <DialogDescription className="font-medium">
-              Isi detail kategori di bawah ini. Klik simpan setelah selesai.
+            <DialogTitle className="font-black uppercase tracking-wide">
+              {editingCategory ? 'Edit Kategori Pengeluaran' : 'Tambah Kategori Pengeluaran'}
+            </DialogTitle>
+            <DialogDescription className="font-medium text-xs">
+              Isi detail kategori pengeluaran di bawah ini.
             </DialogDescription>
           </DialogHeader>
           <CategoryForm
             initialValues={editingCategory || undefined}
             onSubmit={handleSubmit}
-            onCancel={() => setIsDialogOpen(false)}
             isLoading={isMutating}
+            onCancel={() => setIsDialogOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
       <ConfirmActionModal
         open={Boolean(deleteId)}
-        onOpenChange={(open) => !open && setDeleteId(null)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteId(null)
+        }}
         actionType="delete"
         title="Hapus Kategori Pengeluaran"
-        description="Apakah Anda yakin ingin menghapus kategori ini? Data yang terhubung mungkin akan terdampak."
+        description="Apakah Anda yakin ingin menghapus kategori pengeluaran ini? Tindakan ini tidak dapat dibatalkan."
         entityName={deleteTarget?.name}
+        confirmLabel="Ya, Hapus"
         isPending={isMutating}
         onConfirm={handleConfirmDelete}
       />
     </div>
+  )
+}
+
+export default function ExpenseCategoriesPage() {
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse bg-muted border-2 rounded-md border-foreground" />}>
+      <ExpenseCategoriesContent />
+    </React.Suspense>
   )
 }

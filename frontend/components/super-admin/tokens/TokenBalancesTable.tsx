@@ -23,7 +23,8 @@ import { DataTablePagination } from '@/components/data-table/data-table-paginati
 import { DataTableSkeleton } from '@/components/data-table/data-table-skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { formatTanggal } from '@/lib/format'
-import { Search, SlidersHorizontal, ArrowUpDown } from 'lucide-react'
+import { Search, SlidersHorizontal, ArrowUpDown, Coins, Users, Activity, AlertTriangle } from 'lucide-react'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
 import {
   useTokenBalances,
   type TokenBalanceRow,
@@ -90,8 +91,20 @@ export function TokenBalancesTable({
     setDialogOpen(true)
   }
 
+  const totalQuota = rows.reduce((s, r) => s + (r.quota_tokens || 0), 0)
+  const totalUsed = rows.reduce((s, r) => s + (r.used_tokens || 0), 0)
+  const criticalCount = rows.filter((r) => (r.quota_tokens > 0 ? (r.used_tokens / r.quota_tokens) >= 0.8 : false)).length
+
   return (
     <div className="space-y-4">
+      {/* KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard label="Total Pengguna" value={meta.total} icon={Users} />
+        <AdminStatCard label="Total Kuota" value={totalQuota.toLocaleString('id-ID')} icon={Coins} colorClassName="text-primary" />
+        <AdminStatCard label="Token Terpakai" value={totalUsed.toLocaleString('id-ID')} icon={Activity} colorClassName="text-amber-600" />
+        <AdminStatCard label="Batas Kritis (≥80%)" value={criticalCount} icon={AlertTriangle} colorClassName="text-rose-600" />
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex flex-1 max-w-sm items-center gap-2">
           <div className="relative w-full">
@@ -163,6 +176,7 @@ export function TokenBalancesTable({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="w-12 text-center font-bold">No</TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => handleSortToggle('user')}>
                   <div className="flex items-center gap-1">
                     Pengguna
@@ -209,6 +223,9 @@ export function TokenBalancesTable({
 
                 return (
                   <TableRow key={row.user_id}>
+                    <TableCell className="text-center font-mono text-xs text-muted-foreground w-12">
+                      {(page - 1) * perPage + rows.indexOf(row) + 1}
+                    </TableCell>
                     <TableCell>
                       <div className="font-semibold text-foreground">{row.user_full_name || '-'}</div>
                       <div className="text-xs text-muted-foreground font-mono">{row.user_email}</div>

@@ -18,7 +18,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Money } from '@/components/shared/Money'
-import { formatTanggal } from '@/lib/format'
+import { formatTanggal, formatRupiah } from '@/lib/format'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
+import { CreditCard, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
 import { PaymentStatusBadge } from './PaymentStatusBadge'
 import { PaymentDetailDialog } from './PaymentDetailDialog'
 import { PaymentRefundDialog } from './PaymentActionDialogs'
@@ -61,6 +63,14 @@ export function PaymentHistoryTable() {
 
   const columns: ColumnDef<PaymentRow, unknown>[] = React.useMemo(
     () => [
+      {
+        id: 'row_number',
+        header: () => <span className="text-center font-bold block w-10">No</span>,
+        cell: ({ row }) => {
+          const num = (urlState.page - 1) * urlState.perPage + row.index + 1
+          return <span className="font-mono text-xs text-muted-foreground block text-center w-10">{num}</span>
+        },
+      },
       {
         accessorKey: 'invoice_number',
         header: () => (
@@ -242,9 +252,21 @@ export function PaymentHistoryTable() {
   const activeGateway = urlState.filters.gateway || 'all'
   const startDate = urlState.filters.start_date || ''
   const endDate = urlState.filters.end_date || ''
+  const totalCount = meta?.total || payments.length
+  const totalAmount = payments.reduce((s, p) => s + (p.amount_idr || 0), 0)
+  const successCount = payments.filter((p) => p.status === 'paid' || p.status === 'settled').length
+  const pendingCount = payments.filter((p) => p.status === 'pending' || p.status === 'manual_review').length
+
 
   return (
     <div className="space-y-4">
+      {/* 4 KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard label="Total Nominal" value={formatRupiah(totalAmount)} icon={CreditCard} colorClassName="text-primary" />
+        <AdminStatCard label="Total Transaksi" value={totalCount} icon={Clock} />
+        <AdminStatCard label="Berhasil" value={successCount} icon={CheckCircle2} colorClassName="text-green-600" />
+        <AdminStatCard label="Menunggu Review" value={pendingCount} icon={AlertCircle} colorClassName="text-amber-600" />
+      </div>
       <DataTableToolbar
         search={urlState.q}
         onSearch={(v) => urlState.setSearch(v)}

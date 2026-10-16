@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -106,7 +107,7 @@ export function AdjustTokensDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[480px] border-2 border-foreground">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Sesuaikan Saldo Token</DialogTitle>
@@ -187,8 +188,16 @@ export function AdjustTokensDialog({
             <Button
               type="submit"
               disabled={!canSubmit}
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
             >
-              {adjustMutation.isPending ? 'Memproses...' : 'Terapkan Penyesuaian'}
+              {adjustMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                'Terapkan Penyesuaian'
+              )}
             </Button>
           </DialogFooter>
         </form>

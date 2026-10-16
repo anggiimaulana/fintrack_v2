@@ -73,6 +73,7 @@ export function QuotaMonitorTable({ rows, isLoading, isError, threshold, onRetry
       <Table>
         <TableHeader>
           <TableRow className="border-b-2 border-foreground bg-muted">
+            <TableHead className="w-12 text-center font-black uppercase tracking-wide">No</TableHead>
             <TableHead className="font-black uppercase tracking-wide">Pengguna</TableHead>
             <TableHead className="font-black uppercase tracking-wide">Paket</TableHead>
             <TableHead className="font-black uppercase tracking-wide">Batas</TableHead>
@@ -87,6 +88,9 @@ export function QuotaMonitorTable({ rows, isLoading, isError, threshold, onRetry
             const pct = Math.min(100, Math.round(r.used_percent))
             return (
               <TableRow key={`${r.user_id}:${r.limit_key}`} className="border-b border-foreground/20 last:border-b-0">
+                <TableCell className="text-center font-mono text-xs text-muted-foreground w-12">
+                  {rows.indexOf(r) + 1}
+                </TableCell>
                 <TableCell>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold">{r.full_name || '—'}</p>

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { AdminSubscription } from '@/hooks/useSuperAdminSubscriptions'
@@ -50,7 +51,7 @@ export function CancelSubscriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[480px] border-2 border-foreground">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Batalkan Langganan</DialogTitle>
@@ -118,8 +119,20 @@ export function CancelSubscriptionDialog({
             >
               Kembali
             </Button>
-            <Button type="submit" variant="destructive" disabled={!canSubmit}>
-              {isLoading ? 'Membatalkan...' : 'Batalkan Langganan'}
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={!canSubmit}
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Membatalkan...
+                </>
+              ) : (
+                'Batalkan Langganan'
+              )}
             </Button>
           </DialogFooter>
         </form>

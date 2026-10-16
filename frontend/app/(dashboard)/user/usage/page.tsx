@@ -14,7 +14,7 @@ import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
 import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { useUsageHistory, type UsageEvent } from "@/hooks/use-usage";
-import { QuotaUsageCard } from "@/components/billing/QuotaUsageCard";
+import { DualQuotaCard } from "@/components/billing/DualQuotaCard";
 import { UsageChart, USAGE_CHART_TYPES, type UsageRange, type UsageChartType } from "@/components/usage/UsageChart";
 import { usageHistoryColumns } from "@/components/usage/UsageHistoryColumns";
 import { downloadCsv, toCsv } from "@/lib/csv";
@@ -201,8 +201,8 @@ function UsageContent() {
         </p>
       </div>
 
-      {/* Detail penggunaan saat ini (reuses the entitlement mirror). */}
-      <QuotaUsageCard usage={usage} period={period} />
+      {/* Detail penggunaan saat ini (dual weekly + monthly quota engine). */}
+      <DualQuotaCard />
 
       <UsageChart
         range={range}

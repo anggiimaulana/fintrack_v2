@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Money } from '@/components/shared/Money'
+import { RupiahInput } from '@/components/shared/RupiahInput'
+import { Loader2 } from 'lucide-react'
 import type { PaymentRow } from '@/hooks/useSuperAdminPayments'
 import { useResetOnOpen } from '@/hooks/use-reset-on-open'
 
@@ -40,7 +42,7 @@ export function PaymentApproveDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[480px] border-2 border-foreground">
         <DialogHeader>
           <DialogTitle>Setujui Pembayaran</DialogTitle>
           <DialogDescription>
@@ -82,8 +84,16 @@ export function PaymentApproveDialog({
             type="button"
             onClick={handleApprove}
             disabled={isLoading}
+            className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
           >
-            {isLoading ? 'Memproses...' : 'Setujui Pembayaran'}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              'Setujui Pembayaran'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -123,7 +133,7 @@ export function PaymentRejectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[480px] border-2 border-foreground">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Tolak Pembayaran</DialogTitle>
@@ -163,8 +173,16 @@ export function PaymentRejectDialog({
               type="submit"
               variant="destructive"
               disabled={!isValid || isLoading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
             >
-              {isLoading ? 'Menolak...' : 'Tolak Pembayaran'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Menolak...
+                </>
+              ) : (
+                'Tolak Pembayaran'
+              )}
             </Button>
           </DialogFooter>
         </form>
@@ -188,12 +206,12 @@ export function PaymentRefundDialog({
   onConfirm,
   isLoading = false,
 }: PaymentRefundDialogProps) {
-  const [amountStr, setAmountStr] = React.useState('')
+  const [amountNum, setAmountNum] = React.useState<number | undefined>(undefined)
   const [reason, setReason] = React.useState('')
   const [reference, setReference] = React.useState('')
 
   useResetOnOpen(open, () => {
-    setAmountStr('')
+    setAmountNum(undefined)
     setReason('')
     setReference('')
   })
@@ -206,10 +224,9 @@ export function PaymentRefundDialog({
     e.preventDefault()
     if (!reason.trim()) return
 
-    const parsedAmount = amountStr ? Number(amountStr) : undefined
     await onConfirm({
       id: payment.id,
-      amount_idr: parsedAmount && parsedAmount > 0 ? parsedAmount : undefined,
+      amount_idr: amountNum && amountNum > 0 ? amountNum : undefined,
       reason: reason.trim(),
       reference: reference.trim() || undefined,
     })
@@ -220,7 +237,7 @@ export function PaymentRefundDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[500px] border-2 border-foreground">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Proses Refund Pembayaran</DialogTitle>
@@ -258,14 +275,12 @@ export function PaymentRefundDialog({
             <Label htmlFor="refund-amount">
               Nominal Refund (IDR) <span className="text-xs text-muted-foreground font-normal">(opsional: kosong = sisa penuh)</span>
             </Label>
-            <Input
+            <RupiahInput
               id="refund-amount"
-              type="number"
-              min="1"
-              max={remaining}
-              placeholder={`Kosong = refund penuh (${remaining})`}
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
+              value={amountNum}
+              onChange={setAmountNum}
+              min={1}
+              placeholder={`Kosong = sisa penuh (${remaining.toLocaleString('id-ID')})`}
               disabled={isLoading}
             />
           </div>
@@ -310,8 +325,16 @@ export function PaymentRefundDialog({
               type="submit"
               variant="default"
               disabled={!isValid || isLoading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
             >
-              {isLoading ? 'Memproses...' : 'Kirim Refund'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                'Kirim Refund'
+              )}
             </Button>
           </DialogFooter>
         </form>

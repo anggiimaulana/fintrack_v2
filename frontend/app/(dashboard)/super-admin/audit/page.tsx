@@ -1,8 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { ShieldAlert } from 'lucide-react'
+
+import { ShieldAlert, History, PlusCircle, Edit3, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
 import { useDataTableUrlState } from '@/hooks/use-data-table-url-state'
 import {
   useSuperAdminAudit,
@@ -104,6 +107,27 @@ function SuperAdminAuditContent() {
           <ShieldAlert className="h-4 w-4 text-primary" />
           <span>Append-Only Trail (UU PDP)</span>
         </div>
+      </div>
+
+      <SmartInsightCard
+        title="Insight Integritas Jejak Audit (UU PDP)"
+        summaryText="Jejak audit aktif memantau integritas platform secara append-only sesuai kepatuhan regulasi perlindungan data. Seluruh mutasi administratif terekam dengan timestamp presisi dan payload diff lengkap."
+        deltaPercent={0}
+        deltaDirection="flat"
+        isPositiveDelta={true}
+        metricsSummary={[
+          { label: 'Total Log Audit', value: data?.meta?.total || 0 },
+          { label: 'Standar Log', value: 'Append-Only' },
+          { label: 'Kepatuhan', value: 'UU PDP 2022' },
+        ]}
+      />
+
+      {/* 4 KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard label="Total Log" value={data?.meta?.total || 0} icon={History} />
+        <AdminStatCard label="Aksi Pembuatan" value={(data?.data || []).filter((l) => l.action?.toLowerCase().includes('create')).length} icon={PlusCircle} colorClassName="text-green-600" />
+        <AdminStatCard label="Aksi Pembaruan" value={(data?.data || []).filter((l) => l.action?.toLowerCase().includes('update') || l.action?.toLowerCase().includes('adjust')).length} icon={Edit3} colorClassName="text-primary" />
+        <AdminStatCard label="Aksi Hapus / Batal" value={(data?.data || []).filter((l) => l.action?.toLowerCase().includes('delete') || l.action?.toLowerCase().includes('cancel')).length} icon={Trash2} colorClassName="text-rose-600" />
       </div>
 
       {/* Filter controls */}

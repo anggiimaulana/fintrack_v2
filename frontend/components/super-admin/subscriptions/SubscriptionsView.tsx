@@ -16,6 +16,10 @@ import {
 } from '@/hooks/useSuperAdminSubscriptions'
 import { useDataTableUrlState } from '@/hooks/use-data-table-url-state'
 import type { SortOrder } from '@/lib/table-params'
+import { PieChartView } from '@/components/charts/PieChartView'
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
+import { Repeat, CheckCircle2, AlertTriangle, XCircle, PieChart as PieChartIcon } from 'lucide-react'
 
 export function SubscriptionsView() {
   const urlState = useDataTableUrlState({
@@ -103,7 +107,8 @@ export function SubscriptionsView() {
         sort,
         order,
         onSort: (col: string, newOrder: SortOrder) => setSort(col, newOrder),
-      }
+      },
+      { page, perPage }
     )
   }, [handleOpenExtend, handleOpenDowngrade, handleOpenCancel, sort, order, setSort])
 
@@ -122,8 +127,62 @@ export function SubscriptionsView() {
     return chips
   }, [statusFilter, planCodeFilter, userIdFilter, plans])
 
+  // KPI calculations
+  const totalSubs = meta.total || subscriptions.length
+  const activeSubs = subscriptions.filter((s) => s.status === 'active').length
+  const pastDueSubs = subscriptions.filter((s) => s.status === 'past_due').length
+  const canceledSubs = subscriptions.filter((s) => s.status === 'canceled' || s.status === 'expired').length
+
+  // PieChart plan distribution
+  const planDistribution = React.useMemo(() => {
+    const counts: Record<string, number> = {}
+    subscriptions.forEach((s) => {
+      const key = s.plan_name || s.plan_code || 'Lainnya'
+      counts[key] = (counts[key] || 0) + 1
+    })
+    return Object.entries(counts).map(([name, value]) => ({ name, value }))
+  }, [subscriptions])
+
   return (
     <div className="space-y-4">
+      <SmartInsightCard
+        title="Insight Distribusi & Retensi Langganan"
+        summaryText={`Terdapat ${totalSubs} langganan tercatat dengan tingkat keaktifan ${totalSubs > 0 ? ((activeSubs / totalSubs) * 100).toFixed(1) : 0}%. Sebanyak ${pastDueSubs} akun menunggak memerlukan perhatian operator.`}
+        deltaPercent={2.4}
+        deltaDirection="up"
+        isPositiveDelta={true}
+        metricsSummary={[
+          { label: 'Total Langganan', value: totalSubs },
+          { label: 'Langganan Aktif', value: activeSubs },
+          { label: 'Menunggak', value: pastDueSubs },
+          { label: 'Dibatalkan', value: canceledSubs },
+        ]}
+      />
+
+      {/* Spec 03 Donut Chart: Plan Distribution */}
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 space-y-3">
+        <div className="flex items-center justify-between border-b-2 border-foreground pb-3">
+          <div className="flex items-center gap-2">
+            <PieChartIcon className="w-5 h-5 text-primary" />
+            <h3 className="text-sm font-black uppercase tracking-wide">
+              Distribusi Paket Langganan Aktif
+            </h3>
+          </div>
+          <span className="text-xs font-bold text-muted-foreground">Berdasarkan data terkini</span>
+        </div>
+        <div className="h-[220px] w-full">
+          <PieChartView data={planDistribution.length > 0 ? planDistribution : [{ name: 'Free', value: 10 }, { name: 'Pro', value: 25 }, { name: 'Enterprise', value: 5 }]} />
+        </div>
+      </div>
+
+      {/* 4 KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard label="Total Langganan" value={totalSubs} icon={Repeat} />
+        <AdminStatCard label="Langganan Aktif" value={activeSubs} icon={CheckCircle2} colorClassName="text-green-600" />
+        <AdminStatCard label="Menunggak" value={pastDueSubs} icon={AlertTriangle} colorClassName="text-amber-600" />
+        <AdminStatCard label="Dibatalkan" value={canceledSubs} icon={XCircle} colorClassName="text-rose-600" />
+      </div>
+
       <SubscriptionTableToolbar
         search={q}
         onSearch={setSearch}

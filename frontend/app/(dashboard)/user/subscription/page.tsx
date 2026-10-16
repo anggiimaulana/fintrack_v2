@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams, usePathname } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -25,6 +26,7 @@ import { DataTablePagination } from "@/components/data-table/data-table-paginati
 import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
 import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
 import { useEntitlements } from "@/hooks/use-entitlements";
+import { useQuota } from "@/hooks/use-quota";
 import {
   usePublicPlans,
   useMyPaymentsPaged,
@@ -43,9 +45,19 @@ import {
   type UserPayment,
 } from "@/hooks/use-billing";
 import { PlanCard } from "@/components/billing/PlanCard";
-import { LifecycleCountdown } from "@/components/billing/LifecycleCountdown";
 import { SavedCardsCard } from "@/components/billing/SavedCardsCard";
 import { CheckoutDialog } from "@/components/billing/CheckoutDialog";
+import { LifecycleCountdown } from "@/components/billing/LifecycleCountdown";
+
+const SUBSCRIPTION_LIMIT_LABELS: Record<string, string> = {
+  ai_tokens_per_cycle: "Token AI",
+  ai_requests_per_cycle: "Permintaan AI",
+  max_transactions: "Transaksi",
+  ocr_scans_per_cycle: "Pindai Struk (OCR)",
+  voice_requests_per_day: "Permintaan Suara",
+  max_categories: "Maksimal Kategori",
+  max_wallets: "Maksimal Dompet",
+};
 import { CheckoutConfirmDialog } from "@/components/billing/CheckoutConfirmDialog";
 import {
   paymentColumns,
@@ -91,6 +103,7 @@ export default function SubscriptionPage() {
 }
 
 function SubscriptionContent() {
+  const { data: quotaData } = useQuota();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -114,7 +127,7 @@ function SubscriptionContent() {
     window.history.replaceState(null, "", target);
   }, [pathname]);
 
-  const { planCode, planName, status, isLoading: entLoading, isError: entError } = useEntitlements();
+  const { entitlements, planCode, planName, status, isLoading: entLoading, isError: entError } = useEntitlements();
   const { plans, isLoading: plansLoading, isError: plansError } = usePublicPlans();
   const { subscription, scheduledPlanCode, refetch: refetchSub } = useMySubscription();
   const checkout = useCheckout();
@@ -223,6 +236,80 @@ function SubscriptionContent() {
                   </Button>
                 </div>
               )}
+              {/* Detailed Quota & Cycle Breakdown */}
+              <div className="border-t-2 border-foreground/10 pt-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-foreground">
+                    <CalendarClock className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <span>Konfigurasi Kuota &amp; Siklus Reset</span>
+                  </div>
+                  <Button variant="outline" size="xs" asChild className="h-7 text-xs font-bold border-2 border-foreground">
+                    <Link href="/user/usage">Lihat Detail Penggunaan</Link>
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {Object.entries(entitlements?.limits ?? {}).map(([key, limitVal]) => {
+                    const currentPlan = plans.find((p) => p.code === planCode);
+                    const cycle = quotaData?.cycles?.[key] || currentPlan?.cycles?.[key];
+                    const isWeekly =
+                      cycle?.cycle_type === "weekly_monthly" ||
+                      (typeof cycle?.weekly_limit === "number" && cycle.weekly_limit > 0);
+                    const label = SUBSCRIPTION_LIMIT_LABELS[key] || key;
+                    const isUnlimited = limitVal < 0;
+
+                    return (
+                      <div
+                        key={key}
+                        className="rounded-md border-2 border-foreground/20 bg-muted/30 p-2.5 text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-foreground truncate">{label}</span>
+                          <span className="font-mono font-bold text-foreground shrink-0">
+                            {isUnlimited ? "Tak Terbatas" : `${limitVal.toLocaleString("id-ID")} / bulan`}
+                          </span>
+                        </div>
+
+                        {isWeekly ? (
+                          <div className="space-y-1 pt-1 border-t border-border/50 text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-primary">Siklus: Reset Mingguan</span>
+                              <span className="font-mono font-bold text-foreground">
+                                {(cycle.weekly_limit ?? 0).toLocaleString("id-ID")} / minggu
+                              </span>
+                            </div>
+                            {cycle.degraded_mode === "model_downgrade" && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">
+                                Jika mingguan habis: dialihkan ke mode hemat
+                              </p>
+                            )}
+                            {cycle.degraded_mode === "throttle" && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">
+                                Jika mingguan habis: kecepatan request dibatasi
+                              </p>
+                            )}
+                            {cycle.degraded_mode === "hard_block" && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">
+                                Jika mingguan habis: akses diblokir sementara sampai reset
+                              </p>
+                            )}
+                            {cycle.max_degraded_usage && (
+                              <p className="text-[10px] text-muted-foreground font-mono">
+                                Maksimal mode degraded: {cycle.max_degraded_usage.toLocaleString("id-ID")}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between pt-1 border-t border-border/50 text-[10px] text-muted-foreground">
+                            <span>Siklus: Reset Bulanan</span>
+                            <span>Maksimal {isUnlimited ? "tanpa batas" : `${limitVal.toLocaleString("id-ID")} / bulan`}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

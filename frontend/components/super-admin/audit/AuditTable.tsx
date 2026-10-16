@@ -80,6 +80,8 @@ export function AuditTable({
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow className="border-border hover:bg-transparent">
+                {/* Nomor / No */}
+                <TableHead className="w-12 text-center font-bold">No</TableHead>
                 {/* Waktu / created_at */}
                 <TableHead className="w-[180px]">
                   <DataTableColumnHeader
@@ -185,6 +187,9 @@ export function AuditTable({
                       className="cursor-pointer border-border hover:bg-muted/40 transition-colors"
                     >
                       {/* Created at (relative + absolute on hover tooltip) */}
+                      <TableCell className="text-center font-mono text-xs text-muted-foreground w-12">
+                        {(page - 1) * perPage + data.indexOf(row) + 1}
+                      </TableCell>
                       <TableCell className="text-xs">
                         <Tooltip>
                           <TooltipTrigger asChild>

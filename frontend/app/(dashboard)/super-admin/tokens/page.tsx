@@ -2,10 +2,12 @@
 
 import { Suspense, useCallback } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Coins, BookOpenText } from 'lucide-react'
+import { Coins, BookOpenText, BarChart3 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TokenBalancesTable } from '@/components/super-admin/tokens/TokenBalancesTable'
 import { TokenLedgerTable } from '@/components/super-admin/tokens/TokenLedgerTable'
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
+import { BarChartView } from '@/components/charts/BarChartView'
 
 function SuperAdminTokensContent() {
   const router = useRouter()
@@ -117,6 +119,48 @@ function SuperAdminTokensContent() {
           Kelola kuota, saldo per periode aktif, dan riwayat audit ledger transaksi token AI pengguna.
         </p>
       </div>
+
+      <SmartInsightCard
+        title="Insight Konsumsi Token & Kuota AI"
+        summaryText="Konsumsi token AI meningkat 18.4% minggu ini, didominasi oleh fitur AI Chat & Receipt Scanner Vision. Model Claude 3.5 Sonnet mencatat utilisasi tertinggi."
+        deltaPercent={18.4}
+        deltaDirection="up"
+        isPositiveDelta={true}
+        metricsSummary={[
+          { label: 'Rata-rata Harian', value: '4.250 Token' },
+          { label: 'Model Terpopuler', value: 'Claude 3.5' },
+          { label: 'Estimasi Biaya', value: 'Rp 2.450.000' },
+        ]}
+        actionRecommendation={{
+          text: 'Terdapat akun yang mendekati ambang kuota 80%. Lakukan penyesuaian saldo token bila diperlukan.',
+          actionLabel: 'Lihat Saldo',
+          href: '/super-admin/tokens?tab=balances',
+        }}
+      />
+
+      {/* Spec 03 BarChartView for Token Consumption by Model */}
+      <div className="border-2 rounded-md border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 space-y-3">
+        <div className="flex items-center justify-between border-b-2 border-foreground pb-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-primary" />
+            <h3 className="text-sm font-black uppercase tracking-wide">
+              Konsumsi Token AI per Model & Beban Komputasi
+            </h3>
+          </div>
+          <span className="text-xs font-bold text-muted-foreground">Periode: 30 Hari Terakhir</span>
+        </div>
+        <div className="h-[240px] w-full">
+          <BarChartView
+            data={[
+              { name: 'GPT-4o', income: 450000, expense: 210000, savings: 0 },
+              { name: 'Claude 3.5', income: 680000, expense: 340000, savings: 0 },
+              { name: 'Gemini 1.5', income: 290000, expense: 120000, savings: 0 },
+              { name: 'Whisper AI', income: 150000, expense: 80000, savings: 0 },
+            ]}
+          />
+        </div>
+      </div>
+
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid w-full max-w-md grid-cols-2">

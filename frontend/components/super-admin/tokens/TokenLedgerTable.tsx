@@ -291,6 +291,7 @@ export function TokenLedgerTable({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="w-12 text-center font-bold">No</TableHead>
                 <TableHead
                   className="cursor-pointer select-none"
                   onClick={() => handleSortToggle('created_at')}
@@ -359,6 +360,9 @@ export function TokenLedgerTable({
 
                 return (
                   <TableRow key={row.id}>
+                    <TableCell className="text-center font-mono text-xs text-muted-foreground w-12">
+                      {(page - 1) * perPage + rows.indexOf(row) + 1}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatTanggal(row.created_at)}
                     </TableCell>

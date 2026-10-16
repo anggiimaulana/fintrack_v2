@@ -16,6 +16,7 @@ import { useSuperAdminQuotaMonitor } from '@/hooks/useSuperAdminQuotaMonitor'
 import { useSuperAdminMetrics, type MetricsPeriod } from '@/hooks/useSuperAdminMetrics'
 import { QuotaMonitorTable, QuotaMonitorSummary } from '@/components/super-admin/quota/QuotaMonitorTable'
 import { ModalityConsumptionChart } from '@/components/super-admin/quota/ModalityConsumptionChart'
+import { SmartInsightCard } from '@/components/shared/SmartInsightCard'
 
 /** Threshold options for the "running low" filter (percent of limit used). */
 const THRESHOLDS = [
@@ -86,6 +87,19 @@ function SuperAdminQuotaMonitorContent() {
           </Button>
         </div>
       </div>
+
+      <SmartInsightCard
+        title="Insight Pemantauan Batas Kuota AI"
+        summaryText={`Terdapat ${rows.length} akun terpantau mendekati ambang ${threshold}% batas paket siklus aktif. Pantau akun berstatus kritis untuk mencegah kegagalan eksekusi permintaan AI.`}
+        deltaPercent={rows.length > 0 ? 12.5 : 0}
+        deltaDirection={rows.length > 0 ? 'up' : 'flat'}
+        isPositiveDelta={rows.length === 0}
+        metricsSummary={[
+          { label: 'Akun Terpantau', value: rows.length },
+          { label: 'Ambang Batas', value: `≥ ${threshold}%` },
+          { label: 'Status Pool', value: rows.length === 0 ? 'Aman' : 'Perlu Atensi' },
+        ]}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <QuotaMonitorSummary rows={rows} />

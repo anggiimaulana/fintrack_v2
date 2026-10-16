@@ -11,7 +11,12 @@ import {
   ArrowDown,
   Layers,
   Gauge,
+  Package,
+  CheckCircle2,
+  Globe,
+  Lock,
 } from 'lucide-react'
+import { AdminStatCard } from '@/components/admin/AdminStatCard'
 import {
   Table,
   TableBody,
@@ -105,9 +110,22 @@ export function PlanTable({
 
     return result
   }, [plans, search, sortField, sortOrder])
+  const totalPlans = plans.length
+  const activePlans = plans.filter((p) => p.is_active).length
+  const publicPlans = plans.filter((p) => p.is_public).length
+  const privatePlans = plans.filter((p) => !p.is_public).length
+
 
   return (
     <div className="space-y-4">
+      {/* 4 KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <AdminStatCard label="Total Paket" value={totalPlans} icon={Package} />
+        <AdminStatCard label="Paket Aktif" value={activePlans} icon={CheckCircle2} colorClassName="text-green-600" />
+        <AdminStatCard label="Paket Publik" value={publicPlans} icon={Globe} colorClassName="text-primary" />
+        <AdminStatCard label="Paket Privat" value={privatePlans} icon={Lock} colorClassName="text-amber-600" />
+      </div>
+
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-sm">
@@ -131,6 +149,7 @@ export function PlanTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent bg-muted/40">
+                <TableHead className="w-12 text-center font-bold">No</TableHead>
                 <TableHead>Paket & Kode</TableHead>
                 <TableHead>Harga Bulanan</TableHead>
                 <TableHead>Harga Tahunan</TableHead>
@@ -145,6 +164,7 @@ export function PlanTable({
             <TableBody>
               {[1, 2, 3, 4].map((i) => (
                 <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
                   <TableCell>
                     <Skeleton className="h-5 w-28 mb-1" />
                     <Skeleton className="h-3 w-16" />
@@ -186,6 +206,7 @@ export function PlanTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent bg-muted/40">
+                <TableHead className="w-12 text-center font-bold">No</TableHead>
                 <TableHead
                   className="cursor-pointer select-none"
                   onClick={() => handleSort('name')}
@@ -236,6 +257,9 @@ export function PlanTable({
 
                 return (
                   <TableRow key={plan.id}>
+                    <TableCell className="text-center font-mono text-xs text-muted-foreground w-12">
+                      {filteredAndSortedPlans.indexOf(plan) + 1}
+                    </TableCell>
                     <TableCell>
                       <div className="font-bold text-foreground">{plan.name}</div>
                       <div className="font-mono text-xs text-muted-foreground">

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { PlanTable } from '@/components/super-admin/plans/PlanTable'
 import { PlanFormDialog } from '@/components/super-admin/plans/PlanFormDialog'
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { ConfirmActionModal } from '@/components/shared/ConfirmActionModal'
 import {
   useSuperAdminPlans,
   PlanDTO,
@@ -133,22 +133,18 @@ export default function SuperAdminPlansPage() {
         />
       )}
 
-      <ConfirmDialog
+      <ConfirmActionModal
         open={Boolean(deactivatingPlan)}
         onOpenChange={(open) => {
           if (!open) setDeactivatingPlan(null)
         }}
-        onConfirm={handleConfirmDeactivate}
+        actionType="deactivate"
         title="Nonaktifkan Paket"
-        message={
-          deactivatingPlan
-            ? `Paket "${deactivatingPlan.name}" (${deactivatingPlan.code}) akan dinonaktifkan, bukan dihapus dari database. Pengguna baru tidak dapat berlangganan paket ini.`
-            : ''
-        }
-        confirmText="Ya, Nonaktifkan"
-        cancelText="Batal"
-        variant="danger"
-        loading={isDeactivating}
+        description="Paket akan dinonaktifkan dari katalog publik, bukan dihapus dari database. Pengguna baru tidak dapat berlangganan paket ini."
+        entityName={deactivatingPlan ? `${deactivatingPlan.name} (${deactivatingPlan.code})` : undefined}
+        confirmLabel="Ya, Nonaktifkan"
+        isPending={isDeactivating}
+        onConfirm={handleConfirmDeactivate}
       />
     </div>
   )

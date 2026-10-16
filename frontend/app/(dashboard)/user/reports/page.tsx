@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Download, Sparkles, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,9 +17,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/components/shared/DateRangeFilter";
-import { useReports, type CategoryReport, type MonthlyComparison } from "@/hooks/useReports";
+import { DateRangeFilter, type DateRangeValue, type PresetKey, computePresetDates } from "@/components/shared/DateRangeFilter";
+import { useReports, useReportsRealtime, normalizeReport, type CategoryReport, type MonthlyComparison } from "@/hooks/useReports";
 import { useCategoryChart } from "@/hooks/useDashboard";
+import { mapSpk, mapSpkHistory } from "@/hooks/useSpk";
+import { queryKeys } from "@/lib/cache-keys";
+import { staleTimeConfig } from "@/lib/cache-invalidation";
+import api from "@/lib/api";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { useReportAnalytics, useExportReport } from "@/hooks/useReportAnalytics";
 import { ReportsSummaryTab } from "@/components/reports/ReportsSummaryTab";
@@ -32,6 +37,8 @@ import {
   REPORT_TYPES,
   parseTab,
   parseReportType,
+  parseReportFilterParams,
+  reportFilterToParams,
   typeLabel,
   type ReportTypeId,
 } from "@/lib/report-tabs";
@@ -59,28 +66,16 @@ export default function ReportsPage() {
 }
 
 function ReportsContent() {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const now = React.useMemo(() => new Date(), []);
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   // ── URL-backed state ─────────────────────────────────────────
-  // tab / type / date range / table state all live in the query string so the
-  // page is bookmarkable and every interaction is a shallow replace.
   const [tab, setTabState] = React.useState(() => parseTab(searchParams.get("tab")));
   const [reportType, setReportTypeState] = React.useState<ReportTypeId>(() => parseReportType(searchParams.get("type")));
-
-  const [dateFilter, setDateFilterState] = React.useState<DateRangeValue>(() => {
-    const d = computePresetDates("this_month", now);
-    return {
-      preset: "this_month",
-      startDate: d.start,
-      endDate: d.end,
-      compareStart: "",
-      compareEnd: "",
-      enableCompare: false,
-    };
-  });
+  const [dateFilter, setDateFilterState] = React.useState<DateRangeValue>(() => parseReportFilterParams(searchParams, now));
 
   const query: TableQuery = {
     page: Math.max(1, Number(searchParams.get("page")) || 1),
@@ -103,19 +98,50 @@ function ReportsContent() {
         else p.set(k, v);
       }
       const qs = p.toString();
-      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+      const nextUrl = qs ? `${pathname}?${qs}` : pathname;
+      window.history.replaceState(null, "", nextUrl);
+      router.replace(nextUrl, { scroll: false });
     },
-    [pathname]
+    [pathname, router]
   );
 
   const setTab = (t: string) => {
-    setTabState(parseTab(t));
-    updateParams({ tab: t });
+    const parsed = parseTab(t);
+    setTabState(parsed);
+    updateParams({ tab: parsed });
   };
   const setType = (t: ReportTypeId) => {
     setReportTypeState(t);
     updateParams({ type: t, page: null });
   };
+  const setDateFilter = (val: DateRangeValue) => {
+    setDateFilterState(val);
+    updateParams(reportFilterToParams(val));
+  };
+
+  // Sync state if browser back/forward or external URL navigation occurs
+  React.useEffect(() => {
+    const nextTab = parseTab(searchParams.get("tab"));
+    setTabState((curr) => (curr !== nextTab ? nextTab : curr));
+
+    const nextType = parseReportType(searchParams.get("type"));
+    setReportTypeState((curr) => (curr !== nextType ? nextType : curr));
+
+    const nextFilter = parseReportFilterParams(searchParams, now);
+    setDateFilterState((curr) => {
+      if (
+        curr.preset === nextFilter.preset &&
+        curr.startDate === nextFilter.startDate &&
+        curr.endDate === nextFilter.endDate &&
+        curr.enableCompare === nextFilter.enableCompare &&
+        curr.compareStart === nextFilter.compareStart &&
+        curr.compareEnd === nextFilter.compareEnd
+      ) {
+        return curr;
+      }
+      return nextFilter;
+    });
+  }, [searchParams, now]);
 
   // ── Table state writers (reset page on anything but page/per_page) ──
   const setPage = (page: number) => updateParams({ page: page > 1 ? String(page) : null });
@@ -125,23 +151,84 @@ function ReportsContent() {
   const setFilter = (key: string, value: string) => updateParams({ [`filter_${key}`]: value || null, page: null });
   const resetTable = () => updateParams({ q: null, sort: null, order: null, page: null, filter_min_pct: null });
 
-  const debouncedReportType = useDebounce(reportType, 300);
-  const debouncedDateFilter = useDebounce(dateFilter, 300);
   const debouncedQuery = useDebounce(query, 300);
+
+  // ── Realtime SSE subscription ───────────────────────────────
+  useReportsRealtime();
+
   // ── Data ─────────────────────────────────────────────────────
   const { hasFeature, isLoading: entLoading } = useEntitlements();
   const canViewReports = hasFeature("reports_export");
   const canBudget = hasFeature("advanced_budgeting");
   const reportsEnabled = !entLoading && canViewReports;
 
-  const reportParams = debouncedDateFilter.startDate && debouncedDateFilter.endDate
-    ? { type: debouncedReportType, startDate: debouncedDateFilter.startDate, endDate: debouncedDateFilter.endDate }
+  // Prefetch common periods and deep-dive tabs so switching is instant
+  React.useEffect(() => {
+    if (!reportsEnabled) return;
+    const common: PresetKey[] = ["this_month", "last_month", "3months", "this_year", "today", "this_week"];
+    const now2 = new Date();
+    for (const preset of common) {
+      const d = computePresetDates(preset, now2);
+      if (d.start && d.end) {
+        const qKey = `${reportType}|${d.start}|${d.end}||`;
+        queryClient.prefetchQuery({
+          queryKey: [...queryKeys.reports.byPeriod("current_month"), qKey],
+          queryFn: async () => {
+            const res = await api.get(`/reports?type=${reportType}&start_date=${d.start}&end_date=${d.end}`);
+            return normalizeReport(res.data?.data);
+          },
+          staleTime: staleTimeConfig.reports,
+        });
+
+        const qStr = `type=${reportType}&start_date=${d.start}&end_date=${d.end}`;
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.reports.analytics(qStr),
+          queryFn: async () => {
+            const res = await api.get(`/reports/analytics?${qStr}`);
+            return res.data?.data;
+          },
+          staleTime: staleTimeConfig.reports,
+        });
+
+        if (canBudget) {
+          queryClient.prefetchQuery({
+            queryKey: [...queryKeys.budgets.all, `?start_date=${d.start}&end_date=${d.end}`],
+            queryFn: async () => {
+              const res = await api.get(`/budgets/status?start_date=${d.start}&end_date=${d.end}`);
+              return res.data?.data ?? [];
+            },
+            staleTime: staleTimeConfig.dashboard,
+          });
+        }
+      }
+    }
+
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.spk.latest,
+      queryFn: async () => {
+        const res = await api.get("/spk/latest");
+        return mapSpk(res.data?.data);
+      },
+      staleTime: staleTimeConfig.spk,
+    });
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.spk.history,
+      queryFn: async () => {
+        const res = await api.get("/spk/history?limit=12");
+        return mapSpkHistory(res.data?.data);
+      },
+      staleTime: staleTimeConfig.spk,
+    });
+  }, [reportsEnabled, reportType, canBudget, queryClient]);
+
+  const reportParams = dateFilter.startDate && dateFilter.endDate
+    ? { type: reportType, startDate: dateFilter.startDate, endDate: dateFilter.endDate }
     : undefined;
 
   const { data: report, isLoading } = useReports(reportParams, { enabled: reportsEnabled });
-  const { data: catChart } = useCategoryChart(debouncedDateFilter.startDate, debouncedDateFilter.endDate, { enabled: reportsEnabled });
+  const { data: catChart } = useCategoryChart(dateFilter.startDate, dateFilter.endDate, { enabled: reportsEnabled });
   const { data: analytics, isLoading: analyticsLoading } = useReportAnalytics(
-    { type: debouncedReportType, startDate: debouncedDateFilter.startDate, endDate: debouncedDateFilter.endDate },
+    { type: reportType, startDate: dateFilter.startDate, endDate: dateFilter.endDate },
     { enabled: reportsEnabled }
   );
   const exportReport = useExportReport();
@@ -248,7 +335,7 @@ function ReportsContent() {
 
       {/* Date range */}
       <div className="border-2 rounded-lg border-foreground bg-card p-4 shadow-[4px_4px_0px_0px] shadow-foreground">
-        <DateRangeFilter value={dateFilter} onChange={setDateFilterState} />
+        <DateRangeFilter value={dateFilter} onChange={setDateFilter} />
       </div>
 
       {/* Tabs (URL-backed) */}

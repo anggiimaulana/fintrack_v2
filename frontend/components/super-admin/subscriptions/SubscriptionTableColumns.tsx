@@ -46,11 +46,22 @@ function renderStatusBadge(status: string) {
 
 export function createSubscriptionColumns(
   actions: SubscriptionTableActionsProps,
-  sortState?: { sort?: string; order?: SortOrder; onSort?: (col: string, order: SortOrder) => void }
+  sortState?: { sort?: string; order?: SortOrder; onSort?: (col: string, order: SortOrder) => void },
+  pagination?: { page: number; perPage: number }
 ): ColumnDef<AdminSubscription, unknown>[] {
   const { sort, order, onSort } = sortState || {}
+  const page = pagination?.page || 1
+  const perPage = pagination?.perPage || 20
 
   return [
+    {
+      id: 'row_number',
+      header: () => <span className="text-center font-bold block w-10">No</span>,
+      cell: ({ row }) => {
+        const num = (page - 1) * perPage + row.index + 1
+        return <span className="font-mono text-xs text-muted-foreground block text-center w-10">{num}</span>
+      },
+    },
     {
       accessorKey: 'user',
       id: 'user',

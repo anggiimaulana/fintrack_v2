@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -65,7 +65,7 @@ export function ForceDowngradeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto px-6 py-6 sm:max-w-[480px] border-2 border-foreground">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Paksa Turunkan Paket</DialogTitle>
@@ -148,8 +148,20 @@ export function ForceDowngradeDialog({
             >
               Batal
             </Button>
-            <Button type="submit" variant="destructive" disabled={!canSubmit}>
-              {isLoading ? 'Memproses...' : 'Turunkan Paket'}
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={!canSubmit}
+              className="disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                'Turunkan Paket'
+              )}
             </Button>
           </DialogFooter>
         </form>

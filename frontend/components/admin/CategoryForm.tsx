@@ -139,8 +139,14 @@ export function CategoryForm({ initialValues, onSubmit, onCancel, isLoading }: C
             disabled={!form.formState.isValid || isLoading}
             className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed font-bold border-2 border-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Simpan Kategori
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              'Simpan Kategori'
+            )}
           </Button>
         </div>
       </form>
