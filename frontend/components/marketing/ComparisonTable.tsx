@@ -40,7 +40,7 @@ export function ComparisonTable({ plans }: { plans: PublicPlan[] }) {
   const limitRows = buildLimitRows(ordered);
 
   return (
-    <section id="perbandingan" className="border-b-[3px] border-foreground">
+    <section id="perbandingan" className="scroll-mt-24 border-b-[3px] border-foreground">
       <div className="mx-auto max-w-5xl px-4 py-16 lg:py-24">
         <SectionHeading title={PRICING.comparison.h2} align="center" className="mb-12" />
 

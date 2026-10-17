@@ -1,5 +1,6 @@
 import { Download, Gauge, Lock, Trash2 } from "lucide-react";
 import { Reveal } from "./Reveal";
+import { SectionHeading } from "./SectionHeading";
 import { StatCounters } from "./StatCounters";
 import { LANDING } from "@/lib/marketing/copy";
 
@@ -15,9 +16,13 @@ export function TrustBar() {
   return (
     <section aria-labelledby="trust-heading" className="border-b-[3px] border-foreground bg-background">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:py-20">
-        <h2 id="trust-heading" className="sr-only">
-          Privasi dan transparansi
-        </h2>
+        <SectionHeading
+          id="trust-heading"
+          eyebrow="KEAMANAN & PRIVASI"
+          title="Transparansi dan perlindungan data tanpa kompromi"
+          description="Arsitektur data terisolasi, kuota AI transparan, dan kebebasan ekspor atau hapus akun kapan saja."
+          className="mb-10 lg:mb-12"
+        />
 
         <Reveal>
           <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

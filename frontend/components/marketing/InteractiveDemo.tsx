@@ -31,8 +31,8 @@ const RECEIPT_ITEMS = [
 
 function ResultBubble({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-md border-2 border-foreground bg-card p-3 text-sm font-medium">
-      <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
+    <p className="flex items-start gap-2 rounded-md border-2 border-white/20 bg-surface-dark-3 p-3 text-sm font-medium text-neutral-100 shadow-sm">
+      <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-accent-acid" />
       <span>{children}</span>
     </p>
   );
@@ -90,11 +90,10 @@ export function InteractiveDemo() {
               onClick={() => setActive(tab.id)}
               onKeyDown={(event) => onKeyDown(event, index)}
               className={cn(
-                "inline-flex items-center gap-2 rounded-md border-2 border-foreground px-3 py-1.5 text-sm font-bold",
-                "shadow-[3px_3px_0px_0px] shadow-foreground transition-colors",
+                "inline-flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-sm font-bold transition-all",
                 selected
-                  ? "bg-accent-acid text-accent-acid-foreground"
-                  : "bg-card text-foreground hover:bg-muted",
+                  ? "border-foreground bg-accent-acid text-accent-acid-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
+                  : "border-white/20 bg-surface-dark-2 text-neutral-300 shadow-[3px_3px_0px_0px] shadow-black/60 hover:border-white/40 hover:bg-surface-dark-3 hover:text-white",
               )}
             >
               <Icon aria-hidden className="size-4" />
@@ -104,7 +103,18 @@ export function InteractiveDemo() {
         })}
       </div>
 
-      <div className="mt-3 rounded-md border-[3px] border-foreground bg-background p-4 shadow-[6px_6px_0px_0px] shadow-foreground sm:p-6">
+      <div className="mt-3 rounded-md border-[3px] border-white/20 bg-surface-dark-2 p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.7)] sm:p-6">
+        <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="flex items-center gap-1.5" aria-hidden="true">
+            <span className="size-2.5 rounded-full bg-red-500/80" />
+            <span className="size-2.5 rounded-full bg-yellow-500/80" />
+            <span className="size-2.5 rounded-full bg-green-500/80" />
+          </div>
+          <span className="font-mono text-xs font-bold uppercase tracking-widest text-neutral-400">
+            Asisten AI FinTrack
+          </span>
+        </div>
+
         <div
           role="tabpanel"
           id="demo-panel-chat"
@@ -113,7 +123,7 @@ export function InteractiveDemo() {
           tabIndex={0}
           className="flex flex-col gap-3"
         >
-          <p className="self-end rounded-md border-2 border-foreground bg-primary p-3 text-sm font-medium text-primary-foreground">
+          <p className="self-end rounded-md border-2 border-primary/40 bg-primary p-3 text-sm font-medium text-primary-foreground shadow-sm">
             beli kopi 25 ribu tadi siang
           </p>
           <ResultBubble>Pengeluaran Rp 25.000 — Kopi. Tercatat.</ResultBubble>
@@ -131,12 +141,12 @@ export function InteractiveDemo() {
             {[9, 20, 32, 16, 40, 24, 12, 30, 18, 26, 14, 22].map((height, index) => (
               <span
                 key={index}
-                className="w-1.5 rounded-full bg-accent-acid-strong"
+                className="w-1.5 rounded-full bg-accent-acid"
                 style={{ height: `${height}px` }}
               />
             ))}
           </div>
-          <p className="text-sm font-medium text-muted-foreground">“makan siang empat puluh ribu”</p>
+          <p className="text-center text-sm font-medium italic text-neutral-300">“makan siang empat puluh ribu”</p>
           <ResultBubble>Pengeluaran Rp 40.000 — Makan. Tercatat.</ResultBubble>
         </div>
 
@@ -148,17 +158,17 @@ export function InteractiveDemo() {
           tabIndex={0}
           className="flex flex-col gap-3"
         >
-          <div className="rounded-md border-2 border-dashed border-foreground bg-muted p-4 font-mono text-xs">
-            <p className="mb-2 font-bold uppercase tracking-widest">Toko Sembako Sejahtera</p>
+          <div className="rounded-md border-2 border-dashed border-white/20 bg-surface-dark-3 p-4 font-mono text-xs text-neutral-200">
+            <p className="mb-2 font-bold uppercase tracking-widest text-neutral-100">Toko Sembako Sejahtera</p>
             <ul className="flex flex-col gap-1">
               {RECEIPT_ITEMS.map((item) => (
                 <li key={item.label} className="flex justify-between gap-4">
                   <span className="truncate">{item.label}</span>
-                  <span className="shrink-0 tabular-nums">{item.amount}</span>
+                  <span className="shrink-0 tabular-nums text-neutral-300">{item.amount}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 flex justify-between gap-4 border-t-2 border-foreground pt-2 font-bold">
+            <p className="mt-2 flex justify-between gap-4 border-t-2 border-white/20 pt-2 font-bold text-neutral-100">
               <span>TOTAL</span>
               <span className="tabular-nums">Rp 312.500</span>
             </p>
@@ -166,7 +176,7 @@ export function InteractiveDemo() {
           <ResultBubble>Belanja bulanan Rp 312.500 tercatat, 6 item.</ResultBubble>
         </div>
 
-        <p className="mt-4 font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
+        <p className="mt-4 font-mono text-xs uppercase tracking-[0.08em] text-neutral-400">
           {MICROCOPY.demoLabel}
         </p>
       </div>

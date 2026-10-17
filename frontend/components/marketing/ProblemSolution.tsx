@@ -12,7 +12,7 @@ export function ProblemSolution() {
   const { h2, problemTitle, solutionTitle, problems, solutions } = LANDING.problemSolution;
 
   return (
-    <section id="solution" className="border-b-[3px] border-foreground bg-muted">
+    <section id="solution" className="scroll-mt-24 border-b-[3px] border-foreground bg-muted">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:py-24">
         <SectionHeading title={h2} align="center" className="mx-auto mb-12 max-w-3xl" />
 

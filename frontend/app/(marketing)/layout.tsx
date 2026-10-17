@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JsonLd } from "@/components/marketing/JsonLd";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { MarketingMobileBottomNav } from "@/components/marketing/MarketingMobileBottomNav";
 import { PAGE_META } from "@/lib/marketing/copy";
 import { organizationGraph } from "@/lib/seo";
 
@@ -29,9 +30,10 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         Lewati ke konten
       </a>
       <MarketingHeader />
-      <main id="main" className="flex-1">
+      <main id="main" className="flex-1 pb-20 md:pb-0">
         {children}
       </main>
+      <MarketingMobileBottomNav />
       <MarketingFooter />
     </div>
   );

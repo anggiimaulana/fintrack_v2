@@ -94,34 +94,69 @@ export function MarketingHeader() {
         </button>
       </div>
 
+      {/* Backdrop overlay */}
+      {open ? (
+        <div
+          aria-hidden="true"
+          onClick={() => setOpenedPath(null)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs md:hidden"
+        />
+      ) : null}
+
+      {/* Right-side mobile sidebar drawer */}
       <div
         id="marketing-mobile-menu"
         hidden={!open}
-        className="border-t-[3px] border-foreground bg-background md:hidden"
+        className={cn(
+          "fixed inset-y-0 right-0 z-50 flex w-[280px] sm:w-[320px] flex-col justify-between border-l-[3px] border-foreground bg-background p-6 shadow-[-6px_0px_0px_0px] shadow-foreground md:hidden",
+        )}
       >
-        <nav aria-label="Navigasi seluler" className="flex flex-col gap-1 p-4">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive(item.href) ? "page" : undefined}
-              className={cn(
-                "rounded-md px-3 py-2 text-sm font-bold uppercase tracking-wide",
-                isActive(item.href) ? "bg-muted text-foreground" : "text-muted-foreground",
-              )}
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between border-b-2 border-foreground pb-4">
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-md border-2 border-foreground bg-accent-acid shadow-[2px_2px_0px_0px] shadow-foreground">
+                <Wallet aria-hidden className="size-3.5 text-accent-acid-foreground" />
+              </span>
+              <span className="font-heading text-lg font-black tracking-tight">FinTrack</span>
+            </div>
+            <button
+              type="button"
+              className="grid size-8 place-items-center rounded-md border-2 border-foreground bg-background shadow-[2px_2px_0px_0px] shadow-foreground active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+              aria-label="Tutup navigasi"
+              onClick={() => setOpenedPath(null)}
             >
-              {item.label}
-            </Link>
-          ))}
-          <div className="mt-2 flex flex-col gap-2">
-            <Button variant="outline" asChild>
-              <Link href={SIGN_IN_CTA.href}>{SIGN_IN_CTA.label}</Link>
-            </Button>
-            <Button asChild>
-              <Link href={PRIMARY_CTA.href}>{PRIMARY_CTA.label}</Link>
-            </Button>
+              <X aria-hidden className="size-4" />
+            </button>
           </div>
-        </nav>
+
+          <nav aria-label="Navigasi seluler" className="flex flex-col gap-2">
+            {NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive(item.href) ? "page" : undefined}
+                onClick={() => setOpenedPath(null)}
+                className={cn(
+                  "rounded-md border-2 px-4 py-2.5 text-sm font-bold uppercase tracking-wide transition-all",
+                  isActive(item.href)
+                    ? "border-foreground bg-accent-acid text-accent-acid-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
+                    : "border-transparent text-foreground hover:border-foreground hover:bg-muted",
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t-2 border-foreground pt-4">
+          <Button variant="outline" asChild className="w-full font-bold">
+            <Link href={SIGN_IN_CTA.href}>{SIGN_IN_CTA.label}</Link>
+          </Button>
+          <Button asChild className="w-full font-bold">
+            <Link href={PRIMARY_CTA.href}>{PRIMARY_CTA.label}</Link>
+          </Button>
+        </div>
       </div>
     </header>
   );

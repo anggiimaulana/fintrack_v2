@@ -9,7 +9,7 @@ export function HowItWorks() {
   const { h2, steps } = LANDING.howItWorks;
 
   return (
-    <section id="how-it-works" className="border-b-[3px] border-foreground bg-muted">
+    <section id="how-it-works" className="scroll-mt-24 border-b-[3px] border-foreground bg-muted">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:py-24">
         <SectionHeading title={h2} align="center" className="mx-auto mb-12 max-w-3xl" />
 

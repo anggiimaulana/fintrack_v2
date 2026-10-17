@@ -44,7 +44,7 @@ export function ReceiptTapeMarquee() {
           </li>
         ))}
       </ul>
-      <p id="receipt-tape-caption" className="mx-auto max-w-7xl px-4 py-3 text-center text-xs text-muted-foreground">
+      <p id="receipt-tape-caption" className="sr-only">
         {LANDING.receiptTape.caption}
       </p>
     </section>
