@@ -50,7 +50,11 @@ describe("buildPageMetadata", () => {
     expect(meta.description).toBe("Deskripsi.");
     expect(meta.alternates?.canonical).toBe("/pricing");
     expect((meta.openGraph as { url?: string }).url).toBe(`${site.url}/pricing`);
+    expect((meta.openGraph as { images?: Array<{ url: string }> }).images?.[0]?.url).toBe(
+      `${site.url}/opengraph-image`,
+    );
     expect((meta.twitter as { card?: string }).card).toBe("summary_large_image");
+    expect((meta.twitter as { images?: string[] }).images?.[0]).toBe(`${site.url}/opengraph-image`);
   });
 });
 

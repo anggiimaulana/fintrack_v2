@@ -12,7 +12,7 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["lib/**/*.test.ts", "hooks/**/*.test.ts"],
+          include: ["lib/**/*.test.ts", "hooks/**/*.test.ts", "app/**/*.test.ts"],
         },
       },
       {

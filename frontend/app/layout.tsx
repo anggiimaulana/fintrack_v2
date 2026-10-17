@@ -48,13 +48,24 @@ export const metadata: Metadata = {
     title: "FinTrack — Catat Keuangan Otomatis dengan AI",
     description:
       "Catat transaksi lewat chat, suara, atau foto struk. AI berbahasa Indonesia.",
+    images: [
+      {
+        url: `${siteUrl}/opengraph-image`,
+        width: 1200,
+        height: 630,
+        alt: "FinTrack — Catat Keuangan Otomatis dengan AI",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "FinTrack — Catat Keuangan Otomatis dengan AI",
     description:
       "Catat transaksi lewat chat, suara, atau foto struk. AI berbahasa Indonesia.",
+    images: [`${siteUrl}/opengraph-image`],
   },
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
 };
 
 // `viewportFit: "cover"` lets the mobile bottom navigation extend into the
