@@ -159,3 +159,47 @@ export const LANDING_FAQ: FaqItem[] = [
     links: [{ label: "lihat paket dan harga", href: "/pricing" }],
   },
 ];
+
+/**
+ * Eight concise pricing objections for `/pricing` (spec doc 04 §A.7). Answers
+ * are answer-first and follow the real backend behaviour: scheduled downgrade,
+ * manual transfer verification, and a transparent tax line.
+ */
+export const PRICING_FAQ: FaqItem[] = [
+  {
+    q: "Apakah ada paket gratis?",
+    a: "Ya. Paket Free bisa dipakai tanpa batas waktu untuk mulai mencatat, tanpa kartu kredit.",
+    links: [{ label: "daftar gratis", href: "/register" }],
+  },
+  {
+    q: "Apa bedanya Pro dan Business?",
+    a: "Business memberi kuota AI yang lebih besar daripada Pro dan menambahkan akses API. Keduanya sudah termasuk pindai struk, input suara, pencarian cerdas, anggaran lanjutan, dan ekspor laporan.",
+    links: [{ label: "lihat perbandingan fitur", href: "/pricing#perbandingan" }],
+  },
+  {
+    q: "Bagaimana penagihannya?",
+    a: "Langganan ditagih per siklus sesuai masa berlaku paket. Bila pajak berlaku, jumlahnya ditampilkan sebagai baris terpisah dan total terlihat sebelum Anda membayar.",
+  },
+  {
+    q: "Metode pembayaran apa saja yang tersedia?",
+    a: "Pembayaran otomatis melalui gateway Midtrans, atau transfer manual yang diverifikasi oleh admin. Untuk transfer manual, langganan aktif setelah pembayaran disetujui.",
+    links: [{ label: "hubungi tim kami", href: "/contact" }],
+  },
+  {
+    q: "Bisakah saya beralih paket?",
+    a: "Bisa. Kenaikan paket mengikuti alur pembayaran, sedangkan penurunan paket dijadwalkan berlaku pada akhir periode yang sudah Anda bayar.",
+  },
+  {
+    q: "Bisakah saya berhenti berlangganan?",
+    a: "Bisa. Anda dapat membatalkan langganan kapan saja, dan akses tetap berjalan sampai akhir periode yang sudah dibayar; setelah itu akun kembali ke paket Free.",
+  },
+  {
+    q: "Apa yang terjadi bila kuota habis?",
+    a: "Bila kuota paket Anda habis, fitur terkait dapat dibatasi sampai kuota siklus berikutnya tersedia. Anda dapat menaikkan paket untuk kuota yang lebih besar.",
+    links: [{ label: "lihat paket dan harga", href: "/pricing" }],
+  },
+  {
+    q: "Apakah ada biaya tersembunyi?",
+    a: "Tidak. Harga paket dan, bila ada, pajak ditampilkan transparan sebelum pembayaran. Tidak ada biaya yang muncul setelahnya.",
+  },
+];

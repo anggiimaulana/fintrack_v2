@@ -354,6 +354,14 @@ button:disabled, a:disabled, [role="button"]:disabled {
   .neo-marquee:hover,
   .neo-marquee:focus-within {
     animation: none;
+    /* Turn the moving tape/ticker into a static, wrapped list. */
+    width: auto;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  /* The duplicated half exists only to make the loop seamless. */
+  .neo-marquee-clone {
+    display: none;
   }
   .neo-reveal {
     opacity: 1;

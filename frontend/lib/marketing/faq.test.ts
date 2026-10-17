@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FAQ_CATEGORIES, LANDING_FAQ } from "./faq";
+import { FAQ_CATEGORIES, LANDING_FAQ, PRICING_FAQ } from "./faq";
 
 describe("FAQ_CATEGORIES", () => {
   it("has at least four categories with unique anchors", () => {
@@ -55,5 +55,31 @@ describe("LANDING_FAQ", () => {
     const item = LANDING_FAQ.find((f) => /api key/i.test(f.q));
     expect(item).toBeDefined();
     expect(item?.a.startsWith("Tidak")).toBe(true);
+  });
+});
+
+describe("PRICING_FAQ", () => {
+  it("has eight answer-first items", () => {
+    expect(PRICING_FAQ).toHaveLength(8);
+    PRICING_FAQ.forEach((item) => {
+      expect(item.q.trim().length).toBeGreaterThan(8);
+      expect(item.a.trim().length).toBeGreaterThan(30);
+    });
+  });
+
+  it("never advertises an unavailable feature or false claim", () => {
+    const text = JSON.stringify(PRICING_FAQ).toLowerCase();
+    ["sinkron bank", "bank_sync", "byok", "api key milik", "ribuan pengguna", "tak terbatas"].forEach((bad) => {
+      expect(text).not.toContain(bad);
+    });
+  });
+
+  it("keeps internal links real (no dead anchors)", () => {
+    const hrefs = PRICING_FAQ.flatMap((i) => (i.links ?? []).map((l) => l.href));
+    expect(hrefs.length).toBeGreaterThan(0);
+    hrefs.forEach((href) => {
+      expect(href.startsWith("/")).toBe(true);
+      expect(href).not.toBe("#");
+    });
   });
 });
