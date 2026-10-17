@@ -53,6 +53,7 @@ Baseline `frontend/app/page.tsx` adalah landing satu-file tanpa struktur, dengan
 | 09 | [Strategi Pengujian & QA](09-strategi-pengujian-qa.md) | Matriks uji L1–L5 (unit, DOM, a11y, backend, manual), perintah kanonik, Definition of Done. |
 | 10 | [Mitigasi Risiko](10-mitigasi-risiko.md) | Matriks risiko teknis, keamanan/SEO-black-hat, zero-downtime, rollback, observabilitas. |
 | 11 | [Roadmap Fase 2: Blog CMS](11-roadmap-fase2-blog-cms.md) | Garis besar subsistem blog (skema DB, API, editor admin, rendering publik) untuk brainstorm terpisah. |
+| 12 | [Rencana Eksekusi Granular](12-execution-plan.md) | Versi siap-eksekusi dari dokumen 08: tiap tugas diberi berkas persis, perubahan yang diharapkan, perintah verifikasi, assert wajib, dan checkbox. |
 
 ## 4. Ruang Lingkup
 
