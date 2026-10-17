@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-10-17 — Kontrol AI Reasoning Dinamis, Batas Token CoT & Migrasi 0037
+- **Konteks**: Optimalisasi mode penalaran (thinking/reasoning) pada AI FinTrack v2 untuk mencegah konsumsi kuota berlebih dari Chain-of-Thought (CoT), menyediakan kontrol batas token, serta sakelar aktivasi global yang dapat dikonfigurasi langsung oleh Super Admin.
+- **Aksi**:
+  - **Database (`6c993a8`)**: Migrasi `0037_ai_reasoning_controls.sql` mendaftarkan setting `ai_reasoning_max_tokens` (default 4000 token) dan `ai_reasoning_enabled` (default `true`) di `setting_definitions`, serta menata ulang `group_key` ke `ai_estimate`.
+  - **Backend (`053c4fa`)**: Memperbarui `AIUsecase` dan `ai_gateway_adapter.go` dengan `WithReasoningMaxTokens` dan `WithReasoningEnabled`; meneruskan parameter `max_tokens` ke request gateway dan fallback otomatis ke `LLMFast` bila mode reasoning dinonaktifkan.
+  - **Frontend (`dccd0ec`)**: Memperbarui antarmuka pengguna pada `ChatWindow.tsx` untuk stream event `reasoning`, mengintegrasikan tab `QuotaSettingsTab.tsx` super-admin, menyaring metrik kuota yang tidak di-enforce pada `DualQuotaCard.tsx`, serta merapikan kolom riwayat transaksi dan menambahkan deklarasi type `vitest-axe-matchers.d.ts`.
+- **Hasil Verifikasi**:
+  - `go test ./...` lulus 100% (38 paket PASS).
+  - `pnpm test` lulus 100% (102 file uji PASS).
+  - `pnpm build` sukses (53 static & dynamic routes compiled).
+
+---
+
 ## 2026-10-17 — Eksekusi Lengkap: Situs Marketing & SEO FinTrack v2 (Fase 0 s/d Fase 7)
 - **Konteks**: Eksekusi rencana 7-fase per spesifikasi `second_brain/0_Inbox/ide/marketing-seo-spec/` untuk merombak permukaan publik FinTrack: SEO, konversi, desain neobrutalism, copy akurat (tanpa klaim fiktif/BYOK), dan perlindungan rute privat.
 - **Aksi**:
