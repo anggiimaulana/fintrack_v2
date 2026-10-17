@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Funnel_Display } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
@@ -14,9 +14,47 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+// Display font for marketing headings (spec doc 03 §A.4). Swap the single
+// import below to change it (alts: Lexend_Mega, Baloo_2).
+const display = Funnel_Display({
+  variable: "--font-display",
+  subsets: ["latin"],
+});
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001";
+
 export const metadata: Metadata = {
-  title: "FinTrack - Kelola Keuangan Cerdas",
-  description: "Catat transaksi via teks, suara, atau foto. AI FinTrack memahami bahasa Indonesia dan langsung menyimpan ke database Anda.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "FinTrack — Catat Keuangan Otomatis dengan AI",
+    template: "%s · FinTrack",
+  },
+  description:
+    "FinTrack mencatat transaksi lewat chat, suara, atau foto struk. AI berbahasa Indonesia yang menyimpan rapi dan menganalisis kondisi keuangan Anda.",
+  applicationName: "FinTrack",
+  keywords: [
+    "aplikasi pencatat keuangan",
+    "catat keuangan otomatis",
+    "catat pengeluaran",
+    "scan struk otomatis",
+    "analisis keuangan pribadi",
+    "aplikasi keuangan AI",
+  ],
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    siteName: "FinTrack",
+    url: siteUrl,
+    title: "FinTrack — Catat Keuangan Otomatis dengan AI",
+    description:
+      "Catat transaksi lewat chat, suara, atau foto struk. AI berbahasa Indonesia.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "FinTrack — Catat Keuangan Otomatis dengan AI",
+    description:
+      "Catat transaksi lewat chat, suara, atau foto struk. AI berbahasa Indonesia.",
+  },
 };
 
 // `viewportFit: "cover"` lets the mobile bottom navigation extend into the
@@ -37,7 +75,7 @@ export default function RootLayout({
     <html
       lang="id"
       suppressHydrationWarning
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${display.variable} h-full antialiased`}
     >
       <head>
         {/* Anti-flash: apply the stored theme before first paint. This lives in
