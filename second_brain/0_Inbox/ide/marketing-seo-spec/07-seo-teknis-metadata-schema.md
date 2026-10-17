@@ -61,14 +61,14 @@ Setiap halaman mendefinisikan `title`, `description`, dan `alternates.canonical`
 | Rute | title | canonical |
 |------|-------|-----------|
 | `/` | (default) | `/` |
-| `/harga` | Harga FinTrack — Paket Gratis, Pro, dan Business | `/harga` |
-| `/fitur` | Fitur FinTrack — AI, OCR Struk, Suara, Laporan | `/fitur` |
-| `/fitur/{slug}` | {Judul} — FinTrack | `/fitur/{slug}` |
-| `/tentang` | Tentang FinTrack — Misi & Prinsip | `/tentang` |
-| `/kontak` | Kontak FinTrack — Bantuan & Pertanyaan | `/kontak` |
+| `/pricing` | Harga FinTrack — Paket Gratis, Pro, dan Business | `/pricing` |
+| `/features` | Fitur FinTrack — AI, OCR Struk, Suara, Laporan | `/features` |
+| `/features/{slug}` | {Judul} — FinTrack | `/features/{slug}` |
+| `/about` | Tentang FinTrack — Misi & Prinsip | `/about` |
+| `/contact` | Kontak FinTrack — Bantuan & Pertanyaan | `/contact` |
 | `/faq` | Pertanyaan Umum (FAQ) — FinTrack | `/faq` |
-| `/privasi` | Kebijakan Privasi — FinTrack | `/privasi` |
-| `/syarat` | Syarat & Ketentuan — FinTrack | `/syarat` |
+| `/privacy` | Kebijakan Privasi — FinTrack | `/privacy` |
+| `/terms` | Syarat & Ketentuan — FinTrack | `/terms` |
 
 Aturan:
 
@@ -90,7 +90,7 @@ export const alt = "FinTrack — Catat Keuangan Otomatis dengan AI";
 export default function OpengraphImage() {
   return new ImageResponse(
     (
-      <div style={{ /* neo-brutalist: latar gelap, border tebal, aksen primer */ }}>
+      <div style={{ /* neo-brutalist: latar surface-dark, border tebal, aksen kuning asam + biru primer */ }}>
         <div style={{ fontSize: 64, fontWeight: 900, color: "#fff" }}>
           Catat Keuangan Otomatis dengan AI
         </div>
@@ -106,7 +106,7 @@ export default function OpengraphImage() {
 
 - Warna & gaya mengikuti token neo-brutalist (`globals.css`).
 - Teks harus memuat kata kunci utama.
-- Halaman `/harga` boleh punya OG image khusus ("Paket mulai gratis").
+- Halaman `/pricing` boleh punya OG image khusus ("Paket mulai gratis").
 
 ## 4. `robots.ts`
 
@@ -146,16 +146,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${siteUrl}/`, changeFrequency: "weekly", priority: 1.0, lastModified: now },
-    { url: `${siteUrl}/harga`, changeFrequency: "weekly", priority: 0.9, lastModified: now },
-    { url: `${siteUrl}/fitur`, changeFrequency: "monthly", priority: 0.8, lastModified: now },
+    { url: `${siteUrl}/pricing`, changeFrequency: "weekly", priority: 0.9, lastModified: now },
+    { url: `${siteUrl}/features`, changeFrequency: "monthly", priority: 0.8, lastModified: now },
     { url: `${siteUrl}/faq`, changeFrequency: "monthly", priority: 0.7, lastModified: now },
-    { url: `${siteUrl}/tentang`, changeFrequency: "yearly", priority: 0.5, lastModified: now },
-    { url: `${siteUrl}/kontak`, changeFrequency: "yearly", priority: 0.5, lastModified: now },
-    { url: `${siteUrl}/privasi`, changeFrequency: "yearly", priority: 0.3, lastModified: now },
-    { url: `${siteUrl}/syarat`, changeFrequency: "yearly", priority: 0.3, lastModified: now },
+    { url: `${siteUrl}/about`, changeFrequency: "yearly", priority: 0.5, lastModified: now },
+    { url: `${siteUrl}/contact`, changeFrequency: "yearly", priority: 0.5, lastModified: now },
+    { url: `${siteUrl}/privacy`, changeFrequency: "yearly", priority: 0.3, lastModified: now },
+    { url: `${siteUrl}/terms`, changeFrequency: "yearly", priority: 0.3, lastModified: now },
   ];
   const featureRoutes: MetadataRoute.Sitemap = FEATURES.map((f) => ({
-    url: `${siteUrl}/fitur/${f.slug}`,
+    url: `${siteUrl}/features/${f.slug}`,
     changeFrequency: "monthly",
     priority: 0.7,
     lastModified: now,
@@ -206,7 +206,7 @@ Komponen `JsonLd` (server) merender `<script type="application/ld+json">` dengan
 >
 > **Aset `logo` wajib ada.** Google mengharapkan logo raster yang valid. Tambahkan `public/logo.png` (mis. 512×512) sebagai bagian dari Fase 6; sampai aset tersedia, `Organization.logo` harus menunjuk ke berkas yang benar-benar ada agar tidak menjadi URL 404. Alternatif tanpa aset statis: buat `app/icon.tsx` (ImageResponse) untuk ikon situs.
 
-### 6.2 `Product` + `Offer` (`/harga`)
+### 6.2 `Product` + `Offer` (`/pricing`)
 
 ```json
 {
@@ -216,26 +216,26 @@ Komponen `JsonLd` (server) merender `<script type="application/ld+json">` dengan
   "description": "Aplikasi pencatat keuangan otomatis dengan AI berbahasa Indonesia.",
   "brand": { "@type": "Brand", "name": "FinTrack" },
   "offers": [
-    { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "IDR", "url": "https://<domain>/harga", "availability": "https://schema.org/InStock" },
-    { "@type": "Offer", "name": "Pro", "price": "39000", "priceCurrency": "IDR", "url": "https://<domain>/harga", "availability": "https://schema.org/InStock" },
-    { "@type": "Offer", "name": "Business", "price": "129000", "priceCurrency": "IDR", "url": "https://<domain>/harga", "availability": "https://schema.org/InStock" }
+    { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "IDR", "url": "https://<domain>/pricing", "availability": "https://schema.org/InStock" },
+    { "@type": "Offer", "name": "Pro", "price": "39000", "priceCurrency": "IDR", "url": "https://<domain>/pricing", "availability": "https://schema.org/InStock" },
+    { "@type": "Offer", "name": "Business", "price": "129000", "priceCurrency": "IDR", "url": "https://<domain>/pricing", "availability": "https://schema.org/InStock" }
   ]
 }
 ```
 
 - Harga **dibangkitkan dari data endpoint** (bukan angka hardcode) agar selalu konsisten.
-- **Kebijakan pajak (eksplisit & final):** `price` pada `Offer` = **subtotal, belum termasuk pajak** — selaras dengan tampilan kartu di `/harga` (dokumen 04 §A.2). Bila `tax_enabled`, sebutkan di `description` bahwa pajak ditambahkan saat checkout; jangan memasukkan pajak ke `price`.
+- **Kebijakan pajak (eksplisit & final):** `price` pada `Offer` = **subtotal, belum termasuk pajak** — selaras dengan tampilan kartu di `/pricing` (dokumen 04 §A.2). Bila `tax_enabled`, sebutkan di `description` bahwa pajak ditambahkan saat checkout; jangan memasukkan pajak ke `price`.
 
 ### 6.3 `BreadcrumbList` (halaman anak)
 
-Dibangkitkan `Breadcrumbs` dari `siteUrl` + label, mis. `/fitur/scan-struk`:
+Dibangkitkan `Breadcrumbs` dari `siteUrl` + label, mis. `/features/receipt-scan`:
 Beranda › Fitur › Pindai Struk Otomatis.
 
 ### 6.4 `AboutPage`, `ContactPage`, `WebPage`
 
-- `/tentang`: `AboutPage` dengan `mainEntity` → `Organization`.
-- `/kontak`: `ContactPage` + `ContactPoint`.
-- `/faq`, `/privasi`, `/syarat`: `WebPage` sederhana dengan `inLanguage: "id-ID"`.
+- `/about`: `AboutPage` dengan `mainEntity` → `Organization`.
+- `/contact`: `ContactPage` + `ContactPoint`.
+- `/faq`, `/privacy`, `/terms`: `WebPage` sederhana dengan `inLanguage: "id-ID"`.
 
 ### 6.5 Yang **tidak** dipakai
 
@@ -246,7 +246,7 @@ Beranda › Fitur › Pindai Struk Otomatis.
 
 | Metrik | Target | Strategi |
 |--------|--------|----------|
-| LCP | < 2.5s | Hero tanpa gambar raster besar; teks H1 sebagai elemen LCP; font sudah via `next/font` (self-hosted, tanpa layout shift). |
+| LCP | < 2.5s | Hero tanpa gambar raster besar; teks H1 sebagai elemen LCP; font via `next/font` (self-hosted, subset `latin`, tanpa layout shift) termasuk font display heading. |
 | CLS | < 0.1 | Ruang kartu harga dipesan (skeleton/min-height) saat data ISR termuat; tanpa iklan/embed yang menyisipkan konten. |
 | INP | < 200ms | JS klien minimal (header, akordeon, toggle harga); tanpa library animasi. |
 | TTFB | rendah | Halaman statis/ISR disajikan dari cache Next. |
@@ -261,11 +261,11 @@ Praktik:
 
 | Rute | Mode | Alasan |
 |------|------|--------|
-| `/`, `/fitur`, `/fitur/{slug}`, `/tentang`, `/kontak`, `/faq`, `/privasi`, `/syarat` | Statis (SSG) | Konten stabil, tanpa data pengguna. Sub-fitur memakai `generateStaticParams`. |
-| `/harga` | ISR (`revalidate: 3600`) | Bergantung katalog paket dari backend. |
-| Landing (teaser harga) | ISR (`revalidate: 3600`) | Sama seperti `/harga`. |
+| `/`, `/features`, `/features/{slug}`, `/about`, `/contact`, `/faq`, `/privacy`, `/terms` | Statis (SSG) | Konten stabil, tanpa data pengguna. Sub-fitur memakai `generateStaticParams`. |
+| `/pricing` | ISR (`revalidate: 3600`) | Bergantung katalog paket dari backend. |
+| Landing (teaser harga) | ISR (`revalidate: 3600`) | Sama seperti `/pricing`. |
 
-`dynamicParams = false` pada `/fitur/[slug]` agar slug tak dikenal menghasilkan 404, bukan halaman kosong.
+`dynamicParams = false` pada `/features/[slug]` agar slug tak dikenal menghasilkan 404, bukan halaman kosong.
 
 ## 9. Kesiapan GEO / AI Search
 

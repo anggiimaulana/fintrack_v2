@@ -2,7 +2,7 @@
 
 Dokumen ini adalah versi **siap-eksekusi** dari [`08-implementation-plan.md`](./08-implementation-plan.md): setiap tugas diberi berkas persis, perubahan yang diharapkan, perintah verifikasi, dan bukti selesai. Berkas ini menjadi acuan kerja implementasi Fase 1.
 
-> Berkas ini tidak mengubah keputusan desain. Bila terjadi pertentangan, dokumen 02–07 yang berlaku.
+> Berkas ini tidak mengubah keputusan desain. Bila terjadi pertentangan, dokumen 02–07 dan **13** yang berlaku.
 
 ---
 
@@ -30,7 +30,7 @@ Dokumen ini adalah versi **siap-eksekusi** dari [`08-implementation-plan.md`](./
 
 ```ts
 const PUBLIC_PREFIXES = [
-  '/harga', '/fitur', '/tentang', '/kontak', '/faq', '/privasi', '/syarat',
+  '/pricing', '/features', '/about', '/contact', '/faq', '/privacy', '/terms',
 ] as const;
 
 /** True bila pathname boleh diakses tanpa sesi (permukaan marketing publik). */
@@ -61,17 +61,17 @@ cd frontend && pnpm test -- lib/roles.test.ts
 
 | name | pathname | hasSession | hasRefresh | expected |
 |------|----------|-----------|-----------|----------|
-| anon on /harga -> pass | `/harga` | false | — | `"pass"` |
-| anon on /fitur -> pass | `/fitur` | false | — | `"pass"` |
-| anon on /fitur/scan-struk -> pass | `/fitur/scan-struk` | false | — | `"pass"` |
-| anon on /tentang -> pass | `/tentang` | false | — | `"pass"` |
-| anon on /kontak -> pass | `/kontak` | false | — | `"pass"` |
+| anon on /pricing -> pass | `/pricing` | false | — | `"pass"` |
+| anon on /features -> pass | `/features` | false | — | `"pass"` |
+| anon on /features/receipt-scan -> pass | `/features/receipt-scan` | false | — | `"pass"` |
+| anon on /about -> pass | `/about` | false | — | `"pass"` |
+| anon on /contact -> pass | `/contact` | false | — | `"pass"` |
 | anon on /faq -> pass | `/faq` | false | — | `"pass"` |
-| anon on /privasi -> pass | `/privasi` | false | — | `"pass"` |
-| anon on /syarat -> pass | `/syarat` | false | — | `"pass"` |
-| anon on /hargax -> redirect-login (segmentasi) | `/hargax` | false | — | `"redirect-login"` |
-| anon on /fiturx -> redirect-login | `/fiturx` | false | — | `"redirect-login"` |
-| authenticated user on /harga -> pass | `/harga` | true, valid | — | `"pass"` |
+| anon on /privacy -> pass | `/privacy` | false | — | `"pass"` |
+| anon on /terms -> pass | `/terms` | false | — | `"pass"` |
+| anon on /pricingx -> redirect-login (segmentasi) | `/pricingx` | false | — | `"redirect-login"` |
+| anon on /featuresx -> redirect-login | `/featuresx` | false | — | `"redirect-login"` |
+| authenticated user on /pricing -> pass | `/pricing` | true, valid | — | `"pass"` |
 
 **Verifikasi:** `cd frontend && pnpm test -- lib/roles.test.ts`
 
@@ -166,10 +166,12 @@ cd backend && go vet ./... && go build ./...
 | 1.3 | Data 6 fitur + isi sub-halaman | `lib/marketing/features.ts` | `pnpm test -- lib/marketing/features.test.ts` |
 | 1.4 | Data FAQ berkelompok | `lib/marketing/faq.ts` | `pnpm test -- lib/marketing/faq.test.ts` |
 | 1.5 | Data legal (privasi & syarat) | `lib/marketing/legal.ts` | `pnpm test -- lib/marketing/legal.test.ts` |
-| 1.6 | Helper metadata + JSON-LD builder | `lib/seo.ts` | `pnpm test -- lib/seo.test.ts` |
-| 1.7 | `JsonLd`, `Breadcrumbs`, `SectionHeading` | `components/marketing/*` | `pnpm build` |
-| 1.8 | `MarketingHeader` (client) + `MarketingFooter` | `components/marketing/*` | `pnpm test -- components/marketing/MarketingHeader.dom.test.tsx` |
-| 1.9 | Tes data konten | `lib/marketing/*.test.ts` | `pnpm test` |
+| 1.6 | Naskah copy landing & CTA | `lib/marketing/copy.ts` | `pnpm test -- lib/marketing/copy.test.ts` |
+| 1.7 | Helper metadata + JSON-LD builder | `lib/seo.ts` | `pnpm test -- lib/seo.test.ts` |
+| 1.8 | `JsonLd`, `Breadcrumbs`, `SectionHeading` | `components/marketing/*` | `pnpm build` |
+| 1.9 | `MarketingHeader` (client) + `MarketingFooter` | `components/marketing/*` | `pnpm test -- components/marketing/MarketingHeader.dom.test.tsx` |
+| 1.10 | Tes data konten (fitur/FAQ/copy) | `lib/marketing/*.test.ts` | `pnpm test` |
+| 1.11 | Token visual neobrutalism (aksen kuning asam/merah, token motion, kelas `.neo-*`) + font display heading | `frontend/app/globals.css`, `frontend/app/layout.tsx` | `pnpm build`; `--font-display` terhubung ke `--font-heading` |
 
 **Kriteria:** header/footer merender; data lengkap & tervalidasi; tidak ada `href="#"`.
 
@@ -180,18 +182,19 @@ cd backend && go vet ./... && go build ./...
 | ID | Aksi | Berkas | Verifikasi |
 |----|------|--------|-----------|
 | 2.1 | Pindahkan landing ke group marketing; `git rm frontend/app/page.tsx` | `app/(marketing)/page.tsx` | `pnpm build` |
-| 2.2 | `Hero` + `ProductMockup` (copy dikoreksi) | `components/marketing/Hero.tsx`, `ProductMockup.tsx` | DOM test |
-| 2.3 | `TrustBar` (4 klaim faktual) | `components/marketing/TrustBar.tsx` | DOM test |
-| 2.4 | `FeatureGrid` + section masalah→solusi | `components/marketing/FeatureGrid.tsx` | DOM test |
-| 2.5 | `HowItWorks` (3 langkah baru) | `components/marketing/HowItWorks.tsx` | DOM test |
-| 2.6 | `SpkHighlight` | `components/marketing/SpkHighlight.tsx` | DOM test |
-| 2.7 | `PricingTeaser` (props dari `fetchPublicPlans`) | `components/marketing/PricingTeaser.tsx` | DOM test (data kosong → tombol) |
-| 2.8 | `PersonaUseCases` (pengganti testimoni) | `components/marketing/PersonaUseCases.tsx` | DOM test |
-| 2.9 | `FaqAccordion` (`<details>`) + `CtaSection` | `components/marketing/*` | DOM + a11y test |
-| 2.10 | Rakit landing + anchor `#harga`/`#cara-kerja` + metadata | `app/(marketing)/page.tsx` | `pnpm build`; cek anchor |
-| 2.11 | DOM + a11y test landing | `components/marketing/*.dom.test.tsx`, `*.a11y.test.tsx` | `pnpm test` |
+| 2.2 | `Hero` + `InteractiveDemo` (tab Chat/Suara/Struk, mock data; copy dari `lib/marketing/copy.ts`) | `components/marketing/Hero.tsx`, `InteractiveDemo.tsx` | DOM test |
+| 2.3 | Elemen khas: `ReceiptTapeMarquee`, `TickerBand`, `StatCounters`, `Reveal` (hormat `prefers-reduced-motion`) | `components/marketing/*` | DOM + a11y test |
+| 2.4 | `TrustBar` (4 klaim faktual) | `components/marketing/TrustBar.tsx` | DOM test |
+| 2.5 | `ProblemSolution` + `FeatureGrid` | `components/marketing/ProblemSolution.tsx`, `FeatureGrid.tsx` | DOM test |
+| 2.6 | `HowItWorks` (3 langkah baru) | `components/marketing/HowItWorks.tsx` | DOM test |
+| 2.7 | `SpkHighlight` | `components/marketing/SpkHighlight.tsx` | DOM test |
+| 2.8 | `PricingTeaser` (props dari `fetchPublicPlans`) | `components/marketing/PricingTeaser.tsx` | DOM test (data kosong → tombol) |
+| 2.9 | `PersonaUseCases` (pengganti testimoni) | `components/marketing/PersonaUseCases.tsx` | DOM test |
+| 2.10 | `FaqAccordion` (`<details>`) + `CtaSection` | `components/marketing/*` | DOM + a11y test |
+| 2.11 | Rakit landing + anchor `#pricing`/`#how-it-works` + metadata | `app/(marketing)/page.tsx` | `pnpm build`; cek anchor |
+| 2.12 | DOM + a11y test landing | `components/marketing/*.dom.test.tsx`, `*.a11y.test.tsx` | `pnpm test` |
 
-**Assertion wajib:** tidak ada string "API Key"/"API key" pada konten landing; tidak ada nama "Budi Santoso"/"Siti Aminah"/"Andi Wijaya"; tidak ada "ribuan pengguna".
+**Assertion wajib:** tidak ada string "API Key"/"API key" pada konten landing; tidak ada nama "Budi Santoso"/"Siti Aminah"/"Andi Wijaya"; tidak ada "ribuan pengguna"; marquee/ticker ber-`aria-hidden` dan berhenti pada `prefers-reduced-motion`; aksen kuning asam tidak pernah dipasangkan dengan teks putih.
 
 **Kriteria:** tidak ada anchor mati; klaim akurat; a11y hijau.
 
@@ -199,36 +202,36 @@ cd backend && go vet ./... && go build ./...
 
 ## 5. Fase 3–5 — Halaman Publik
 
-### Fase 3 — `/harga`
+### Fase 3 — `/pricing`
 
 | ID | Aksi | Berkas | Verifikasi |
 |----|------|--------|-----------|
 | 3.1 | `PricingCards` (client, toggle siklus, `-1` → "Tanpa batas") | `components/marketing/PricingCards.tsx` | DOM test |
 | 3.2 | `ComparisonTable` (fitur + limit enforced) | `components/marketing/ComparisonTable.tsx` | DOM test; assert `max_categories`/`max_wallets` absen |
-| 3.3 | Halaman `/harga` + FAQ + schema `Product`/`Offer` | `app/(marketing)/harga/page.tsx` | `pnpm build` |
-| 3.4 | Fallback katalog gagal (pesan + `router.refresh()`) | `app/(marketing)/harga/page.tsx` | DOM test |
+| 3.3 | Halaman `/pricing` + FAQ + schema `Product`/`Offer` | `app/(marketing)/pricing/page.tsx` | `pnpm build` |
+| 3.4 | Fallback katalog gagal (pesan + `router.refresh()`) | `app/(marketing)/pricing/page.tsx` | DOM test |
 | 3.5 | A11y test | `components/marketing/*.a11y.test.tsx` | `pnpm test` |
 
 **Assertion wajib:** teks "Bank" / "bank_sync" tidak muncul; pajak hanya muncul bila `tax_enabled`.
 
-### Fase 4 — `/fitur` & sub-halaman
+### Fase 4 — `/features` & sub-halaman
 
 | ID | Aksi | Berkas | Verifikasi |
 |----|------|--------|-----------|
-| 4.1 | Hub `/fitur` (6 kartu) | `app/(marketing)/fitur/page.tsx` | `pnpm build` |
-| 4.2 | Sub-halaman dinamis + `generateStaticParams` + `dynamicParams=false` | `app/(marketing)/fitur/[slug]/page.tsx` | `pnpm build`; slug ngawur → 404 |
+| 4.1 | Hub `/features` (6 kartu) | `app/(marketing)/features/page.tsx` | `pnpm build` |
+| 4.2 | Sub-halaman dinamis + `generateStaticParams` + `dynamicParams=false` | `app/(marketing)/features/[slug]/page.tsx` | `pnpm build`; slug ngawur → 404 |
 | 4.3 | Isi 6 sub-halaman (≥300 kata unik) | `lib/marketing/features.ts` | review manual + tes kelengkapan |
-| 4.4 | "Fitur terkait" + badge paket | `app/(marketing)/fitur/[slug]/page.tsx` | DOM test |
-| 4.5 | DOM test hub & sub-halaman | `app/(marketing)/fitur/*.dom.test.tsx` | `pnpm test` |
+| 4.4 | "Fitur terkait" + badge paket | `app/(marketing)/features/[slug]/page.tsx` | DOM test |
+| 4.5 | DOM test hub & sub-halaman | `app/(marketing)/features/*.dom.test.tsx` | `pnpm test` |
 
 ### Fase 5 — Halaman pendukung
 
 | ID | Aksi | Berkas | Verifikasi |
 |----|------|--------|-----------|
-| 5.1 | `/tentang` | `app/(marketing)/tentang/page.tsx` | `pnpm build` |
-| 5.2 | `/kontak` (mailto/wa.me dari `site.ts`) | `app/(marketing)/kontak/page.tsx` | DOM test (href benar) |
+| 5.1 | `/about` | `app/(marketing)/about/page.tsx` | `pnpm build` |
+| 5.2 | `/contact` (mailto/wa.me dari `site.ts`) | `app/(marketing)/contact/page.tsx` | DOM test (href benar) |
 | 5.3 | `/faq` | `app/(marketing)/faq/page.tsx` | DOM test |
-| 5.4 | `LegalPage` + `/privasi` + `/syarat` | `app/(marketing)/privasi/page.tsx`, `syarat/page.tsx` | `pnpm build` |
+| 5.4 | `LegalPage` + `/privacy` + `/terms` | `app/(marketing)/privacy/page.tsx`, `terms/page.tsx` | `pnpm build` |
 | 5.5 | A11y test halaman pendukung | `app/(marketing)/**/*.a11y.test.tsx` | `pnpm test` |
 
 ---
@@ -269,7 +272,7 @@ Terakhir: perbarui `second_brain/1_Digest/Tugas-Rutin/log_aktivitas.md`.
 | # | Cakupan | Pesan contoh |
 |---|---------|--------------|
 | 1 | Fase 0 | `fix(auth): izinkan rute marketing publik + endpoint publik paket` |
-| 2 | Fase 1 | `feat(marketing): struktur route group, layout, dan data konten` |
+| 2 | Fase 1 | `feat(marketing): struktur route group, design system neobrutalism, dan data konten` |
 | 3 | Fase 2 | `feat(marketing): rombak landing page (SEO, copy akurat, CTA)` |
 | 4 | Fase 3 | `feat(marketing): halaman harga + tabel komparasi paket` |
 | 5 | Fase 4 | `feat(marketing): halaman fitur + 6 sub-halaman` |
@@ -293,10 +296,10 @@ Catatan: repo saat ini memiliki perubahan tertunda yang tidak terkait Fase 1 (ba
 - [ ] 0.8 tipe `PublicPlan` disatukan
 
 **Fase 1–5**
-- [ ] 1.1–1.9 struktur & data konten
-- [ ] 2.1–2.11 landing page
-- [ ] 3.1–3.5 halaman `/harga`
-- [ ] 4.1–4.5 halaman `/fitur` + sub-halaman
+- [ ] 1.1–1.11 struktur, design system & data konten
+- [ ] 2.1–2.12 landing page
+- [ ] 3.1–3.5 halaman `/pricing`
+- [ ] 4.1–4.5 halaman `/features` + sub-halaman
 - [ ] 5.1–5.5 halaman pendukung
 
 **Fase 6–7**
@@ -309,7 +312,10 @@ Catatan: repo saat ini memiliki perubahan tertunda yang tidak terkait Fase 1 (ba
 
 ## 10. Guardrails (Ringkas)
 
-- Tidak menyentuh `frontend/proxy.ts`, `next.config.ts`, `app/(auth)/*`, `app/(dashboard)/*`, `globals.css`.
+- Tidak menyentuh `frontend/proxy.ts`, `next.config.ts`, `app/(auth)/*`, `app/(dashboard)/*`.
+- Tidak memakai gradien, blur, atau `shadow-lg`/`shadow-xl`; hanya hard shadow 3/4/6px.
+- Tidak memakai emoji; hanya ikon `lucide-react`.
+- Sudut tetap membulat (`rounded-md`/`lg`) — tidak dilancipkan.
 - Tidak mengubah `/api/v1/plans` yang terproteksi.
 - Tidak menambah dependensi runtime baru.
 - Tidak memakai `FAQPage`/`Review`/`AggregateRating`.

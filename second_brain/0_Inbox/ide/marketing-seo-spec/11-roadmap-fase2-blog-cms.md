@@ -36,7 +36,7 @@ Dokumen ini adalah **garis besar** untuk Fase 2 (Blog berbasis database + editor
 - Tambahkan rute blog ke `app/sitemap.ts` (sudah dirancang untuk diperluas di Fase 1).
 - `robots.ts`: pastikan `/blog` publik dapat diindeks.
 - Editor admin: form tulis (judul, slug, excerpt, body, cover, status, SEO), pratinjau, simpan draf/publish.
-- Internal linking: artikel menautkan ke `/fitur/*` dan `/harga`.
+- Internal linking: artikel menautkan ke `/features/*` dan `/pricing`.
 
 ### 2.3 E-E-A-T
 

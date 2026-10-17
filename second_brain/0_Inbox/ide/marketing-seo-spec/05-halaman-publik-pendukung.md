@@ -1,10 +1,12 @@
 # 05 — Halaman Pendukung Publik
 
-Dokumen ini merinci `/tentang`, `/kontak`, `/faq`, `/privasi`, dan `/syarat`: konten, struktur, metadata, dan schema. Kelima halaman ini adalah fondasi sinyal **Trustworthiness** dan **Authoritativeness** (E-E-A-T) sekaligus permukaan penangkapan intent informasional.
+Dokumen ini merinci `/about`, `/contact`, `/faq`, `/privacy`, dan `/terms`: konten, struktur, metadata, dan schema. Kelima halaman ini adalah fondasi sinyal **Trustworthiness** dan **Authoritativeness** (E-E-A-T) sekaligus permukaan penangkapan intent informasional.
+
+> **Gaya & nada (mengikuti dokumen 03):** visual neobrutalism (border 3px, hard shadow 6px, sudut membulat, aksen kuning asam/merah). Nada **kalem & profesional** dan sangat relevan di sini: kelima halaman ini adalah permukaan kepercayaan, sehingga setiap klaim harus faktual, tenang, dan tanpa hiperbola. `lang="id"` (konten Indonesia) meski URL berbahasa Inggris.
 
 ---
 
-## 1. `/tentang` — Tentang FinTrack
+## 1. `/about` — Tentang FinTrack
 
 ### 1.1 Tujuan
 
@@ -18,8 +20,8 @@ Membangun kepercayaan: siapa yang membuat produk, apa prinsipnya, dan bagaimana 
 | 2 | Misi | "Membuat pencatatan keuangan semudah mengobrol — tanpa mengorbankan privasi dan kejelasan." |
 | 3 | Cara kerja teknis (ringkas, jujur) | Arsitektur tingkat tinggi: aplikasi web + AI Gateway terpusat + basis data PostgreSQL; tanpa klaim berlebihan. |
 | 4 | Prinsip produk | 4 poin: Akurasi, Privasi (isolasi per akun), Transparansi kuota, Kendali data (ekspor/hapus). |
-| 5 | Untuk siapa | Tautan ke section persona di landing (`/#untuk-siapa`). |
-| 6 | Kontak | Ringkas + tautan ke `/kontak`. |
+| 5 | Untuk siapa | Tautan ke section persona di landing (`/#who-its-for`). |
+| 6 | Kontak | Ringkas + tautan ke `/contact`. |
 | 7 | CTA | `Mulai Gratis`. |
 
 > **Aturan kejujuran:** jangan mengarang sejarah perusahaan, jumlah tim, atau pendanaan. Bila informasi korporat belum final, gunakan pernyataan yang benar-benar berlaku (mis. "FinTrack dikembangkan oleh tim produk perangkat lunak keuangan.") tanpa detail fiktif. Bagian "Tim" hanya diisi bila ada data nyata.
@@ -28,12 +30,12 @@ Membangun kepercayaan: siapa yang membuat produk, apa prinsipnya, dan bagaimana 
 
 - `title`: "Tentang FinTrack — Misi & Prinsip"
 - `description`: "Misi FinTrack: pencatatan keuangan semudah mengobrol, dengan privasi dan transparansi kuota."
-- `canonical`: `/tentang`
+- `canonical`: `/about`
 - JSON-LD: `AboutPage` + `Organization` (nama, url, logo, kontak) + `BreadcrumbList`.
 
 ---
 
-## 2. `/kontak` — Kontak
+## 2. `/contact` — Kontak
 
 ### 2.1 Tujuan
 
@@ -75,7 +77,7 @@ export const site = {
 
 - `title`: "Kontak FinTrack — Bantuan & Pertanyaan"
 - `description`: "Hubungi tim FinTrack lewat email atau WhatsApp. Lihat juga FAQ, harga, dan panduan fitur."
-- `canonical`: `/kontak`
+- `canonical`: `/contact`
 - JSON-LD: `ContactPage` + `Organization.contactPoint` (email, dan jenis kontak) + `BreadcrumbList`.
 
 ---
@@ -101,7 +103,7 @@ Empat kelompok, tiap jawaban diawali **jawaban langsung** (answer-first) baru de
 
 - **Answer-first:** kalimat pertama menjawab langsung; 1–2 baris. Contoh: "Ya. Paket Free bisa dipakai tanpa batas waktu untuk mulai mencatat." 
 - Akurasi: rujuk perilaku nyata (downgrade berlaku di akhir periode, verifikasi manual oleh admin).
-- Tautan kontekstual ke `/harga`, `/fitur/*`, `/privasi`, `/kontak`.
+- Tautan kontekstual ke `/pricing`, `/features/*`, `/privacy`, `/contact`.
 - Panjang jawaban 40–120 kata.
 
 ### 3.4 Implementasi
@@ -119,7 +121,7 @@ Empat kelompok, tiap jawaban diawali **jawaban langsung** (answer-first) baru de
 
 ---
 
-## 4. `/privasi` — Kebijakan Privasi
+## 4. `/privacy` — Kebijakan Privasi
 
 ### 4.1 Tujuan
 
@@ -139,7 +141,7 @@ Kepatuhan UU PDP dan bukti Trustworthiness. Harus **spesifik pada produk nyata**
 | 8 | Keamanan | Kontrol akses berbasis peran, isolasi data per akun, enkripsi kredensial gateway. |
 | 9 | Anak-anak | Pernyataan kelayakan usia. |
 | 10 | Perubahan kebijakan | Cara memberitahukan perubahan + tanggal berlaku. |
-| 11 | Kontak privasi | Tautan ke `/kontak`. |
+| 11 | Kontak privasi | Tautan ke `/contact`. |
 
 ### 4.3 Aturan kejujuran
 
@@ -151,11 +153,11 @@ Kepatuhan UU PDP dan bukti Trustworthiness. Harus **spesifik pada produk nyata**
 
 - `title`: "Kebijakan Privasi — FinTrack"
 - `description`: "Bagaimana FinTrack mengumpulkan, memakai, dan melindungi data Anda; serta hak akses, ekspor, dan penghapusan."
-- `canonical`: `/privasi`; halaman **diizinkan diindeks** (penting untuk trust).
+- `canonical`: `/privacy`; halaman **diizinkan diindeks** (penting untuk trust).
 
 ---
 
-## 5. `/syarat` — Syarat & Ketentuan
+## 5. `/terms` — Syarat & Ketentuan
 
 ### 5.1 Bagian wajib
 
@@ -170,13 +172,13 @@ Kepatuhan UU PDP dan bukti Trustworthiness. Harus **spesifik pada produk nyata**
 | 7 | Batasan tanggung jawab | Sesuai praktik umum; tanpa jaminan berlebihan. |
 | 8 | Penghentian | Kapan akun dapat ditangguhkan/ditutup. |
 | 9 | Perubahan syarat | Cara pemberitahuan. |
-| 10 | Hukum yang berlaku & kontak | Yurisdiksi Indonesia + tautan `/kontak`. |
+| 10 | Hukum yang berlaku & kontak | Yurisdiksi Indonesia + tautan `/contact`. |
 
 ### 5.2 Metadata
 
 - `title`: "Syarat & Ketentuan — FinTrack"
 - `description`: "Ketentuan penggunaan layanan FinTrack: akun, langganan, pembayaran, kuota AI, dan tanggung jawab."
-- `canonical`: `/syarat`; diizinkan diindeks.
+- `canonical`: `/terms`; diizinkan diindeks.
 
 ---
 
@@ -192,11 +194,11 @@ Kepatuhan UU PDP dan bukti Trustworthiness. Harus **spesifik pada produk nyata**
 
 | Rute | title | Schema |
 |------|-------|--------|
-| `/tentang` | Tentang FinTrack — Misi & Prinsip | `AboutPage`, `Organization`, `BreadcrumbList` |
-| `/kontak` | Kontak FinTrack — Bantuan & Pertanyaan | `ContactPage`, `BreadcrumbList` |
+| `/about` | Tentang FinTrack — Misi & Prinsip | `AboutPage`, `Organization`, `BreadcrumbList` |
+| `/contact` | Kontak FinTrack — Bantuan & Pertanyaan | `ContactPage`, `BreadcrumbList` |
 | `/faq` | Pertanyaan Umum (FAQ) — FinTrack | `WebPage`, `BreadcrumbList` |
-| `/privasi` | Kebijakan Privasi — FinTrack | `WebPage` |
-| `/syarat` | Syarat & Ketentuan — FinTrack | `WebPage` |
+| `/privacy` | Kebijakan Privasi — FinTrack | `WebPage` |
+| `/terms` | Syarat & Ketentuan — FinTrack | `WebPage` |
 
 ## 8. Kriteria Selesai Halaman Pendukung
 

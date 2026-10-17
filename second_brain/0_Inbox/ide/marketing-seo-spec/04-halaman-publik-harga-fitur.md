@@ -1,10 +1,12 @@
 # 04 — Halaman Harga & Fitur
 
-Dokumen ini merinci dua permukaan SEO paling penting setelah beranda: `/harga` (pembalik keberatan + konversi) dan `/fitur` beserta enam sub-halamannya (penangkapan long-tail intent).
+Dokumen ini merinci dua permukaan SEO paling penting setelah beranda: `/pricing` (pembalik keberatan + konversi) dan `/features` beserta enam sub-halamannya (penangkapan long-tail intent).
+
+> **Gaya & nada (mengikuti dokumen 03):** visual neobrutalism — border 3px, hard shadow 6px, sudut **membulat**, aksen **kuning asam** untuk CTA/highlight, **merah** hanya untuk masalah/peringatan. Copy **kalem & profesional**: kalimat jelas, tanpa hiperbola, tanpa klaim yang tidak dapat dibuktikan. Semua kartu, tabel, dan badge memakai token dari `globals.css`.
 
 ---
 
-## Bagian A — Halaman `/harga`
+## Bagian A — Halaman `/pricing`
 
 ### A.1 Tujuan
 
@@ -61,7 +63,7 @@ Baris = fitur dari katalog resmi (`backend/internal/entitlement/catalog.go:29-36
 | Ekspor laporan | — | ✅ | ✅ |
 | Akses API | — | — | ✅ |
 
-**Dilarang menampilkan** `bank_sync` (katalog menyatakan "belum tersedia"). Setiap baris fitur menautkan ke sub-halaman `/fitur/{slug}` yang relevan (internal linking, dokumen 02 §6).
+**Dilarang menampilkan** `bank_sync` (katalog menyatakan "belum tersedia"). Setiap baris fitur menautkan ke sub-halaman `/features/{slug}` yang relevan (internal linking, dokumen 02 §6).
 
 ### A.6 Tabel Komparasi Limit
 
@@ -99,7 +101,7 @@ Aturan tampilan:
 
 - `title`: "Harga FinTrack — Paket Gratis, Pro, dan Business"
 - `description`: "Bandingkan paket FinTrack: kuota AI, fitur OCR struk, input suara, dan laporan. Mulai gratis, upgrade kapan saja."
-- `canonical`: `/harga`
+- `canonical`: `/pricing`
 - JSON-LD: `Product` dengan `offers` (satu `Offer` per paket, `price` dan `priceCurrency: "IDR"`) + `BreadcrumbList` (Beranda › Harga). Lihat dokumen 07.
 
 ### A.9 Catatan Teknis
@@ -110,11 +112,11 @@ Aturan tampilan:
 
 ---
 
-## Bagian B — Halaman `/fitur` & Sub-halaman
+## Bagian B — Halaman `/features` & Sub-halaman
 
 ### B.1 Strategi Konten
 
-- `/fitur` adalah **hub** dengan ringkasan 6 fitur (kartu) + tautan ke sub-halaman.
+- `/features` adalah **hub** dengan ringkasan 6 fitur (kartu) + tautan ke sub-halaman.
 - Tiap sub-halaman adalah **halaman mendalam** (≥ 300 kata unik) untuk menangkap pencarian spesifik.
 - Melarang konten tipis/duplikat: setiap sub-halaman punya masalah, alur, contoh nyata, dan CTA berbeda.
 - Data fitur terpusat di `lib/marketing/features.ts` (satu sumber untuk hub, footer, landing, tabel harga, dan sitemap).
@@ -123,7 +125,7 @@ Aturan tampilan:
 
 ```ts
 export interface FeaturePage {
-  slug: string;              // "scan-struk"
+  slug: string;              // "receipt-scan"
   icon: LucideIcon;
   title: string;             // "Foto Struk"
   navLabel: string;          // untuk tabel harga & footer
@@ -144,12 +146,12 @@ export const FEATURES: FeaturePage[] = [ /* 6 item */ ];
 
 | Slug | Judul | Keyword target | Fitur katalog terkait |
 |------|-------|----------------|-----------------------|
-| `chat-ai` | Catat & Tanya Lewat Chat | catat pengeluaran via chat, asisten keuangan AI | `ai_chat` |
-| `input-suara` | Catat dengan Suara | catat transaksi suara, input suara Indonesia | `voice_input` |
-| `scan-struk` | Pindai Struk Otomatis | scan struk otomatis, OCR struk belanja | `ocr_receipt` |
+| `ai-chat` | Catat & Tanya Lewat Chat | catat pengeluaran via chat, asisten keuangan AI | `ai_chat` |
+| `voice-input` | Catat dengan Suara | catat transaksi suara, input suara Indonesia | `voice_input` |
+| `receipt-scan` | Pindai Struk Otomatis | scan struk otomatis, OCR struk belanja | `ocr_receipt` |
 | `dashboard` | Dasbor Keuangan Interaktif | dashboard keuangan, grafik pengeluaran | — |
-| `analisis-spk` | Analisis Kesehatan Finansial | analisis keuangan pribadi, skor keuangan | — |
-| `laporan` | Laporan & Ekspor Data | laporan keuangan otomatis, ekspor data keuangan | `reports_export` |
+| `financial-health` | Analisis Kesehatan Finansial | analisis keuangan pribadi, skor keuangan | — |
+| `reports` | Laporan & Ekspor Data | laporan keuangan otomatis, ekspor data keuangan | `reports_export` |
 
 ### B.4 Struktur Tiap Sub-halaman
 
@@ -165,7 +167,7 @@ export const FEATURES: FeaturePage[] = [ /* 6 item */ ];
 
 ### B.5 Contoh Konten (pola yang harus diikuti)
 
-`/fitur/scan-struk`:
+`/features/receipt-scan`:
 
 - Keywords: scan struk otomatis, OCR struk belanja, catat belanja dari foto.
 - Problem: "Mengetik ulang deretan belanjaan dari struk itu melelahkan dan rawan salah."
@@ -174,12 +176,12 @@ export const FEATURES: FeaturePage[] = [ /* 6 item */ ];
 - Contoh: prompt "foto struk ini" → hasil "Belanja bulanan Rp 312.500 tercatat, 8 item".
 - `enabledInPlans: ["pro", "business"]` (katalog: `ocr_receipt` Free = false).
 
-`/fitur/input-suara`:
+`/features/voice-input`:
 
 - `enabledInPlans: ["pro", "business"]` (`voice_input` Free = false).
 - Sebut batas wajar memakai label resmi "Permintaan suara / hari".
 
-`/fitur/chat-ai`:
+`/features/ai-chat`:
 
 - `enabledInPlans: ["free", "pro", "business"]` (`ai_chat` semua plan).
 - Tegaskan **tidak perlu API key** (koreksi F-04).
@@ -188,14 +190,14 @@ export const FEATURES: FeaturePage[] = [ /* 6 item */ ];
 
 - `title`: "{{Judul}} — FinTrack"
 - `description`: ringkas, mengandung keyword target.
-- `canonical`: `/fitur/{slug}`
+- `canonical`: `/features/{slug}`
 - `generateStaticParams` dari `FEATURES`; `dynamicParams = false` agar slug tak dikenal → 404.
 - JSON-LD: `BreadcrumbList` + `WebPage` (dengan `about`). Tidak memakai `FAQPage`.
 
-### B.7 Hub `/fitur`
+### B.7 Hub `/features`
 
 - H1: "Fitur FinTrack".
 - Grid kartu 6 fitur (ikon, judul, tagline, tautan "Pelajari lebih lanjut").
 - Section "Bagaimana semuanya terhubung" singkat.
-- CTA → `/register` dan `/harga`.
+- CTA → `/register` dan `/pricing`.
 - JSON-LD `BreadcrumbList` (Beranda › Fitur).

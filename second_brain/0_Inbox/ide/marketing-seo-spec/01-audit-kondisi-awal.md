@@ -103,7 +103,7 @@ if (!hasSession) {
 }
 ```
 
-**Dampak:** pengunjung anonim yang membuka `/harga`, `/fitur`, `/tentang`, `/kontak`, `/faq`, `/privasi`, atau `/syarat` akan **dipantulkan ke `/login`**. Ini mematikan seluruh tujuan Fase 1. Wajib diperbaiki sebelum halaman apa pun dibuat.
+**Dampak:** pengunjung anonim yang membuka rute marketing baru (`/pricing`, `/features`, `/features/*`, `/about`, `/contact`, `/faq`, `/privacy`, `/terms`) akan **dipantulkan ke `/login`**. Ini mematikan seluruh tujuan Fase 1. Wajib diperbaiki sebelum halaman apa pun dibuat.
 
 ### F-08 — Menu mobile tidak berfungsi
 
@@ -194,9 +194,9 @@ Dari `backend/internal/entitlement/catalog.go` (label resmi) dan seed `plan_enti
 
 | ID | Kategori | Keparahan | Rencana Perbaikan | Dokumen |
 |----|----------|-----------|-------------------|---------|
-| F-01 | Navigasi | Tinggi | Section `#harga` nyata + tautan ke `/harga` | 02, 03 |
+| F-01 | Navigasi | Tinggi | Section `#pricing` nyata + tautan ke `/pricing` | 02, 03 |
 | F-02 | Navigasi/Trust | Tinggi | Halaman nyata + footer fungsional | 02, 05 |
-| F-03 | Konversi | Tinggi | Anchor ke `#cara-kerja` | 03 |
+| F-03 | Konversi | Tinggi | Anchor ke `#how-it-works` | 03 |
 | F-04 | Akurasi/Trust | Kritis | Hapus klaim BYOK; ganti pernyataan akurat | 03 |
 | F-05 | Trust/E-E-A-T | Tinggi | Ganti testimoni → persona use-case | 03 |
 | F-06 | SEO | Tinggi | Metadata, canonical, OG, sitemap, robots, JSON-LD | 07 |

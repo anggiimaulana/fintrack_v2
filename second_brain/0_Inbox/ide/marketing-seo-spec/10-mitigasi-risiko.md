@@ -8,11 +8,11 @@ Dokumen ini memetakan risiko teknis, keamanan, SEO, konten, dan operasional untu
 
 | ID | Area | Deskripsi Risiko | Keparahan | Probabilitas | Mitigasi |
 |----|------|------------------|-----------|--------------|----------|
-| **R-01** | Routing/Keamanan | Membuka prefix publik di `decideRoute` membuat rute privat ikut terbuka (mis. `/harga…` cocok dengan `/harga-laporan`). | Tinggi | Sedang | Bandingkan sebagai segmen penuh (`=== p` atau `startsWith(p + '/')`), bukan `startsWith(p)`. Tes eksplisit `/hargax`, `/fiturx`. |
+| **R-01** | Routing/Keamanan | Membuka prefix publik di `decideRoute` membuat rute privat ikut terbuka (mis. prefix `/features` ikut meloloskan `/features-internal`). | Tinggi | Sedang | Bandingkan sebagai segmen penuh (`=== p` atau `startsWith(p + '/')`), bukan `startsWith(p)`. Tes eksplisit `/pricingx`, `/featuresx`. |
 | **R-02** | Keamanan | Endpoint publik `GET /public/plans` disalahgunakan (scraping/DoS). | Sedang | Sedang | Rate limit eksplisit per menit; hanya mengembalikan data publik; ISR frontend menekan frekuensi panggilan; tidak ada operasi tulis. |
 | **R-03** | Data/Konsistensi | Harga di halaman publik berbeda dari harga checkout (karena ISR basi). | Sedang | Sedang | Checkout selalu memakai DB (otoritatif). Tampilkan disclaimer kecil; `revalidate: 3600` dapat diturunkan bila perlu. Signal "harga dapat berubah" di halaman harga. |
 | **R-04** | SEO | Konten sub-halaman fitur menjadi tipis/duplikat satu sama lain. | Sedang | Sedang | Wajib konten unik ≥300 kata; larangan menyalin; tes memverifikasi kelengkapan data; review manual sebelum rilis. |
-| **R-05** | SEO | Cannibalization antar halaman (mis. `/` vs `/fitur` vs `/harga` bersaing kata kunci sama). | Sedang | Sedang | Tetapkan intent: `/` brand+umum, `/fitur/*` fitur spesifik, `/harga` komersial. `title`/`H1` berbeda; canonical tepat. |
+| **R-05** | SEO | Cannibalization antar halaman (mis. `/` vs `/features` vs `/pricing` bersaing kata kunci sama). | Sedang | Sedang | Tetapkan intent: `/` brand+umum, `/features/*` fitur spesifik, `/pricing` komersial. `title`/`H1` berbeda; canonical tepat. |
 | **R-06** | SEO | Klaim palsu / schema rating palsu → penalti. | Tinggi | Rendah | Testimoni fiktif dihapus; tidak memakai `Review`/`AggregateRating`; copy diverifikasi terhadap `catalog.go` & seed. |
 | **R-07** | SEO | Halaman legal di-`noindex` tanpa sengaja. | Sedang | Rendah | Tetapkan `robots: { index: true }`; jangan masukkan ke `disallow`. |
 | **R-08** | Konten/Hukum | Kebijakan Privasi/Syarat terbit tanpa tinjauan dan memuat klaim kepatuhan berlebihan. | Tinggi | Sedang | Tandai isi sebagai draf internal di `legal.ts`; pemilik produk wajib meninjau; hindari klaim sertifikasi; cantumkan tanggal berlaku. |
@@ -26,6 +26,8 @@ Dokumen ini memetakan risiko teknis, keamanan, SEO, konten, dan operasional untu
 | **R-16** | Aksesibilitas/Fungsional | Akordeon berbasis JS gagal tanpa JS. | Rendah | Sedang | Gunakan `<details>`/`<summary>` native; konten ada di HTML server. |
 | **R-17** | SEO/GEO | Memblokir crawler AI secara tak sengaja. | Rendah | Rendah | `robots.ts` hanya memblokir rute privat; jangan blokir GPTBot/PerplexityBot pada publik. |
 | **R-18** | Operasional | Perubahan guard auth mengganggu alur login/redirect pengguna lama. | Sedang | Rendah | Tes regresi perilaku `/login`, `/user`, `/admin`, `/super-admin`; logika tetap terpusat di `roles.ts`. |
+| **R-19** | Aksesibilitas | Animasi baru (receipt tape, ticker band, stat counter) memicu ketidaknyamanan atau tidak berhenti saat pengguna memilih reduced-motion. | Sedang | Rendah | Hentikan total pada `prefers-reduced-motion`; jeda saat hover/focus; `aria-hidden` pada track yang bergerak; sediakan versi statis; maksimum 2 elemen beranimasi per viewport. |
+| **R-20** | Performa/Tipografi | Font display baru menambah bobot unduhan atau menggeser tata letak (CLS). | Rendah | Sedang | `next/font` (self-hosted, subset `latin`); fallback metrik; H1 hero sebagai elemen LCP tetap teks; uji CLS < 0.1. |
 
 ---
 
@@ -76,7 +78,7 @@ Dokumen ini memetakan risiko teknis, keamanan, SEO, konten, dan operasional untu
 | Urutan deploy | Deploy **backend lebih dulu** (agar `/public/plans` sudah ada), lalu frontend. |
 | Kompatibilitas | Frontend lama tetap berfungsi bila backend baru lebih dulu (tidak ada rute yang dihapus). |
 | Env baru | `NEXT_PUBLIC_SITE_URL` (frontend). `BACKEND_ORIGIN` sudah ada. |
-| Verifikasi pasca-deploy | `curl /api/v1/public/plans`; buka `/harga`; cek `robots.txt`/`sitemap.xml`; cek canonical di HTML. |
+| Verifikasi pasca-deploy | `curl /api/v1/public/plans`; buka `/pricing`; cek `robots.txt`/`sitemap.xml`; cek canonical di HTML. |
 
 ### 4.1 Rollback
 
@@ -92,7 +94,7 @@ Dokumen ini memetakan risiko teknis, keamanan, SEO, konten, dan operasional untu
 | Sinyal | Sumber | Aksi |
 |--------|--------|------|
 | 5xx pada `/public/plans` | Log backend / metrik | Investasi kegagalan katalog |
-| Halaman `/harga` kosong | Laporan pengguna / smoke test | Cek `BACKEND_ORIGIN` & ISR |
+| Halaman `/pricing` kosong | Laporan pengguna / smoke test | Cek `BACKEND_ORIGIN` & ISR |
 | Lonjakan trafik endpoint publik | Rate-limit hit | Evaluasi batas |
 | Penurunan peringkat/trafik | Search Console | Periksa cannibalization/markup |
 
@@ -121,4 +123,7 @@ Dokumen ini memetakan risiko teknis, keamanan, SEO, konten, dan operasional untu
 - [ ] `robots.txt` & `sitemap.xml` benar.
 - [ ] Tidak ada `href="#"` atau anchor mati.
 - [ ] Tidak ada klaim BYOK / testimoni fiktif.
+- [ ] Animasi berhenti pada `prefers-reduced-motion`; marquee/ticker `aria-hidden` dan punya versi statis.
+- [ ] Font display termuat tanpa pergeseran tata letak (CLS < 0.1).
+- [ ] Tidak ada gradien/blur/emoji; aksen kuning asam selalu berpasangan teks gelap.
 - [ ] `go test ./...`, `pnpm lint`, `pnpm test`, `pnpm build` hijau.

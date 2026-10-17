@@ -25,18 +25,18 @@ Dokumen ini menetapkan strategi pengujian berlapis (L1–L5), matriks kasus uji,
 | Area | Kasus | File |
 |------|-------|------|
 | `roles.decideRoute` | anonim → `/` = `pass` | `lib/roles.test.ts` |
-| `roles.decideRoute` | anonim → tiap prefix publik (`/harga`, `/fitur`, `/fitur/scan-struk`, `/tentang`, `/kontak`, `/faq`, `/privasi`, `/syarat`) = `pass` | `lib/roles.test.ts` |
-| `roles.decideRoute` | anonim → `/hargax` / `/fiturx` = `redirect-login` (segmentasi) | `lib/roles.test.ts` |
+| `roles.decideRoute` | anonim → tiap prefix publik (`/pricing`, `/features`, `/features/receipt-scan`, `/about`, `/contact`, `/faq`, `/privacy`, `/terms`) = `pass` | `lib/roles.test.ts` |
+| `roles.decideRoute` | anonim → `/pricingx` / `/featuresx` = `redirect-login` (segmentasi) | `lib/roles.test.ts` |
 | `roles.decideRoute` | anonim → `/user` = `redirect-login` | `lib/roles.test.ts` |
 | `roles.decideRoute` | sesi valid → `/login` = redirect ke home per peran (regresi) | `lib/roles.test.ts` |
-| `roles.decideRoute` | sesi valid → `/harga` = `pass` | `lib/roles.test.ts` |
+| `roles.decideRoute` | sesi valid → `/pricing` = `pass` | `lib/roles.test.ts` |
 | `fetchPublicPlans` | respons OK + `data` array | `lib/plans-server.test.ts` |
 | `fetchPublicPlans` | respons non-OK → `[]` | `lib/plans-server.test.ts` |
 | `fetchPublicPlans` | `data` bukan array → `[]` | `lib/plans-server.test.ts` |
 | `enforcedLimits` | menyembunyikan `max_categories` & `max_wallets` | `lib/plans-server.test.ts` |
 | `FEATURES` | 6 item, slug unik, semua slug valid kebab-case | `lib/marketing/features.test.ts` |
 | `FEATURES` | setiap item punya problem, howItWorks ≥3, benefits ≥3, relatedSlugs valid | `lib/marketing/features.test.ts` |
-| `FEATURES` | `enabledInPlans` konsisten (mis. `scan-struk` tanpa `free`) | `lib/marketing/features.test.ts` |
+| `FEATURES` | `enabledInPlans` konsisten (mis. `receipt-scan` tanpa `free`) | `lib/marketing/features.test.ts` |
 | `faq` | ≥ 4 kategori, tiap item punya `q` & `a` non-kosong | `lib/marketing/faq.test.ts` |
 | `legal` | punya `effectiveDate` + seluruh bagian wajib | `lib/marketing/legal.test.ts` |
 | `site` | `url` valid, `email`/`whatsapp` terisi | `lib/marketing/site.test.ts` |
@@ -58,6 +58,10 @@ Dokumen ini menetapkan strategi pengujian berlapis (L1–L5), matriks kasus uji,
 | `ComparisonTable` | Sel "tidak tersedia" memakai label aksesibel, bukan hanya warna |
 | `FaqAccordion` | Klik `<summary>` membuka/menutup; konten ada di DOM meski tertutup |
 | `PricingTeaser` | Data kosong → menampilkan tombol `Lihat Harga`, bukan grid kosong |
+| `InteractiveDemo` | Tab Chat/Suara/Struk: klik & panah keyboard berpindah panel; `aria-selected` benar; semua panel ada di DOM |
+| `MarketingHeader` | Tautan nav menunjuk `/features`, `/pricing`, `/faq` (tanpa `#` hampa) |
+| `StatCounters` | Nilai akhir tetap tampil meski `IntersectionObserver` tidak berjalan |
+| `ReceiptTapeMarquee` / `TickerBand` | Track bergerak `aria-hidden="true"`; versi teks statis tersedia |
 
 ### 2.3 L3 — A11y
 
@@ -68,7 +72,10 @@ Dokumen ini menetapkan strategi pengujian berlapis (L1–L5), matriks kasus uji,
 | `PricingCards` | `aria-pressed` pada toggle; `aria-live` pada harga |
 | `ComparisonTable` | Tabel punya `<caption>`/`<th scope>`; lulus `axe` |
 | `FaqAccordion` | `<summary>` dapat difokuskan; lulus `axe` |
-| Halaman `/`, `/harga`, `/faq` | Tidak ada pelanggaran `axe` serius |
+| Halaman `/`, `/pricing`, `/faq` | Tidak ada pelanggaran `axe` serius |
+| `InteractiveDemo` | `role="tablist"/"tab"/"tabpanel"` benar; navigasi panah keyboard; lulus `axe` |
+| `ReceiptTapeMarquee` / `TickerBand` | Track bergerak `aria-hidden`; lulus `axe` |
+| `StatCounters` | Nilai akhir dapat dibaca pembaca layar; lulus `axe` |
 
 ### 2.4 L4 — Backend (Go)
 
@@ -85,16 +92,19 @@ Dokumen ini menetapkan strategi pengujian berlapis (L1–L5), matriks kasus uji,
 
 Checklist smoke (tanpa login):
 
-- [ ] `/` merender; tombol `Lihat Cara Kerja` menggulir ke `#cara-kerja`; `Mulai Gratis` → `/register`.
-- [ ] Nav: Fitur → `/fitur`; Harga → `/harga`; FAQ → `/faq`; menu mobile berfungsi.
-- [ ] `/harga`: kartu & tabel terisi; toggle siklus bekerja; baris tak enforced absen.
-- [ ] `/fitur` → 6 kartu; tiap sub-halaman terbuka; slug ngawur → 404.
-- [ ] `/tentang`, `/kontak`, `/faq`, `/privasi`, `/syarat` terbuka; tautan `mailto:`/`wa.me` benar.
+- [ ] `/` merender; tombol `Lihat Cara Kerja` menggulir ke `#how-it-works`; `Mulai Gratis` → `/register`.
+- [ ] Nav: Fitur → `/features`; Harga → `/pricing`; FAQ → `/faq`; menu mobile berfungsi.
+- [ ] `/pricing`: kartu & tabel terisi; toggle siklus bekerja; baris tak enforced absen.
+- [ ] `/features` → 6 kartu; tiap sub-halaman terbuka; slug ngawur → 404.
+- [ ] `/about`, `/contact`, `/faq`, `/privacy`, `/terms` terbuka; tautan `mailto:`/`wa.me` benar.
 - [ ] Tidak ada tautan `#` hampa di HTML.
 - [ ] View Source: `<link rel="canonical">`, `og:*`, `application/ld+json` ada.
 - [ ] `/robots.txt` & `/sitemap.xml` benar.
 - [ ] `/user` tanpa login → diarahkan ke `/login` (regresi).
 - [ ] Tidak ada emoji di UI.
+- [ ] Hero menampilkan demo interaktif; tab berpindah dengan klik & panah keyboard.
+- [ ] Receipt tape & ticker band bergerak, berhenti saat hover, dan statis pada `prefers-reduced-motion`.
+- [ ] Stat counter berakhir pada nilai akhir yang benar.
 - [ ] Kontras teks di atas permukaan gelap memadai.
 
 ---
@@ -132,8 +142,8 @@ cd frontend && pnpm build
 
 - [ ] Guard auth membuka seluruh prefix marketing untuk anonim; dashboard tetap terlindungi.
 - [ ] Landing dirender ulang; tidak ada anchor mati; `Lihat Cara Kerja` berfungsi.
-- [ ] `/harga` menampilkan paket dari endpoint; `-1` → "Tanpa batas"; pajak tampil bila `tax_enabled`.
-- [ ] `/fitur` + 6 sub-halaman punya konten unik; slug invalid → 404.
+- [ ] `/pricing` menampilkan paket dari endpoint; `-1` → "Tanpa batas"; pajak tampil bila `tax_enabled`.
+- [ ] `/features` + 6 sub-halaman punya konten unik; slug invalid → 404.
 - [ ] Halaman pendukung selesai; tautan kontak berfungsi.
 - [ ] Footer tidak punya tautan mati.
 
@@ -152,7 +162,7 @@ cd frontend && pnpm build
 - [ ] `pnpm build` hijau.
 - [ ] Tidak ada emoji di UI.
 - [ ] Semua ikon dari `lucide-react`.
-- [ ] `log_aktivitas.md` & HUD roadmap diperbarui.
+- [ ] `log_aktivitas.md` diperbarui.
 
 ---
 

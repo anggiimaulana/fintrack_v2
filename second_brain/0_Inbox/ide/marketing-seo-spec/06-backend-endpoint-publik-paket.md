@@ -1,6 +1,6 @@
 # 06 — Backend: Endpoint Publik Katalog Paket
 
-Dokumen ini merinci satu-satunya perubahan backend di Fase 1: membuka katalog paket untuk pengunjung anonim, agar halaman `/harga` dan teaser harga di landing dapat menampilkan harga nyata dari database.
+Dokumen ini merinci satu-satunya perubahan backend di Fase 1: membuka katalog paket untuk pengunjung anonim, agar halaman `/pricing` dan teaser harga di landing dapat menampilkan harga nyata dari database.
 
 ---
 
@@ -159,12 +159,12 @@ export function enforcedLimits(plan: PublicPlan): Array<[string, number]> {
 
 | Skenario | Perilaku |
 |----------|----------|
-| Backend mati saat build/revalidate pertama | `fetchPublicPlans` mengembalikan `[]`. `/harga` menyembunyikan grid harga tetapi tetap menampilkan FAQ, cara pembayaran, dan CTA. Landing menyembunyikan kartu teaser, menampilkan tombol `Lihat Harga`. |
+| Backend mati saat build/revalidate pertama | `fetchPublicPlans` mengembalikan `[]`. `/pricing` menyembunyikan grid harga tetapi tetap menampilkan FAQ, cara pembayaran, dan CTA. Landing menyembunyikan kartu teaser, menampilkan tombol `Lihat Harga`. |
 | Backend mati setelah pernah sukses | Next ISR menyajikan halaman statis terakhir yang berhasil (hingga revalidate berikutnya). |
 | Respons 200 tetapi `data` bukan array | Dikembalikan `[]` (defensif). |
 | Timeout jaringan | `fetch` gagal → `[]` (tambahkan `AbortSignal.timeout(5000)` bila diinginkan; opsional). |
 
-> **Trade-off ISR 3600s:** perubahan harga oleh Super Admin dapat memakan waktu hingga 1 jam untuk muncul di halaman publik. Checkout selalu memakai harga dari database (otoritatif), sehingga risiko finansial nol; hanya ada risiko kebingungan tampilan. Mitigasi opsional (di luar Fase 1): endpoint revalidasi bertoken dari backend ke Next (`revalidatePath('/harga')`). Bila diinginkan lebih responsif, turunkan ke `revalidate: 600`.
+> **Trade-off ISR 3600s:** perubahan harga oleh Super Admin dapat memakan waktu hingga 1 jam untuk muncul di halaman publik. Checkout selalu memakai harga dari database (otoritatif), sehingga risiko finansial nol; hanya ada risiko kebingungan tampilan. Mitigasi opsional (di luar Fase 1): endpoint revalidasi bertoken dari backend ke Next (`revalidatePath('/pricing')`). Bila diinginkan lebih responsif, turunkan ke `revalidate: 600`.
 
 ## 7. Pengujian
 
