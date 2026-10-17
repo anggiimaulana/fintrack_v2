@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HelpCircle, Home, Sparkles, Tag, Workflow } from "lucide-react";
+import { HelpCircle, Home, LayoutGrid, Tag, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MOBILE_NAV_ITEMS = [
   { label: "Beranda", href: "/", icon: Home },
-  { label: "Fitur", href: "/features", icon: Sparkles },
+  { label: "Fitur", href: "/features", icon: LayoutGrid },
   { label: "Cara Kerja", href: "/#how-it-works", icon: Workflow },
   { label: "Harga", href: "/pricing", icon: Tag },
   { label: "FAQ", href: "/faq", icon: HelpCircle },

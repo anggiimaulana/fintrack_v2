@@ -35,6 +35,14 @@ export const NAV: NavItem[] = [
 export const PRIMARY_CTA: Cta = { label: "Mulai Gratis", href: "/register" };
 export const SIGN_IN_CTA: Cta = { label: "Masuk", href: "/login" };
 
+/** Mobile drawer secondary links (primary links are in MobileBottomNav). */
+export const MOBILE_DRAWER_NAV: NavItem[] = [
+  { label: "Tentang Kami", href: "/about" },
+  { label: "Kontak", href: "/contact" },
+  { label: "Kebijakan Privasi", href: "/privacy" },
+  { label: "Syarat & Ketentuan", href: "/terms" },
+];
+
 // ─── Footer ────────────────────────────────────────────────────
 
 export const FOOTER_COLUMNS: FooterColumn[] = [

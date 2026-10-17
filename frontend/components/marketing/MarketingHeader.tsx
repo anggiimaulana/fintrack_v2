@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
+import { MOBILE_DRAWER_NAV, NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
 import { cn } from "@/lib/utils";
 
 /**
@@ -99,7 +99,7 @@ export function MarketingHeader() {
         <div
           aria-hidden="true"
           onClick={() => setOpenedPath(null)}
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs md:hidden"
+          className="drawer-backdrop fixed inset-0 z-50 bg-black/50 md:hidden"
         />
       ) : null}
 
@@ -108,7 +108,7 @@ export function MarketingHeader() {
         id="marketing-mobile-menu"
         hidden={!open}
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-[280px] sm:w-[320px] flex-col justify-between border-l-[3px] border-foreground bg-background p-6 shadow-[-6px_0px_0px_0px] shadow-foreground md:hidden",
+          "drawer-panel fixed inset-y-0 right-0 z-50 flex w-[280px] sm:w-[320px] flex-col justify-between border-l-[3px] border-foreground bg-background p-6 shadow-[-6px_0px_0px_0px] shadow-foreground md:hidden",
         )}
       >
         <div className="flex flex-col gap-6">
@@ -129,34 +129,52 @@ export function MarketingHeader() {
             </button>
           </div>
 
-          <nav aria-label="Navigasi seluler" className="flex flex-col gap-2">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={isActive(item.href) ? "page" : undefined}
-                onClick={() => setOpenedPath(null)}
-                className={cn(
-                  "rounded-md border-2 px-4 py-2.5 text-sm font-bold uppercase tracking-wide transition-all",
-                  isActive(item.href)
-                    ? "border-foreground bg-accent-acid text-accent-acid-foreground shadow-[3px_3px_0px_0px] shadow-foreground"
-                    : "border-transparent text-foreground hover:border-foreground hover:bg-muted",
-                )}
-              >
-                {item.label}
+          {/* Akses Akun */}
+          <div className="flex flex-col gap-2.5">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Akun
+            </span>
+            <Button variant="outline" asChild className="w-full font-bold">
+              <Link href={SIGN_IN_CTA.href} onClick={() => setOpenedPath(null)}>
+                {SIGN_IN_CTA.label}
               </Link>
-            ))}
-          </nav>
+            </Button>
+            <Button asChild className="w-full font-bold">
+              <Link href={PRIMARY_CTA.href} onClick={() => setOpenedPath(null)}>
+                {PRIMARY_CTA.label}
+              </Link>
+            </Button>
+          </div>
+
+          {/* Navigasi Tambahan */}
+          <div className="flex flex-col gap-2 border-t-2 border-foreground/15 pt-4">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Lainnya
+            </span>
+            <nav aria-label="Navigasi seluler" className="flex flex-col gap-1">
+              {MOBILE_DRAWER_NAV.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isActive(item.href) ? "page" : undefined}
+                  onClick={() => setOpenedPath(null)}
+                  className={cn(
+                    "rounded-md border-2 px-3 py-2 text-sm font-bold transition-all",
+                    isActive(item.href)
+                      ? "border-foreground bg-accent-acid text-accent-acid-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
+                      : "border-transparent text-foreground hover:border-foreground hover:bg-muted",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t-2 border-foreground pt-4">
-          <Button variant="outline" asChild className="w-full font-bold">
-            <Link href={SIGN_IN_CTA.href}>{SIGN_IN_CTA.label}</Link>
-          </Button>
-          <Button asChild className="w-full font-bold">
-            <Link href={PRIMARY_CTA.href}>{PRIMARY_CTA.label}</Link>
-          </Button>
-        </div>
+        <p className="border-t-2 border-foreground/10 pt-4 font-mono text-[11px] text-muted-foreground">
+          FinTrack © 2026. Navigasi utama tersedia di bilah bawah.
+        </p>
       </div>
     </header>
   );

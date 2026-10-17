@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MarketingHeader } from "./MarketingHeader";
-import { NAV } from "@/lib/marketing/copy";
+import { MOBILE_DRAWER_NAV, NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
 
 const pathname = vi.fn(() => "/");
 vi.mock("next/navigation", () => ({
@@ -42,11 +42,14 @@ describe("MarketingHeader", () => {
 
     expect(screen.getByRole("button", { name: "Tutup menu" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("navigation", { name: "Navigasi seluler" })).toBeInTheDocument();
-    // Every nav target is reachable from the mobile panel too.
+    // Drawer surfaces account actions and secondary destinations (primary are in bottom nav).
     const mobile = screen.getByRole("navigation", { name: "Navigasi seluler" });
-    NAV.forEach((item) => {
+    MOBILE_DRAWER_NAV.forEach((item) => {
       expect(within(mobile).getByRole("link", { name: item.label })).toHaveAttribute("href", item.href);
     });
+    const drawer = document.getElementById("marketing-mobile-menu")!;
+    expect(within(drawer).getByRole("link", { name: SIGN_IN_CTA.label })).toHaveAttribute("href", SIGN_IN_CTA.href);
+    expect(within(drawer).getByRole("link", { name: PRIMARY_CTA.label })).toHaveAttribute("href", PRIMARY_CTA.href);
 
     fireEvent.click(screen.getByRole("button", { name: "Tutup menu" }));
     expect(screen.queryByRole("navigation", { name: "Navigasi seluler" })).not.toBeInTheDocument();
