@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { FEATURES, FEATURE_SLUGS, getFeature, featureHref, PLAN_LABEL } from "./features";
+import {
+  FEATURES,
+  FEATURE_SLUGS,
+  getFeature,
+  featureHref,
+  featureWords,
+  featureWordCount,
+  featureUniqueWordCount,
+  PLAN_LABEL,
+} from "./features";
 
 const EXPECTED_SLUGS = [
   "ai-chat",
@@ -32,12 +41,43 @@ describe("FEATURES", () => {
       expect(f.tagline.length).toBeGreaterThan(0);
       expect(f.heroDescription.length).toBeGreaterThan(40);
       expect(f.problem.length).toBeGreaterThan(40);
+      expect(f.detail.length).toBeGreaterThanOrEqual(3);
       expect(f.howItWorks.length).toBeGreaterThanOrEqual(3);
       expect(f.benefits.length).toBeGreaterThanOrEqual(3);
+      expect(f.useCases.length).toBeGreaterThanOrEqual(3);
+      expect(f.notes.length).toBeGreaterThanOrEqual(3);
       expect(f.keywords.length).toBeGreaterThanOrEqual(2);
       expect(f.example.prompt.length).toBeGreaterThan(0);
       expect(f.example.result.length).toBeGreaterThan(0);
       expect(f.enabledInPlans.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps each sub-page long enough to avoid thin content (spec doc 04 §B.1)", () => {
+    FEATURES.forEach((f) => {
+      expect(featureWordCount(f), `${f.slug} total words`).toBeGreaterThanOrEqual(300);
+      expect(featureUniqueWordCount(f), `${f.slug} distinct words`).toBeGreaterThanOrEqual(200);
+    });
+  });
+
+  it("keeps every sub-page materially distinct (no near-duplicate copy)", () => {
+    const sets = FEATURES.map((f) => new Set(featureWords(f)));
+    for (let i = 0; i < sets.length; i += 1) {
+      for (let j = i + 1; j < sets.length; j += 1) {
+        const intersection = [...sets[i]].filter((word) => sets[j].has(word)).length;
+        const union = sets[i].size + sets[j].size - intersection;
+        // Shared function words are expected; whole sentences are not.
+        expect(intersection / union, `${FEATURES[i].slug} vs ${FEATURES[j].slug}`).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  it("gives every feature an SEO meta description with a target keyword", () => {
+    FEATURES.forEach((f) => {
+      expect(f.metaDescription.length, `${f.slug} meta length`).toBeGreaterThanOrEqual(70);
+      expect(f.metaDescription.length).toBeLessThanOrEqual(180);
+      const lower = f.metaDescription.toLowerCase();
+      expect(f.keywords.some((keyword) => lower.includes(keyword.toLowerCase()))).toBe(true);
     });
   });
 

@@ -214,6 +214,64 @@ export const LANDING = {
   },
 } as const;
 
+// ─── Feature hub & sub-pages ───────────────────────────────────
+
+/** `/features` hub copy (spec doc 13 §7.1, doc 04 §B.7). */
+export const FEATURES_HUB = {
+  h1: "Fitur FinTrack",
+  subhead: "Semua yang Anda butuhkan untuk mencatat, memahami, dan mengelola keuangan pribadi.",
+  gridTitle: "Enam fitur utama",
+  cardCta: "Pelajari lebih lanjut",
+  connected: {
+    title: "Bagaimana semuanya terhubung",
+    paragraphs: [
+      "Setiap fitur bermuara pada catatan yang sama. Transaksi yang Anda masukkan lewat chat, suara, atau foto struk langsung menjadi entri terstruktur.",
+      "Dari catatan itu, dasbor menampilkan arus kas, analisis kesehatan finansial memberi skor dan status, dan laporan menutup siklusnya dengan berkas yang dapat Anda unduh.",
+    ],
+  },
+  cta: { label: "Daftar Gratis", href: "/register" },
+  pricingCta: { label: "Lihat Harga", href: "/pricing" },
+} as const;
+
+/** Section headings/labels shared by every `/features/{slug}` page. */
+export const FEATURE_PAGE = {
+  problemTitle: "Masalah yang diselesaikan",
+  howTitle: "Cara kerjanya",
+  detailTitle: "Bagaimana FinTrack melakukannya",
+  benefitsTitle: "Manfaat utama",
+  exampleTitle: "Contoh nyata",
+  useCasesTitle: "Kapan paling berguna",
+  notesTitle: "Yang perlu diketahui",
+  availabilityLabel: "Tersedia di",
+  availabilityNote:
+    "Ketersediaan paket mengikuti katalog langganan yang berlaku. Keterangan kuota memakai label resmi di halaman harga.",
+  relatedTitle: "Fitur terkait",
+  allFeatures: { label: "Lihat semua fitur", href: "/features" },
+  primaryCta: PRIMARY_CTA,
+  pricingCta: { label: "Lihat Harga", href: "/pricing" },
+  closing: {
+    h2: "Mulai rapikan keuangan Anda hari ini",
+    subhead: "Gratis untuk memulai. Tanpa kartu kredit. Data Anda dapat diekspor atau dihapus kapan saja.",
+  },
+} as const;
+
+// ─── FAQ page ──────────────────────────────────────────────────
+
+/** `/faq` copy (spec doc 05 §3). */
+export const FAQ_PAGE = {
+  h1: "Pertanyaan Umum",
+  subhead:
+    "Jawaban singkat dan langsung untuk pertanyaan yang paling sering muncul soal harga, langganan, AI, privasi data, dan pembayaran.",
+  tocTitle: "Kategori",
+  stillTitle: "Belum menemukan jawabannya?",
+  stillText: "Kirim pertanyaan Anda dan kami akan membantu pada hari kerja.",
+  contactCta: { label: "Hubungi Kami", href: "/contact" },
+  closing: {
+    h2: "Mulai rapikan keuangan Anda hari ini",
+    subhead: "Gratis untuk memulai. Tanpa kartu kredit.",
+  },
+} as const;
+
 // ─── Per-page SEO ──────────────────────────────────────────────
 
 export interface PageMeta {

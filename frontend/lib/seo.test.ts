@@ -7,6 +7,7 @@ import {
   breadcrumbJsonLd,
   aboutPageJsonLd,
   contactPageJsonLd,
+  featurePageJsonLd,
   webPageJsonLd,
 } from "./seo";
 import { site } from "./marketing/site";
@@ -106,6 +107,28 @@ describe("page-type nodes", () => {
     expect(webPageJsonLd("FAQ", "/faq", "x")["@type"]).toBe("WebPage");
     expect(webPageJsonLd("FAQ", "/faq", "x").inLanguage).toBe("id-ID");
   });
+
+  it("gives AboutPage a full Organization (name, url, logo, contact)", () => {
+    const org = aboutPageJsonLd().mainEntity as Record<string, unknown>;
+    expect(org["@type"]).toBe("Organization");
+    expect(org.name).toBe("FinTrack");
+    expect(org.url).toBe(`${site.url}/`);
+    expect(org.logo).toBe(`${site.url}/logo.png`);
+    expect((org.contactPoint as Record<string, unknown>).email).toBe(site.email);
+  });
+
+  it("ties a feature WebPage to the site and names what it is about", () => {
+    const node = featurePageJsonLd({
+      name: "Pindai Struk Otomatis — FinTrack",
+      path: "/features/receipt-scan",
+      description: "Deskripsi.",
+      about: "Pindai struk (OCR)",
+    });
+    expect(node["@type"]).toBe("WebPage");
+    expect(node.url).toBe(`${site.url}/features/receipt-scan`);
+    expect(node.isPartOf).toEqual({ "@id": `${site.url}/#website` });
+    expect((node.about as Record<string, unknown>).name).toBe("Pindai struk (OCR)");
+  });
 });
 
 describe("forbidden structured data", () => {
@@ -117,6 +140,7 @@ describe("forbidden structured data", () => {
       aboutPageJsonLd(),
       contactPageJsonLd(),
       webPageJsonLd("x", "/x", "y"),
+      featurePageJsonLd({ name: "n", path: "/features/x", description: "d", about: "a" }),
     ]);
     ["FAQPage", "AggregateRating", "Review"].forEach((banned) => {
       expect(blob).not.toContain(banned);

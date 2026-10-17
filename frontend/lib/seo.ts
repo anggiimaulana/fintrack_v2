@@ -133,7 +133,11 @@ export function breadcrumbJsonLd(items: BreadcrumbItem[]): JsonLdNode {
   };
 }
 
-/** AboutPage pointing at the Organization. */
+/**
+ * AboutPage plus a self-contained Organization (name, url, logo, contact) as
+ * required by spec doc 05 §1.3. Kept inline so the node is valid even before the
+ * shared `organizationGraph()` is wired into the marketing layout.
+ */
 export function aboutPageJsonLd(): JsonLdNode {
   return {
     "@context": "https://schema.org",
@@ -141,7 +145,41 @@ export function aboutPageJsonLd(): JsonLdNode {
     name: `Tentang ${site.name}`,
     inLanguage: "id-ID",
     url: absoluteUrl("/about"),
-    mainEntity: { "@type": "Organization", name: site.name, url: `${site.url}/` },
+    mainEntity: {
+      "@type": "Organization",
+      name: site.name,
+      url: `${site.url}/`,
+      logo: `${site.url}/logo.png`,
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "customer support",
+        email: site.email,
+        availableLanguage: ["id"],
+      },
+    },
+  };
+}
+
+/**
+ * WebPage for a feature deep-dive, with `about` naming the capability and
+ * `isPartOf` pointing at the WebSite node (spec doc 04 §B.6). No `FAQPage` here
+ * either — the visible example/prompt text is plain content.
+ */
+export function featurePageJsonLd(input: {
+  name: string;
+  path: string;
+  description: string;
+  about: string;
+}): JsonLdNode {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: input.name,
+    description: input.description,
+    inLanguage: "id-ID",
+    url: absoluteUrl(input.path),
+    isPartOf: { "@id": `${site.url}/#website` },
+    about: { "@type": "Thing", name: input.about },
   };
 }
 
