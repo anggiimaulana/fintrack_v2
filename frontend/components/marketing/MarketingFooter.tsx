@@ -16,7 +16,7 @@ export function MarketingFooter() {
         <div className="flex flex-col gap-4">
           <Link href="/" className="flex items-center gap-2" aria-label="FinTrack — beranda">
             <span className="grid size-8 place-items-center rounded-md border-2 border-black bg-accent-acid">
-              <Wallet aria-hidden className="size-4 text-black" />
+              <Wallet aria-hidden className="size-4 text-accent-acid-foreground" />
             </span>
             <span className="font-heading text-xl font-black tracking-tight text-white">
               {site.name}
