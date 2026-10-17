@@ -34,15 +34,29 @@ export function ActionLink({
   tone = "acid",
   size = "md",
   className,
+  target,
+  rel,
+  ariaLabel,
 }: {
   href: string;
   children: React.ReactNode;
   tone?: ActionTone;
   size?: ActionSize;
   className?: string;
+  /** Set `_blank` for external channels (e.g. wa.me). */
+  target?: string;
+  /** Pass `noopener noreferrer` alongside `target="_blank"`. */
+  rel?: string;
+  ariaLabel?: string;
 }) {
   return (
-    <Link href={href} className={cn(BASE, SIZES[size], TONES[tone], className)}>
+    <Link
+      href={href}
+      target={target}
+      rel={rel}
+      aria-label={ariaLabel}
+      className={cn(BASE, SIZES[size], TONES[tone], className)}
+    >
       {children}
     </Link>
   );
