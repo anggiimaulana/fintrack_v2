@@ -33,6 +33,33 @@ export type DecideRouteInput = {
 export type DecideRouteAction = 'redirect-login' | 'pass' | { redirect: string };
 
 /**
+ * Prefix yang boleh diakses tanpa sesi (permukaan marketing publik).
+ *
+ * Dipakai untuk memutuskan apakah pengunjung anonim diarahkan ke /login atau
+ * dibiarkan lewat. URL berbahasa Inggris; konten tetap Bahasa Indonesia.
+ */
+const PUBLIC_PREFIXES = [
+  '/pricing',
+  '/features',
+  '/about',
+  '/contact',
+  '/faq',
+  '/privacy',
+  '/terms',
+] as const;
+
+/**
+ * True bila `pathname` boleh diakses tanpa sesi.
+ *
+ * Prefix dibandingkan sebagai **segmen penuh** (`=== p` atau `startsWith(p + '/')`),
+ * bukan `startsWith(p)`, agar `/pricingx` tidak ikut lolos.
+ */
+export function isPublicPath(pathname: string): boolean {
+  if (pathname === '/' || pathname === '/login' || pathname === '/register') return true;
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
  * Single routing decision shared by the edge proxy and its tests.
  *
  * - No access cookie: public pages pass; otherwise an existing refresh cookie
@@ -48,7 +75,7 @@ export function decideRoute({
   role = 'user',
   valid = false,
 }: DecideRouteInput): DecideRouteAction {
-  const publicPath = pathname === '/login' || pathname === '/' || pathname === '/register';
+  const publicPath = isPublicPath(pathname);
 
   if (!hasSession) {
     if (publicPath) return 'pass';

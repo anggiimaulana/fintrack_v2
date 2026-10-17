@@ -235,17 +235,20 @@ func SetupRouter(
 	registerLimit := envInt("RATE_LIMIT_REGISTER", 3)
 
 	rateLimitMap := map[string]limiter.Rate{
-		"/api/v1/auth/login":           {Period: 1 * time.Minute, Limit: loginLimit},
-		"/api/v1/auth/register":        {Period: 1 * time.Minute, Limit: registerLimit},
-		"/api/v1/auth/refresh":         {Period: 1 * time.Minute, Limit: 10},
-		"/api/v1/spk/calculate":        {Period: 1 * time.Minute, Limit: 30},
+		"/api/v1/auth/login":    {Period: 1 * time.Minute, Limit: loginLimit},
+		"/api/v1/auth/register": {Period: 1 * time.Minute, Limit: registerLimit},
+		"/api/v1/auth/refresh":  {Period: 1 * time.Minute, Limit: 10},
+		"/api/v1/spk/calculate": {Period: 1 * time.Minute, Limit: 30},
+		// Public marketing catalog: unauthenticated, so it carries its own
+		// explicit budget instead of relying on the middleware default.
+		"/api/v1/public/plans": {Period: 1 * time.Minute, Limit: 60},
 		// Billing mutations are expensive (they issue invoices and call the
 		// gateway), so they get their own tight per-user budget to stop a user
 		// (or a stuck retry loop) from hammering them.
-		"/api/v1/payments/checkout":      {Period: 1 * time.Minute, Limit: 5},
+		"/api/v1/payments/checkout":        {Period: 1 * time.Minute, Limit: 5},
 		"/api/v1/invoices/:id/auto-charge": {Period: 1 * time.Minute, Limit: 5},
-		"/api/v1/invoices/:id/cancel":    {Period: 1 * time.Minute, Limit: 10},
-		"/api/v1/payments/:id/proof":     {Period: 1 * time.Minute, Limit: 10},
+		"/api/v1/invoices/:id/cancel":      {Period: 1 * time.Minute, Limit: 10},
+		"/api/v1/payments/:id/proof":       {Period: 1 * time.Minute, Limit: 10},
 		// daily counter, so a tight per-user budget stops a retry loop (or a
 		// scripted client) from inflating the counter faster than a human speaks.
 		"/api/v1/me/voice-history": {Period: 1 * time.Minute, Limit: 30},
@@ -260,6 +263,12 @@ func SetupRouter(
 		// Payment webhook is public (no JWT); signature is verified by the gateway.
 		if paymentH != nil {
 			api.POST("/payments/webhook/midtrans", paymentH.MidtransWebhook)
+
+			// Public marketing catalog. The pricing page renders before login, so
+			// it must read the plan list without a session. Same handler/service as
+			// the authenticated /plans route; only is_public && is_active plans are
+			// returned, and no user data is involved.
+			api.GET("/public/plans", paymentH.ListPublicPlans)
 		}
 
 		auth := api.Group("/auth")

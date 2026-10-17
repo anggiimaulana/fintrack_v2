@@ -1,11 +1,11 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query";
-import type { PlanLimitCycle } from "@/hooks/usePlanCycles";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { queryKeys } from "@/lib/cache-keys";
 import { staleTimeConfig } from "@/lib/cache-invalidation";
+import type { PublicPlan } from "@/lib/plans-types";
 
 /**
  * User-facing billing hooks (P0/P1).
@@ -16,38 +16,11 @@ import { staleTimeConfig } from "@/lib/cache-invalidation";
  */
 
 // ─── Types ────────────────────────────────────────────────────
-
-/** Display metadata for a plan limit, including whether it is enforced. */
-export interface PlanLimitMeta {
-  key: string;
-  label: string;
-  unit: string;
-  enforced: boolean;
-}
-
-export interface PublicPlan {
-  code: string;
-  name: string;
-  description?: string;
-  price_monthly_idr: number;
-  price_yearly_idr: number;
-  billing_period_days: number;
-  is_public: boolean;
-  sort_order: number;
-  fallback_gateway: string;
-  features: Record<string, boolean>;
-  limits: Record<string, number>;
-  /** Per-limit label/unit/enforced, from the backend entitlement catalog. */
-  limit_meta?: Record<string, PlanLimitMeta>;
-  /** Cycle configurations (e.g. weekly/monthly, degraded mode) per limit key. */
-  cycles?: Record<string, PlanLimitCycle>;
-  /** PPN rate applied at checkout (0 when tax is off). */
-  tax_rate_percent?: number;
-  /** Tax amount for one billing period at the current rate. */
-  tax_idr?: number;
-  /** Grand total (subtotal + tax) for one billing period. */
-  total_idr?: number;
-}
+//
+// The public catalog shape lives in `lib/plans-types.ts` (shared with the
+// server-only marketing client `lib/plans-server.ts`). Re-exported here so the
+// many existing `@/hooks/use-billing` imports keep working unchanged.
+export type { PublicPlan, PlanLimitMeta } from "@/lib/plans-types";
 
 export interface UserPayment {
   id: string;

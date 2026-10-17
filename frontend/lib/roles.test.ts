@@ -5,6 +5,7 @@ import {
   isSuperAdmin,
   homePathForRole,
   decideRoute,
+  isPublicPath,
   type Role,
   type DecideRouteAction,
 } from "./roles";
@@ -196,11 +197,119 @@ describe("decideRoute", () => {
       valid: false,
       expected: "pass",
     },
+    // ─── Fase 0: permukaan marketing publik (allowlist prefix) ───
+    {
+      name: "anon on /pricing -> pass",
+      pathname: "/pricing",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /features -> pass",
+      pathname: "/features",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /features/receipt-scan -> pass",
+      pathname: "/features/receipt-scan",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /about -> pass",
+      pathname: "/about",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /contact -> pass",
+      pathname: "/contact",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /faq -> pass",
+      pathname: "/faq",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /privacy -> pass",
+      pathname: "/privacy",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /terms -> pass",
+      pathname: "/terms",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /pricingx -> redirect-login (segmentasi)",
+      pathname: "/pricingx",
+      hasSession: false,
+      valid: false,
+      expected: "redirect-login",
+    },
+    {
+      name: "anon on /featuresx -> redirect-login (segmentasi)",
+      pathname: "/featuresx",
+      hasSession: false,
+      valid: false,
+      expected: "redirect-login",
+    },
+    {
+      name: "authenticated user on /pricing -> pass",
+      pathname: "/pricing",
+      role: "user",
+      valid: true,
+      expected: "pass",
+    },
   ];
 
   cases.forEach(({ name, pathname, role, valid, hasSession = true, hasRefresh, expected }) => {
     it(name, () => {
       expect(decideRoute({ pathname, role, valid, hasSession, hasRefresh })).toEqual(expected);
+    });
+  });
+});
+
+describe("isPublicPath", () => {
+  const publicPaths = [
+    "/",
+    "/login",
+    "/register",
+    "/pricing",
+    "/features",
+    "/features/receipt-scan",
+    "/about",
+    "/contact",
+    "/faq",
+    "/privacy",
+    "/terms",
+  ];
+
+  publicPaths.forEach((p) => {
+    it(`treats ${p} as public`, () => {
+      expect(isPublicPath(p)).toBe(true);
+    });
+  });
+
+  const privatePaths = ["/user", "/admin", "/super-admin", "/pricingx", "/featuresx", "/pricing-old"];
+
+  privatePaths.forEach((p) => {
+    it(`treats ${p} as private`, () => {
+      expect(isPublicPath(p)).toBe(false);
     });
   });
 });
