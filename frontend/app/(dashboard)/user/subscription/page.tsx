@@ -249,8 +249,13 @@ function SubscriptionContent() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {Object.entries(entitlements?.limits ?? {}).map(([key, limitVal]) => {
-                    const currentPlan = plans.find((p) => p.code === planCode);
+                  {Object.entries(entitlements?.limits ?? {})
+                    .filter(([key]) => {
+                      const currentPlan = plans.find((p) => p.code === planCode);
+                      return currentPlan?.limit_meta?.[key]?.enforced !== false;
+                    })
+                    .map(([key, limitVal]) => {
+                      const currentPlan = plans.find((p) => p.code === planCode);
                     const cycle = quotaData?.cycles?.[key] || currentPlan?.cycles?.[key];
                     const isWeekly =
                       cycle?.cycle_type === "weekly_monthly" ||

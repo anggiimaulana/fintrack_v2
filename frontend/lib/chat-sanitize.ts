@@ -59,7 +59,7 @@ export function sanitizeAssistantContent(content: string): string {
   // If the model answered with nothing but a payload, say something useful
   // rather than rendering an empty bubble.
   if (out === "") {
-    return "Hasil sudah saya proses. Silakan lihat grafik/ringkasan di atas.";
+    return "Hasil sudah saya proses.";
   }
   return out;
 }

@@ -62,7 +62,11 @@ export function DualQuotaCard() {
       if (limit === 0) continue // not in plan
 
       const usage = usageMap[key]
-      const monthlyUsed = usage?.used ?? 0
+      // Only display limits that have active consumption tracking from the backend.
+      // Unenforced limits (such as max_categories or max_wallets which lack usage resolvers) are skipped.
+      if (!usage) continue
+
+      const monthlyUsed = usage.used ?? 0
       const monthlyUnlimited = limit < 0
       const monthlyRemaining = monthlyUnlimited ? -1 : Math.max(0, limit - monthlyUsed)
 

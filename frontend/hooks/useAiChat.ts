@@ -3,7 +3,6 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import api, { refreshSession } from "@/lib/api";
-import { queryKeys } from "@/lib/cache-keys";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -15,8 +14,9 @@ interface ChatMessage {
 }
 
 interface StreamEvent {
-  type: "content" | "session_created" | "agent_step" | "tool_call" | "tool_result" | "title_update" | "done" | "error" | "cooldown";
+  type: "content" | "reasoning" | "session_created" | "agent_step" | "tool_call" | "tool_result" | "title_update" | "done" | "error" | "cooldown";
   content?: string;
+  reasoning?: string;
   step?: string;
   step_label?: string;
   step_status?: string;
@@ -202,10 +202,29 @@ export function useAiChat(source?: string) {
 				case "session_created":
 				  onMessage({ role: "assistant", content: "" });
 				  break;
+				case "reasoning":
+                  setToolSteps((prev) => {
+                    const existing = prev.findIndex(s => s.tool === "reasoning");
+                    if (existing >= 0) return prev;
+                    const next = [{ tool: "reasoning", status: "running" as const }, ...prev];
+                    toolStepsRef.current = next;
+                    return next;
+                  });
+                  break;
 				case "content":
                   if (event.content) {
                     lastContent += event.content;
                     setStreamingContent(lastContent);
+                    setToolSteps((prev) => {
+                      const idx = prev.findIndex(s => s.tool === "reasoning" && s.status === "running");
+                      if (idx >= 0) {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], status: "success" };
+                        toolStepsRef.current = next;
+                        return next;
+                      }
+                      return prev;
+                    });
                   }
                   break;
                 case "agent_step": {

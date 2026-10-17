@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useCallback } from "react";
+import { Suspense, useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Plus, Download, Camera, ArrowDownLeft, ArrowUpRight, PiggyBank, Wallet, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -125,6 +125,12 @@ function TransactionsContent() {
   const { mutateAsync: deleteTransaction, isPending: isDeleting } = useDeleteTransaction();
   // UX mirror only: the backend gate is authoritative (see lib/entitlement-errors).
   const { hasFeature } = useEntitlements();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const canExport = mounted && hasFeature("reports_export");
+  const canScan = mounted && hasFeature("ocr_receipt");
 
   const [formType, setFormType] = useState<"expense" | "income" | "savings">("expense");
   const [formAmount, setFormAmount] = useState(0);
@@ -235,8 +241,8 @@ function TransactionsContent() {
           <Button
             variant="outline"
             className="flex-1 sm:flex-none text-muted-foreground cursor-pointer disabled:cursor-not-allowed"
-            disabled={!hasFeature("reports_export") || isExporting}
-            title={hasFeature("reports_export") ? undefined : "Ekspor laporan membutuhkan paket Pro atau lebih tinggi."}
+            disabled={!canExport || isExporting}
+            title={canExport ? undefined : "Ekspor laporan membutuhkan paket Pro atau lebih tinggi."}
             onClick={handleExportCSV}
           >
             <Download className="w-4 h-4 mr-2" />
@@ -245,8 +251,8 @@ function TransactionsContent() {
           <Button
             variant="outline"
             className="text-amber-600 border-amber-600 hover:bg-amber-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!hasFeature("ocr_receipt")}
-            title={hasFeature("ocr_receipt") ? undefined : "Pindai struk membutuhkan paket Pro atau lebih tinggi."}
+            disabled={!canScan}
+            title={canScan ? undefined : "Pindai struk membutuhkan paket Pro atau lebih tinggi."}
             onClick={() => setScannerOpen(true)}
           >
             <Camera className="w-4 h-4 mr-2" />

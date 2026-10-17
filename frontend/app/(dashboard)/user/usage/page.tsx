@@ -12,7 +12,6 @@ import { DataTable } from "@/components/data-table/data-table";
 import { DataTablePagination } from "@/components/data-table/data-table-pagination";
 import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
 import { useDataTableUrlState } from "@/hooks/use-data-table-url-state";
-import { useEntitlements } from "@/hooks/use-entitlements";
 import { useUsageHistory, type UsageEvent } from "@/hooks/use-usage";
 import { DualQuotaCard } from "@/components/billing/DualQuotaCard";
 import { UsageChart, USAGE_CHART_TYPES, type UsageRange, type UsageChartType } from "@/components/usage/UsageChart";
@@ -120,7 +119,6 @@ function UsageContent() {
   const table = useDataTableUrlState({ perPage: 20 });
   const filterKind = table.filters.kind || "";
 
-  const { usage, period } = useEntitlements();
 
   const debouncedHistStart = useDebounce(histStart, 300);
   const debouncedHistEnd = useDebounce(histEnd, 300);
@@ -185,10 +183,9 @@ function UsageContent() {
       e.description,
       e.amount,
       e.unit,
-      e.cost_idr,
       new Date(e.created_at).toISOString(),
     ]);
-    const csv = toCsv(["Jenis", "Keterangan", "Jumlah", "Satuan", "Biaya (IDR)", "Waktu"], rows);
+    const csv = toCsv(["Jenis", "Keterangan", "Jumlah", "Satuan", "Waktu"], rows);
     downloadCsv(`penggunaan-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   };
 

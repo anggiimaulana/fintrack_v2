@@ -34,6 +34,7 @@ const toolLabels: Record<string, string> = {
   get_categories: "Memuat daftar kategori...",
   get_finance_insight: "Menganalisis data keuangan...",
   generate_chart: "Membuat visualisasi grafik...",
+  reasoning: "Memproses penalaran mendalam...",
 };
 
 function updateUrlSession(sessionId: string | null) {

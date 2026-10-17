@@ -39,7 +39,7 @@ export function QuotaSettingsTab({ settings, isLoading, onSave, isSaving }: Quot
     () =>
       definitions.filter(
         (d) =>
-          (d.group_key === 'kuota' || d.group_key === 'ai_estimate') &&
+          (d.group_key === 'kuota' || d.group_key === 'ai_estimate' || d.group_key === 'ai') &&
           d.is_active &&
           d.is_writable &&
           !d.is_secret,

@@ -4,7 +4,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowLeftRight, Sparkles, ScanLine, Mic, Coins } from "lucide-react";
 import { SortableHeader } from "@/components/data-table/data-table-column-header";
 import type { UsageEvent } from "@/hooks/use-usage";
-import { formatRupiah } from "@/lib/format";
 
 /** A colored icon + label per consumption kind, so a row reads at a glance. */
 function kindMeta(kind: string): { icon: React.ElementType; label: string; className: string } {
@@ -46,8 +45,7 @@ export interface UsageHistoryColumnsOptions {
 
 /**
  * Column definitions for the usage-history ledger. Sorting is server-side: the
- * column ids match the API's accepted `sort` values (created_at | kind | amount
- * | cost_idr).
+ * column ids match the API's accepted `sort` values (created_at | kind | amount).
  */
 export function usageHistoryColumns({
   page = 1,
@@ -98,18 +96,6 @@ export function usageHistoryColumns({
           {formatAmount(row.original.amount, row.original.unit)}
         </span>
       ),
-      meta: { align: "right" },
-    },
-    {
-      id: "cost_idr",
-      accessorFn: (e) => e.cost_idr,
-      header: (ctx) => <SortableHeader title="Biaya" columnId="cost_idr" ctx={ctx} className="justify-end" />,
-      cell: ({ row }) =>
-        row.original.cost_idr > 0 ? (
-          <span className="font-mono text-sm font-bold text-foreground">{formatRupiah(row.original.cost_idr)}</span>
-        ) : (
-          <span className="text-xs font-bold text-muted-foreground">—</span>
-        ),
       meta: { align: "right" },
     },
     {

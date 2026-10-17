@@ -38,9 +38,8 @@ describe("DualQuotaCard", () => {
         },
       },
       isLoading: false,
-      error: null,
-      refetch: vi.fn(),
-    })
+      isError: false,
+    } as unknown as UseEntitlementsResult)
 
     vi.mocked(quotaHook.useQuota).mockReturnValue({
       data: {
@@ -105,9 +104,8 @@ describe("DualQuotaCard", () => {
         },
       },
       isLoading: false,
-      error: null,
-      refetch: vi.fn(),
-    })
+      isError: false,
+    } as unknown as UseEntitlementsResult)
 
     vi.mocked(quotaHook.useQuota).mockReturnValue({
       data: {
@@ -208,4 +206,54 @@ describe("DualQuotaCard", () => {
     // Weekly progress text displays 59.394 instead of 0
     expect(screen.getByText(/59\.394 \/ 100\.000/)).toBeInTheDocument()
   })
+
+  it("does not render unenforced/untracked limits such as max_categories or max_wallets", () => {
+    vi.mocked(entitlementsHook.useEntitlements).mockReturnValue({
+      entitlements: {
+        user_id: "1",
+        plan_code: "pro",
+        plan_name: "Pro Plan",
+        status: "active",
+        version: 1,
+        features: {},
+        limits: {
+          ai_tokens_per_cycle: 150000,
+          max_categories: 30,
+          max_wallets: 5,
+        },
+        usage: {
+          ai_tokens_per_cycle: {
+            used: 45000,
+            limit: 150000,
+            remaining: 105000,
+            unlimited: false,
+            unit: "kuota",
+          },
+        },
+        period: {
+          start: new Date().toISOString(),
+          end: new Date(Date.now() + 15 * 24 * 3600_000).toISOString(),
+        },
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as UseEntitlementsResult)
+
+    vi.mocked(quotaHook.useQuota).mockReturnValue({
+      data: {
+        warning_threshold: 80,
+        counters: [],
+        cycles: {},
+      },
+      isLoading: false,
+    } as unknown as UseQueryResult<UserQuotaSummary, Error>)
+
+    render(<DualQuotaCard />)
+
+    expect(screen.getByText("Kuota AI")).toBeInTheDocument()
+    expect(screen.queryByText("max_categories")).not.toBeInTheDocument()
+    expect(screen.queryByText("max_wallets")).not.toBeInTheDocument()
+  })
 })
+
