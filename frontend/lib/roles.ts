@@ -41,6 +41,7 @@ export type DecideRouteAction = 'redirect-login' | 'pass' | { redirect: string }
 const PUBLIC_PREFIXES = [
   '/pricing',
   '/features',
+  '/explore',
   '/about',
   '/contact',
   '/faq',

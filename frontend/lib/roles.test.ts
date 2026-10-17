@@ -313,6 +313,7 @@ describe("isPublicPath", () => {
     "/pricing",
     "/features",
     "/features/receipt-scan",
+    "/explore",
     "/about",
     "/contact",
     "/faq",

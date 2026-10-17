@@ -3,9 +3,9 @@ import sitemap from "./sitemap";
 import { FEATURE_SLUGS } from "@/lib/marketing/features";
 
 describe("app/sitemap.ts", () => {
-  it("includes all 8 static marketing routes plus 6 feature sub-pages", () => {
+  it("includes all 9 static marketing routes plus 6 feature sub-pages", () => {
     const entries = sitemap();
-    expect(entries).toHaveLength(8 + 6);
+    expect(entries).toHaveLength(9 + 6);
   });
 
   it("lists all feature slugs in the sitemap", () => {

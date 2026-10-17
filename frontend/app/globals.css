@@ -158,7 +158,7 @@
   html {
     @apply font-sans;
     scroll-behavior: smooth;
-    scroll-padding-top: 5rem;
+    scroll-padding-top: 4rem;
   }
   input::placeholder,
   textarea::placeholder {

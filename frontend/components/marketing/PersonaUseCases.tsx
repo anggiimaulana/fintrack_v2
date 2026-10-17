@@ -15,7 +15,7 @@ export function PersonaUseCases() {
   const { eyebrow, h2, items } = LANDING.personas;
 
   return (
-    <section id="who-its-for" className="scroll-mt-24 border-b-[3px] border-foreground bg-background">
+    <section id="who-its-for" className="border-b-[3px] border-foreground bg-background">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:py-24">
         <SectionHeading eyebrow={eyebrow} title={h2} align="center" className="mx-auto mb-12 max-w-3xl" />
 

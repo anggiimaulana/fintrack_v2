@@ -20,7 +20,7 @@ describe("MarketingMobileBottomNav", () => {
     expect(within(nav).getByRole("link", { name: "Fitur" })).toHaveAttribute("href", "/features");
     expect(within(nav).getByRole("link", { name: "Cara Kerja" })).toHaveAttribute("href", "/#how-it-works");
     expect(within(nav).getByRole("link", { name: "Harga" })).toHaveAttribute("href", "/pricing");
-    expect(within(nav).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/faq");
+    expect(within(nav).getByRole("link", { name: "Jelajahi" })).toHaveAttribute("href", "/explore");
   });
 
   it("marks the active destination with aria-current", () => {

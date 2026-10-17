@@ -29,19 +29,11 @@ export const NAV: NavItem[] = [
   { label: "Fitur", href: "/features" },
   { label: "Cara Kerja", href: "/#how-it-works" },
   { label: "Harga", href: "/pricing" },
-  { label: "FAQ", href: "/faq" },
+  { label: "Jelajahi", href: "/explore" },
 ];
 
 export const PRIMARY_CTA: Cta = { label: "Mulai Gratis", href: "/register" };
 export const SIGN_IN_CTA: Cta = { label: "Masuk", href: "/login" };
-
-/** Mobile drawer secondary links (primary links are in MobileBottomNav). */
-export const MOBILE_DRAWER_NAV: NavItem[] = [
-  { label: "Tentang Kami", href: "/about" },
-  { label: "Kontak", href: "/contact" },
-  { label: "Kebijakan Privasi", href: "/privacy" },
-  { label: "Syarat & Ketentuan", href: "/terms" },
-];
 
 // ─── Footer ────────────────────────────────────────────────────
 
@@ -280,6 +272,73 @@ export const FAQ_PAGE = {
   },
 } as const;
 
+// ─── Explore Hub ────────────────────────────────────────────────
+
+export interface ExploreCard {
+  title: string;
+  tagline: string;
+  href: string;
+  badge: string;
+  cta: string;
+  iconName: "HelpCircle" | "Info" | "Headphones" | "ShieldCheck" | "FileText";
+}
+
+export const EXPLORE_HUB = {
+  eyebrow: "JELAJAHI",
+  h1: "Pusat Informasi & Eksplorasi",
+  subhead:
+    "Semua hal tentang FinTrack dalam satu tempat: panduan FAQ, misi pengembang, saluran bantuan resmi, hingga komitmen privasi dan ketentuan layanan.",
+  gridTitle: "Daftar Halaman Eksplorasi",
+  cta: {
+    h2: "Siap Mengelola Keuangan dengan Tenang?",
+    subhead: "Daftar dalam hitungan detik tanpa kartu kredit. Mulai catat transaksi secara otomatis dengan kecerdasan buatan.",
+    primary: { label: "Mulai Gratis", href: "/register" },
+    secondary: { label: "Lihat Harga", href: "/pricing" },
+  },
+  cards: [
+    {
+      title: "Pertanyaan Umum (FAQ)",
+      tagline: "Jawaban komprehensif seputar fitur AI, batasan kuota gratis, keamanan isolasi data, dan integrasi pembayaran.",
+      href: "/faq",
+      badge: "Bantuan",
+      cta: "Buka FAQ",
+      iconName: "HelpCircle",
+    },
+    {
+      title: "Tentang FinTrack",
+      tagline: "Misi kami, arsitektur teknologi di balik sistem, dan prinsip privasi mutlak tanpa kompromi.",
+      href: "/about",
+      badge: "Profil",
+      cta: "Pelajari Misi Kami",
+      iconName: "Info",
+    },
+    {
+      title: "Kontak & Dukungan",
+      tagline: "Saluran komunikasi langsung dengan tim pengembang melalui WhatsApp resmi dan email untuk pertanyaan maupun kendala.",
+      href: "/contact",
+      badge: "Dukungan",
+      cta: "Hubungi Kami",
+      iconName: "Headphones",
+    },
+    {
+      title: "Kebijakan Privasi",
+      tagline: "Transparansi penuh atas pemrosesan data, hak ekspor riwayat keuangan, serta kendali penghapusan akun kapan saja.",
+      href: "/privacy",
+      badge: "Legalitas",
+      cta: "Baca Kebijakan",
+      iconName: "ShieldCheck",
+    },
+    {
+      title: "Syarat & Ketentuan",
+      tagline: "Ketentuan lisensi penggunaan platform, aturan akun pengguna, dan batasan tanggung jawab hukum FinTrack.",
+      href: "/terms",
+      badge: "Ketentuan",
+      cta: "Baca Ketentuan",
+      iconName: "FileText",
+    },
+  ] as ExploreCard[],
+} as const;
+
 // ─── Per-page SEO ──────────────────────────────────────────────
 
 export interface PageMeta {
@@ -303,6 +362,11 @@ export const PAGE_META: Record<string, PageMeta> = {
     title: "Fitur FinTrack — AI, OCR Struk, Suara, Laporan",
     description:
       "Enam fitur utama FinTrack: catat lewat chat, suara, dan foto struk; dasbor, analisis kesehatan finansial, serta laporan dan ekspor data.",
+  },
+  "/explore": {
+    title: "Jelajahi FinTrack — Pusat Informasi, Bantuan & Legalitas",
+    description:
+      "Temukan panduan, jawaban pertanyaan umum, profil misi, saluran bantuan, serta transparansi privasi dan ketentuan FinTrack.",
   },
   "/about": {
     title: "Tentang FinTrack — Misi & Prinsip",

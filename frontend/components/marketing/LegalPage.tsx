@@ -77,7 +77,7 @@ export function LegalPage({ doc }: { doc: LegalDocument }) {
 
           <div className="flex flex-col gap-10">
             {doc.sections.map((section) => (
-              <article key={section.id} id={section.id} className="scroll-mt-24 flex flex-col gap-3">
+              <article key={section.id} id={section.id} className="flex flex-col gap-3">
                 <h2 className="font-heading text-xl font-extrabold tracking-tight">
                   {section.heading}
                 </h2>

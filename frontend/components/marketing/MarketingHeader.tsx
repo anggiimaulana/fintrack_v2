@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MOBILE_DRAWER_NAV, NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
+import { NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
 import { cn } from "@/lib/utils";
 
 /**
@@ -134,46 +134,23 @@ export function MarketingHeader() {
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Akun
             </span>
-            <Button variant="outline" asChild className="w-full font-bold">
-              <Link href={SIGN_IN_CTA.href} onClick={() => setOpenedPath(null)}>
-                {SIGN_IN_CTA.label}
-              </Link>
-            </Button>
-            <Button asChild className="w-full font-bold">
-              <Link href={PRIMARY_CTA.href} onClick={() => setOpenedPath(null)}>
-                {PRIMARY_CTA.label}
-              </Link>
-            </Button>
-          </div>
-
-          {/* Navigasi Tambahan */}
-          <div className="flex flex-col gap-2 border-t-2 border-foreground/15 pt-4">
-            <span className="font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Lainnya
-            </span>
-            <nav aria-label="Navigasi seluler" className="flex flex-col gap-1">
-              {MOBILE_DRAWER_NAV.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={isActive(item.href) ? "page" : undefined}
-                  onClick={() => setOpenedPath(null)}
-                  className={cn(
-                    "rounded-md border-2 px-3 py-2 text-sm font-bold transition-all",
-                    isActive(item.href)
-                      ? "border-foreground bg-accent-acid text-accent-acid-foreground shadow-[2px_2px_0px_0px] shadow-foreground"
-                      : "border-transparent text-foreground hover:border-foreground hover:bg-muted",
-                  )}
-                >
-                  {item.label}
+            <nav aria-label="Navigasi seluler" className="flex flex-col gap-3">
+              <Button variant="outline" asChild className="w-full font-bold">
+                <Link href={SIGN_IN_CTA.href} onClick={() => setOpenedPath(null)}>
+                  {SIGN_IN_CTA.label}
                 </Link>
-              ))}
+              </Button>
+              <Button asChild className="w-full font-bold">
+                <Link href={PRIMARY_CTA.href} onClick={() => setOpenedPath(null)}>
+                  {PRIMARY_CTA.label}
+                </Link>
+              </Button>
             </nav>
           </div>
         </div>
 
-        <p className="border-t-2 border-foreground/10 pt-4 font-mono text-[11px] text-muted-foreground">
-          FinTrack © 2026. Navigasi utama tersedia di bilah bawah.
+        <p className="border-t-2 border-foreground/10 pt-4 font-mono text-xs text-muted-foreground">
+          FinTrack © 2026
         </p>
       </div>
     </header>

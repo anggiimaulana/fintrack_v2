@@ -19,7 +19,7 @@ export interface FaqAccordionProps {
 
 export function FaqAccordion({ id = "faq", eyebrow, heading, description, items, footer }: FaqAccordionProps) {
   return (
-    <section id={id} className="scroll-mt-24 border-b-[3px] border-foreground bg-muted">
+    <section id={id} className="border-b-[3px] border-foreground bg-muted">
       <div className="mx-auto max-w-3xl px-4 py-16 lg:py-24">
         <SectionHeading eyebrow={eyebrow} title={heading} description={description} align="center" className="mb-12" />
 

@@ -14,7 +14,7 @@ export function FeatureGrid() {
   const { eyebrow, h2, subhead } = LANDING.featureSection;
 
   return (
-    <section id="features" className="scroll-mt-24 border-b-[3px] border-foreground bg-background">
+    <section id="features" className="border-b-[3px] border-foreground bg-background">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:py-24">
         <SectionHeading
           eyebrow={eyebrow}

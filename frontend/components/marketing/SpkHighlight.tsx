@@ -40,7 +40,7 @@ export function SpkHighlight() {
   const { eyebrow, h2, description, statuses, example } = LANDING.spk;
 
   return (
-    <section id="insights" className="scroll-mt-24 border-b-[3px] border-foreground bg-background">
+    <section id="insights" className="border-b-[3px] border-foreground bg-background">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 lg:grid-cols-2 lg:py-24">
         <div className="flex flex-col gap-6">
           <SectionHeading eyebrow={eyebrow} title={h2} description={description} />

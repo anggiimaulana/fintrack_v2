@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HelpCircle, Home, LayoutGrid, Tag, Workflow } from "lucide-react";
+import { Compass, Home, LayoutGrid, Tag, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MOBILE_NAV_ITEMS = [
@@ -10,7 +10,7 @@ const MOBILE_NAV_ITEMS = [
   { label: "Fitur", href: "/features", icon: LayoutGrid },
   { label: "Cara Kerja", href: "/#how-it-works", icon: Workflow },
   { label: "Harga", href: "/pricing", icon: Tag },
-  { label: "FAQ", href: "/faq", icon: HelpCircle },
+  { label: "Jelajahi", href: "/explore", icon: Compass },
 ];
 
 export function MarketingMobileBottomNav() {

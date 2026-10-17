@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MarketingHeader } from "./MarketingHeader";
-import { MOBILE_DRAWER_NAV, NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
+import { NAV, PRIMARY_CTA, SIGN_IN_CTA } from "@/lib/marketing/copy";
 
 const pathname = vi.fn(() => "/");
 vi.mock("next/navigation", () => ({
@@ -19,7 +19,7 @@ describe("MarketingHeader", () => {
 
     expect(within(nav).getByRole("link", { name: "Fitur" })).toHaveAttribute("href", "/features");
     expect(within(nav).getByRole("link", { name: "Harga" })).toHaveAttribute("href", "/pricing");
-    expect(within(nav).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/faq");
+    expect(within(nav).getByRole("link", { name: "Jelajahi" })).toHaveAttribute("href", "/explore");
     expect(within(nav).getByRole("link", { name: "Cara Kerja" })).toHaveAttribute("href", "/#how-it-works");
   });
 
@@ -42,14 +42,11 @@ describe("MarketingHeader", () => {
 
     expect(screen.getByRole("button", { name: "Tutup menu" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("navigation", { name: "Navigasi seluler" })).toBeInTheDocument();
-    // Drawer surfaces account actions and secondary destinations (primary are in bottom nav).
-    const mobile = screen.getByRole("navigation", { name: "Navigasi seluler" });
-    MOBILE_DRAWER_NAV.forEach((item) => {
-      expect(within(mobile).getByRole("link", { name: item.label })).toHaveAttribute("href", item.href);
-    });
+    // Drawer focuses purely on Account actions (primary navigation is in bottom nav and /explore).
     const drawer = document.getElementById("marketing-mobile-menu")!;
     expect(within(drawer).getByRole("link", { name: SIGN_IN_CTA.label })).toHaveAttribute("href", SIGN_IN_CTA.href);
     expect(within(drawer).getByRole("link", { name: PRIMARY_CTA.label })).toHaveAttribute("href", PRIMARY_CTA.href);
+    expect(within(drawer).getByText("FinTrack © 2026")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Tutup menu" }));
     expect(screen.queryByRole("navigation", { name: "Navigasi seluler" })).not.toBeInTheDocument();

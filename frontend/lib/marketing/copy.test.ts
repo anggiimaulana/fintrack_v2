@@ -62,7 +62,7 @@ describe("landing copy structure", () => {
 
 describe("navigation & footer links", () => {
   it("links navigation to real routes", () => {
-    expect(NAV.map((n) => n.href)).toEqual(["/features", "/#how-it-works", "/pricing", "/faq"]);
+    expect(NAV.map((n) => n.href)).toEqual(["/features", "/#how-it-works", "/pricing", "/explore"]);
   });
 
   it("never uses an empty '#' link anywhere", () => {
@@ -82,6 +82,7 @@ describe("PAGE_META", () => {
     "/",
     "/pricing",
     "/features",
+    "/explore",
     "/about",
     "/contact",
     "/faq",
