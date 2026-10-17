@@ -169,3 +169,49 @@ export function isFreePlan(plan: PublicPlan): boolean {
 export function yearlyMonthlyEquivalent(plan: PublicPlan): number {
   return Math.round((plan.price_yearly_idr ?? 0) / 12);
 }
+
+/** Billing cycle shown on the pricing page toggle (spec doc 04 §A.4). */
+export type BillingCycle = "monthly" | "yearly";
+
+/** Subtotal + tax + total for the selected cycle (spec doc 04 §A.2). */
+export interface TaxBreakdown {
+  /** Price shown on the card, before tax. */
+  subtotalIdr: number;
+  taxIdr: number;
+  totalIdr: number;
+  /** Tax display name from the catalog (e.g. "PPN"). */
+  label: string;
+  ratePercent: number;
+}
+
+/**
+ * Tax line for one billing period, or `null` when no tax applies.
+ *
+ * The card always shows the **subtotal**; tax is a separate line and the total is
+ * subtotal + tax, matching the backend meaning of `tax_idr`/`total_idr`
+ * (spec doc 04 §A.2). `tax_enabled` plus a positive rate gate the line so a
+ * "+ 0%" row is never shown. The monthly cycle trusts the backend-provided
+ * `tax_idr`/`total_idr`; the yearly cycle has no backend tax field, so the same
+ * rate is applied to the yearly subtotal to stay transparent.
+ */
+export function taxBreakdown(plan: PublicPlan, cycle: BillingCycle): TaxBreakdown | null {
+  if (!plan.tax_enabled) return null;
+  const ratePercent = plan.tax_rate_percent ?? 0;
+  if (ratePercent <= 0) return null;
+
+  const subtotalIdr = cycle === "yearly" ? (plan.price_yearly_idr ?? 0) : (plan.price_monthly_idr ?? 0);
+  const hasBackendMonthlyTax =
+    cycle === "monthly" && plan.tax_idr != null && plan.total_idr != null;
+  const taxIdr = hasBackendMonthlyTax
+    ? (plan.tax_idr as number)
+    : Math.round((subtotalIdr * ratePercent) / 100);
+  const totalIdr = hasBackendMonthlyTax ? (plan.total_idr as number) : subtotalIdr + taxIdr;
+
+  return {
+    subtotalIdr,
+    taxIdr,
+    totalIdr,
+    label: plan.tax_label ?? "Pajak",
+    ratePercent,
+  };
+}

@@ -8,6 +8,7 @@ import {
   orderPlans,
   planHasFeature,
   planHighlights,
+  taxBreakdown,
   yearlyMonthlyEquivalent,
 } from "./plans";
 
@@ -168,5 +169,50 @@ describe("plan ordering & helpers", () => {
 
   it("computes the effective monthly price for a yearly plan", () => {
     expect(yearlyMonthlyEquivalent(PRO)).toBe(32500);
+  });
+});
+
+describe("taxBreakdown", () => {
+  const TAXED = makePlan({
+    code: "pro",
+    price_monthly_idr: 39000,
+    price_yearly_idr: 390000,
+    tax_enabled: true,
+    tax_label: "PPN",
+    tax_rate_percent: 11,
+    tax_idr: 4290,
+    total_idr: 43290,
+  });
+
+  it("returns null when tax is disabled", () => {
+    expect(taxBreakdown(FREE, "monthly")).toBeNull();
+  });
+
+  it("returns null rather than a '+ 0%' line when the rate is zero", () => {
+    expect(taxBreakdown(makePlan({ tax_enabled: true, tax_rate_percent: 0 }), "monthly")).toBeNull();
+  });
+
+  it("uses the backend monthly tax/total for the monthly cycle", () => {
+    expect(taxBreakdown(TAXED, "monthly")).toEqual({
+      subtotalIdr: 39000,
+      taxIdr: 4290,
+      totalIdr: 43290,
+      label: "PPN",
+      ratePercent: 11,
+    });
+  });
+
+  it("applies the same rate to the yearly subtotal, which has no backend tax field", () => {
+    const yearly = taxBreakdown(TAXED, "yearly");
+    expect(yearly).not.toBeNull();
+    expect(yearly?.subtotalIdr).toBe(390000);
+    expect(yearly?.taxIdr).toBe(42900);
+    expect(yearly?.totalIdr).toBe(432900);
+  });
+
+  it("never mixes tax into the subtotal", () => {
+    const monthly = taxBreakdown(TAXED, "monthly");
+    expect(monthly?.subtotalIdr).toBe(TAXED.price_monthly_idr);
+    expect(monthly?.totalIdr).toBe((monthly?.subtotalIdr ?? 0) + (monthly?.taxIdr ?? 0));
   });
 });
