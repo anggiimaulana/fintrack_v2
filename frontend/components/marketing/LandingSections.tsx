@@ -8,7 +8,6 @@ import { ProblemSolution } from "./ProblemSolution";
 import { FeatureGrid } from "./FeatureGrid";
 import { HowItWorks } from "./HowItWorks";
 import { SpkHighlight } from "./SpkHighlight";
-import { TickerBand } from "./TickerBand";
 import { PricingTeaser } from "./PricingTeaser";
 import { PersonaUseCases } from "./PersonaUseCases";
 import { FaqAccordion } from "./FaqAccordion";
@@ -31,7 +30,6 @@ export function LandingSections({ plans }: { plans: PublicPlan[] }) {
       <FeatureGrid />
       <HowItWorks />
       <SpkHighlight />
-      <TickerBand />
       <PricingTeaser plans={plans} />
       <PersonaUseCases />
       <FaqAccordion heading={LANDING.faq.h2} items={LANDING_FAQ} footer={LANDING.faq.viewAll} />

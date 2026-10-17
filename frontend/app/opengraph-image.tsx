@@ -4,7 +4,7 @@ import { ImageResponse } from "next/og";
  * Dynamic Open Graph / Twitter image (spec doc 07 §3).
  *
  * Generated on demand with `next/og` (no external sharp/canvas dependency).
- * Neobrutalist design: dark surface, thick border, acid yellow accent, Funnel
+ * Neobrutalist design: dark surface, thick border, electric sky blue accent, Funnel
  * Display inspired heavy typography.
  */
 export const size = { width: 1200, height: 630 };
@@ -25,7 +25,7 @@ export default function OpengraphImage() {
           backgroundColor: "#121212",
           color: "#ffffff",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          border: "8px solid #FFE23D",
+          border: "8px solid #38BDF8",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -33,7 +33,7 @@ export default function OpengraphImage() {
             style={{
               width: 56,
               height: 56,
-              backgroundColor: "#FFE23D",
+              backgroundColor: "#38BDF8",
               color: "#121212",
               display: "flex",
               alignItems: "center",
@@ -65,7 +65,7 @@ export default function OpengraphImage() {
               border: "2px solid #333333",
               fontSize: 14,
               fontWeight: 700,
-              color: "#FFE23D",
+              color: "#38BDF8",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
@@ -116,7 +116,7 @@ export default function OpengraphImage() {
           <div
             style={{
               padding: "10px 24px",
-              backgroundColor: "#FFE23D",
+              backgroundColor: "#38BDF8",
               color: "#121212",
               fontSize: 18,
               fontWeight: 900,

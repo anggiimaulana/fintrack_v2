@@ -11,7 +11,7 @@
   --font-mono: var(--font-jetbrains-mono);
   /* Display font (Funnel Display, set in app/layout.tsx). Headings only. */
   --font-heading: var(--font-display);
-  /* Acid yellow accent — actions/highlights only, never white text on it. */
+  /* Electric sky blue accent — actions/highlights only, never white text on it. */
   --color-accent-acid: var(--accent-acid);
   --color-accent-acid-strong: var(--accent-acid-strong);
   --color-accent-acid-foreground: var(--accent-acid-foreground);
@@ -97,10 +97,10 @@
   --surface-dark: oklch(0.22 0.03 265);
   --surface-dark-2: oklch(0.26 0.03 265);
   --surface-dark-3: oklch(0.31 0.03 265);
-  /* Acid yellow: only for primary actions & highlights (spec doc 03 §A.3).
+  /* Electric sky blue accent: primary actions & highlights in neobrutalism.
      Never place white text on top of it — foreground stays dark. */
-  --accent-acid: oklch(0.92 0.19 103);
-  --accent-acid-strong: oklch(0.86 0.19 100);
+  --accent-acid: oklch(0.82 0.14 220);
+  --accent-acid-strong: oklch(0.74 0.14 220);
   --accent-acid-foreground: oklch(0.15 0.02 260);
   /* Shared motion durations (spec doc 03 §A.5) — only transform/opacity. */
   --motion-fast: 100ms;
