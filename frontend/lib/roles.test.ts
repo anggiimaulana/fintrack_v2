@@ -255,6 +255,27 @@ describe("decideRoute", () => {
       expected: "pass",
     },
     {
+      name: "anon on /robots.txt -> pass",
+      pathname: "/robots.txt",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /sitemap.xml -> pass",
+      pathname: "/sitemap.xml",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
+      name: "anon on /opengraph-image -> pass",
+      pathname: "/opengraph-image",
+      hasSession: false,
+      valid: false,
+      expected: "pass",
+    },
+    {
       name: "anon on /pricingx -> redirect-login (segmentasi)",
       pathname: "/pricingx",
       hasSession: false,

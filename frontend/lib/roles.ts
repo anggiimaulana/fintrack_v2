@@ -49,13 +49,25 @@ const PUBLIC_PREFIXES = [
 ] as const;
 
 /**
+ * Halaman tunggal yang boleh diakses tanpa sesi (akar, auth, dan rute SEO publik).
+ */
+const PUBLIC_EXACT_PATHS = [
+  '/',
+  '/login',
+  '/register',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/opengraph-image',
+] as const;
+
+/**
  * True bila `pathname` boleh diakses tanpa sesi.
  *
  * Prefix dibandingkan sebagai **segmen penuh** (`=== p` atau `startsWith(p + '/')`),
  * bukan `startsWith(p)`, agar `/pricingx` tidak ikut lolos.
  */
 export function isPublicPath(pathname: string): boolean {
-  if (pathname === '/' || pathname === '/login' || pathname === '/register') return true;
+  if (PUBLIC_EXACT_PATHS.some((p) => pathname === p)) return true;
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
