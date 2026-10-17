@@ -4,6 +4,59 @@
 
 ---
 
+## 2026-10-17 — Eksekusi Lengkap: Situs Marketing & SEO FinTrack v2 (Fase 0 s/d Fase 7)
+- **Konteks**: Eksekusi rencana 7-fase per spesifikasi `second_brain/0_Inbox/ide/marketing-seo-spec/` untuk merombak permukaan publik FinTrack: SEO, konversi, desain neobrutalism, copy akurat (tanpa klaim fiktif/BYOK), dan perlindungan rute privat.
+- **Aksi**:
+  - **Fase 0 (`ad23cef`)**: Guard auth `isPublicPath` & `decideRoute` diperbaiki (`lib/roles.ts`); endpoint publik backend `GET /api/v1/public/plans` dengan rate-limit (reuse catalog service); klien server ISR `lib/plans-server.ts`; tipe bersama `lib/plans-types.ts`.
+  - **Fase 1 (`53eb744`)**: Struktur route group `app/(marketing)/`; token warna neobrutalism (acid yellow, red coral, hard shadow); header & footer responsive; data model murni `site.ts`, `features.ts`, `faq.ts`, `legal.ts`, `copy.ts`.
+  - **Fase 2 (`62d95d2`)**: Perombakan landing page `app/(marketing)/page.tsx` (12 section, InteractiveDemo 3-tab, ticker marquee, stat counter, problem-solution, feature grid, how it works, persona, spk highlight, pricing teaser, FAQ, CTA).
+  - **Fase 3 (`786272b` & `fdd6e4a`)**: Halaman `/pricing` dan tabel komparasi detail; toggle bulanan/tahunan; filter limit `enforced: true`; kebijakan pajak subtotal transparan; JSON-LD Product + Offer.
+  - **Fase 4 (`bbb3d25`)**: Hub `/features` dan 6 sub-halaman mendalam (`ai-chat`, `voice-input`, `receipt-scan`, `dashboard`, `financial-health`, `reports`); static params & fallback 404; kata unik 449–540 kata; breadcrumbs & JSON-LD WebPage.
+  - **Fase 5 (`07596b9`)**: Halaman pendukung (`/about`, `/contact`, `/faq`, `/privacy`, `/terms`); `<details>` native FAQ; contact via mailto/WhatsApp; LegalPage dengan status draf; accessibility & contract tests.
+  - **Fase 6 (`e43f82a`)**: SEO teknis global (`metadataBase`, title template, canonical, robots index/follow, default OG/Twitter images); `Organization` & `WebSite` JSON-LD di root marketing; `app/robots.ts` & `app/sitemap.ts` (14 URLs); `app/opengraph-image.tsx` (1200x630 dynamic next/og); `public/logo.png` (512x512 raster).
+  - **Fase 7 (`51075fc`)**: Verifikasi end-to-end; temuan guard auth memblokir robots/sitemap/OG diperbaiki via `PUBLIC_EXACT_PATHS`; smoke test produksi: semua 14 rute publik 200, slug tidak valid 404, rute privat `/user` 307 ke `/login`.
+- **Hasil Verifikasi**:
+  - Go backend: `go vet`, `go test ./...`, `go build ./...` lulus 100%.
+  - Frontend: 100 test files, 728 tests lulus 100% (`pnpm test`).
+  - Next.js build: `pnpm build` sukses (52 halaman statis teroptimasi).
+  - ESLint: 0 masalah pada seluruh berkas marketing (`eslint app/(marketing) ...`).
+  - Assertion terbukti: tidak ada `FAQPage`, `Review`, atau `AggregateRating` di JSON-LD.
+
+---
+
+## 2026-10-17 — Penyusunan Spec: Situs Marketing & SEO FinTrack v2 (Fase 1)
+- **Konteks**: Permintaan user untuk memperbarui/memperbaiki landing page agar SEO kuat, mudah dipahami & digunakan, menjual, dan mendorong langganan — plus menambah halaman lain (harga, komparasi, blog, dll). Setelah sesi brainstorming (7 pertanyaan keputusan), disepakati pemecahan menjadi 2 fase: Fase 1 = situs marketing publik + infrastruktur SEO; Fase 2 = Blog CMS (database + editor admin). Dokumentasi diminta ditulis lengkap di `second_brain/0_Inbox/ide/`.
+- **Aksi**:
+  - Membuat folder spec baru `second_brain/0_Inbox/ide/marketing-seo-spec/` berisi 13 berkas (README + 12 dokumen):
+    - `README.md` (master spec, keputusan desain, ruang lingkup, kriteria keberhasilan).
+    - `01-audit-kondisi-awal.md` (temuan baseline dengan bukti `file:line`, defect F-01 s/d F-10).
+    - `02-arsitektur-informasi-routing.md` (peta situs, struktur route group, perbaikan kritis `decideRoute`, nav/footer, internal linking).
+    - `03-desain-landing-page.md` (susunan 12 section, copy final, kata kunci, alur konversi, koreksi klaim BYOK & testimoni).
+    - `04-halaman-publik-harga-fitur.md` (`/harga` + tabel komparasi; `/fitur` + 6 sub-halaman).
+    - `05-halaman-publik-pendukung.md` (`/tentang`, `/kontak`, `/faq`, `/privasi`, `/syarat`).
+    - `06-backend-endpoint-publik-paket.md` (rute publik `GET /api/v1/public/plans` reuse catalog + klien server ISR).
+    - `07-seo-teknis-metadata-schema.md` (metadata, canonical, OG dinamis, robots, sitemap, JSON-LD, CWV, GEO).
+    - `08-implementation-plan.md` (7 fase eksekusi + inventaris berkas + dependensi).
+    - `09-strategi-pengujian-qa.md` (matriks uji L1–L5 + DoD).
+    - `10-mitigasi-risiko.md` (matriks risiko R-01 s/d R-18, keamanan, rollback).
+    - `11-roadmap-fase2-blog-cms.md` (garis besar Fase 2 untuk brainstorm terpisah).
+    - `12-execution-plan.md` (rencana eksekusi granular: berkas persis, perubahan, perintah verifikasi, assert wajib, checkbox per tugas).
+  - Temuan kritis yang didokumentasikan: `frontend/lib/roles.ts` hanya mengenali `/`, `/login`, `/register` sebagai publik sehingga rute marketing baru akan terpantul ke `/login`; nav `#harga` dan 3 anchor footer mati; tombol "Lihat Demo" tanpa `href`; klaim BYOK/API key yang sudah tidak berlaku; testimoni fiktif; nol infrastruktur SEO.
+  - Hasil self-review spec: seluruh tautan antar-dokumen valid; kebijakan pajak (subtotal + baris pajak terpisah) dan aset logo `Organization` dibuat eksplisit; kontradiksi nama berkas doc 09 diperbaiki.
+- **Status**: Menunggu review spesifikasi oleh user sebelum menyusun rencana eksekusi (writing-plans). Belum ada perubahan kode produksi.
+
+---
+
+## 2026-10-16 — Perbaikan Limit Non-Enforced (max_categories & max_wallets) di Halaman Penggunaan (/user/usage)
+- **Konteks**: User menanyakan kalkulasi `max_categories` dan `max_wallets` yang muncul di `/user/usage` dengan tampilan janggal `0 / 30 (0%)` dan `0 / 5 (0%)` bersiklus reset bulanan. Limit ini merupakan batas entitas statis non-enforced (`enforced: false`) dan backend sengaja tidak mengembalikan usage counter untuknya.
+- **Aksi**:
+  - Memperbarui [DualQuotaCard.tsx](file:///d:/project/finance/fintrack_v2/frontend/components/billing/DualQuotaCard.tsx) untuk melewati (`continue`) limit yang tidak memiliki data pemakaian (`!usage`) dari backend, sehingga hanya kuota aktif yang ditegakkan dan dihitung (`ai_tokens_per_cycle`, `ai_requests_per_cycle`, `ocr_scans_per_cycle`, `voice_requests_per_day`, `max_transactions`) yang ditampilkan pada bar kuota periodik.
+  - Memperbarui [user/subscription/page.tsx](file:///d:/project/finance/fintrack_v2/frontend/app/(dashboard)/user/subscription/page.tsx) untuk memfilter limit bertanda `enforced: false` agar tidak ditampilkan keliru sebagai siklus reset bulanan di grid konfigurasi kuota.
+  - Menambahkan test regresi di [DualQuotaCard.dom.test.tsx](file:///d:/project/finance/fintrack_v2/frontend/components/billing/DualQuotaCard.dom.test.tsx) untuk memastikan `max_categories` dan `max_wallets` tidak pernah di-render di kartu kuota.
+  - Verifikasi: Semua pengujian komponen `DualQuotaCard.dom.test.tsx` (4 tests) dan `lib/plan-limits.test.ts` (7 tests) lulus 100%.
+
+---
+
 ## 2026-10-16 — Eksekusi Migrasi Database 0036 (Dual-Cycle Weekly & Monthly Quota) & Regenerasi Dump
 - **Konteks**: Permintaan user untuk menjalankan migrasi skema database terbaru (`0036_weekly_monthly_quota.sql`).
 - **Aksi**:
@@ -2361,3 +2414,41 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled successfully.
   - `cd backend && go test ./...` -> 38 packages passed.
   - Backend binary `server.exe` di-compile dan dijalankan ulang di port 8081.
+## 2026-10-16 (Dynamic AI Reasoning Controls & Quota Token Protection) — Kontrol Dinamis Mode Penalaran dari Super Admin
+- **Konteks & Masalah**:
+  - Pengguna melaporkan lonjakan drastis konsumsi kuota token di `/user/usage` dari ~30k ke >50k hanya karena satu request mode penalaran (thinking) di `/user/ai`.
+  - Investigasi `token_ledger`: Satu transaksi penalaran membakar **21.162 token** karena Chain-of-Thought (CoT) tanpa batas dan multi-turn agent loop. Pesan asisten tersimpan kosong (`content_len: 0`) saat tool loop habis dan reasoning deltas diabaikan.
+  - Parameter penalaran (`ai_reasoning_effort`) sebelumnya terisolasi di grup `ai` yang tidak muncul di tab Kuota Super Admin, dan tidak ada pembatas token penalaran maksimal (`max_tokens`).
+- **Perubahan yang Diterapkan**:
+  1. **Database Migration (`database/migrations/0037_ai_reasoning_controls.sql`)**:
+     - Memindahkan seluruh setting estimasi & penalaran AI ke `group_key = 'ai_estimate'` agar otomatis muncul di tab Kuota & Estimasi AI Super Admin.
+     - Menambahkan setting baru `ai_reasoning_max_tokens` (default 4.000) dan `ai_reasoning_enabled` (default true).
+     - Menetapkan nilai default `ai_reasoning_effort` = 'low' untuk menahan lonjakan CoT internal.
+     - Dump database (`database/dump/fintrack_v2.*`) di-regenerate via `dump.sh`.
+  2. **Backend Runtime & Gateway (`backend/internal/usecase/ai_gateway_adapter.go`, `ai_usecase.go`, `admin/settings.go`, `cmd/server/main.go`)**:
+     - Meneruskan `MaxTokens: maxTokens` dinamis dari setting `ai_reasoning_max_tokens` ke request gateway model, mencegah pemborosan puluhan ribu token.
+     - Fallback otomatis ke mode cepat jika `ai_reasoning_enabled` dinonaktifkan oleh Super Admin.
+     - Meneruskan stream chunk reasoning (`Type: "reasoning"`) ke channel SSE klien.
+     - Menambahkan safety guard agar `fullResponse` selalu menangkap hasil respon tool terakhir dan tidak pernah menyimpan pesan asisten kosong ke DB.
+  3. **Frontend Super Admin & Chat (`frontend/components/super-admin/settings/QuotaSettingsTab.tsx`, `frontend/hooks/useAiChat.ts`, `frontend/components/ai/ChatWindow.tsx`)**:
+     - Mengizinkan grup `ai_estimate` dan `ai` di `QuotaSettingsTab` sehingga seluruh kontrol penalaran dan kuota AI dapat dikelola dinamis langsung oleh Super Admin tanpa deploy.
+     - Menangani event stream `reasoning` pada hook chat dan menambahkan indikator status "Memproses penalaran mendalam..." pada UI chat.
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go vet ./... && go test ./... && go build ./...` -> 38 packages passed.
+  - `cd frontend && pnpm build` -> 36 routes compiled successfully.
+  - `cd frontend && pnpm test` -> 70 test files, 460 tests passed.
+## 2026-10-16 (Removal of Confusing "Biaya (Rp)" Column from User Usage Ledger) — Penyeragaman Tampilan Penggunaan Berbasis Kuota Token
+- **Konteks & Masalah**:
+  - Kolom "BIAYA" (`cost_idr` dengan format `Rp X.XXX`) di `/user/usage` menimbulkan kebingungan besar bagi pengguna akhir, karena mengira saldo uang/dompet riil terpotong saat berinteraksi dengan AI.
+  - FinTrack menerapkan model **Kuota Paket Langganan**, di mana yang riil berkurang adalah token/kuota di kolom "JUMLAH", bukan saldo uang rupiah.
+- **Perubahan yang Diterapkan**:
+  1. `frontend/components/usage/UsageHistoryColumns.tsx`:
+     - Menghapus kolom `cost_idr` ("Biaya") dan import `formatRupiah` dari definisi tabel riwayat penggunaan pengguna.
+     - Struktur kolom tabel diseragamkan menjadi: `#` | `JENIS` | `KETERANGAN` | `JUMLAH` | `WAKTU`.
+  2. `frontend/app/(dashboard)/user/usage/page.tsx`:
+     - Menghapus kolom "Biaya (IDR)" dari fungsi export CSV agar selaras dan konsisten dengan antarmuka tabel.
+     - Membersihkan unused import `useEntitlements`.
+- **Verifikasi Hasil Uji**:
+  - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled cleanly (0 type error).
+  - `pnpm --filter frontend test` -> 70 test files, 460 tests passed.
+  - `cd backend && go test ./...` -> 38 packages passed.
