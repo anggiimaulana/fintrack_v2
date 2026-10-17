@@ -55,7 +55,9 @@ type AIUsecase struct {
 	// reasoningEffort, when set, supplies the `reasoning_effort` value at request
 	// time (DB setting over env default). Nil falls back to the environment, so
 	// the behaviour is unchanged when runtime config is not wired.
-	reasoningEffort func() string
+	reasoningEffort    func() string
+	reasoningMaxTokens func() int
+	reasoningEnabled   func() bool
 }
 
 // WithReasoningEffort installs a runtime resolver for `reasoning_effort` so the
@@ -71,6 +73,36 @@ func (u *AIUsecase) reasoningEffortValue() string {
 		return strings.TrimSpace(u.reasoningEffort())
 	}
 	return reasoningEffortForMode(domain.LLMReasoning)
+}
+
+// WithReasoningMaxTokens installs a runtime resolver for maximum reasoning tokens.
+func (u *AIUsecase) WithReasoningMaxTokens(fn func() int) *AIUsecase {
+	u.reasoningMaxTokens = fn
+	return u
+}
+
+// reasoningMaxTokensValue returns the configured max reasoning tokens (fallback 4000).
+func (u *AIUsecase) reasoningMaxTokensValue() int {
+	if u.reasoningMaxTokens != nil {
+		if v := u.reasoningMaxTokens(); v > 0 {
+			return v
+		}
+	}
+	return 4000
+}
+
+// WithReasoningEnabled installs a runtime predicate for whether reasoning mode is active.
+func (u *AIUsecase) WithReasoningEnabled(fn func() bool) *AIUsecase {
+	u.reasoningEnabled = fn
+	return u
+}
+
+// isReasoningEnabled returns true if reasoning mode is enabled.
+func (u *AIUsecase) isReasoningEnabled() bool {
+	if u.reasoningEnabled != nil {
+		return u.reasoningEnabled()
+	}
+	return true
 }
 
 // WithGateway attaches the centralized AI gateway. All AI traffic (chat,

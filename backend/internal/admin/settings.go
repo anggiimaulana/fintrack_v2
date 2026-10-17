@@ -149,6 +149,8 @@ var writableSettings = map[string]settingSpec{
 	"r2_public_base_url":   {kind: "string"},
 	// AI knobs.
 	"ai_reasoning_effort":      {kind: "enum", enum: []string{"", "low", "medium", "high"}},
+	"ai_reasoning_max_tokens":  {kind: "int", min: 0, max: 100_000},
+	"ai_reasoning_enabled":     {kind: "bool"},
 	"gemini_embedding_api_key": {kind: "secret"},
 
 	// ─── AI timeout budget (dynamic, zero-downtime) ───────────────
@@ -467,7 +469,7 @@ func (h *Handler) settingsSnapshot(ctx contextT) (map[string]json.RawMessage, er
 		"manual_bank_name", "manual_account_number", "manual_account_holder",
 		"r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket",
 		"r2_region", "r2_endpoint", "r2_prefix", "r2_public_base_url",
-		"ai_reasoning_effort", "gemini_embedding_api_key",
+		"ai_reasoning_effort", "ai_reasoning_max_tokens", "ai_reasoning_enabled", "gemini_embedding_api_key",
 		"ai_timeout_chat_ms", "ai_timeout_vision_ms", "ai_timeout_voice_ms",
 		"ai_timeout_embedding_ms", "ai_timeout_reasoning_ms", "ai_timeout_client_ms",
 		"voice_max_duration_seconds", "voice_language_mode", "voice_default_language",

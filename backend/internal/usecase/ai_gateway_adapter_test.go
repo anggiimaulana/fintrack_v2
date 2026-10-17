@@ -377,7 +377,7 @@ func TestGatewayStream_RoutesReasoningAndCapturesModel(t *testing.T) {
 
 	var served string
 	got, err := u.gatewayStream(context.Background(), domain.UseCaseReasoning, reasoningEffortForMode(domain.LLMReasoning),
-		"sys", nil, "hai", func(string) {}, &served, nil)
+		4000, "sys", nil, "hai", func(string) {}, nil, &served, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestGatewayStream_FastModeSendsNoReasoningEffort(t *testing.T) {
 
 	var served string
 	if _, err := u.gatewayStream(context.Background(), domain.UseCaseChat, reasoningEffortForMode(domain.LLMFast),
-		"sys", nil, "hai", func(string) {}, &served, nil); err != nil {
+		0, "sys", nil, "hai", func(string) {}, nil, &served, nil); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if gw.lastChatReq == nil || gw.lastChatReq.UseCase != domain.UseCaseChat {
@@ -425,7 +425,7 @@ func TestGatewayStream_ReasoningFallsBackToChatPool(t *testing.T) {
 
 	var served string
 	got, err := u.gatewayStream(context.Background(), domain.UseCaseReasoning, reasoningEffortForMode(domain.LLMReasoning),
-		"sys", nil, "hai", func(string) {}, &served, nil)
+		4000, "sys", nil, "hai", func(string) {}, nil, &served, nil)
 	if err != nil {
 		t.Fatalf("expected graceful fallback, got err: %v", err)
 	}
@@ -438,6 +438,28 @@ func TestGatewayStream_ReasoningFallsBackToChatPool(t *testing.T) {
 	}
 	if gw.lastChatReq.ReasoningEffort != "" {
 		t.Fatalf("fallback must drop reasoning_effort, got %q", gw.lastChatReq.ReasoningEffort)
+	}
+}
+
+func TestGatewayStream_ReasoningMaxTokensForwarded(t *testing.T) {
+	gw := &fakeGateway{chatResponse: "jawaban", servedModel: "deepseek-r1"}
+	u := (&AIUsecase{}).WithGateway(gw).WithReasoningMaxTokens(func() int { return 3500 })
+
+	var served string
+	_, err := u.gatewayStream(context.Background(), domain.UseCaseReasoning, "low",
+		u.reasoningMaxTokensValue(), "sys", nil, "hai", func(string) {}, nil, &served, nil)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if gw.lastChatReq == nil || gw.lastChatReq.MaxTokens != 3500 {
+		t.Fatalf("expected max_tokens 3500 forwarded, got %+v", gw.lastChatReq)
+	}
+}
+
+func TestGatewayStream_ReasoningDisabledFallback(t *testing.T) {
+	u := (&AIUsecase{}).WithReasoningEnabled(func() bool { return false })
+	if u.isReasoningEnabled() {
+		t.Fatal("expected reasoning mode to be disabled")
 	}
 }
 type fakeEntSource struct {

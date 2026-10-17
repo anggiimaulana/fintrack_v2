@@ -60,12 +60,17 @@ func (u *AIUsecase) chatViaGateway(
 		StepStatus: "success",
 	}
 
-	// Mode → gateway use case. "reasoning" is served by the dedicated reasoning
-	// route pool; "fast" (default) by the standard chat pool. This is the single
-	// point where the user's CEPAT/PENALARAN choice takes effect.
-	useCase := gatewayUseCaseForMode(req.Mode)
+	// Mode → gateway use case. If reasoning is disabled by Super Admin, fallback to fast.
+	mode := req.Mode
+	if mode == domain.LLMReasoning && !u.isReasoningEnabled() {
+		mode = domain.LLMFast
+	}
+	useCase := gatewayUseCaseForMode(mode)
 	reasoningEffort := u.reasoningEffortValue()
-
+	maxTokens := 0
+	if useCase == domain.UseCaseReasoning {
+		maxTokens = u.reasoningMaxTokensValue()
+	}
 	// Streaming filter: strip <TOOL_CALL>/<TOOL_RESULT> blocks so raw tool JSON
 	// is never exposed to the client. Identical to the legacy path.
 	var streamBuf string
@@ -125,10 +130,16 @@ func (u *AIUsecase) chatViaGateway(
 			streamBuf = ""
 		}
 	}
+	onReasoning := func(r string) {
+		if r != "" {
+			msgChan <- domain.ChatStreamEvent{Type: "reasoning", Reasoning: r}
+		}
+	}
+
 
 	// First gateway call: stream the assistant response.
 	var servedModel string
-	responseText, callErr := u.gatewayStream(ctx, useCase, reasoningEffort, systemPrompt, history, req.Message, onContent, &servedModel, usage)
+	responseText, callErr := u.gatewayStream(ctx, useCase, reasoningEffort, maxTokens, systemPrompt, history, req.Message, onContent, onReasoning, &servedModel, usage)
 	flushStreamBuf()
 	if callErr != nil {
 		msgChan <- domain.ChatStreamEvent{Type: "content", Content: gatewayFriendlyError(callErr)}
@@ -194,13 +205,24 @@ func (u *AIUsecase) chatViaGateway(
 
 		toolMessage := u.buildToolResultPrompt(results)
 		var err error
-		responseText, err = u.gatewayStream(ctx, useCase, reasoningEffort, systemPrompt, agentHistory, toolMessage, onContent, &servedModel, usage)
+		responseText, err = u.gatewayStream(ctx, useCase, reasoningEffort, maxTokens, systemPrompt, agentHistory, toolMessage, onContent, onReasoning, &servedModel, usage)
 		flushStreamBuf()
 		if err != nil {
 			logger.Error("gateway agent loop failed", zap.Error(err))
 			fullResponse.WriteString(fmt.Sprintf("\n\nMaaf, terjadi kesalahan saat memproses tool: %s", err.Error()))
 			break
 		}
+	}
+
+	if fullResponse.Len() == 0 {
+		clean := strings.TrimSpace(stripToolCalls(responseText))
+		if clean == "" {
+			clean = strings.TrimSpace(responseText)
+		}
+		if clean == "" {
+			clean = "Permintaan Anda telah berhasil diproses."
+		}
+		fullResponse.WriteString(clean)
 	}
 
 	// Persist messages + title using a detached context so cancellation of the
@@ -247,10 +269,12 @@ func (u *AIUsecase) gatewayStream(
 	ctx context.Context,
 	useCase domain.UseCase,
 	reasoningEffort string,
+	maxTokens int,
 	systemPrompt string,
 	history []domain.ChatMessage,
 	userMessage string,
 	onContent func(string),
+	onReasoning func(string),
 	servedModel *string,
 	usage *domain.TokenUsage,
 ) (string, error) {
@@ -264,6 +288,7 @@ func (u *AIUsecase) gatewayStream(
 	ch, err := u.gateway.ChatStream(ctx, &domain.AIChatRequest{
 		UseCase:         useCase,
 		Messages:        msgs,
+		MaxTokens:       maxTokens,
 		ReasoningEffort: reasoningEffort,
 	})
 	if err != nil {
@@ -297,11 +322,12 @@ func (u *AIUsecase) gatewayStream(
 			streamUsage = chunk.Usage
 			break
 		}
-		// Reasoning deltas are not part of the answer text; drop them from the
-		// assistant content (they are surfaced separately if ever needed).
 		if chunk.Content != "" {
 			sb.WriteString(chunk.Content)
 			onContent(chunk.Content)
+		}
+		if chunk.Reasoning != "" && onReasoning != nil {
+			onReasoning(chunk.Reasoning)
 		}
 	}
 

@@ -454,6 +454,12 @@ func main() {
 	aiUC.WithReasoningEffort(func() string {
 		return runtimeResolver.String(bgCtx, "ai_reasoning_effort", "AI_REASONING_EFFORT", "")
 	})
+	aiUC.WithReasoningMaxTokens(func() int {
+		return runtimeResolver.Int(bgCtx, "ai_reasoning_max_tokens", "AI_REASONING_MAX_TOKENS", 4000)
+	})
+	aiUC.WithReasoningEnabled(func() bool {
+		return runtimeResolver.Bool(bgCtx, "ai_reasoning_enabled", "AI_REASONING_ENABLED", true)
+	})
 	// Subscription & entitlement engine (P04).
 	billingRepo := postgres.NewBillingRepo(pool)
 	entSource := postgres.NewEntitlementSource(billingRepo)
