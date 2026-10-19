@@ -77,7 +77,8 @@ func (r *EmbeddingRepo) ListMissingTransactions(ctx context.Context, limit int) 
 		limit = 20
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT t.id, t.user_id, t.type, t.amount, t.income_category_id, t.expense_category_id,
+		SELECT t.id, t.user_id, t.type, t.amount, t.currency_code, t.amount_base,
+			t.income_category_id, t.expense_category_id,
 			t.savings_category_id, t.subcategory_id, t.description, t.notes, t.tags,
 			t.transaction_date, t.is_recurring, t.recurring_interval, t.source,
 			t.is_deleted, t.deleted_at, t.created_at, t.updated_at
@@ -95,7 +96,7 @@ func (r *EmbeddingRepo) ListMissingTransactions(ctx context.Context, limit int) 
 	for rows.Next() {
 		var t domain.Transaction
 		if err := rows.Scan(
-			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.IncomeCategoryID,
+			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.CurrencyCode, &t.AmountBase, &t.IncomeCategoryID,
 			&t.ExpenseCategoryID, &t.SavingsCategoryID, &t.SubcategoryID, &t.Description, &t.Notes,
 			&t.Tags, &t.TransactionDate, &t.IsRecurring, &t.RecurringInterval,
 			&t.Source, &t.IsDeleted, &t.DeletedAt, &t.CreatedAt, &t.UpdatedAt,

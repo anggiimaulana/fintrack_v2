@@ -231,3 +231,26 @@ func TestRender_UnknownFormatErrors(t *testing.T) {
 		t.Fatal("expected an error for an unsupported format")
 	}
 }
+
+// A currency added by a Super Admin must export with its catalog symbol and
+// precision, not the built-in fallback (which would show the raw code).
+func TestRenderCSV_UsesCatalogCurrencyFormat(t *testing.T) {
+	in := sampleInput()
+	in.Report.CurrencyCode = "EUR"
+	in.Report.RateUsed = 17000
+	in.CurrencySymbol = "€"
+	digits := 2
+	in.CurrencyDigits = &digits
+
+	out, err := Render(in, FormatCSV)
+	if err != nil {
+		t.Fatalf("render csv: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "€ 5000000.00") {
+		t.Errorf("csv did not use the catalog symbol/precision, got:\n%s", s)
+	}
+	if !strings.Contains(s, "1 EUR = 17000.0000 IDR") {
+		t.Error("csv missing rate legend")
+	}
+}

@@ -22,13 +22,13 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
 
-const userCols = "id, email, full_name, phone, role, avatar_url, is_active, created_at, updated_at"
+const userCols = "id, email, full_name, phone, role, avatar_url, is_active, display_currency, created_at, updated_at"
 
 func scanUser(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.Profile, error) {
 	p := &domain.Profile{}
-	err := row.Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.DisplayCurrency, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -50,7 +50,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*domain.Profil
 	p := &domain.Profile{}
 	var hash string
 	err := q(ctx, r.pool).QueryRow(ctx, query, email).Scan(
-		&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt, &hash,
+		&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.DisplayCurrency, &p.CreatedAt, &p.UpdatedAt, &hash,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -82,6 +82,19 @@ func (r *UserRepo) Update(ctx context.Context, p *domain.Profile) error {
 	return q(ctx, r.pool).QueryRow(ctx, query, p.ID, p.FullName, p.Phone, p.AvatarURL).Scan(&p.UpdatedAt)
 }
 
+// SetDisplayCurrency updates only the user's currency preference.
+func (r *UserRepo) SetDisplayCurrency(ctx context.Context, id uuid.UUID, code string) error {
+	tag, err := q(ctx, r.pool).Exec(ctx,
+		`UPDATE users SET display_currency = $2, updated_at = now() WHERE id = $1`, id, code)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 // SetActive toggles a user's is_active flag.
 func (r *UserRepo) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
 	tag, err := q(ctx, r.pool).Exec(ctx, `UPDATE users SET is_active = $2 WHERE id = $1`, id, active)
@@ -108,7 +121,7 @@ func (r *UserRepo) GetByIDWithHash(ctx context.Context, id uuid.UUID) (*domain.P
 	var p domain.Profile
 	var hash string
 	err := q(ctx, r.pool).QueryRow(ctx, query, id).
-		Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.CreatedAt, &p.UpdatedAt, &hash)
+		Scan(&p.ID, &p.Email, &p.FullName, &p.Phone, &p.Role, &p.AvatarURL, &p.IsActive, &p.DisplayCurrency, &p.CreatedAt, &p.UpdatedAt, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil
 	}
@@ -143,8 +156,8 @@ func (r *UserRepo) ListWithStats(ctx context.Context) ([]domain.UserStats, *doma
 		SELECT
 			u.id, u.full_name, u.email, u.role, u.is_active, u.created_at,
 			COUNT(t.id) AS tx_count,
-			COALESCE(SUM(CASE WHEN t.type = 'income'  AND t.is_deleted = false THEN t.amount ELSE 0 END), 0) AS total_income,
-			COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.is_deleted = false THEN t.amount ELSE 0 END), 0) AS total_expense,
+			COALESCE(SUM(CASE WHEN t.type = 'income'  AND t.is_deleted = false THEN t.amount_base ELSE 0 END), 0) AS total_income,
+			COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.is_deleted = false THEN t.amount_base ELSE 0 END), 0) AS total_expense,
 			MAX(t.created_at) AS last_tx
 		FROM users u
 		LEFT JOIN transactions t ON t.user_id = u.id AND t.is_deleted = false

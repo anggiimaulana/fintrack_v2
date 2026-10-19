@@ -17,9 +17,9 @@ type stubRepo struct {
 	prefs   domain.NotificationPreferences
 }
 
-func (s *stubRepo) Create(_ context.Context, n *domain.Notification) error {
+func (s *stubRepo) Create(_ context.Context, n *domain.Notification) (bool, error) {
 	s.created = append(s.created, *n)
-	return nil
+	return true, nil
 }
 
 func (s *stubRepo) GetPreferences(context.Context, uuid.UUID) (domain.NotificationPreferences, error) {
@@ -113,6 +113,26 @@ func TestEmitter_IgnoresAdminEvents(t *testing.T) {
 		t.Fatalf("admin event must not create a user notification, got %d", len(repo.created))
 	}
 }
+
+// TestNotify_DedupedMessageIsSilent verifies a duplicate (dedupe key already
+// stored) neither emits realtime nor reaches email.
+func TestNotify_DedupedMessageIsSilent(t *testing.T) {
+	em := &captureEmitter{}
+	svc := NewService(&droppedRepo{}, nil, nil).WithEmitter(em)
+	if err := svc.Notify(context.Background(), Message{
+		UserID: uuid.New(), Event: "x", Title: "T", Body: "B", DedupeKey: "k",
+	}); err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+	if len(em.events) != 0 {
+		t.Fatalf("duplicate must not emit, got %d events", len(em.events))
+	}
+}
+
+// droppedRepo reports every insert as a duplicate.
+type droppedRepo struct{ domain.NotificationRepository }
+
+func (d *droppedRepo) Create(context.Context, *domain.Notification) (bool, error) { return false, nil }
 
 func TestAllowedByPreferences(t *testing.T) {
 	prefs := domain.NotificationPreferences{TransactionEmail: true, CategoryReminder: false, WeeklyReport: false}

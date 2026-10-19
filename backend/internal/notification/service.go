@@ -35,6 +35,8 @@ type Message struct {
 	Body    string
 	Href    string
 	Channel Channel
+	// DedupeKey makes delivery idempotent (user + key). Empty disables dedupe.
+	DedupeKey string
 }
 
 // EmailResolver returns the recipient address for a user. Kept as a function so
@@ -117,14 +119,20 @@ func toContractNotification(n *domain.Notification) *contracts.Notification {
 // operation, and the in-app entry (already committed) remains as the fallback.
 func (s *Service) Notify(ctx context.Context, m Message) error {
 	n := &domain.Notification{
-		UserID: m.UserID,
-		Event:  m.Event,
-		Title:  m.Title,
-		Body:   m.Body,
-		Href:   m.Href,
+		UserID:    m.UserID,
+		Event:     m.Event,
+		Title:     m.Title,
+		Body:      m.Body,
+		Href:      m.Href,
+		DedupeKey: m.DedupeKey,
 	}
-	if err := s.repo.Create(ctx, n); err != nil {
+	created, err := s.repo.Create(ctx, n)
+	if err != nil {
 		return fmt.Errorf("persist notification: %w", err)
+	}
+	if !created {
+		// Already delivered for this dedupe key: no SSE, no email.
+		return nil
 	}
 
 	// Push the new row to the owner so the bell badge and the notifications page

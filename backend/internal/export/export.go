@@ -69,6 +69,12 @@ type ReportInput struct {
 	StartDate string
 	EndDate   string
 	Period    string
+	// CurrencySymbol/CurrencyDigits describe how to render the report currency.
+	// Optional: when empty/nil the built-in defaults are used, so the export
+	// package stays usable without a catalog. Populated from the dynamic catalog
+	// so a currency added by a Super Admin renders with its configured appearance.
+	CurrencySymbol string
+	CurrencyDigits *int
 	// GeneratedAt is injectable so tests are deterministic.
 	GeneratedAt time.Time
 }
@@ -110,11 +116,20 @@ func renderCSV(in ReportInput) ([]byte, error) {
 	if err := writeRow("Laporan Keuangan FinTrack"); err != nil {
 		return nil, err
 	}
+	code := reportCurrency(in)
 	if err := writeRow("Jenis", typeLabel(in.Type)); err != nil {
 		return nil, err
 	}
 	if err := writeRow("Periode", in.StartDate, in.EndDate); err != nil {
 		return nil, err
+	}
+	if err := writeRow("Currency", code); err != nil {
+		return nil, err
+	}
+	if legend := rateLegend(in); legend != "" {
+		if err := writeRow("Rate", legend); err != nil {
+			return nil, err
+		}
 	}
 	if err := writeRow("Dibuat", in.GeneratedAt.Format("2006-01-02 15:04")); err != nil {
 		return nil, err
@@ -127,16 +142,16 @@ func renderCSV(in ReportInput) ([]byte, error) {
 	if err := writeRow("Ringkasan"); err != nil {
 		return nil, err
 	}
-	if err := writeRow("Total Pemasukan", rupiah(in.Report.Summary.TotalIncome)); err != nil {
+	if err := writeRow("Total Pemasukan", in.money(in.Report.Summary.TotalIncome)); err != nil {
 		return nil, err
 	}
-	if err := writeRow("Total Pengeluaran", rupiah(in.Report.Summary.TotalExpense)); err != nil {
+	if err := writeRow("Total Pengeluaran", in.money(in.Report.Summary.TotalExpense)); err != nil {
 		return nil, err
 	}
-	if err := writeRow("Total Tabungan", rupiah(in.Report.Summary.TotalSavings)); err != nil {
+	if err := writeRow("Total Tabungan", in.money(in.Report.Summary.TotalSavings)); err != nil {
 		return nil, err
 	}
-	if err := writeRow("Surplus", rupiah(in.Report.Summary.Surplus)); err != nil {
+	if err := writeRow("Surplus", in.money(in.Report.Summary.Surplus)); err != nil {
 		return nil, err
 	}
 	if err := writeRow(""); err != nil {
@@ -151,7 +166,7 @@ func renderCSV(in ReportInput) ([]byte, error) {
 		return nil, err
 	}
 	for _, c := range in.Report.Categories {
-		if err := writeRow(c.CategoryName, rupiah(c.Total), pct(c.Percentage), trend(c.Trend), strconv.Itoa(c.Count)); err != nil {
+		if err := writeRow(c.CategoryName, in.money(c.Total), pct(c.Percentage), trend(c.Trend), strconv.Itoa(c.Count)); err != nil {
 			return nil, err
 		}
 	}
@@ -167,7 +182,7 @@ func renderCSV(in ReportInput) ([]byte, error) {
 		return nil, err
 	}
 	for _, m := range in.Report.Monthly {
-		if err := writeRow(m.Month, rupiah(m.Income), rupiah(m.Expense), rupiah(m.Savings)); err != nil {
+		if err := writeRow(m.Month, in.money(m.Income), in.money(m.Expense), in.money(m.Savings)); err != nil {
 			return nil, err
 		}
 	}
@@ -210,6 +225,12 @@ func renderXLSX(in ReportInput) ([]byte, error) {
 	_ = f.SetCellValue(sheet, "B3", fmt.Sprintf("%s s/d %s", in.StartDate, in.EndDate))
 	_ = f.SetCellValue(sheet, "A4", "Dibuat")
 	_ = f.SetCellValue(sheet, "B4", in.GeneratedAt.Format("2006-01-02 15:04"))
+	_ = f.SetCellValue(sheet, "A5", "Currency")
+	currLabel := reportCurrency(in)
+	if legend := rateLegend(in); legend != "" {
+		currLabel = currLabel + " (" + legend + ")"
+	}
+	_ = f.SetCellValue(sheet, "B5", currLabel)
 
 	// Summary
 	_ = f.SetCellValue(sheet, "A6", "Ringkasan")
@@ -275,8 +296,76 @@ func renderXLSX(in ReportInput) ([]byte, error) {
 
 // ─── helpers ──────────────────────────────────────────────────
 
-func rupiah(v float64) string {
-	return "Rp " + strconv.FormatFloat(v, 'f', 0, 64)
+// reportCurrency returns the currency the report totals are expressed in.
+func reportCurrency(in ReportInput) string {
+	if in.Report != nil && in.Report.CurrencyCode != "" {
+		return in.Report.CurrencyCode
+	}
+	return "IDR"
+}
+
+// money formats a report amount in the report's currency. The report endpoint
+// already converted the aggregates to the display currency (at the period-end
+// rate), so no further conversion happens here.
+func (in ReportInput) money(v float64) string {
+	code := reportCurrency(in)
+	sym := in.CurrencySymbol
+	if sym == "" {
+		sym = currencySymbol(code)
+	}
+	digits := currencyDigits(code)
+	if in.CurrencyDigits != nil {
+		digits = *in.CurrencyDigits
+	}
+	return sym + " " + strconv.FormatFloat(v, 'f', digits, 64)
+}
+
+// currencySymbol maps a code to its display symbol. Unknown codes fall back to
+// the code itself so a newly added currency still renders legibly.
+func currencySymbol(code string) string {
+	switch code {
+	case "IDR":
+		return "Rp"
+	case "JPY":
+		return "¥"
+	case "USD":
+		return "$"
+	case "MYR":
+		return "RM"
+	default:
+		return code + " "
+	}
+}
+
+// currencyDigits returns the minor-unit precision for known currencies.
+func currencyDigits(code string) int {
+	switch code {
+	case "IDR", "JPY":
+		return 0
+	default:
+		return 2
+	}
+}
+
+// money formats an amount in the given currency using its symbol and precision.
+func money(v float64, code string) string {
+	return currencySymbol(code) + " " + strconv.FormatFloat(v, 'f', currencyDigits(code), 64)
+}
+
+// rupiah is kept for callers that always render base currency.
+func rupiah(v float64) string { return money(v, "IDR") }
+
+// rateLegend describes the conversion used when a report is not in base IDR.
+func rateLegend(in ReportInput) string {
+	code := reportCurrency(in)
+	if code == "IDR" || in.Report == nil || in.Report.RateUsed == 0 {
+		return ""
+	}
+	at := ""
+	if in.Report.RateAt != nil {
+		at = in.Report.RateAt.Format("2006-01-02")
+	}
+	return fmt.Sprintf("1 %s = %.4f IDR (rate as of %s)", code, in.Report.RateUsed, at)
 }
 
 func pct(v float64) string {

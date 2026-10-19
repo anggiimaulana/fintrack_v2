@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -25,42 +26,59 @@ func (r *recNotifier) Notify(_ context.Context, n Notification) error {
 }
 func (r *recNotifier) count() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.sent) }
 
-// TestDunningWorker_RemindersAndDedup verifies reminders are emitted once per
-// bucket and never duplicated (default thresholds 0/24/72h).
-func TestDunningWorker_RemindersAndDedup(t *testing.T) {
+// TestDunningWorker_RemindsSubscriptions verifies reminders follow the
+// subscription period (default H-7 onto the SOON bucket), not the invoice due
+// date, and carry a stable per-period dedupe key.
+func TestDunningWorker_RemindsSubscriptions(t *testing.T) {
 	repo := newMemRepo()
 	notifier := &recNotifier{}
 	w := NewDunningWorker(repo, nil, notifier, time.Hour)
 
-	// Seed an invoice due in 48h (=> H-3 "soon" bucket).
-	due := time.Now().UTC().Add(48 * time.Hour)
 	userID := uuid.New()
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: uuid.New(), UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
+	end := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+	repo.subs = []SubscriptionExpiry{{UserID: userID, PeriodEnd: end}}
 
 	w.RunOnce(context.Background())
-	w.RunOnce(context.Background()) // second run must not re-notify
 
 	if notifier.count() != 1 {
-		t.Fatalf("expected exactly 1 reminder (deduped), got %d", notifier.count())
+		t.Fatalf("expected 1 reminder, got %d", notifier.count())
 	}
-	if notifier.sent[0].Type != "SUBSCRIPTION_EXPIRING_SOON" {
-		t.Fatalf("expected SOON bucket, got %s", notifier.sent[0].Type)
+	got := notifier.sent[0]
+	if got.Type != "SUBSCRIPTION_EXPIRING_SOON" {
+		t.Fatalf("expected SOON bucket, got %s", got.Type)
+	}
+	want := "subscription:" + userID.String() + ":" + strconv.FormatInt(end.Unix(), 10) + ":SUBSCRIPTION_EXPIRING_SOON"
+	if got.DedupeKey != want {
+		t.Fatalf("dedupe key = %q, want %q", got.DedupeKey, want)
 	}
 }
 
-// TestDunningBucket verifies bucket boundaries.
+// TestDunningWorker_EndedSubscriptionIsIgnored verifies a period that already
+// ended never produces a reminder (the "still notified after expiry" bug).
+func TestDunningWorker_EndedSubscriptionIsIgnored(t *testing.T) {
+	repo := newMemRepo()
+	notifier := &recNotifier{}
+	w := NewDunningWorker(repo, nil, notifier, time.Hour)
+	repo.subs = []SubscriptionExpiry{{UserID: uuid.New(), PeriodEnd: time.Now().UTC().Add(-time.Hour)}}
+	w.RunOnce(context.Background())
+	if notifier.count() != 0 {
+		t.Fatalf("ended subscription must not be reminded, got %d", notifier.count())
+	}
+}
+
+// TestDunningBucket verifies bucket boundaries (soon defaults to H-7).
 func TestDunningBucket(t *testing.T) {
 	cases := map[int]string{
-		100: "", // beyond the H-3 window -> no reminder
-		72:  "SUBSCRIPTION_EXPIRING_SOON",
+		200: "", // beyond the H-7 window -> no reminder
+		168: "SUBSCRIPTION_EXPIRING_SOON",
 		48:  "SUBSCRIPTION_EXPIRING_SOON",
 		24:  "SUBSCRIPTION_EXPIRING_URGENT",
 		5:   "SUBSCRIPTION_EXPIRING_URGENT",
-		0:   "SUBSCRIPTION_EXPIRING_DUE",
-		-10: "SUBSCRIPTION_EXPIRING_DUE",
+		0:   "SUBSCRIPTION_EXPIRING_URGENT",
+		-1:  "",
 	}
 	for h, want := range cases {
-		if got := dunningBucket(h, 0, 24, 72); got != want {
+		if got := dunningBucket(h, 24, 168); got != want {
 			t.Errorf("dunningBucket(%d)=%s want %s", h, got, want)
 		}
 	}
@@ -76,17 +94,14 @@ func TestDunningWorker_ConfigurableThresholds(t *testing.T) {
 	settings.m["dunning_hours_soon"] = int64(36)
 	w := NewDunningWorker(repo, settings, notifier, time.Hour)
 
-	// An invoice due in 30h is now "soon" (<=36) but was outside the old 24h
-	// urgent / inside 72h soon window either way; the point is the boundary
-	// moved: 30h > 12h urgent, <=36h soon.
-	due := time.Now().UTC().Add(30 * time.Hour)
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: uuid.New(), UserID: uuid.New(), Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
+	// A period ending in 30h is SOON (>12h urgent, <=36h soon).
+	repo.subs = []SubscriptionExpiry{{UserID: uuid.New(), PeriodEnd: time.Now().UTC().Add(30 * time.Hour)}}
 	w.RunOnce(context.Background())
 	if notifier.count() != 1 || notifier.sent[0].Type != "SUBSCRIPTION_EXPIRING_SOON" {
 		t.Fatalf("expected SOON reminder under custom thresholds, got %+v", notifier.sent)
 	}
 
-	// With a 20h horizon the 30h invoice must NOT be picked up at all.
+	// With a 20h horizon the 30h subscription must NOT be picked up at all.
 	notifier2 := &recNotifier{}
 	settings.m["dunning_hours_soon"] = int64(20)
 	w2 := NewDunningWorker(repo, settings, notifier2, time.Hour)
@@ -97,15 +112,37 @@ func TestDunningWorker_ConfigurableThresholds(t *testing.T) {
 }
 
 // TestDunningThresholds_Monotonic verifies urgent is clamped to soon so the
-// buckets can never invert (which would strand invoices in an unreachable band).
+// buckets can never invert (which would strand subscriptions in an unreachable band).
 func TestDunningThresholds_Monotonic(t *testing.T) {
 	settings := newMemSettings()
 	settings.m["dunning_hours_urgent"] = int64(90)
 	settings.m["dunning_hours_soon"] = int64(24)
 	w := NewDunningWorker(newMemRepo(), settings, nil, time.Hour)
-	_, urgent, soon := w.dunningThresholds(context.Background())
+	urgent, soon := w.dunningThresholds(context.Background())
 	if urgent != soon {
 		t.Fatalf("expected urgent clamped to soon (%d), got urgent=%d soon=%d", soon, urgent, soon)
+	}
+}
+
+// TestDunningWorker_NextPeriodGetsNewDedupeKey verifies a renewed subscription
+// (new period end) is reminded again instead of being silenced forever.
+func TestDunningWorker_NextPeriodGetsNewDedupeKey(t *testing.T) {
+	repo := newMemRepo()
+	notifier := &recNotifier{}
+	w := NewDunningWorker(repo, nil, notifier, time.Hour)
+	userID := uuid.New()
+
+	repo.subs = []SubscriptionExpiry{{UserID: userID, PeriodEnd: time.Now().UTC().Add(48 * time.Hour)}}
+	w.RunOnce(context.Background())
+	firstKey := notifier.sent[0].DedupeKey
+
+	repo.subs = []SubscriptionExpiry{{UserID: userID, PeriodEnd: time.Now().UTC().Add(100 * time.Hour)}}
+	w.RunOnce(context.Background())
+	if notifier.count() != 2 {
+		t.Fatalf("expected the renewed period to be reminded too, got %d", notifier.count())
+	}
+	if notifier.sent[1].DedupeKey == firstKey {
+		t.Fatal("a new period must produce a new dedupe key")
 	}
 }
 
@@ -179,59 +216,4 @@ type recAudit struct{ events []AuditEvent }
 func (r *recAudit) Record(_ context.Context, e AuditEvent) error {
 	r.events = append(r.events, e)
 	return nil
-}
-
-// TestDunningWorker_EvictsClosedInvoices proves the dedupe map stays bounded:
-// once an invoice leaves the open set, its reminder keys are dropped, so a long
-// running process does not accumulate one entry per invoice forever.
-func TestDunningWorker_EvictsClosedInvoices(t *testing.T) {
-	repo := newMemRepo()
-	notifier := &recNotifier{}
-	w := NewDunningWorker(repo, nil, notifier, time.Hour)
-
-	due := time.Now().UTC().Add(48 * time.Hour)
-	invID := uuid.New()
-	userID := uuid.New()
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: invID, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
-
-	w.RunOnce(context.Background())
-	if len(w.reminded) == 0 {
-		t.Fatal("expected a reminder key after the first sweep")
-	}
-
-	// The invoice is paid -> it leaves the open set -> its key must be evicted.
-	for _, inv := range repo.invoices {
-		inv.Status = InvoicePaid
-	}
-	w.RunOnce(context.Background())
-	if len(w.reminded) != 0 {
-		t.Fatalf("closed invoice keys must be evicted, got %d entries", len(w.reminded))
-	}
-}
-
-// TestDunningWorker_NextInvoiceStillReminds proves the fix also corrects a
-// correctness bug: with per-user dedupe, a user's SECOND invoice would never be
-// reminded (the user+bucket key was already seen). Per-invoice keys fix that.
-func TestDunningWorker_NextInvoiceStillReminds(t *testing.T) {
-	repo := newMemRepo()
-	notifier := &recNotifier{}
-	w := NewDunningWorker(repo, nil, notifier, time.Hour)
-	userID := uuid.New()
-
-	due := time.Now().UTC().Add(48 * time.Hour)
-	first := uuid.New()
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: first, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 1000})
-	w.RunOnce(context.Background())
-
-	// First invoice paid; a new one is issued for the next cycle.
-	for _, inv := range repo.invoices {
-		inv.Status = InvoicePaid
-	}
-	second := uuid.New()
-	_ = repo.CreateInvoice(context.Background(), &Invoice{ID: second, UserID: userID, Status: InvoiceIssued, DueAt: &due, TotalIDR: 2000})
-	w.RunOnce(context.Background())
-
-	if notifier.count() != 2 {
-		t.Fatalf("the next invoice must also be reminded, got %d reminders", notifier.count())
-	}
 }

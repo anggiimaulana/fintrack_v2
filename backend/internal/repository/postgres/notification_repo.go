@@ -55,12 +55,24 @@ func (r *NotificationRepo) SavePreferences(ctx context.Context, userID uuid.UUID
 	return nil
 }
 
-func (r *NotificationRepo) Create(ctx context.Context, n *domain.Notification) error {
-	return r.pool.QueryRow(ctx, `
-		INSERT INTO notifications (user_id, event, title, body, href)
-		VALUES ($1, $2, $3, $4, $5)
+func (r *NotificationRepo) Create(ctx context.Context, n *domain.Notification) (bool, error) {
+	var dedupeKey *string
+	if n.DedupeKey != "" {
+		dedupeKey = &n.DedupeKey
+	}
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO notifications (user_id, event, title, body, href, dedupe_key)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
 		RETURNING id, created_at`,
-		n.UserID, n.Event, n.Title, n.Body, n.Href).Scan(&n.ID, &n.CreatedAt)
+		n.UserID, n.Event, n.Title, n.Body, n.Href, dedupeKey).Scan(&n.ID, &n.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // duplicate dedupe key: already delivered
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *NotificationRepo) ListRecent(ctx context.Context, userID uuid.UUID, limit int) ([]domain.Notification, error) {

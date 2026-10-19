@@ -2,18 +2,23 @@ package payment
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/google/uuid"
+
 	"github.com/fintrack/backend/pkg/logger"
 )
 
-// Notification is an in-app/system notification emitted by dunning/grace.
+// Notification is an in-app/system notification emitted by dunning.
 type Notification struct {
 	UserID  string `json:"user_id"`
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	// DedupeKey makes delivery idempotent across restarts and replicas.
+	DedupeKey string `json:"dedupe_key"`
 }
 
 // Notifier receives notifications (persisted + pushed via SSE/pub-sub).
@@ -21,17 +26,22 @@ type Notifier interface {
 	Notify(ctx context.Context, n Notification) error
 }
 
-// DunningWorker scans for subscriptions approaching expiry and emits reminders
-// at configurable H-N offsets, then a renewal reminder at H-0.
+// SubscriptionExpiry is the subset of a subscription the dunning scan needs.
+type SubscriptionExpiry struct {
+	UserID    uuid.UUID
+	PeriodEnd time.Time
+}
+
+// DunningWorker reminds users before their paid period ends.
 //
-// The reminder offsets are read from `settings` (dunning_hours_due/urgent/soon)
-// so an operator can retune the cadence from the Super Admin portal without a
-// redeploy. When a setting is absent the built-in defaults (0/24/72h) apply.
+// It scans SUBSCRIPTIONS, not invoices: an invoice's due date is the payment
+// window (often 72h), so keying on it warned users "subscription ending" weeks
+// before it actually ended (and after an upgrade invoice, when nothing was
+// ending at all).
 //
-// Dedupe is per INVOICE, not per user+bucket: an invoice is reminded at most once
-// per bucket, and the key disappears with the invoice. Keying on the user alone
-// would grow an unbounded set over the process's lifetime (a leak) and would also
-// silence reminders for the user's NEXT invoice, since the bucket label repeats.
+// Offsets come from `settings` (dunning_hours_soon/urgent), default H-7 / H-1.
+// Dedupe is persisted (notifications.dedupe_key = user + period end + bucket),
+// so a process restart or a second replica cannot re-send the same reminder.
 type DunningWorker struct {
 	repo     Repository
 	settings SettingsRepository
@@ -39,16 +49,12 @@ type DunningWorker struct {
 	interval time.Duration
 	stop     chan struct{}
 	done     chan struct{}
-
-	// reminded tracks "<invoiceID>:<bucket>" keys already notified to avoid
-	// dupes. Entries are evicted once their invoice leaves the open set.
-	reminded map[string]bool
 }
 
-// Dunning defaults (hours before due) when the corresponding setting is absent.
+// Dunning defaults (hours before period end) when the setting is absent.
 const (
 	defaultDunningUrgentHours = 24
-	defaultDunningSoonHours   = 72
+	defaultDunningSoonHours   = 168 // H-7
 )
 
 // NewDunningWorker builds the worker (hourly scan by default). settings may be
@@ -57,20 +63,13 @@ func NewDunningWorker(repo Repository, settings SettingsRepository, notifier Not
 	if interval <= 0 {
 		interval = time.Hour
 	}
-	return &DunningWorker{repo: repo, settings: settings, notifier: notifier, interval: interval, stop: make(chan struct{}), done: make(chan struct{}), reminded: map[string]bool{}}
-}
-
-// dunningWindow returns the look-ahead horizon (the largest configured offset)
-// so the scan only loads invoices that could match any bucket.
-func (w *DunningWorker) dunningWindow(ctx context.Context) time.Duration {
-	_, _, soon := w.dunningThresholds(ctx)
-	return time.Duration(soon) * time.Hour
+	return &DunningWorker{repo: repo, settings: settings, notifier: notifier, interval: interval, stop: make(chan struct{}), done: make(chan struct{})}
 }
 
 // dunningThresholds returns the configured (urgent, soon) hour offsets. Each
 // falls back to its default when the setting is absent, zero, or out of order,
 // and the pair is kept monotonic (urgent <= soon) so buckets never overlap.
-func (w *DunningWorker) dunningThresholds(ctx context.Context) (due, urgent, soon int) {
+func (w *DunningWorker) dunningThresholds(ctx context.Context) (urgent, soon int) {
 	urgent = defaultDunningUrgentHours
 	soon = defaultDunningSoonHours
 	if w.settings != nil {
@@ -84,7 +83,7 @@ func (w *DunningWorker) dunningThresholds(ctx context.Context) (due, urgent, soo
 	if urgent > soon {
 		urgent = soon
 	}
-	return 0, urgent, soon
+	return urgent, soon
 }
 
 // Start launches the scan loop.
@@ -116,76 +115,42 @@ func (w *DunningWorker) Stop() {
 	<-w.done
 }
 
-// RunOnce scans due-soon subscriptions and emits reminders (H-3/H-1) or a
-// renewal invoice (H-0). Deduplicates per user+bucket.
+// RunOnce reminds subscriptions whose period ends inside the configured
+// window. Already-ended subscriptions (expired/period_end past) are not
+// returned by the repository, so no reminder can arrive after expiry.
 func (w *DunningWorker) RunOnce(ctx context.Context) {
 	now := time.Now().UTC()
-	due, urgent, soon := w.dunningThresholds(ctx)
-	dueSoon, err := w.repo.ListInvoicesDueBefore(ctx, now.Add(w.dunningWindow(ctx)).Unix())
+	urgent, soon := w.dunningThresholds(ctx)
+	ending, err := w.repo.ListSubscriptionsEndingBefore(ctx, now.Add(time.Duration(soon)*time.Hour).Unix())
 	if err != nil {
 		logger.Warn("dunning: list failed", zap.Error(err))
 		return
 	}
-	for _, inv := range dueSoon {
-		if inv.DueAt == nil {
-			continue
-		}
-		hoursLeft := int(inv.DueAt.Sub(now).Hours())
-		bucket := dunningBucket(hoursLeft, due, urgent, soon)
+	for _, sub := range ending {
+		hoursLeft := int(sub.PeriodEnd.Sub(now).Hours())
+		bucket := dunningBucket(hoursLeft, urgent, soon)
 		if bucket == "" {
 			continue
 		}
-		key := inv.ID.String() + ":" + bucket
-		if w.reminded[key] {
+		if w.notifier == nil {
 			continue
 		}
-		w.reminded[key] = true
-		if w.notifier != nil {
-			_ = w.notifier.Notify(ctx, Notification{
-				UserID:  inv.UserID.String(),
-				Type:    bucket,
-				Message: "Langganan Anda akan berakhir. Segera lakukan pembayaran.",
-			})
-		}
-	}
-
-	// Evict dedupe keys for invoices that are no longer open (paid, voided, or
-	// expired), so the map stays bounded over the process's lifetime.
-	w.evictClosed(ctx, now)
-}
-
-// evictClosed drops `reminded` entries whose invoice has left the open set. The
-// scan re-reads the open invoices; anything still open keeps its key, everything
-// else is forgotten (its reminders are moot, and the next invoice starts fresh).
-func (w *DunningWorker) evictClosed(ctx context.Context, now time.Time) {
-	if len(w.reminded) == 0 {
-		return
-	}
-	open, err := w.repo.ListInvoicesDueBefore(ctx, now.Add(w.dunningWindow(ctx)).Unix())
-	if err != nil {
-		// Keep the map as-is on a read error: better a slightly stale entry than
-		// re-notifying a user for an invoice we cannot confirm is closed.
-		return
-	}
-	live := make(map[string]bool, len(open))
-	for _, inv := range open {
-		for _, bucket := range []string{"SUBSCRIPTION_EXPIRING_DUE", "SUBSCRIPTION_EXPIRING_URGENT", "SUBSCRIPTION_EXPIRING_SOON"} {
-			live[inv.ID.String()+":"+bucket] = true
-		}
-	}
-	for key := range w.reminded {
-		if !live[key] {
-			delete(w.reminded, key)
-		}
+		_ = w.notifier.Notify(ctx, Notification{
+			UserID:    sub.UserID.String(),
+			Type:      bucket,
+			Message:   "Langganan Anda akan berakhir. Segera lakukan pembayaran.",
+			DedupeKey: fmt.Sprintf("subscription:%s:%d:%s", sub.UserID, sub.PeriodEnd.Unix(), bucket),
+		})
 	}
 }
 
 // dunningBucket maps hours-left to a reminder bucket label using the configured
-// thresholds: due (<=0), urgent (<=urgent), soon (<=soon), else none.
-func dunningBucket(hoursLeft, due, urgent, soon int) string {
+// thresholds: urgent (<=urgent), soon (<=soon), else none. A non-positive value
+// means the period already ended, which is never reminded.
+func dunningBucket(hoursLeft, urgent, soon int) string {
 	switch {
-	case hoursLeft <= due:
-		return "SUBSCRIPTION_EXPIRING_DUE"
+	case hoursLeft < 0:
+		return ""
 	case hoursLeft <= urgent:
 		return "SUBSCRIPTION_EXPIRING_URGENT"
 	case hoursLeft <= soon:

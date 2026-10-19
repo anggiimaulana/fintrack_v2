@@ -228,6 +228,36 @@ func (r *PaymentRepo) ListRenewalCandidates(ctx context.Context, now time.Time) 
 	return out, rows.Err()
 }
 
+// ListSubscriptionsEndingBefore returns still-entitled subscriptions whose paid
+// period ends before beforeUnix. Ended periods and terminal statuses are
+// excluded so a reminder can never arrive after the subscription is over.
+func (r *PaymentRepo) ListSubscriptionsEndingBefore(ctx context.Context, beforeUnix int64) ([]payment.SubscriptionExpiry, error) {
+	before := time.Unix(beforeUnix, 0).UTC()
+	rows, err := q(ctx, r.pool).Query(ctx,
+		`SELECT s.user_id, s.current_period_end
+         FROM subscriptions s
+         WHERE s.status IN ('active','trialing','grace','past_due')
+           AND s.cancel_at_period_end = false
+           AND s.current_period_end IS NOT NULL
+           AND s.current_period_end > now()
+           AND s.current_period_end <= $1
+         ORDER BY s.current_period_end ASC
+         LIMIT 500`, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []payment.SubscriptionExpiry
+	for rows.Next() {
+		var s payment.SubscriptionExpiry
+		if err := rows.Scan(&s.UserID, &s.PeriodEnd); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 const paymentSelect = `SELECT id, invoice_id, user_id, gateway, gateway_ref, amount_idr, status,
     payment_method, proof_url, idempotency_key, payload_snapshot, created_at, updated_at FROM payments`
 

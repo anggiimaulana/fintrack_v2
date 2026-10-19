@@ -50,6 +50,10 @@ type Repository interface {
 	// invoiced for the next one.
 	ListRenewalCandidates(ctx context.Context, now time.Time) ([]RenewalCandidate, error)
 
+	// Dunning: still-entitled subscriptions whose paid period ends before the
+	// given Unix time. Ended/expired/canceled subscriptions are excluded.
+	ListSubscriptionsEndingBefore(ctx context.Context, beforeUnix int64) ([]SubscriptionExpiry, error)
+
 	// User-scoped reads (self-service history). Payments are joined with their
 	// invoice so the UI can render one row per attempt without extra queries.
 	ListPaymentsByUser(ctx context.Context, userID uuid.UUID, q *pagination.Query) ([]*UserPayment, int, error)

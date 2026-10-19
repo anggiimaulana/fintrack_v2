@@ -29,20 +29,37 @@ func (r *TransactionRepo) Create(ctx context.Context, tx *domain.Transaction) er
 
 	query := `
 		INSERT INTO transactions (
-			user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
+			user_id, type, amount, currency_code, exchange_rate, rate_at,
+			income_category_id, expense_category_id, savings_category_id,
 			subcategory_id, description, notes, tags, transaction_date,
 			is_recurring, recurring_interval, source
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-		) RETURNING id, created_at, updated_at`
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+		) RETURNING id, amount_base, created_at, updated_at`
 
 	return q(ctx, r.pool).QueryRow(
 		ctx, query,
-		tx.UserID, tx.Type, tx.Amount, tx.IncomeCategoryID,
-		tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
+		tx.UserID, tx.Type, tx.Amount, currencyOrBase(tx.CurrencyCode), rateOrOne(tx.ExchangeRate), tx.RateAt,
+		tx.IncomeCategoryID, tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
 		tx.Notes, emptyTags(tx.Tags), tx.TransactionDate,
 		tx.IsRecurring, tx.RecurringInterval, defaultSource(tx.Source),
-	).Scan(&tx.ID, &tx.CreatedAt, &tx.UpdatedAt)
+	).Scan(&tx.ID, &tx.AmountBase, &tx.CreatedAt, &tx.UpdatedAt)
+}
+
+// currencyOrBase defaults an empty currency to the base currency.
+func currencyOrBase(code string) string {
+	if code == "" {
+		return "IDR"
+	}
+	return code
+}
+
+// rateOrOne defaults a non-positive rate to 1 (base currency semantics).
+func rateOrOne(r float64) float64 {
+	if r <= 0 {
+		return 1
+	}
+	return r
 }
 
 // emptyTags ensures a non-nil slice so the NOT NULL `tags` column is satisfied.
@@ -63,7 +80,8 @@ func defaultSource(s domain.TransactionSource) domain.TransactionSource {
 
 func (r *TransactionRepo) GetByID(ctx context.Context, id, userID uuid.UUID) (*domain.Transaction, error) {
 	query := `
-		SELECT id, user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
+		SELECT id, user_id, type, amount, currency_code, exchange_rate, amount_base, rate_at,
+			income_category_id, expense_category_id, savings_category_id,
 			subcategory_id, description, notes, tags, transaction_date,
 			is_recurring, recurring_interval, source, is_deleted, deleted_at,
 			created_at, updated_at
@@ -72,7 +90,7 @@ func (r *TransactionRepo) GetByID(ctx context.Context, id, userID uuid.UUID) (*d
 
 	tx := &domain.Transaction{}
 	err := q(ctx, r.pool).QueryRow(ctx, query, id, userID).Scan(
-		&tx.ID, &tx.UserID, &tx.Type, &tx.Amount, &tx.IncomeCategoryID,
+		&tx.ID, &tx.UserID, &tx.Type, &tx.Amount, &tx.CurrencyCode, &tx.ExchangeRate, &tx.AmountBase, &tx.RateAt, &tx.IncomeCategoryID,
 		&tx.ExpenseCategoryID, &tx.SavingsCategoryID, &tx.SubcategoryID, &tx.Description, &tx.Notes,
 		&tx.Tags, &tx.TransactionDate, &tx.IsRecurring, &tx.RecurringInterval,
 		&tx.Source, &tx.IsDeleted, &tx.DeletedAt, &tx.CreatedAt, &tx.UpdatedAt,
@@ -149,7 +167,8 @@ func (r *TransactionRepo) List(ctx context.Context, userID uuid.UUID, filter dom
 	orderCol := "transaction_date"
 	switch strings.ToLower(filter.SortBy) {
 	case "amount":
-		orderCol = "amount"
+		// Sort by the IDR base value so mixed-currency rows order correctly.
+		orderCol = "amount_base"
 	case "type":
 		orderCol = "type"
 	case "description":
@@ -173,7 +192,8 @@ func (r *TransactionRepo) List(ctx context.Context, userID uuid.UUID, filter dom
 	}
 
 	dataQuery := fmt.Sprintf(`
-		SELECT id, user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
+		SELECT id, user_id, type, amount, currency_code, exchange_rate, amount_base, rate_at,
+			income_category_id, expense_category_id, savings_category_id,
 			subcategory_id, description, notes, tags, transaction_date,
 			is_recurring, recurring_interval, source, is_deleted, deleted_at,
 			created_at, updated_at
@@ -194,7 +214,7 @@ func (r *TransactionRepo) List(ctx context.Context, userID uuid.UUID, filter dom
 	for rows.Next() {
 		var t domain.Transaction
 		err := rows.Scan(
-			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.IncomeCategoryID,
+			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.CurrencyCode, &t.ExchangeRate, &t.AmountBase, &t.RateAt, &t.IncomeCategoryID,
 			&t.ExpenseCategoryID, &t.SavingsCategoryID, &t.SubcategoryID, &t.Description, &t.Notes,
 			&t.Tags, &t.TransactionDate, &t.IsRecurring, &t.RecurringInterval,
 			&t.Source, &t.IsDeleted, &t.DeletedAt, &t.CreatedAt, &t.UpdatedAt,
@@ -216,31 +236,34 @@ func (r *TransactionRepo) Update(ctx context.Context, tx *domain.Transaction, ex
 		UPDATE transactions SET
 			type = COALESCE($3, type),
 			amount = COALESCE($4, amount),
-			income_category_id = $5,
-			expense_category_id = $6,
-			savings_category_id = $7,
-			subcategory_id = $8,
-			description = COALESCE($9, description),
-			notes = COALESCE($10, notes),
-			tags = COALESCE($11, tags),
-			transaction_date = COALESCE($12, transaction_date),
-			is_recurring = COALESCE($13, is_recurring),
-			recurring_interval = COALESCE($14, recurring_interval),
-			source = COALESCE($15, source)
+			currency_code = COALESCE(NULLIF($5, ''), currency_code),
+			exchange_rate = COALESCE(NULLIF($6, 0), exchange_rate),
+			rate_at = $7,
+			income_category_id = $8,
+			expense_category_id = $9,
+			savings_category_id = $10,
+			subcategory_id = $11,
+			description = COALESCE($12, description),
+			notes = COALESCE($13, notes),
+			tags = COALESCE($14, tags),
+			transaction_date = COALESCE($15, transaction_date),
+			is_recurring = COALESCE($16, is_recurring),
+			recurring_interval = COALESCE($17, recurring_interval),
+			source = COALESCE($18, source)
 		WHERE id = $1 AND user_id = $2 AND is_deleted = false`
 	args := []interface{}{
-		tx.ID, tx.UserID, tx.Type, tx.Amount, tx.IncomeCategoryID,
-		tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
+		tx.ID, tx.UserID, tx.Type, tx.Amount, tx.CurrencyCode, tx.ExchangeRate, tx.RateAt,
+		tx.IncomeCategoryID, tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
 		tx.Notes, emptyTags(tx.Tags), tx.TransactionDate, tx.IsRecurring, tx.RecurringInterval,
 		defaultSource(tx.Source),
 	}
 	if expectedUpdatedAt != nil {
-		query += ` AND updated_at = $16`
+		query += ` AND updated_at = $19`
 		args = append(args, *expectedUpdatedAt)
 	}
-	query += ` RETURNING updated_at`
+	query += ` RETURNING updated_at, amount_base`
 
-	err := q(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&tx.UpdatedAt)
+	err := q(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&tx.UpdatedAt, &tx.AmountBase)
 	if err == pgx.ErrNoRows && expectedUpdatedAt != nil {
 		// Distinguish a stale write from a missing/soft-deleted row.
 		exists, existsErr := r.rowExists(ctx, tx.ID, tx.UserID)
@@ -296,9 +319,9 @@ func (r *TransactionRepo) SoftDelete(ctx context.Context, id, userID uuid.UUID) 
 func (r *TransactionRepo) GetStats(ctx context.Context, userID uuid.UUID, period domain.StatsPeriod) (*domain.TransactionStats, error) {
 	query := `
 		SELECT
-			COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as total_income,
-			COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as total_expense,
-			COALESCE(SUM(CASE WHEN type = 'savings' THEN amount ELSE 0 END), 0) as total_savings,
+			COALESCE(SUM(CASE WHEN type = 'income' THEN amount_base ELSE 0 END), 0) as total_income,
+			COALESCE(SUM(CASE WHEN type = 'expense' THEN amount_base ELSE 0 END), 0) as total_expense,
+			COALESCE(SUM(CASE WHEN type = 'savings' THEN amount_base ELSE 0 END), 0) as total_savings,
 			COUNT(CASE WHEN type = 'income' THEN 1 END) as income_count,
 			COUNT(CASE WHEN type = 'expense' THEN 1 END) as expense_count,
 			COUNT(CASE WHEN type = 'savings' THEN 1 END) as savings_count
@@ -322,7 +345,7 @@ func (r *TransactionRepo) GetStats(ctx context.Context, userID uuid.UUID, period
 
 func (r *TransactionRepo) GetMonthlyExpense(ctx context.Context, userID uuid.UUID, year, month int) (float64, error) {
 	query := `
-		SELECT COALESCE(SUM(amount), 0) FROM transactions
+		SELECT COALESCE(SUM(amount_base), 0) FROM transactions
 		WHERE user_id = $1
 			AND type = 'expense'
 			AND is_deleted = false
@@ -341,7 +364,7 @@ func (r *TransactionRepo) GetCategoryExpensesByPeriod(ctx context.Context, userI
 	query := `
 		SELECT
 			COALESCE(ec.name, 'Unknown') as category_name,
-			SUM(t.amount) as total,
+			SUM(t.amount_base) as total,
 			COUNT(t.id) as count
 		FROM transactions t
 		LEFT JOIN expense_categories ec ON t.expense_category_id = ec.id
@@ -374,7 +397,7 @@ func (r *TransactionRepo) GetCategoryIncomesByPeriod(ctx context.Context, userID
 	query := `
 		SELECT
 			COALESCE(ic.name, 'Unknown') as category_name,
-			SUM(t.amount) as total,
+			SUM(t.amount_base) as total,
 			COUNT(t.id) as count
 		FROM transactions t
 		LEFT JOIN income_categories ic ON t.income_category_id = ic.id
@@ -407,7 +430,7 @@ func (r *TransactionRepo) GetCategorySavingsByPeriod(ctx context.Context, userID
 	query := `
 		SELECT
 			COALESCE(sc.name, 'Unknown') as category_name,
-			SUM(t.amount) as total,
+			SUM(t.amount_base) as total,
 			COUNT(t.id) as count
 		FROM transactions t
 		LEFT JOIN savings_categories sc ON t.savings_category_id = sc.id
@@ -464,7 +487,8 @@ func (r *TransactionRepo) CountActiveByUser(ctx context.Context, userID uuid.UUI
 
 func (r *TransactionRepo) GetRecentByUser(ctx context.Context, userID uuid.UUID, limit int) ([]domain.Transaction, error) {
 	query := `
-		SELECT id, user_id, type, amount, income_category_id, expense_category_id, savings_category_id,
+		SELECT id, user_id, type, amount, currency_code, exchange_rate, amount_base, rate_at,
+			income_category_id, expense_category_id, savings_category_id,
 			subcategory_id, description, notes, tags, transaction_date,
 			is_recurring, recurring_interval, source, is_deleted, deleted_at,
 			created_at, updated_at
@@ -483,7 +507,7 @@ func (r *TransactionRepo) GetRecentByUser(ctx context.Context, userID uuid.UUID,
 	for rows.Next() {
 		var t domain.Transaction
 		if err := rows.Scan(
-			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.IncomeCategoryID,
+			&t.ID, &t.UserID, &t.Type, &t.Amount, &t.CurrencyCode, &t.ExchangeRate, &t.AmountBase, &t.RateAt, &t.IncomeCategoryID,
 			&t.ExpenseCategoryID, &t.SavingsCategoryID, &t.SubcategoryID, &t.Description, &t.Notes,
 			&t.Tags, &t.TransactionDate, &t.IsRecurring, &t.RecurringInterval,
 			&t.Source, &t.IsDeleted, &t.DeletedAt, &t.CreatedAt, &t.UpdatedAt,
@@ -500,7 +524,7 @@ func (r *TransactionRepo) GetCategoryTimeSeries(ctx context.Context, userID uuid
 		SELECT
 			to_char(t.transaction_date, 'YYYY-MM') as period,
 			COALESCE(ec.name, 'Unknown') as category_name,
-			SUM(t.amount) as total
+			SUM(t.amount_base) as total
 		FROM transactions t
 		LEFT JOIN expense_categories ec ON t.expense_category_id = ec.id
 		WHERE t.user_id = $1
@@ -554,9 +578,9 @@ func (r *TransactionRepo) GetTimeSeries(ctx context.Context, userID uuid.UUID, s
 		tx_data AS (
 			SELECT
 				date_trunc('%s', transaction_date)::date AS bucket,
-				COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
-				COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expense,
-				COALESCE(SUM(CASE WHEN type = 'savings' THEN amount ELSE 0 END), 0) as savings
+				COALESCE(SUM(CASE WHEN type = 'income' THEN amount_base ELSE 0 END), 0) as income,
+				COALESCE(SUM(CASE WHEN type = 'expense' THEN amount_base ELSE 0 END), 0) as expense,
+				COALESCE(SUM(CASE WHEN type = 'savings' THEN amount_base ELSE 0 END), 0) as savings
 			FROM transactions
 			WHERE user_id = $1
 				AND is_deleted = false

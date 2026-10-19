@@ -18,6 +18,7 @@ type memRepo struct {
 	payments   map[uuid.UUID]*Payment
 	byRef      map[string]*Payment
 	savedCards []*CardToken
+	subs       []SubscriptionExpiry
 	paidCall   int
 }
 
@@ -208,6 +209,19 @@ func (m *memRepo) InvoiceExistsByMarker(_ context.Context, marker string) (bool,
 
 func (m *memRepo) ListRenewalCandidates(_ context.Context, now time.Time) ([]RenewalCandidate, error) {
 	return nil, nil
+}
+
+func (m *memRepo) ListSubscriptionsEndingBefore(_ context.Context, beforeUnix int64) ([]SubscriptionExpiry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	before := time.Unix(beforeUnix, 0).UTC()
+	var out []SubscriptionExpiry
+	for _, s := range m.subs {
+		if s.PeriodEnd.After(time.Now().UTC()) && !s.PeriodEnd.After(before) {
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 func (m *memRepo) SaveCardToken(_ context.Context, tok *CardToken) error {

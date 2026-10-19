@@ -169,13 +169,18 @@ func renderPDF(in ReportInput) ([]byte, error) {
 	d.text(fmt.Sprintf("Jenis: %s", typeLabel(in.Type)), fontSize, false)
 	d.text(fmt.Sprintf("Periode: %s s/d %s", in.StartDate, in.EndDate), fontSize, false)
 	d.text(fmt.Sprintf("Dibuat: %s", in.GeneratedAt.Format("2006-01-02 15:04")), fontSize, false)
+	code := reportCurrency(in)
+	d.text(fmt.Sprintf("Currency: %s", code), fontSize, false)
+	if legend := rateLegend(in); legend != "" {
+		d.text(fmt.Sprintf("Rate: %s", legend), fontSize, false)
+	}
 	d.y -= 6
 
 	d.text("Ringkasan", 12, true)
-	d.text(fmt.Sprintf("Total Pemasukan   : %s", rupiah(in.Report.Summary.TotalIncome)), fontSize, false)
-	d.text(fmt.Sprintf("Total Pengeluaran : %s", rupiah(in.Report.Summary.TotalExpense)), fontSize, false)
-	d.text(fmt.Sprintf("Total Tabungan    : %s", rupiah(in.Report.Summary.TotalSavings)), fontSize, false)
-	d.text(fmt.Sprintf("Surplus           : %s", rupiah(in.Report.Summary.Surplus)), fontSize, false)
+	d.text(fmt.Sprintf("Total Pemasukan   : %s", in.money(in.Report.Summary.TotalIncome)), fontSize, false)
+	d.text(fmt.Sprintf("Total Pengeluaran : %s", in.money(in.Report.Summary.TotalExpense)), fontSize, false)
+	d.text(fmt.Sprintf("Total Tabungan    : %s", in.money(in.Report.Summary.TotalSavings)), fontSize, false)
+	d.text(fmt.Sprintf("Surplus           : %s", in.money(in.Report.Summary.Surplus)), fontSize, false)
 	d.y -= 8
 
 	d.text("Detail per Kategori", 12, true)
@@ -197,7 +202,7 @@ func renderPDF(in ReportInput) ([]byte, error) {
 		d.ensureSpace(lineHeight)
 		y := d.y
 		d.textAt(colX[0], y, truncate(c.CategoryName, 30), fontSize, false)
-		d.textAt(colX[1], y, rupiah(c.Total), fontSize, false)
+		d.textAt(colX[1], y, in.money(c.Total), fontSize, false)
 		d.textAt(colX[2], y, pct(c.Percentage), fontSize, false)
 		d.textAt(colX[3], y, trend(c.Trend), fontSize, false)
 		d.textAt(colX[4], y, fmt.Sprintf("%d", c.Count), fontSize, false)
@@ -223,9 +228,9 @@ func renderPDF(in ReportInput) ([]byte, error) {
 		d.ensureSpace(lineHeight)
 		y := d.y
 		d.textAt(mColX[0], y, m.Month, fontSize, false)
-		d.textAt(mColX[1], y, rupiah(m.Income), fontSize, false)
-		d.textAt(mColX[2], y, rupiah(m.Expense), fontSize, false)
-		d.textAt(mColX[3], y, rupiah(m.Savings), fontSize, false)
+		d.textAt(mColX[1], y, in.money(m.Income), fontSize, false)
+		d.textAt(mColX[2], y, in.money(m.Expense), fontSize, false)
+		d.textAt(mColX[3], y, in.money(m.Savings), fontSize, false)
 		d.y -= lineHeight
 	}
 
