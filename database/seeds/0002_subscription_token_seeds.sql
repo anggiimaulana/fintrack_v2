@@ -124,8 +124,8 @@ ON CONFLICT (key) DO NOTHING;
 -- bucket: urgent at <= dunning_hours_urgent, soon at <= dunning_hours_soon, and
 -- a due reminder at H-0. Kept monotonic (urgent <= soon) by the worker.
 INSERT INTO settings (key, value, description) VALUES
-    ('dunning_hours_urgent', '24'::jsonb, 'Ingatkan (mendesak) saat sisa waktu invoice <= N jam'),
-    ('dunning_hours_soon',   '72'::jsonb, 'Ingatkan (segera) saat sisa waktu invoice <= N jam')
+    ('dunning_hours_urgent', '24'::jsonb, 'Ingatkan (mendesak) saat langganan berakhir <= N jam'),
+    ('dunning_hours_soon',   '168'::jsonb, 'Ingatkan (segera) saat langganan berakhir <= N jam')
 ON CONFLICT (key) DO NOTHING;
 
 -- ------------------------------------------------------------
