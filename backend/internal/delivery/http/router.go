@@ -83,6 +83,10 @@ type RouterConfig struct {
 	QuotaHandler *handler.QuotaHandler
 	// AIConfig exposes the effective AI timeout budget to the client so the
 	AIConfig *handler.AIConfigHandler
+	// Currency exposes the dynamic currency catalog/rates. When non-nil, the
+	// user catalog route and the Super Admin mutation routes are registered.
+	// Nil omits them (tests that predate multi-currency).
+	Currency *handler.CurrencyHandler
 }
 
 // envInt reads an integer env var, falling back to def when unset/invalid.
@@ -333,6 +337,13 @@ func SetupRouter(
 			if config.QuotaHandler != nil {
 				protected.GET("/me/quota", config.QuotaHandler.GetUserQuotaSnapshot)
 			}
+			// Dynamic currency catalog. Any authenticated user may read the
+			// selectable currencies (with their current rate); the preference
+			// write is validated against that catalog.
+			if config.Currency != nil {
+				protected.GET("/currencies", config.Currency.List)
+				protected.PUT("/me/preferences/currency", ah.UpdateCurrencyPreference)
+			}
 
 			userRoutes := protected.Group("")
 			userRoutes.Use(middleware.RequireUser())
@@ -531,6 +542,13 @@ func SetupRouter(
 				sa.POST("/payment-accounts", pah.Create)
 				sa.PUT("/payment-accounts/:id", pah.Update)
 				sa.DELETE("/payment-accounts/:id", pah.Delete)
+				// Dynamic currency catalog + append-only rate history.
+				if config.Currency != nil {
+					sa.GET("/currencies", config.Currency.ListAll)
+					sa.POST("/currencies", config.Currency.Upsert)
+					sa.GET("/currency-rates", config.Currency.ListRates)
+					sa.POST("/currency-rates", config.Currency.AddRate)
+				}
 			}
 		}
 	}

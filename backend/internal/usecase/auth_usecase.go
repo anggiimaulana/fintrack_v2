@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/infrastructure/auth"
 )
@@ -45,10 +46,32 @@ type AuthUsecase struct {
 	userRepo    domain.ProfileRepository
 	refreshRepo domain.RefreshTokenRepository
 	jwtSecret   []byte
+	// currencySvc validates a requested display currency. Optional.
+	currencySvc *currency.Service
 }
 
 func NewAuthUsecase(userRepo domain.ProfileRepository, refreshRepo domain.RefreshTokenRepository, jwtSecret []byte) *AuthUsecase {
 	return &AuthUsecase{userRepo: userRepo, refreshRepo: refreshRepo, jwtSecret: jwtSecret}
+}
+
+// WithCurrency attaches the currency service so the display-currency preference
+// can be validated against the catalog.
+func (u *AuthUsecase) WithCurrency(svc *currency.Service) *AuthUsecase {
+	u.currencySvc = svc
+	return u
+}
+
+// SetDisplayCurrency validates and persists the user's currency preference.
+func (u *AuthUsecase) SetDisplayCurrency(ctx context.Context, userID uuid.UUID, code string) (*domain.Profile, error) {
+	if u.currencySvc != nil {
+		if err := u.currencySvc.ValidateSelectable(ctx, code, time.Now()); err != nil {
+			return nil, err
+		}
+	}
+	if err := u.userRepo.SetDisplayCurrency(ctx, userID, code); err != nil {
+		return nil, err
+	}
+	return u.userRepo.GetByID(ctx, userID)
 }
 
 func (u *AuthUsecase) issuePair(ctx context.Context, p *domain.Profile, userAgent string) (*TokenPair, error) {

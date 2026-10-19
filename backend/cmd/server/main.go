@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/fintrack/backend/internal/audit"
 	"github.com/fintrack/backend/internal/billing"
 	"github.com/fintrack/backend/internal/configcatalog"
+	"github.com/fintrack/backend/internal/currency"
 	deliveryHTTP "github.com/fintrack/backend/internal/delivery/http"
 	"github.com/fintrack/backend/internal/delivery/http/handler"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
@@ -415,6 +417,30 @@ func main() {
 		return ""
 	}
 
+	// Multi-currency (dynamic catalog + append-only rates). IDR stays the base
+	// accounting currency; the service resolves the user's display currency and
+	// snapshots rates for non-IDR records.
+	currencyRepo := postgres.NewCurrencyRepo(pool)
+	currencySvc := currency.NewService(currencyRepo)
+	currencyUC := usecase.NewCurrencyUsecase(currencySvc, currencyRepo)
+	currencyHandler := handler.NewCurrencyHandler(currencyUC)
+	displayCurrency := func(ctx context.Context, userID uuid.UUID) string {
+		p, err := userRepo.GetByID(ctx, userID)
+		if err != nil || p == nil || p.DisplayCurrency == "" {
+			return currency.BaseCode
+		}
+		code := strings.ToUpper(strings.TrimSpace(p.DisplayCurrency))
+		if code == currency.BaseCode {
+			return code
+		}
+		// Defensive: a currency deactivated after a user selected it must not
+		// break their writes. Fall back to base when it is no longer selectable.
+		if err := currencySvc.ValidateSelectable(ctx, code, time.Now()); err != nil {
+			return currency.BaseCode
+		}
+		return code
+	}
+
 	// Usecases
 	spkRepo := postgres.NewSPKRepo(pool)
 	spkMetricRepo := postgres.NewSPKMetricRepo(pool)
@@ -429,12 +455,14 @@ func main() {
 			logger.Warn("SPK calculation failed", zap.Error(err))
 		}
 	})
-	transactionUC := usecase.NewTransactionUsecase(txRepo, spkQueue, embedder, embedRepo, catName)
+	transactionUC := usecase.NewTransactionUsecase(txRepo, spkQueue, embedder, embedRepo, catName).
+		WithCurrency(currencySvc, displayCurrency)
 	categoryUC := usecase.NewCategoryUsecase(incomeCatRepo, expenseCatRepo, savingsCatRepo, subcatRepo)
 	userUC := usecase.NewUserUsecase(userRepo)
 	dashboardUC := usecase.NewDashboardUsecase(txRepo, spkUC)
 
-	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, embedder, embedRepo)
+	aiUC := usecase.NewAIUsecase(chatSessionRepo, chatMessageRepo, txRepo, incomeCatRepo, expenseCatRepo, savingsCatRepo, userRepo, embedder, embedRepo).
+		WithCurrency(currencySvc, displayCurrency)
 	if gatewayEnabled {
 		aiUC.WithGateway(aiGateway)
 	} else {
@@ -641,8 +669,8 @@ func main() {
 	defer renewalWorker.Stop()
 
 	providerUC := usecase.NewProviderUsecase(providerRepo)
-	reportUC := usecase.NewReportUsecase(txRepo)
-	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret))
+	reportUC := usecase.NewReportUsecase(txRepo).WithCurrency(currencySvc, displayCurrency)
+	authUC := usecase.NewAuthUsecase(userRepo, refreshRepo, []byte(jwtSecret)).WithCurrency(currencySvc)
 
 	// Entitlement enforcement (P07 slice A): the middleware existed since P04 but
 	// was never constructed, so plan checks never ran. Wire it now, with usage
@@ -834,6 +862,7 @@ func main() {
 		UsageHandler:  usageHandler,
 		QuotaHandler:  handler.NewQuotaHandler(quotaRepo, dualCycleEnforcer, realtimePublisher),
 		AIConfig:      handler.NewAIConfigHandler(runtimeResolver),
+		Currency:      currencyHandler,
 	}
 	// Super Admin portal (P06): one service + handler shared by every route.
 	adminSvc := admin.NewService(pool, auditSvc,
@@ -1136,11 +1165,12 @@ func (n dunningNotifier) Notify(ctx context.Context, msg payment.Notification) e
 		title = "Langganan berakhir sebentar lagi"
 	}
 	return n.service.Notify(ctx, notification.Message{
-		UserID:  uid,
-		Event:   msg.Type,
-		Title:   title,
-		Body:    msg.Message,
-		Href:    "/user/subscription",
-		Channel: notification.ChannelTransaction,
+		UserID:    uid,
+		Event:     msg.Type,
+		Title:     title,
+		Body:      msg.Message,
+		Href:      "/user/subscription",
+		Channel:   notification.ChannelTransaction,
+		DedupeKey: msg.DedupeKey,
 	})
 }

@@ -8,16 +8,28 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/pkg/logger"
 )
 
 type ReportUsecase struct {
 	txRepo domain.TransactionRepository
+	// currencySvc + displayCurrency convert IDR aggregates to the user's display
+	// currency at the report's end date. Optional (nil keeps IDR-only behaviour).
+	currencySvc     *currency.Service
+	displayCurrency func(ctx context.Context, userID uuid.UUID) string
 }
 
 func NewReportUsecase(txRepo domain.TransactionRepository) *ReportUsecase {
 	return &ReportUsecase{txRepo: txRepo}
+}
+
+// WithCurrency attaches conversion for display-currency reports.
+func (u *ReportUsecase) WithCurrency(svc *currency.Service, display func(ctx context.Context, userID uuid.UUID) string) *ReportUsecase {
+	u.currencySvc = svc
+	u.displayCurrency = display
+	return u
 }
 
 func (u *ReportUsecase) Generate(ctx context.Context, userID uuid.UUID, req domain.ReportRequest) (*domain.ReportResponse, error) {
@@ -158,7 +170,7 @@ func (u *ReportUsecase) Generate(ctx context.Context, userID uuid.UUID, req doma
 
 	surplus := math.Round((currentStats.TotalIncome-currentStats.TotalExpense)*100) / 100
 
-	return &domain.ReportResponse{
+	resp := &domain.ReportResponse{
 		Summary: domain.ReportSummary{
 			TotalIncome:  math.Round(currentStats.TotalIncome*100) / 100,
 			TotalExpense: math.Round(currentStats.TotalExpense*100) / 100,
@@ -167,7 +179,68 @@ func (u *ReportUsecase) Generate(ctx context.Context, userID uuid.UUID, req doma
 		},
 		Categories: categoryReports,
 		Monthly:    monthly,
-	}, nil
+	}
+	u.applyDisplayCurrency(ctx, userID, end, resp)
+	return resp, nil
+}
+
+// applyDisplayCurrency converts every IDR aggregate in the response into the
+// user's display currency using the rate effective at the report's end date (so
+// a historical report is not rewritten by a later rate). When there is no rate
+// for that date (e.g. the period predates the rate history) or no display
+// currency, the totals stay in base IDR and CurrencyCode is pinned to IDR so the
+// frontend labels them correctly instead of assuming the active currency.
+func (u *ReportUsecase) applyDisplayCurrency(ctx context.Context, userID uuid.UUID, ref time.Time, resp *domain.ReportResponse) {
+	resp.CurrencyCode = currency.BaseCode
+	resp.RateUsed = 1
+
+	if u.currencySvc == nil || u.displayCurrency == nil {
+		return
+	}
+	code := u.displayCurrency(ctx, userID)
+	if code == "" || code == currency.BaseCode {
+		return
+	}
+	rate, err := u.currencySvc.RateAsOf(ctx, code, ref)
+	if err != nil || rate == nil || rate.RateToBase == 0 {
+		return
+	}
+	digits := 2
+	if m, merr := u.currencySvc.Meta(ctx, code); merr == nil && m != nil {
+		digits = m.DecimalDigits
+	}
+	conv := func(v float64) float64 { return currency.RoundTo(v/rate.RateToBase, digits) }
+
+	resp.Summary.TotalIncome = conv(resp.Summary.TotalIncome)
+	resp.Summary.TotalExpense = conv(resp.Summary.TotalExpense)
+	resp.Summary.TotalSavings = conv(resp.Summary.TotalSavings)
+	resp.Summary.Surplus = conv(resp.Summary.Surplus)
+	for i := range resp.Categories {
+		resp.Categories[i].Total = conv(resp.Categories[i].Total)
+	}
+	for i := range resp.Monthly {
+		resp.Monthly[i].Income = conv(resp.Monthly[i].Income)
+		resp.Monthly[i].Expense = conv(resp.Monthly[i].Expense)
+		resp.Monthly[i].Savings = conv(resp.Monthly[i].Savings)
+	}
+	resp.CurrencyCode = code
+	resp.RateUsed = rate.RateToBase
+	eff := rate.EffectiveAt
+	resp.RateAt = &eff
+}
+
+// CurrencyFormat returns the catalog symbol and decimal digits for a code so
+// exports render a dynamically added currency as configured. ok is false when
+// the catalog is unavailable or the code is unknown (caller keeps defaults).
+func (u *ReportUsecase) CurrencyFormat(ctx context.Context, code string) (string, int, bool) {
+	if u.currencySvc == nil || code == "" {
+		return "", 0, false
+	}
+	m, err := u.currencySvc.Meta(ctx, code)
+	if err != nil || m == nil {
+		return "", 0, false
+	}
+	return m.Symbol, m.DecimalDigits, true
 }
 
 func (u *ReportUsecase) getCategoriesByType(ctx context.Context, userID uuid.UUID, typ string, start, end time.Time) ([]domain.CategoryExpenseSummary, error) {

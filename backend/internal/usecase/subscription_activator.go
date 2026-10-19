@@ -90,6 +90,11 @@ func (a *SubscriptionActivator) ActivateForUser(ctx context.Context, userID uuid
 		if cerr := a.subs.Create(ctx, newSub); cerr != nil {
 			return cerr
 		}
+		a.recordEvent(ctx, newSub.ID, userID, "created", nil, map[string]any{
+			"plan_code":  planCode,
+			"status":     string(billing.StatusActive),
+			"period_end": end.Format(time.RFC3339),
+		})
 		a.invalidate(ctx, userID)
 		return nil
 	}
@@ -113,6 +118,8 @@ func (a *SubscriptionActivator) ActivateForUser(ctx context.Context, userID uuid
 		end = *sub.CurrentPeriodEnd
 	}
 
+	prevPlanID := sub.PlanID
+	prevEnd := sub.CurrentPeriodEnd
 	sub.PlanID = plan.ID
 	sub.Status = billing.StatusActive
 	sub.CancelAtPeriodEnd = false
@@ -127,6 +134,19 @@ func (a *SubscriptionActivator) ActivateForUser(ctx context.Context, userID uuid
 	if uerr := a.subs.Update(ctx, sub); uerr != nil {
 		return uerr
 	}
+	eventType := "upgraded"
+	if samePlan || !cycleRunning {
+		eventType = "renewed"
+	}
+	prev := map[string]any{"plan_id": prevPlanID.String()}
+	if prevEnd != nil {
+		prev["period_end"] = prevEnd.Format(time.RFC3339)
+	}
+	a.recordEvent(ctx, sub.ID, userID, eventType, prev, map[string]any{
+		"plan_code":  planCode,
+		"period_end": end.Format(time.RFC3339),
+		"status":     string(billing.StatusActive),
+	})
 	// A plan change must reach the RUNNING token period, or the user stays capped
 	// at the previous plan's quota until the cycle lapses. Best-effort: the
 	// payment already succeeded, so a sync failure is logged, not fatal.
@@ -145,5 +165,23 @@ func (a *SubscriptionActivator) ActivateForUser(ctx context.Context, userID uuid
 func (a *SubscriptionActivator) invalidate(ctx context.Context, userID uuid.UUID) {
 	if a.ent != nil {
 		a.ent.Invalidate(ctx, userID)
+	}
+}
+
+// recordEvent appends a lifecycle event so the user's "Riwayat" tab reflects
+// activation/renewal/upgrade. Best-effort: the payment already succeeded, so a
+// history write failure is logged rather than rolling back the whole approval.
+func (a *SubscriptionActivator) recordEvent(ctx context.Context, subID, userID uuid.UUID, eventType string, prev, next map[string]any) {
+	err := a.subs.RecordEvent(ctx, &billing.SubscriptionEvent{
+		SubscriptionID: subID,
+		UserID:         userID,
+		EventType:      eventType,
+		PreviousState:  prev,
+		NewState:       next,
+	})
+	if err != nil {
+		logger.Warn("activate: record subscription event failed",
+			zap.String("user_id", userID.String()),
+			zap.String("event", eventType), zap.Error(err))
 	}
 }

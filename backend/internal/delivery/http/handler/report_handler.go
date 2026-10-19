@@ -98,14 +98,22 @@ func (h *ReportHandler) Export(c *gin.Context) {
 		period = req.StartDate + "_" + req.EndDate
 	}
 
-	payload, err := export.Render(export.ReportInput{
+	in := export.ReportInput{
 		Report:      report,
 		Type:        req.Type,
 		StartDate:   req.StartDate,
 		EndDate:     req.EndDate,
 		Period:      period,
 		GeneratedAt: time.Now(),
-	}, format)
+	}
+	// Render the report currency with the catalog's configured symbol/precision
+	// so a Super-Admin-added currency exports correctly without a code change.
+	if symbol, digits, ok := h.usecase.CurrencyFormat(c.Request.Context(), report.CurrencyCode); ok {
+		in.CurrencySymbol = symbol
+		in.CurrencyDigits = &digits
+	}
+
+	payload, err := export.Render(in, format)
 	if err != nil {
 		response.InternalError(c, "Gagal membuat berkas ekspor")
 		return

@@ -19,7 +19,21 @@ func TestBuildEmbeddingText(t *testing.T) {
 	}
 
 	got := buildEmbeddingText(tx, "Makanan & Minuman")
-	want := "2026-04-15 expense Makanan & Minuman makan siang sate padang Rp35000"
+	want := "2026-04-15 expense Makanan & Minuman makan siang sate padang IDR35000"
+	if got != want {
+		t.Fatalf("buildEmbeddingText = %q, want %q", got, want)
+	}
+}
+
+func TestBuildEmbeddingTextNonBaseCurrency(t *testing.T) {
+	tx := &domain.Transaction{
+		Type:            domain.TransactionExpense,
+		Amount:          1000,
+		CurrencyCode:    "JPY",
+		TransactionDate: time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC),
+	}
+	got := buildEmbeddingText(tx, "Makanan")
+	want := "2026-04-15 expense Makanan  JPY1000"
 	if got != want {
 		t.Fatalf("buildEmbeddingText = %q, want %q", got, want)
 	}
@@ -32,7 +46,7 @@ func TestBuildEmbeddingTextNilDescription(t *testing.T) {
 		TransactionDate: time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
 	}
 	got := buildEmbeddingText(tx, "Gaji Tetap")
-	want := "2026-05-25 income Gaji Tetap  Rp7000000"
+	want := "2026-05-25 income Gaji Tetap  IDR7000000"
 	if got != want {
 		t.Fatalf("buildEmbeddingText = %q, want %q", got, want)
 	}

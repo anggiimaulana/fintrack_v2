@@ -87,6 +87,10 @@ func (h *QuotaHandler) UpsertPlanCycles(c *gin.Context) {
 			response.BadRequest(c, "limit_key is required", "validation_error")
 			return
 		}
+		if item.CycleType != quota.CycleMonthlyOnly && item.CycleType != quota.CycleWeeklyMonthly {
+			response.BadRequest(c, "cycle_type must be monthly_only or weekly_monthly", "validation_error")
+			return
+		}
 		if item.CycleType == quota.CycleWeeklyMonthly {
 			if item.WeeklyLimit == nil || *item.WeeklyLimit <= 0 {
 				response.BadRequest(c, "weekly_limit must be > 0 for weekly_monthly cycle", "validation_error")

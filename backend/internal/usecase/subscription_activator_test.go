@@ -13,7 +13,8 @@ import (
 
 // fakeSubRepo is a one-row SubscriptionRepository for activator tests.
 type fakeSubRepo struct {
-	sub *billing.Subscription
+	sub    *billing.Subscription
+	events []*billing.SubscriptionEvent
 }
 
 func (f *fakeSubRepo) GetByUserID(context.Context, uuid.UUID) (*billing.Subscription, error) {
@@ -24,7 +25,8 @@ func (f *fakeSubRepo) GetByUserID(context.Context, uuid.UUID) (*billing.Subscrip
 }
 func (f *fakeSubRepo) Create(_ context.Context, s *billing.Subscription) error { f.sub = s; return nil }
 func (f *fakeSubRepo) Update(_ context.Context, s *billing.Subscription) error { f.sub = s; return nil }
-func (f *fakeSubRepo) RecordEvent(context.Context, *billing.SubscriptionEvent) error {
+func (f *fakeSubRepo) RecordEvent(_ context.Context, ev *billing.SubscriptionEvent) error {
+	f.events = append(f.events, ev)
 	return nil
 }
 func (f *fakeSubRepo) ListEvents(context.Context, uuid.UUID, int) ([]*billing.SubscriptionEvent, error) {
@@ -163,6 +165,25 @@ func TestActivateForUser_ClearsScheduledDowngrade(t *testing.T) {
 	}
 	if _, ok := repo.sub.Metadata["scheduled_plan_code"]; ok {
 		t.Fatal("paying must clear the scheduled downgrade")
+	}
+}
+
+// Activation writes a lifecycle event so the "Riwayat" tab is not empty after a
+// normal checkout/approval (previously only admin actions recorded events).
+func TestActivateForUser_RecordsHistoryEvent(t *testing.T) {
+	act, repo, _, _ := newActivatorFixture(t, nil)
+	user := uuid.New()
+	if err := act.ActivateForUser(context.Background(), user, "pro"); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if len(repo.events) != 1 {
+		t.Fatalf("expected 1 lifecycle event, got %d", len(repo.events))
+	}
+	if repo.events[0].EventType != "created" {
+		t.Fatalf("event type = %q, want created", repo.events[0].EventType)
+	}
+	if repo.events[0].UserID != user {
+		t.Fatalf("event user = %s, want %s", repo.events[0].UserID, user)
 	}
 }
 

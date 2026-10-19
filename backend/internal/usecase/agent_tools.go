@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/pkg/logger"
 )
@@ -86,7 +89,7 @@ var agentTools = []toolDef{
 			Type: "object",
 			Properties: map[string]toolParam{
 				"type":        {Type: "string", Description: "Transaction type", Enum: []string{"income", "expense", "savings"}},
-				"amount":      {Type: "string", Description: "Amount in Rupiah (numbers only, e.g. 50000)"},
+				"amount":      {Type: "string", Description: "Amount in the user's display currency (numbers only, e.g. 50000). Do not convert; the server snapshots the rate to IDR base."},
 				"category":    {Type: "string", Description: "Category name (must match existing category)"},
 				"description": {Type: "string", Description: "Optional description"},
 				"date":        {Type: "string", Description: "Date in YYYY-MM-DD format (default today)"},
@@ -423,6 +426,7 @@ func (u *AIUsecase) execGetTransactions(ctx context.Context, userID uuid.UUID, p
 	}
 
 	var list []map[string]interface{}
+	mc := u.moneyCtx(ctx, userID)
 	for _, t := range txns {
 		desc := ""
 		if t.Description != nil {
@@ -445,7 +449,8 @@ func (u *AIUsecase) execGetTransactions(ctx context.Context, userID uuid.UUID, p
 			}
 		}
 		list = append(list, map[string]interface{}{
-			"id": t.ID.String(), "type": t.Type, "amount": t.Amount,
+			"id": t.ID.String(), "type": t.Type, "amount": mc.format(t.AmountBase),
+			"currency_code": mc.codeOrDefault(),
 			"category": catName, "description": desc,
 			"date": t.TransactionDate.Format("2006-01-02"),
 		})
@@ -457,13 +462,11 @@ func (u *AIUsecase) execGetTransactions(ctx context.Context, userID uuid.UUID, p
 
 func (u *AIUsecase) execCreateTransaction(ctx context.Context, userID uuid.UUID, params map[string]interface{}) toolExecResult {
 	txType, _ := params["type"].(string)
-	amountStr, _ := params["amount"].(string)
 	categoryName, _ := params["category"].(string)
 	desc, _ := params["description"].(string)
 
-	var amount float64
-	fmt.Sscanf(amountStr, "%f", &amount)
-	if amount <= 0 {
+	amount := parseAmountParam(params["amount"])
+	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
 		return toolExecResult{Tool: "create_transaction", Error: "Jumlah tidak valid"}
 	}
 
@@ -594,6 +597,24 @@ func (u *AIUsecase) execCreateTransaction(ctx context.Context, userID uuid.UUID,
 		Source:            domain.SourceAI,
 	}
 
+	// The model speaks the user's display currency; snapshot the rate so the
+	// generated amount_base reflects the currency actually recorded.
+	mc := u.moneyCtx(ctx, userID)
+	code := mc.codeOrDefault()
+	tx.CurrencyCode = code
+	if code == currency.BaseCode || u.currencySvc == nil {
+		tx.ExchangeRate = 1
+		tx.RateAt = nil
+	} else {
+		rate, err := u.currencySvc.RateForWrite(ctx, code, txDate)
+		if err != nil || rate == nil || rate.RateToBase <= 0 {
+			return toolExecResult{Tool: "create_transaction", Error: "Kurs mata uang belum tersedia"}
+		}
+		tx.ExchangeRate = rate.RateToBase
+		rt := rate.EffectiveAt
+		tx.RateAt = &rt
+	}
+
 	if err := u.txRepo.Create(ctx, tx); err != nil {
 		logger.Error("failed to create transaction from AI", zap.Error(err))
 		return toolExecResult{Tool: "create_transaction", Error: "Gagal menyimpan transaksi"}
@@ -601,9 +622,38 @@ func (u *AIUsecase) execCreateTransaction(ctx context.Context, userID uuid.UUID,
 
 	return toolExecResult{Tool: "create_transaction", Data: map[string]interface{}{
 		"id": tx.ID.String(), "type": string(cType), "amount": amount,
+		"currency_code": code, "amount_base": tx.AmountBase, "symbol": mc.symbol,
 		"category": categoryName, "description": desc,
 		"date": txDate.Format("2006-01-02"),
 	}}
+}
+
+// parseAmountParam accepts the amount as the model may send it (string or JSON
+// number) and returns 0 when it cannot be parsed. The string form is the
+// documented contract; the numeric forms guard against a model that ignores it.
+func parseAmountParam(v interface{}) float64 {
+	switch n := v.(type) {
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0
+		}
+		return f
+	case float64:
+		return n
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0
+		}
+		return f
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
 }
 
 func (u *AIUsecase) execGenerateChart(ctx context.Context, userID uuid.UUID, params map[string]interface{}) toolExecResult {

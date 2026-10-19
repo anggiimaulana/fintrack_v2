@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/payment"
@@ -165,6 +166,41 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	response.OK(c, "Profil berhasil diambil", profile)
+}
+
+// updateCurrencyPreferenceRequest is the body for PUT /me/preferences/currency.
+type updateCurrencyPreferenceRequest struct {
+	CurrencyCode string `json:"currency_code" binding:"required"`
+}
+
+// UpdateCurrencyPreference changes the signed-in user's recording/display
+// currency. It never touches billing, invoices, tokens, or quota (those stay IDR).
+func (h *AuthHandler) UpdateCurrencyPreference(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req updateCurrencyPreferenceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body", err.Error())
+		return
+	}
+
+	profile, err := h.authUsecase.SetDisplayCurrency(c.Request.Context(), userID, strings.ToUpper(strings.TrimSpace(req.CurrencyCode)))
+	if err != nil {
+		switch {
+		case errors.Is(err, currency.ErrUnknown):
+			response.BadRequest(c, "Mata uang tidak dikenal", "currency_unknown")
+		case errors.Is(err, currency.ErrInactive):
+			response.Error(c, http.StatusUnprocessableEntity, "Mata uang belum tersedia", "currency_inactive")
+		case errors.Is(err, currency.ErrNoRate):
+			response.Error(c, http.StatusUnprocessableEntity, "Mata uang belum memiliki rate", "currency_no_rate")
+		case errors.Is(err, domain.ErrNotFound):
+			response.NotFound(c, "Pengguna tidak ditemukan")
+		default:
+			response.InternalError(c, "Gagal memperbarui mata uang")
+		}
+		return
+	}
+	response.OK(c, "Preferensi mata uang berhasil diperbarui", profile)
 }
 
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {

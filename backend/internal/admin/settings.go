@@ -99,7 +99,7 @@ var writableSettings = map[string]settingSpec{
 	"ai_estimate_vision":    {kind: "int", min: 1, max: 1_000_000},
 	"ai_estimate_voice":     {kind: "int", min: 1, max: 1_000_000},
 	"ai_estimate_embedding": {kind: "int", min: 1, max: 1_000_000},
-	// Dunning reminder offsets (hours before an invoice is due). Retunable at
+	// Dunning reminder offsets (hours before the paid period ends). Retunable at
 	// runtime so the reminder cadence does not require a redeploy.
 	"dunning_hours_urgent": {kind: "int", min: 1, max: 720},
 	"dunning_hours_soon":   {kind: "int", min: 1, max: 720},

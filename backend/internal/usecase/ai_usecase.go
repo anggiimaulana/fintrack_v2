@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/entitlement"
 	"github.com/fintrack/backend/internal/infrastructure/embedding"
@@ -58,6 +59,64 @@ type AIUsecase struct {
 	reasoningEffort    func() string
 	reasoningMaxTokens func() int
 	reasoningEnabled   func() bool
+
+	// currencySvc + displayCurrency let the AI speak and accept amounts in the
+	// user's display currency while everything is stored in IDR base. Both
+	// optional: nil keeps IDR-only behaviour (tests).
+	currencySvc     *currency.Service
+	displayCurrency func(ctx context.Context, userID uuid.UUID) string
+}
+
+// WithCurrency attaches the currency service and the user's display-currency
+// resolver. Returns the usecase for chaining.
+func (u *AIUsecase) WithCurrency(svc *currency.Service, display func(ctx context.Context, userID uuid.UUID) string) *AIUsecase {
+	u.currencySvc = svc
+	u.displayCurrency = display
+	return u
+}
+
+// aiMoney resolves the user's display currency once and formats base amounts.
+type aiMoney struct {
+	code   string
+	symbol string
+	digits int
+	rate   float64
+}
+
+// moneyCtx resolves the formatting context for a user. Falls back to IDR.
+func (u *AIUsecase) moneyCtx(ctx context.Context, userID uuid.UUID) aiMoney {
+	m := aiMoney{code: currency.BaseCode, symbol: "Rp", digits: 0, rate: 1}
+	if u.displayCurrency != nil {
+		if c := u.displayCurrency(ctx, userID); c != "" {
+			m.code = c
+		}
+	}
+	if u.currencySvc != nil {
+		if meta, err := u.currencySvc.Meta(ctx, m.code); err == nil && meta != nil {
+			m.symbol = meta.Symbol
+			m.digits = meta.DecimalDigits
+		}
+		if r, err := u.currencySvc.RateAsOf(ctx, m.code, time.Now()); err == nil && r != nil && r.RateToBase > 0 {
+			m.rate = r.RateToBase
+		}
+	}
+	return m
+}
+
+// format renders an IDR base amount in the resolved display currency.
+func (m aiMoney) format(base float64) string {
+	if m.rate <= 0 {
+		m.rate = 1
+	}
+	return m.symbol + strconv.FormatFloat(base/m.rate, 'f', m.digits, 64)
+}
+
+// codeOrDefault returns the resolved currency code.
+func (m aiMoney) codeOrDefault() string {
+	if m.code == "" {
+		return currency.BaseCode
+	}
+	return m.code
 }
 
 // WithReasoningEffort installs a runtime resolver for `reasoning_effort` so the
@@ -326,6 +385,10 @@ func (u *AIUsecase) isContentAllowed(message string) (bool, string) {
 func (u *AIUsecase) buildUserContext(ctx context.Context, userID uuid.UUID) (string, error) {
 	var sb strings.Builder
 
+	mc := u.moneyCtx(ctx, userID)
+	sb.WriteString(fmt.Sprintf("Mata uang pencatatan pengguna: %s (1 %s = %.4f IDR). Tampilkan SEMUA nominal dalam %s.\n",
+		mc.codeOrDefault(), mc.codeOrDefault(), mc.rate, mc.codeOrDefault()))
+
 	profile, _ := u.profileRepo.GetByID(ctx, userID)
 	if profile != nil {
 		sb.WriteString(fmt.Sprintf("Nama Pengguna: %s\n", profile.FullName))
@@ -337,8 +400,8 @@ func (u *AIUsecase) buildUserContext(ctx context.Context, userID uuid.UUID) (str
 
 	stats, _ := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{StartDate: monthStart, EndDate: now})
 	if stats != nil {
-		sb.WriteString(fmt.Sprintf("Bulan Ini - Pemasukan: Rp%.0f, Pengeluaran: Rp%.0f, Tabungan: Rp%.0f, Saldo Bersih: Rp%.0f\n",
-			stats.TotalIncome, stats.TotalExpense, stats.TotalSavings, stats.NetBalance))
+		sb.WriteString(fmt.Sprintf("Bulan Ini - Pemasukan: %s, Pengeluaran: %s, Tabungan: %s, Saldo Bersih: %s\n",
+			mc.format(stats.TotalIncome), mc.format(stats.TotalExpense), mc.format(stats.TotalSavings), mc.format(stats.NetBalance)))
 	}
 
 	prevStats, _ := u.txRepo.GetStats(ctx, userID, domain.StatsPeriod{StartDate: prevMonthStart, EndDate: monthStart.Add(-time.Second)})
@@ -357,12 +420,12 @@ func (u *AIUsecase) buildUserContext(ctx context.Context, userID uuid.UUID) (str
 		if yearStats.TotalIncome > 0 {
 			savingsRate = ((yearStats.TotalSavings + yearStats.NetBalance) / yearStats.TotalIncome) * 100
 		}
-		sb.WriteString(fmt.Sprintf("\nSiklus Keuangan 1 Tahun Terakhir (12 Bulan):\n- Total Pemasukan: Rp%.0f (%d transaksi)\n- Total Pengeluaran: Rp%.0f (%d transaksi)\n- Total Tabungan/Investasi: Rp%.0f (%d transaksi)\n- Saldo Bersih (Surplus): Rp%.0f\n- Rata-rata Bulanan: Pemasukan Rp%.0f/bln, Pengeluaran Rp%.0f/bln, Tabungan Rp%.0f/bln\n- Rasio Tabungan/Surplus: %.1f%%\n",
-			yearStats.TotalIncome, yearStats.IncomeCount,
-			yearStats.TotalExpense, yearStats.ExpenseCount,
-			yearStats.TotalSavings, yearStats.SavingsCount,
-			yearStats.NetBalance,
-			avgIncome, avgExpense, avgSavings,
+		sb.WriteString(fmt.Sprintf("\nSiklus Keuangan 1 Tahun Terakhir (12 Bulan):\n- Total Pemasukan: %s (%d transaksi)\n- Total Pengeluaran: %s (%d transaksi)\n- Total Tabungan/Investasi: %s (%d transaksi)\n- Saldo Bersih (Surplus): %s\n- Rata-rata Bulanan: Pemasukan %s/bln, Pengeluaran %s/bln, Tabungan %s/bln\n- Rasio Tabungan/Surplus: %.1f%%\n",
+			mc.format(yearStats.TotalIncome), yearStats.IncomeCount,
+			mc.format(yearStats.TotalExpense), yearStats.ExpenseCount,
+			mc.format(yearStats.TotalSavings), yearStats.SavingsCount,
+			mc.format(yearStats.NetBalance),
+			mc.format(avgIncome), mc.format(avgExpense), mc.format(avgSavings),
 			savingsRate))
 	}
 
@@ -374,7 +437,7 @@ func (u *AIUsecase) buildUserContext(ctx context.Context, userID uuid.UUID) (str
 			limit = len(yearCategories)
 		}
 		for _, c := range yearCategories[:limit] {
-			sb.WriteString(fmt.Sprintf("- %s: Rp%.0f (%d transaksi)\n", c.CategoryName, c.Total, c.Count))
+			sb.WriteString(fmt.Sprintf("- %s: %s (%d transaksi)\n", c.CategoryName, mc.format(c.Total), c.Count))
 		}
 	}
 
@@ -386,7 +449,7 @@ func (u *AIUsecase) buildUserContext(ctx context.Context, userID uuid.UUID) (str
 			if t.Description != nil {
 				desc = sanitizeRAGText(*t.Description)
 			}
-			sb.WriteString(fmt.Sprintf("  - %s: Rp%.0f (%s)\n", desc, t.Amount, t.TransactionDate.Format("2006-01-02")))
+			sb.WriteString(fmt.Sprintf("  - %s: %s (%s)\n", desc, mc.format(t.AmountBase), t.TransactionDate.Format("2006-01-02")))
 		}
 		sb.WriteString("</user_transactions>\n")
 	}
@@ -847,7 +910,11 @@ func (u *AIUsecase) generateToolResponse(results []toolExecResult) string {
 			case "savings":
 				typeLabel = "Tabungan"
 			}
-			formatted := fmt.Sprintf("Rp %.0f", amount)
+			symbol, _ := data["symbol"].(string)
+			if symbol == "" {
+				symbol = "Rp"
+			}
+			formatted := fmt.Sprintf("%s %s", symbol, strconv.FormatFloat(amount, 'f', -1, 64))
 			if desc != "" {
 				sb.WriteString(fmt.Sprintf("Done! **%s** %s sebesar %s berhasil dicatat.", desc, typeLabel, formatted))
 			} else {

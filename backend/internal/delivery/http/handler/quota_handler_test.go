@@ -98,6 +98,21 @@ func TestQuotaHandler_GetAndUpsertPlanCycles(t *testing.T) {
 		t.Fatalf("expected 400 on invalid cycle, got %d", w.Code)
 	}
 
+	// 2b. PUT empty cycle_type -> 400, not a DB constraint 500
+	payloadEmpty := map[string]any{
+		"cycles": []map[string]any{
+			{"limit_key": "ocr_scans_per_cycle", "cycle_type": ""},
+		},
+	}
+	body, _ = json.Marshal(payloadEmpty)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/plans/"+planID.String()+"/cycles", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 on empty cycle_type, got %d", w.Code)
+	}
+
 	// 3. PUT valid weekly cycle
 	wLimit := int64(50000)
 	degMode := "model_downgrade"

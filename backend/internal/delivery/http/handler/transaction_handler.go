@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/fintrack/backend/internal/currency"
 	"github.com/fintrack/backend/internal/delivery/http/middleware"
 	"github.com/fintrack/backend/internal/domain"
 	"github.com/fintrack/backend/internal/usecase"
@@ -117,6 +118,21 @@ func (h *TransactionHandler) GetByID(c *gin.Context) {
 	response.OK(c, "Transaction retrieved successfully", tx)
 }
 
+// mapTransactionWriteError translates user-fixable write failures (amount that
+// overflows the base column, or a display currency that became unavailable) into
+// a 400. Returns true when the error was handled.
+func mapTransactionWriteError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, domain.ErrInvalidAmount),
+		errors.Is(err, currency.ErrUnknown),
+		errors.Is(err, currency.ErrInactive),
+		errors.Is(err, currency.ErrNoRate):
+		response.BadRequest(c, "Nominal atau mata uang tidak valid", "validation_error")
+		return true
+	}
+	return false
+}
+
 func (h *TransactionHandler) Create(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -141,7 +157,9 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 
 	tx, err := h.usecase.Create(c.Request.Context(), userID, req)
 	if err != nil {
-		response.InternalError(c, "Failed to create transaction")
+		if !mapTransactionWriteError(c, err) {
+			response.InternalError(c, "Failed to create transaction")
+		}
 		return
 	}
 
@@ -168,6 +186,9 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 
 	tx, err := h.usecase.Update(c.Request.Context(), userID, id, req)
 	if err != nil {
+		if mapTransactionWriteError(c, err) {
+			return
+		}
 		if errors.Is(err, domain.ErrConflict) {
 			response.Conflict(c, "Data telah berubah, muat ulang")
 			return
