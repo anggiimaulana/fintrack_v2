@@ -14,6 +14,8 @@ export type AuthUser = {
   role: Role;
   avatar_url?: string | null;
   is_active: boolean;
+  /** Recording/display currency chosen by the user (IDR unless changed). */
+  display_currency?: string;
 };
 
 type ApiEnvelope<T> = { success: boolean; message: string; data?: T; error?: string };

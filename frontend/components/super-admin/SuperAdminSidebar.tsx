@@ -21,6 +21,7 @@ import {
   Calculator,
   ListChecks,
   Gauge,
+  Banknote,
   ChevronDown,
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -76,6 +77,7 @@ const superAdminMenuGroups: {
   {
     label: 'Sistem',
     items: [
+      { title: 'Mata Uang & Kurs', href: '/super-admin/currency', icon: Banknote, exact: false },
       { title: 'Metrik SPK', href: '/super-admin/spk-metrics', icon: SlidersHorizontal, exact: false },
       { title: 'Audit Log', href: '/super-admin/audit', icon: History, exact: false },
       { title: 'Pengaturan', href: '/super-admin/settings', icon: Settings, exact: false },

@@ -119,6 +119,10 @@ export function buildReceiptTransaction(
   const payload: ReceiptTransactionPayload = {
     type,
     amount,
+    // Receipt/OCR amounts are Indonesian Rupiah, so pin the code instead of
+    // letting the server fall back to the user's display currency (which would
+    // misread a Rp25.000 receipt as ¥25.000 for a JPY user).
+    currency_code: "IDR",
     [categoryField]: category.id,
     description,
     transaction_date: txDate,

@@ -37,4 +37,24 @@ describe("RupiahInput", () => {
     const alert = screen.getByRole("alert")
     expect(alert).toHaveTextContent("Minimal input adalah 1")
   })
+
+  it("renders decimals when decimals prop is set", () => {
+    render(<RupiahInput value={1000.5} decimals={2} />)
+
+    const input = screen.getByRole("textbox") as HTMLInputElement
+    expect(input.value).toBe("1.000,50")
+  })
+
+  it("keeps a trailing separator while typing the fraction", () => {
+    const handleChange = vi.fn()
+    render(<RupiahInput onChange={handleChange} decimals={2} />)
+
+    const input = screen.getByRole("textbox") as HTMLInputElement
+    fireEvent.change(input, { target: { value: "1000," } })
+    // The comma must survive so the next keypress lands in the fraction.
+    expect(input.value).toBe("1.000,")
+
+    fireEvent.change(input, { target: { value: "1.000,5" } })
+    expect(handleChange).toHaveBeenLastCalledWith(1000.5)
+  })
 })

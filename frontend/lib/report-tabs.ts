@@ -9,35 +9,19 @@ import { computePresetDates, type DateRangeValue, type PresetKey } from "@/compo
  * so a link can reproduce a tab *and* its table view.
  */
 
+// IDs are the URL slugs (English); labels are the visible Indonesian text.
 export const REPORT_TABS = [
-  { id: "ringkasan", label: "Ringkasan" },
+  { id: "summary", label: "Ringkasan" },
   { id: "spk", label: "Skor SPK" },
-  { id: "kategori", label: "Kategori" },
-  { id: "tren", label: "Tren" },
+  { id: "category", label: "Kategori" },
+  { id: "trend", label: "Tren" },
   { id: "budget", label: "Anggaran" },
-  { id: "kalender", label: "Kalender" },
+  { id: "calendar", label: "Kalender" },
 ] as const;
 
 export type ReportTabId = (typeof REPORT_TABS)[number]["id"];
 
-export const DEFAULT_REPORT_TAB: ReportTabId = "ringkasan";
-
-const TAB_ALIASES: Record<string, ReportTabId> = {
-  ringkasan: "ringkasan",
-  summary: "ringkasan",
-  spk: "spk",
-  kategori: "kategori",
-  category: "kategori",
-  categories: "kategori",
-  tren: "tren",
-  trend: "tren",
-  trends: "tren",
-  budget: "budget",
-  budgets: "budget",
-  anggaran: "budget",
-  kalender: "kalender",
-  calendar: "kalender",
-};
+export const DEFAULT_REPORT_TAB: ReportTabId = "summary";
 
 /** The report "type" dimension (which slice of transactions is analysed). */
 export const REPORT_TYPES = [
@@ -53,11 +37,9 @@ export function isReportTabId(v: string | null | undefined): v is ReportTabId {
   return !!v && REPORT_TABS.some((t) => t.id === v);
 }
 
-/** parseTab resolves a raw query value to a valid tab, accepting English aliases and defaulting safely. */
+/** parseTab resolves a raw query value to a valid tab, defaulting safely. */
 export function parseTab(v: string | null | undefined): ReportTabId {
-  if (!v) return DEFAULT_REPORT_TAB;
-  const lower = v.toLowerCase();
-  return TAB_ALIASES[lower] ?? (isReportTabId(v) ? v : DEFAULT_REPORT_TAB);
+  return isReportTabId(v) ? v : DEFAULT_REPORT_TAB;
 }
 
 /** parseReportType resolves a raw query value to a valid type. */

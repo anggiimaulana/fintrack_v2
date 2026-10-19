@@ -19,6 +19,7 @@ import { useAdminCategories } from "@/hooks/useAdminCategories";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import type { ReceiptResult } from "@/lib/receipt";
 import { buildReceiptTransaction, formatRupiahIDR, normalizeReceiptType, receiptTypeLabel } from "@/lib/receipt";
+import { formatMoney } from "@/lib/currency";
 
 import { BarChartView } from "@/components/charts/BarChartView";
 import { LineChartView } from "@/components/charts/LineChartView";
@@ -561,12 +562,12 @@ export default function ChatWindow() {
           <div className="h-44 border-2 rounded-md border-foreground p-2 bg-card">
             <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Distribusi Keuangan</p>
             <div className="h-[calc(100%-40px)]">
-              <PieChartView data={pieData} compact />
+              <PieChartView display data={pieData} compact />
             </div>
             <div className="flex justify-around text-[10px] font-bold">
-              <span className="text-green-700">Pemasukan: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totalIncome)}</span>
-              <span className="text-red-700">Pengeluaran: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totalExpense)}</span>
-              <span className="text-blue-700">Tabungan: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totalSavings)}</span>
+              <span className="text-green-700">Pemasukan: {formatMoney(totalIncome)}</span>
+              <span className="text-red-700">Pengeluaran: {formatMoney(totalExpense)}</span>
+              <span className="text-blue-700">Tabungan: {formatMoney(totalSavings)}</span>
             </div>
           </div>
         )}
@@ -575,13 +576,13 @@ export default function ChatWindow() {
             <div className="h-36 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Batang</p>
               <div className="h-[calc(100%-20px)]">
-                <BarChartView data={chartData} />
+                <BarChartView display data={chartData} />
               </div>
             </div>
             <div className="h-36 border-2 rounded-md border-foreground p-2 bg-card">
               <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1">Grafik Garis</p>
               <div className="h-[calc(100%-20px)]">
-                <LineChartView data={chartData} />
+                <LineChartView display data={chartData} />
               </div>
             </div>
           </div>

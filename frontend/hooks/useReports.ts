@@ -33,6 +33,12 @@ export interface ReportResponse {
   summary: ReportSummary;
   categories: CategoryReport[];
   monthly: MonthlyComparison[];
+  /** Currency the totals were converted to server-side (IDR for base). */
+  currency_code?: string;
+  /** Rate used for the conversion (1 for IDR / when none applied). */
+  rate_used?: number;
+  /** When the rate was effective (period end). */
+  rate_at?: string | null;
 }
 
 const emptySummary: ReportSummary = { total_income: 0, total_expense: 0, total_savings: 0, surplus: 0 };
@@ -50,6 +56,9 @@ export function normalizeReport(data: unknown): ReportResponse | undefined {
     summary: d.summary ?? emptySummary,
     categories: Array.isArray(d.categories) ? d.categories : [],
     monthly: Array.isArray(d.monthly) ? d.monthly : [],
+    currency_code: typeof d.currency_code === "string" ? d.currency_code : "IDR",
+    rate_used: typeof d.rate_used === "number" ? d.rate_used : 1,
+    rate_at: d.rate_at ?? null,
   };
 }
 

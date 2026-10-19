@@ -119,6 +119,7 @@ export function Header() {
     if (pathname.startsWith("/super-admin/kuota") || pathname.startsWith("/super-admin/quota-monitor")) return "Monitoring Kuota AI";
     if (pathname.startsWith("/super-admin/pricing")) return "Konfigurasi Harga & Token";
     if (pathname.startsWith("/super-admin/spk-metrics")) return "Metrik SPK";
+    if (pathname.startsWith("/super-admin/currency")) return "Mata Uang & Kurs";
     if (pathname === "/super-admin") return "Dashboard Super Admin";
 
     return "Dashboard";

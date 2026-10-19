@@ -9,11 +9,30 @@ export interface RupiahInputProps extends Omit<React.InputHTMLAttributes<HTMLInp
   min?: number
   allowZero?: boolean
   errorMessage?: string
+  /** Currency symbol shown before the field. Defaults to Rupiah. */
+  symbol?: string
+  /**
+   * Minor-unit precision. 0 (default) keeps the original integer-only Rupiah
+   * behaviour; >0 allows a comma decimal separator so currencies like USD can be
+   * entered exactly.
+   */
+  decimals?: number
 }
 
-function groupThousands(digits: string): string {
-  const clean = digits.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "")
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+const GROUP_SEP = "."
+const DEC_SEP = ","
+
+function groupThousands(intPart: string): string {
+  const clean = intPart.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "")
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, GROUP_SEP)
+}
+
+function formatValue(value: number | undefined, decimals: number): string {
+  if (value == null) return ""
+  const fixed = decimals > 0 ? value.toFixed(decimals) : String(Math.trunc(value))
+  const [int, frac] = fixed.split(".")
+  const grouped = groupThousands(int)
+  return frac ? `${grouped}${DEC_SEP}${frac}` : grouped
 }
 
 export const RupiahInput = React.forwardRef<HTMLInputElement, RupiahInputProps>(
@@ -25,21 +44,36 @@ export const RupiahInput = React.forwardRef<HTMLInputElement, RupiahInputProps>(
       min = 1,
       allowZero = false,
       errorMessage,
+      symbol = "Rp",
+      decimals = 0,
       placeholder = "0",
       onBlur,
       ...props
     },
     ref
   ) => {
+    const digits = Math.min(4, Math.max(0, Math.trunc(decimals)))
     const [draft, setDraft] = useState<string | null>(null)
     const effectiveMin = allowZero ? 0 : min
-    const displayValue = draft ?? (value != null ? groupThousands(String(value)) : "")
+    const displayValue = draft ?? formatValue(value, digits)
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const cleanVal = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "")
-      setDraft(groupThousands(cleanVal))
-      const num = cleanVal ? parseInt(cleanVal, 10) : undefined
-      onChange?.(num)
+      const raw = e.target.value.replace(/[^0-9,]/g, "")
+      const [intRaw, ...fracParts] = raw.split(DEC_SEP)
+      const int = intRaw.replace(/^0+(?=\d)/, "")
+      const frac = digits > 0 ? fracParts.join("").slice(0, digits) : ""
+      // Keep a trailing separator while the fraction is still empty, otherwise
+      // typing "1000," would drop the comma and the next keypress would land in
+      // the integer part.
+      const hasSep = digits > 0 && raw.includes(DEC_SEP)
+      setDraft(hasSep ? `${groupThousands(int)}${DEC_SEP}${frac}` : groupThousands(int))
+
+      if (!int && !frac) {
+        onChange?.(undefined)
+        return
+      }
+      const num = Number(`${int || "0"}.${frac || "0"}`)
+      onChange?.(Number.isFinite(num) ? num : undefined)
     }
 
     const isInvalid = value !== undefined && value < effectiveMin
@@ -53,13 +87,13 @@ export const RupiahInput = React.forwardRef<HTMLInputElement, RupiahInputProps>(
       <div className="space-y-1 w-full">
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold text-xs select-none">
-            Rp
+            {symbol}
           </span>
           <Input
             {...props}
             ref={ref}
             type="text"
-            inputMode="numeric"
+            inputMode={digits > 0 ? "decimal" : "numeric"}
             value={displayValue}
             onChange={handleChange}
             onBlur={handleBlur}

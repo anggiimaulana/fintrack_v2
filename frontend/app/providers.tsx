@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState } from "react";
 import { Toaster } from "sonner";
 import { SessionProvider } from "@/lib/session-context";
+import { CurrencyProvider } from "@/providers/currency-provider";
 import { RealtimeProvider } from "@/providers/realtime-provider";
 import { shouldRetry } from "@/lib/query-retry";
 
@@ -32,9 +33,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
-        <RealtimeProvider>
-          {children}
-        </RealtimeProvider>
+        <CurrencyProvider>
+          <RealtimeProvider>
+            {children}
+          </RealtimeProvider>
+        </CurrencyProvider>
       </SessionProvider>
       <Toaster
         position="bottom-right"

@@ -22,8 +22,18 @@ describe("normalizeReport", () => {
       summary: { total_income: 5_000_000, total_expense: 2_000_000, total_savings: 1_000_000, surplus: 3_000_000 },
       categories: [{ category_name: "Makanan", total: 500_000, percentage: 25, trend: 10, count: 12 }],
       monthly: [{ month: "Jan 2026", income: 5_000_000, expense: 2_000_000, savings: 1_000_000 }],
+      currency_code: "JPY",
+      rate_used: 110,
+      rate_at: "2026-10-31T00:00:00Z",
     };
     expect(normalizeReport(payload)).toEqual(payload);
+  });
+
+  it("defaults currency metadata to base IDR when absent", () => {
+    const out = normalizeReport({ categories: [], monthly: [] });
+    expect(out?.currency_code).toBe("IDR");
+    expect(out?.rate_used).toBe(1);
+    expect(out?.rate_at).toBeNull();
   });
 
   it("defaults a missing summary to zeros", () => {

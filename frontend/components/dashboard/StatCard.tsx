@@ -2,6 +2,7 @@
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
+import { formatMoney } from "@/lib/currency";
 
 interface StatCardProps {
   title: string;
@@ -21,12 +22,7 @@ export function StatCard({ title, amount, trend, icon: Icon, variant }: StatCard
     neutral: "bg-neutral-100 text-neutral-700",
   };
 
-  const formattedAmount = new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  const formattedAmount = formatMoney(amount);
 
   return (
     <div className="border-2 rounded-lg border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground p-5 flex flex-col gap-3">

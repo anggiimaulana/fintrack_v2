@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * Renders a Rupiah amount in a monospace face so figures align across the UI.
- * Every currency value should go through this component.
+ * This is the IDR-zone renderer (billing, subscription, marketing): it always
+ * shows Rupiah. User-facing financial views use lib/currency's `formatMoney`,
+ * which follows the user's display currency.
  */
 export function Money({
   value,

@@ -88,6 +88,11 @@ export const queryKeys = {
   providers: {
     all: ["providers"] as const,
   },
+  currency: {
+    all: ["currency", "catalog"] as const,
+    admin: ["currency", "admin"] as const,
+    rates: (code: string) => ["currency", "rates", code] as const,
+  },
   superAdmin: {
     metricsOverview: (refresh?: boolean) => ["super-admin", "metrics-overview", refresh] as const,
     metricsTimeseries: (period?: string) => ["super-admin", "metrics-timeseries", period] as const,

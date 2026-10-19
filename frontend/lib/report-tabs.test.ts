@@ -18,13 +18,12 @@ describe("parseTab", () => {
     }
   });
 
-  it("resolves English aliases to declared tab IDs", () => {
-    expect(parseTab("summary")).toBe("ringkasan");
-    expect(parseTab("calendar")).toBe("kalender");
-    expect(parseTab("category")).toBe("kategori");
-    expect(parseTab("trend")).toBe("tren");
-    expect(parseTab("budget")).toBe("budget");
-    expect(parseTab("spk")).toBe("spk");
+  it("rejects legacy Indonesian slugs (aliases removed)", () => {
+    expect(parseTab("ringkasan")).toBe(DEFAULT_REPORT_TAB);
+    expect(parseTab("kalender")).toBe(DEFAULT_REPORT_TAB);
+    expect(parseTab("kategori")).toBe(DEFAULT_REPORT_TAB);
+    expect(parseTab("tren")).toBe(DEFAULT_REPORT_TAB);
+    expect(parseTab("anggaran")).toBe(DEFAULT_REPORT_TAB);
   });
 
   it("falls back to the default for unknown/empty input", () => {
