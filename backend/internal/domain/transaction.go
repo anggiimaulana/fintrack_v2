@@ -48,6 +48,14 @@ type Transaction struct {
 	UserID            uuid.UUID          `json:"user_id" db:"user_id"`
 	Type              TransactionType    `json:"type" db:"type"`
 	Amount            float64            `json:"amount" db:"amount"`
+	// CurrencyCode is the currency of Amount (the original user input).
+	CurrencyCode string `json:"currency_code" db:"currency_code"`
+	// ExchangeRate is the snapshot: 1 unit CurrencyCode = ExchangeRate IDR.
+	ExchangeRate float64 `json:"exchange_rate" db:"exchange_rate"`
+	// AmountBase is the IDR value; DB-generated (round(amount*exchange_rate,2)).
+	AmountBase float64 `json:"amount_base" db:"amount_base"`
+	// RateAt is when the snapshot rate was effective (nil for IDR).
+	RateAt            *time.Time         `json:"rate_at,omitempty" db:"rate_at"`
 	IncomeCategoryID  *uuid.UUID         `json:"income_category_id,omitempty" db:"income_category_id"`
 	ExpenseCategoryID *uuid.UUID         `json:"expense_category_id,omitempty" db:"expense_category_id"`
 	SavingsCategoryID *uuid.UUID         `json:"savings_category_id,omitempty" db:"savings_category_id"`
@@ -132,6 +140,8 @@ type TransactionStats struct {
 type CreateTransactionRequest struct {
 	Type              TransactionType    `json:"type" binding:"required"`
 	Amount            float64            `json:"amount" binding:"required,gt=0"`
+	// CurrencyCode is optional; server defaults to the user's display currency.
+	CurrencyCode      string             `json:"currency_code"`
 	IncomeCategoryID  *uuid.UUID         `json:"income_category_id"`
 	ExpenseCategoryID *uuid.UUID         `json:"expense_category_id"`
 	SavingsCategoryID *uuid.UUID         `json:"savings_category_id"`
@@ -147,6 +157,7 @@ type CreateTransactionRequest struct {
 
 type UpdateTransactionRequest struct {
 	Amount            *float64           `json:"amount"`
+	CurrencyCode      *string            `json:"currency_code"`
 	IncomeCategoryID  *uuid.UUID         `json:"income_category_id"`
 	ExpenseCategoryID *uuid.UUID         `json:"expense_category_id"`
 	SavingsCategoryID *uuid.UUID         `json:"savings_category_id"`

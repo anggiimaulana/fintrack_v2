@@ -30,8 +30,11 @@ type Profile struct {
 	Role      UserRole  `json:"role" db:"role"`
 	AvatarURL *string   `json:"avatar_url,omitempty" db:"avatar_url"`
 	IsActive  bool      `json:"is_active" db:"is_active"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	// DisplayCurrency is the user's chosen recording/display currency. IDR unless
+	// changed; never affects billing, invoices, tokens, or quota (those stay IDR).
+	DisplayCurrency string    `json:"display_currency" db:"display_currency"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ProfileRepository persists users and reads aggregated admin statistics.
@@ -43,6 +46,8 @@ type ProfileRepository interface {
 	SetActive(ctx context.Context, id uuid.UUID, active bool) error
 	// UpdatePasswordHash replaces the bcrypt hash for a user.
 	UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error
+	// SetDisplayCurrency updates only the user's currency preference.
+	SetDisplayCurrency(ctx context.Context, id uuid.UUID, code string) error
 	// GetByIDWithHash returns the profile plus its bcrypt hash (for password
 	// change verification); hash is empty when the user is absent.
 	GetByIDWithHash(ctx context.Context, id uuid.UUID) (*Profile, string, error)

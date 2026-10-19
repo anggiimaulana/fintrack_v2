@@ -33,6 +33,11 @@ type ReportResponse struct {
 	Summary    ReportSummary       `json:"summary"`
 	Categories []CategoryReport    `json:"categories"`
 	Monthly    []MonthlyComparison `json:"monthly"`
+	// CurrencyCode is the display currency the totals were converted to (base IDR
+	// when empty/IDR). RateUsed/RateAt carry the rate for the export legend.
+	CurrencyCode string     `json:"currency_code,omitempty"`
+	RateUsed     float64    `json:"rate_used,omitempty"`
+	RateAt       *time.Time `json:"rate_at,omitempty"`
 }
 
 type ReportRequest struct {

@@ -37,6 +37,9 @@ type Notification struct {
 	Href      string     `json:"href"`
 	ReadAt    *time.Time `json:"read_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
+	// DedupeKey is an optional idempotency key: a second notification with the
+	// same (user_id, dedupe_key) is dropped. Empty means no dedupe.
+	DedupeKey string `json:"-"`
 }
 
 // NotificationFilter drives the paged notification list (table page).
@@ -60,8 +63,9 @@ type NotificationStats struct {
 type NotificationRepository interface {
 	GetPreferences(ctx context.Context, userID uuid.UUID) (NotificationPreferences, error)
 	SavePreferences(ctx context.Context, userID uuid.UUID, p NotificationPreferences) error
-	// Create appends an in-app notification.
-	Create(ctx context.Context, n *Notification) error
+	// Create appends an in-app notification. It reports false (and inserts
+	// nothing) when a row with the same (user_id, dedupe_key) already exists.
+	Create(ctx context.Context, n *Notification) (bool, error)
 	// ListRecent returns the most recent notifications, newest first.
 	ListRecent(ctx context.Context, userID uuid.UUID, limit int) ([]Notification, error)
 	// ListPaged returns one page of notifications plus the total matching count.
