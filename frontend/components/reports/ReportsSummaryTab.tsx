@@ -5,9 +5,10 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import type { ReportAnalytics } from "@/hooks/useReportAnalytics";
 import type { ReportTypeId } from "@/lib/report-tabs";
 import { trendIsGood } from "@/lib/report-tabs";
+import { formatMoney } from "@/lib/currency";
 
 function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+  return formatMoney(value);
 }
 
 interface DeltaChipProps {

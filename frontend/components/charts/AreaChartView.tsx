@@ -1,16 +1,22 @@
 "use client";
 
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { formatDisplay, formatMoney } from "@/lib/currency";
+import { formatRupiah } from "@/lib/format";
 
 interface AreaChartViewProps {
   data?: Array<{ name: string; balance: number }>;
+  /** When true the values are IDR base and are shown in the user's currency. */
+  display?: boolean;
+  /** When true the values were already converted server-side (report data). */
+  raw?: boolean;
+  /** Currency code for `raw` mode (the report's currency). */
+  currencyCode?: string | null;
 }
 
-function formatIDR(value: number) {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-}
+type Fmt = (value: number) => string;
 
-function CustomTooltip({ active, payload, label }: { active?: boolean, payload?: Array<{value: number, color: string, name: string}>, label?: string }) {
+function CustomTooltip({ active, payload, label, fmt }: { active?: boolean, payload?: Array<{value: number, color: string, name: string}>, label?: string, fmt: Fmt }) {
   if (!active || !payload?.length) return null;
   const total = payload.reduce((sum: number, p: {value: number, color: string, name: string}) => sum + Math.abs((p.value as number) || 0), 0);
   return (
@@ -20,7 +26,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
         <div key={i} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span>{p.name}:</span>
-          <span className="font-mono">{formatIDR(p.value)}</span>
+          <span className="font-mono">{fmt(p.value)}</span>
           <span className="text-muted-foreground">
             ({total > 0 ? ((Math.abs(p.value) / total) * 100).toFixed(1) : 0}%)
           </span>
@@ -30,7 +36,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
   );
 }
 
-export function AreaChartView({ data }: AreaChartViewProps) {
+export function AreaChartView({ data, display, raw, currencyCode }: AreaChartViewProps) {
+  const fmt: Fmt = (v) => (raw ? formatDisplay(v, currencyCode) : display ? formatMoney(v) : formatRupiah(v));
   const chartData = data && data.length > 0 ? data : [
     { name: "Jan", balance: 0 },
     { name: "Feb", balance: 0 },
@@ -51,7 +58,7 @@ export function AreaChartView({ data }: AreaChartViewProps) {
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
             <YAxis hide domain={["dataMin", "auto"]} />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip fmt={fmt} />} />
             <Area type="monotone" dataKey="balance" name="Saldo" stroke="#3b5bdb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
           </AreaChart>
         </ResponsiveContainer>

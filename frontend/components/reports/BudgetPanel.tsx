@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { RupiahInput } from "@/components/shared/RupiahInput";
 import { useBudgets, useDeleteBudget, useUpsertBudget, type BudgetStatus } from "@/hooks/useBudgets";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
+import { formatMoney, toBase } from "@/lib/currency";
+import { useCurrency } from "@/providers/currency-provider";
 
 function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+  return formatMoney(value);
 }
 
 /** Colour band for a budget's usage. */
@@ -35,6 +37,7 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
   const { categories: expenseCategories = [] } = useAdminCategories("expense");
   const upsert = useUpsertBudget();
   const remove = useDeleteBudget();
+  const { displayCurrency } = useCurrency();
 
   const [categoryId, setCategoryId] = React.useState("");
   const [amount, setAmount] = React.useState<number | undefined>(undefined);
@@ -56,7 +59,9 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
       return;
     }
     try {
-      await upsert.mutateAsync({ category_id: categoryId, amount_idr: amount });
+      // amount_idr is int64 IDR base: round the converted value so a fractional
+      // rate can never produce a number the API rejects.
+      await upsert.mutateAsync({ category_id: categoryId, amount_idr: Math.round(toBase(amount)) });
       toast.success("Anggaran disimpan");
       setAmount(undefined);
     } catch {
@@ -103,12 +108,14 @@ export function BudgetPanel({ period, enabled }: BudgetPanelProps) {
           </div>
           <div className="flex-1">
             <label htmlFor="budget-amount" className="text-[10px] font-black uppercase text-muted-foreground">
-              Nominal
+              Nominal ({displayCurrency.code})
             </label>
             <RupiahInput
               id="budget-amount"
               value={amount}
               onChange={setAmount}
+              symbol={displayCurrency.symbol}
+              decimals={displayCurrency.decimal_digits}
               placeholder="50.000"
             />
           </div>

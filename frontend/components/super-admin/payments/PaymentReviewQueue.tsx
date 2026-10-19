@@ -145,6 +145,7 @@ export function PaymentReviewQueue() {
                   Bukti Transfer:
                 </span>
                 <PaymentProofDialog
+                  paymentId={p.id}
                   proofUrl={p.proof_url}
                   invoiceNumber={p.invoice_number}
                 />

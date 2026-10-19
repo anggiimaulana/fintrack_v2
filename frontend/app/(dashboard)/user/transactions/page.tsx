@@ -13,7 +13,8 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DateRangeFilter, type DateRangeValue, computePresetDates } from "@/components/shared/DateRangeFilter";
 import { InlineAiAssistant } from "@/components/ai/InlineAiAssistant";
 import { useTransactions, useTransactionStats, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
-import { formatRupiah } from "@/lib/format";
+import { currencyMeta, formatMoney, formatOriginal } from "@/lib/currency";
+import { useCurrency } from "@/providers/currency-provider";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTablePagination } from "@/components/data-table/data-table-pagination";
 import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
@@ -132,6 +133,7 @@ function TransactionsContent() {
   const canExport = mounted && hasFeature("reports_export");
   const canScan = mounted && hasFeature("ocr_receipt");
 
+  const { displayCurrency } = useCurrency();
   const [formType, setFormType] = useState<"expense" | "income" | "savings">("expense");
   const [formAmount, setFormAmount] = useState(0);
   const [formCategoryId, setFormCategoryId] = useState("");
@@ -230,6 +232,13 @@ function TransactionsContent() {
     setFormDate(new Date().toISOString().split("T")[0]);
   };
 
+  // The amount field is entered in the transaction's own currency: the existing
+  // currency when editing, else the user's display currency (the backend applies
+  // the same rule when `currency_code` is omitted).
+  const formCurrencyCode = editingTx?.currency_code || displayCurrency.code;
+  const formCurrencyMeta = currencyMeta(formCurrencyCode);
+  const formCurrencySymbol = formCurrencyMeta.symbol;
+
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -290,8 +299,10 @@ function TransactionsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="tx-form-amount" className="text-xs font-bold uppercase tracking-wide text-foreground">Jumlah</label>
-                  <RupiahInput id="tx-form-amount" value={formAmount} onChange={(v) => setFormAmount(v || 0)} />
+                  <label htmlFor="tx-form-amount" className="text-xs font-bold uppercase tracking-wide text-foreground">
+                    Jumlah ({formCurrencyCode})
+                  </label>
+                  <RupiahInput id="tx-form-amount" symbol={formCurrencySymbol} decimals={formCurrencyMeta.decimal_digits} value={formAmount} onChange={(v) => setFormAmount(v || 0)} />
                 </div>
 
                 <div className="space-y-2">
@@ -359,7 +370,7 @@ function TransactionsContent() {
           </div>
           <div>
             <div className="text-lg sm:text-xl font-black font-mono text-foreground">
-              {isStatsLoading ? "..." : formatRupiah(statsData?.total_income || 0)}
+              {isStatsLoading ? "..." : formatMoney(statsData?.total_income || 0)}
             </div>
             <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
               {isStatsLoading ? "memuat..." : `${statsData?.income_count || 0} transaksi`}
@@ -376,7 +387,7 @@ function TransactionsContent() {
           </div>
           <div>
             <div className="text-lg sm:text-xl font-black font-mono text-foreground">
-              {isStatsLoading ? "..." : formatRupiah(statsData?.total_expense || 0)}
+              {isStatsLoading ? "..." : formatMoney(statsData?.total_expense || 0)}
             </div>
             <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
               {isStatsLoading ? "memuat..." : `${statsData?.expense_count || 0} transaksi`}
@@ -393,7 +404,7 @@ function TransactionsContent() {
           </div>
           <div>
             <div className="text-lg sm:text-xl font-black font-mono text-foreground">
-              {isStatsLoading ? "..." : formatRupiah(statsData?.total_savings || 0)}
+              {isStatsLoading ? "..." : formatMoney(statsData?.total_savings || 0)}
             </div>
             <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
               {isStatsLoading ? "memuat..." : `${statsData?.savings_count || 0} transaksi`}
@@ -410,7 +421,7 @@ function TransactionsContent() {
           </div>
           <div>
             <div className={`text-lg sm:text-xl font-black font-mono ${(statsData?.net_balance || 0) >= 0 ? "text-foreground" : "text-rose-600"}`}>
-              {isStatsLoading ? "..." : formatRupiah(statsData?.net_balance || 0)}
+              {isStatsLoading ? "..." : formatMoney(statsData?.net_balance || 0)}
             </div>
             <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
               {isStatsLoading ? "memuat..." : "Pemasukan - Pengeluaran"}
@@ -511,7 +522,7 @@ function TransactionsContent() {
                   detailTx.type === "income" ? "text-emerald-700" : detailTx.type === "savings" ? "text-blue-700" : "text-foreground"
                 }`}>
                   {detailTx.type === "income" ? "+" : detailTx.type === "savings" ? "→" : "-"}
-                  {formatRupiah(detailTx.amount)}
+                  {formatOriginal(detailTx.amount, detailTx.currency_code || "IDR")}
                 </span>
               </div>
 

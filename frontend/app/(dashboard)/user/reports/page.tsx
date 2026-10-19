@@ -44,6 +44,7 @@ import {
 } from "@/lib/report-tabs";
 import type { TableQuery } from "@/lib/client-table";
 import { toast } from "sonner";
+import { formatDisplay } from "@/lib/currency";
 
 // Charts pull in recharts (~500 KB); keep them code-split and below the fold.
 const chartFallback = <Skeleton className="h-full w-full border-2 rounded-md border-foreground" />;
@@ -51,8 +52,9 @@ const PieChartView = dynamic(() => import("@/components/charts/PieChartView").th
 const BarChartView = dynamic(() => import("@/components/charts/BarChartView").then((m) => m.BarChartView), { ssr: false, loading: () => chartFallback });
 const MultiSeriesChart = dynamic(() => import("@/components/charts/MultiSeriesChart").then((m) => m.MultiSeriesChart), { ssr: false, loading: () => chartFallback });
 
-function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+function formatIDR(value: number, currencyCode?: string | null): string {
+  // Report totals already arrive converted to the report's currency.
+  return formatDisplay(value, currencyCode);
 }
 
 const DEFAULT_PER_PAGE = 20;
@@ -254,6 +256,7 @@ function ReportsContent() {
   }, [report?.categories, minPct]);
 
   const typeName = typeLabel(reportType);
+  const reportCurrency = report?.currency_code ?? "IDR";
 
   // ── Paywall ──────────────────────────────────────────────────
   if (entLoading) {
@@ -282,7 +285,7 @@ function ReportsContent() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6">
       {/* Header: title, type switch, export */}
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
@@ -348,7 +351,7 @@ function ReportsContent() {
           ))}
         </TabsList>
 
-        <TabsContent value="ringkasan">
+        <TabsContent value="summary">
           <ReportsSummaryTab analytics={analytics} isLoading={analyticsLoading} type={reportType} />
         </TabsContent>
 
@@ -356,7 +359,7 @@ function ReportsContent() {
           <ReportsSpkTab />
         </TabsContent>
 
-        <TabsContent value="kategori">
+        <TabsContent value="category">
           <div className="space-y-6">
             {/* Summary cards with trend-aware colouring */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
@@ -369,7 +372,7 @@ function ReportsContent() {
                 <div key={c.label} className="flex flex-col gap-2 border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                   <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">{c.label}</span>
                   {isLoading ? <Skeleton className="h-6 w-24" /> : (
-                    <span className={`font-mono text-xl font-black ${c.cls}`}>{formatIDR(c.value)}</span>
+                    <span className={`font-mono text-xl font-black ${c.cls}`}>{formatIDR(c.value, reportCurrency)}</span>
                   )}
                 </div>
               ))}
@@ -379,13 +382,13 @@ function ReportsContent() {
               <div className="flex h-[400px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Distribusi {typeName} per Kategori</h3>
                 <div className="relative flex-1 w-full">
-                  <PieChartView data={categories.map((c) => ({ name: c.category_name, value: c.total }))} />
+                  <PieChartView raw currencyCode={reportCurrency} data={categories.map((c) => ({ name: c.category_name, value: c.total }))} />
                 </div>
               </div>
               <div className="flex h-[400px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Perbandingan Bulanan</h3>
                 <div className="relative flex-1 w-full">
-                  <BarChartView data={(report?.monthly ?? []).map((m: MonthlyComparison) => ({ name: m.month, income: m.income, expense: m.expense, savings: m.savings }))} />
+                  <BarChartView raw currencyCode={reportCurrency} data={(report?.monthly ?? []).map((m: MonthlyComparison) => ({ name: m.month, income: m.income, expense: m.expense, savings: m.savings }))} />
                 </div>
               </div>
             </div>
@@ -393,6 +396,7 @@ function ReportsContent() {
             <CategoryTable
               categories={categories}
               type={reportType}
+              currencyCode={reportCurrency}
               query={debouncedQuery}
               onPageChange={setPage}
               onPerPageChange={setPerPage}
@@ -404,14 +408,14 @@ function ReportsContent() {
           </div>
         </TabsContent>
 
-        <TabsContent value="tren">
+        <TabsContent value="trend">
           <div className="space-y-6">
             <TopMoversPanel movers={analytics?.top_movers} />
             {catChart?.labels?.length && catChart?.series?.length ? (
               <div className="flex h-[420px] flex-col border-2 rounded-lg border-foreground bg-card p-5 shadow-[4px_4px_0px_0px] shadow-foreground">
                 <h3 className="mb-5 text-xs font-black uppercase tracking-wide">Tren Kategori</h3>
                 <div className="min-h-0 flex-1 w-full">
-                  <MultiSeriesChart labels={catChart.labels} series={catChart.series} type="area" />
+                  <MultiSeriesChart labels={catChart.labels} series={catChart.series} type="area" display />
                 </div>
               </div>
             ) : null}
@@ -426,7 +430,7 @@ function ReportsContent() {
           />
         </TabsContent>
 
-        <TabsContent value="kalender">
+        <TabsContent value="calendar">
           <CalendarHeatmap daily={analytics?.daily} />
         </TabsContent>
       </Tabs>

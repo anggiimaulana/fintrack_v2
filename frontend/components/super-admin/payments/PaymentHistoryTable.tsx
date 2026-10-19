@@ -254,8 +254,8 @@ export function PaymentHistoryTable() {
   const endDate = urlState.filters.end_date || ''
   const totalCount = meta?.total || payments.length
   const totalAmount = payments.reduce((s, p) => s + (p.amount_idr || 0), 0)
-  const successCount = payments.filter((p) => p.status === 'paid' || p.status === 'settled').length
-  const pendingCount = payments.filter((p) => p.status === 'pending' || p.status === 'manual_review').length
+  const successCount = payments.filter((p) => p.status === 'settled').length
+  const pendingCount = payments.filter((p) => p.status === 'pending' || p.status === 'pending_review').length
 
 
   return (

@@ -3,9 +3,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import type { CategoryAnomaly, TopMovers } from "@/hooks/useReportAnalytics";
+import { formatMoney } from "@/lib/currency";
 
 function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+  return formatMoney(value);
 }
 
 interface MoverListProps {

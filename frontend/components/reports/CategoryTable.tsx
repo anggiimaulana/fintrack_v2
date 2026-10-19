@@ -10,9 +10,11 @@ import { applyTableQuery, type TableQuery } from "@/lib/client-table";
 import type { CategoryReport } from "@/hooks/useReports";
 import type { ReportTypeId } from "@/lib/report-tabs";
 import { trendIsGood } from "@/lib/report-tabs";
+import { formatDisplay } from "@/lib/currency";
 
-function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+/** Report totals are already converted server-side to the report's currency. */
+function formatReport(value: number, currencyCode?: string | null): string {
+  return formatDisplay(value, currencyCode);
 }
 
 /** Row shape includes a 1-based number for display, independent of sort. */
@@ -21,6 +23,8 @@ type Row = CategoryReport & { __no: number; trend_good: string };
 interface CategoryTableProps {
   categories: CategoryReport[];
   type: ReportTypeId;
+  /** Currency the report totals are expressed in (server-converted). */
+  currencyCode?: string | null;
   query: TableQuery;
   onPageChange: (page: number) => void;
   onPerPageChange: (perPage: number) => void;
@@ -38,6 +42,7 @@ interface CategoryTableProps {
 export function CategoryTable({
   categories,
   type,
+  currencyCode,
   query,
   onPageChange,
   onPerPageChange,
@@ -96,7 +101,7 @@ export function CategoryTable({
           onSort={onSort}
         />
       ),
-      cell: ({ row }) => <span className="font-mono font-bold">{formatIDR(row.original.total)}</span>,
+      cell: ({ row }) => <span className="font-mono font-bold">{formatReport(row.original.total, currencyCode)}</span>,
     },
     {
       id: "percentage",

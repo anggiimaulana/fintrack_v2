@@ -1,11 +1,17 @@
 "use client";
 
 import { Pencil, Trash2, Mic, Camera, Sparkles, User } from "lucide-react";
+import { formatOriginal } from "@/lib/currency";
 
 export interface TransactionData {
   id: string;
   type: "income" | "expense" | "savings";
   amount: number;
+  /** IDR base value (server-computed); use for display-currency rendering. */
+  amount_base?: number;
+  /** Currency the amount was recorded in (IDR unless changed). */
+  currency_code?: string;
+  exchange_rate?: number;
   category?: string;
   category_name?: string;
   subcategory?: string;
@@ -27,12 +33,8 @@ export function TransactionRow({ transaction }: TransactionRowProps) {
   const amountColor = isIncome ? "text-green-700" : "text-foreground";
   const prefix = isIncome ? "+" : "-";
   
-  const formattedAmount = new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(transaction.amount);
+  // Amount as recorded, in its own currency (immutable; not re-quoted).
+  const formattedAmount = formatOriginal(transaction.amount, transaction.currency_code || "IDR");
 
   const getSourceBadge = (source?: string) => {
     switch(source) {

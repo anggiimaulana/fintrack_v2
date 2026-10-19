@@ -1,20 +1,26 @@
 "use client";
 
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Cell } from "recharts";
+import { formatDisplay, formatMoney } from "@/lib/currency";
+import { formatRupiah } from "@/lib/format";
 
 interface PieChartViewProps {
   data?: Array<{ name: string; value: number; color?: string }>;
   compact?: boolean;
   showLegend?: boolean;
+  /** When true the values are IDR base and are shown in the user's currency. */
+  display?: boolean;
+  /** When true the values were already converted server-side (report data). */
+  raw?: boolean;
+  /** Currency code for `raw` mode (the report's currency). */
+  currencyCode?: string | null;
 }
 
 const COLORS = ["#3b5bdb", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#8b5cf6", "#ec4899", "#14b8a6"];
 
-function formatIDR(value: number) {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-}
+type Fmt = (value: number) => string;
 
-function CustomTooltip({ active, payload }: { active?: boolean, payload?: Array<{ color: string, payload: { name: string, value: number } }> }) {
+function CustomTooltip({ active, payload, fmt }: { active?: boolean, fmt: Fmt, payload?: Array<{ color: string, payload: { name: string, value: number } }> }) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload;
   return (
@@ -23,12 +29,12 @@ function CustomTooltip({ active, payload }: { active?: boolean, payload?: Array<
         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].color }} />
         {data.name}
       </p>
-      <p className="font-mono">{formatIDR(data.value)}</p>
+      <p className="font-mono">{fmt(data.value)}</p>
     </div>
   );
 }
 
-export function PieChartView({ data, compact, showLegend = !compact }: PieChartViewProps) {
+export function PieChartView({ data, compact, showLegend = !compact, display, raw, currencyCode }: PieChartViewProps) {
   const chartData = data && data.length > 0 ? data : [{ name: "Belum ada data", value: 1 }];
   const total = chartData.reduce((s, d) => s + d.value, 0);
 
@@ -54,7 +60,7 @@ export function PieChartView({ data, compact, showLegend = !compact }: PieChartV
                 <Cell key={`cell-${index}`} fill={entry.color ?? COLORS[index % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip fmt={(v) => (raw ? formatDisplay(v, currencyCode) : display ? formatMoney(v) : formatRupiah(v))} />} />
           </PieChart>
         </ResponsiveContainer>
       </div>

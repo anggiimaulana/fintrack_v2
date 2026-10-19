@@ -1,17 +1,20 @@
 'use client'
 
 import * as React from 'react'
+import { Check, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { Money } from '@/components/shared/Money'
 import { formatTanggal } from '@/lib/format'
 import { PaymentStatusBadge } from './PaymentStatusBadge'
 import { PaymentProofDialog } from './PaymentProofDialog'
-import type { PaymentRow } from '@/hooks/useSuperAdminPayments'
+import { PaymentApproveDialog, PaymentRejectDialog } from './PaymentActionDialogs'
+import { useSuperAdminPaymentMutations, type PaymentRow } from '@/hooks/useSuperAdminPayments'
 
 interface PaymentDetailDialogProps {
   payment: PaymentRow | null
@@ -24,7 +27,13 @@ export function PaymentDetailDialog({
   open,
   onOpenChange,
 }: PaymentDetailDialogProps) {
+  const [confirmAction, setConfirmAction] = React.useState<'approve' | 'reject' | null>(null)
+  const { approvePayment, rejectPayment, isApproving, isRejecting } =
+    useSuperAdminPaymentMutations()
+
   if (!payment) return null
+
+  const canReview = payment.status === 'pending_review'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,6 +96,7 @@ export function PaymentDetailDialog({
                 <span className="text-muted-foreground">Bukti Transfer: </span>
                 <div className="mt-1">
                   <PaymentProofDialog
+                    paymentId={payment.id}
                     proofUrl={payment.proof_url}
                     invoiceNumber={payment.invoice_number}
                   />
@@ -131,15 +141,54 @@ export function PaymentDetailDialog({
             </div>
           )}
 
-          <div className="space-y-1">
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Raw JSON Data
-            </p>
-            <pre className="max-h-40 overflow-auto rounded border border-border bg-muted p-2 font-mono text-[11px] text-muted-foreground">
-              {JSON.stringify(payment, null, 2)}
-            </pre>
-          </div>
+          {canReview && (
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t-2 border-foreground/10 pt-3">
+              <Button
+                type="button"
+                variant="destructive"
+                className="gap-1.5 font-bold"
+                onClick={() => setConfirmAction('reject')}
+                disabled={isApproving || isRejecting}
+              >
+                <X className="h-4 w-4" />
+                Tolak
+              </Button>
+              <Button
+                type="button"
+                className="gap-1.5 bg-emerald-600 font-bold text-white hover:bg-emerald-700"
+                onClick={() => setConfirmAction('approve')}
+                disabled={isApproving || isRejecting}
+              >
+                <Check className="h-4 w-4" />
+                Setujui Pembayaran
+              </Button>
+            </div>
+          )}
         </div>
+
+        <PaymentApproveDialog
+          payment={payment}
+          open={confirmAction === 'approve'}
+          onOpenChange={(o) => !o && setConfirmAction(null)}
+          onConfirm={async (id) => {
+            await approvePayment(id)
+            setConfirmAction(null)
+            onOpenChange(false)
+          }}
+          isLoading={isApproving}
+        />
+
+        <PaymentRejectDialog
+          payment={payment}
+          open={confirmAction === 'reject'}
+          onOpenChange={(o) => !o && setConfirmAction(null)}
+          onConfirm={async (id, reason) => {
+            await rejectPayment({ id, reason })
+            setConfirmAction(null)
+            onOpenChange(false)
+          }}
+          isLoading={isRejecting}
+        />
       </DialogContent>
     </Dialog>
   )

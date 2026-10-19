@@ -107,7 +107,7 @@ export function ChartContainer({ dateRange, value, onChange }: ChartContainerPro
     const isMulti = chartType === "line" || chartType === "area";
 
     if (isMulti && groupBy === "category" && catChartData?.labels?.length && catChartData?.series?.length) {
-      return <MultiSeriesChart labels={catChartData.labels} series={catChartData.series} type={chartType} />;
+      return <MultiSeriesChart labels={catChartData.labels} series={catChartData.series} type={chartType} display />;
     }
 
     if (isMulti && groupBy === "category") {
@@ -118,11 +118,11 @@ export function ChartContainer({ dateRange, value, onChange }: ChartContainerPro
 
     switch (chartType) {
       case "line":
-        return <LineChartView data={data.length > 0 ? data : undefined} />;
+        return <LineChartView display data={data.length > 0 ? data : undefined} />;
       case "area":
-        return <AreaChartView data={data.length > 0 ? data.map((d: ChartDataPoint) => ({ name: d.name, balance: d.income - d.expense })) : undefined} />;
+        return <AreaChartView display data={data.length > 0 ? data.map((d: ChartDataPoint) => ({ name: d.name, balance: d.income - d.expense })) : undefined} />;
       case "bar":
-        return <BarChartView data={data.length > 0 ? data : undefined} />;
+        return <BarChartView display data={data.length > 0 ? data : undefined} />;
       case "pie": {
         const totalIncome = data.reduce((s: number, d: ChartDataPoint) => s + d.income, 0);
         const totalExpense = data.reduce((s: number, d: ChartDataPoint) => s + d.expense, 0);
@@ -134,10 +134,10 @@ export function ChartContainer({ dateRange, value, onChange }: ChartContainerPro
               { name: "Tabungan", value: totalSavings },
             ]
           : undefined;
-        return <PieChartView data={pieData} />;
+        return <PieChartView display data={pieData} />;
       }
       default:
-        return <LineChartView data={data.length > 0 ? data : undefined} />;
+        return <LineChartView display data={data.length > 0 ? data : undefined} />;
     }
   };
 

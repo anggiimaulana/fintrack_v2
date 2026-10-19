@@ -13,9 +13,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAdminCategories } from "@/hooks/useAdminCategories";
 import type { DailyPoint } from "@/hooks/useReportAnalytics";
+import { formatMoney } from "@/lib/currency";
 
 function formatIDR(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+  return formatMoney(value);
 }
 
 

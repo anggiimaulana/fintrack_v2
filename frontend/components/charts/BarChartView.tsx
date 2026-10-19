@@ -1,16 +1,22 @@
 "use client";
 
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { formatDisplay, formatMoney } from "@/lib/currency";
+import { formatRupiah } from "@/lib/format";
 
 interface BarChartViewProps {
   data?: Array<{ name: string; income: number; expense: number; savings?: number }>;
+  /** When true the values are IDR base and are shown in the user's currency. */
+  display?: boolean;
+  /** When true the values were already converted server-side (report data). */
+  raw?: boolean;
+  /** Currency code for `raw` mode (the report's currency). */
+  currencyCode?: string | null;
 }
 
-function formatIDR(value: number) {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-}
+type Fmt = (value: number) => string;
 
-function CustomTooltip({ active, payload, label }: { active?: boolean, payload?: Array<{value: number, color: string, name: string}>, label?: string }) {
+function CustomTooltip({ active, payload, label, fmt }: { active?: boolean, payload?: Array<{value: number, color: string, name: string}>, label?: string, fmt: Fmt }) {
   if (!active || !payload?.length) return null;
   const total = payload.reduce((sum: number, p: {value: number, color: string, name: string}) => sum + ((p.value as number) || 0), 0);
   return (
@@ -20,7 +26,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
         <div key={i} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span>{p.name}:</span>
-          <span className="font-mono">{formatIDR(p.value)}</span>
+          <span className="font-mono">{fmt(p.value)}</span>
           <span className="text-muted-foreground">
             ({total > 0 ? ((p.value / total) * 100).toFixed(1) : 0}%)
           </span>
@@ -30,7 +36,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean, payload?:
   );
 }
 
-export function BarChartView({ data }: BarChartViewProps) {
+export function BarChartView({ data, display, raw, currencyCode }: BarChartViewProps) {
+  const fmt: Fmt = (v) => (raw ? formatDisplay(v, currencyCode) : display ? formatMoney(v) : formatRupiah(v));
   const chartData = data && data.length > 0 ? data : [
     { name: "Jan", income: 0, expense: 0, savings: 0 },
     { name: "Feb", income: 0, expense: 0, savings: 0 },
@@ -44,7 +51,7 @@ export function BarChartView({ data }: BarChartViewProps) {
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={6} />
             <YAxis hide />
-            <Tooltip cursor={{ fill: "#f1f5f9" }} content={<CustomTooltip />} />
+            <Tooltip cursor={{ fill: "#f1f5f9" }} content={<CustomTooltip fmt={fmt} />} />
             <Bar dataKey="savings" name="Tabungan" fill="#f59e0b" />
             <Bar dataKey="income" name="Pemasukan" fill="#10b981" />
             <Bar dataKey="expense" name="Pengeluaran" fill="#f43f5e" />

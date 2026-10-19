@@ -12,12 +12,20 @@ import {
 import { Button } from '@/components/ui/button'
 
 interface PaymentProofDialogProps {
+  /** Payment id: proofs are served by the authenticated API, not a public file path. */
+  paymentId: string
+  /** `payments.proof_url` is a storage key; only its presence matters here. */
   proofUrl?: string | null
   invoiceNumber?: string | null
 }
 
-export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDialogProps) {
+export function PaymentProofDialog({ paymentId, proofUrl, invoiceNumber }: PaymentProofDialogProps) {
   const [open, setOpen] = React.useState(false)
+
+  // The DB stores the storage key ("payment-proofs/<id>.png"), not a URL. The
+  // API endpoint resolves it (and enforces ownership/super-admin) while the
+  // auth cookie rides along on this same-origin request.
+  const src = `/api/v1/payment-proofs/${paymentId}`
 
   if (!proofUrl) {
     return (
@@ -38,7 +46,7 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={proofUrl}
+            src={src}
             alt={`Bukti pembayaran ${invoiceNumber || ''}`}
             className="h-12 w-12 rounded-md object-cover transition group-hover:scale-105"
             loading="lazy"
@@ -58,7 +66,7 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
               asChild
               className="gap-1.5"
             >
-              <a className="cursor-pointer" href={proofUrl} target="_blank" rel="noopener noreferrer">
+              <a className="cursor-pointer" href={src} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3.5 w-3.5" />
                 Buka Tab Baru
               </a>
@@ -68,7 +76,7 @@ export function PaymentProofDialog({ proofUrl, invoiceNumber }: PaymentProofDial
         <div className="flex max-h-[70vh] items-center justify-center overflow-auto rounded-md border border-border bg-muted/40 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={proofUrl}
+            src={src}
             alt={`Bukti pembayaran penuh ${invoiceNumber || ''}`}
             className="max-h-[65vh] w-auto max-w-full rounded-md object-contain"
           />

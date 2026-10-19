@@ -329,7 +329,7 @@ function SubscriptionContent() {
             <Receipt className="mr-1.5 h-4 w-4" aria-hidden="true" /> Pembayaran &amp; Tagihan
           </TabsTrigger>
           <TabsTrigger value="history">
-            <HistoryIcon className="mr-1.5 h-4 w-4" aria-hidden="true" /> Riwayat
+            <HistoryIcon className="mr-1.5 h-4 w-4" aria-hidden="true" /> Riwayat Paket
           </TabsTrigger>
         </TabsList>
 
@@ -598,7 +598,13 @@ function HistoryTab({ active }: { active: boolean }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-md border-2 border-foreground bg-card shadow-[4px_4px_0px_0px] shadow-foreground">
       <div className="flex flex-col justify-between gap-4 border-b-2 border-foreground bg-muted p-4 md:flex-row md:items-center">
-        <h3 className="text-sm font-black uppercase tracking-wide text-foreground">Riwayat Langganan</h3>
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wide text-foreground">Riwayat Langganan</h3>
+          <p className="mt-0.5 text-xs font-bold text-muted-foreground">
+            Catatan perubahan paket: dibuat, upgrade, perpanjangan, dan pembatalan.
+            Pembayaran &amp; tagihan ada di tab Pembayaran.
+          </p>
+        </div>
         <DataTableToolbar
           search={table.q}
           onSearch={(q) => table.setSearch(q)}

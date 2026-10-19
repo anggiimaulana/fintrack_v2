@@ -315,32 +315,34 @@ export function PlanFormDialog({
     await onSubmit(payload)
     if (isEdit && plan?.id && cycles.length > 0) {
       try {
-        const sanitizedCycles: PlanLimitCycle[] = cycles.map((c) => {
-          if (c.cycle_type === "weekly_monthly") {
-            const isToken = c.limit_key.includes("token");
-            const degraded = c.degraded_mode || (isToken ? "model_downgrade" : "hard_block");
+        const sanitizedCycles: PlanLimitCycle[] = cycles
+          .filter((c) => c.cycle_type === "monthly_only" || c.cycle_type === "weekly_monthly")
+          .map((c) => {
+            if (c.cycle_type === "weekly_monthly") {
+              const isToken = c.limit_key.includes("token");
+              const degraded = c.degraded_mode || (isToken ? "model_downgrade" : "hard_block");
+              return {
+                ...c,
+                weekly_limit:
+                  c.weekly_limit && c.weekly_limit > 0
+                    ? c.weekly_limit
+                    : isToken
+                    ? 50000
+                    : c.limit_key.includes("scan")
+                    ? 25
+                    : 500,
+                degraded_mode: degraded,
+                fallback_model: degraded === "model_downgrade" ? c.fallback_model || "gpt-4o-mini" : null,
+              };
+            }
             return {
               ...c,
-              weekly_limit:
-                c.weekly_limit && c.weekly_limit > 0
-                  ? c.weekly_limit
-                  : isToken
-                  ? 50000
-                  : c.limit_key.includes("scan")
-                  ? 25
-                  : 500,
-              degraded_mode: degraded,
-              fallback_model: degraded === "model_downgrade" ? c.fallback_model || "gpt-4o-mini" : null,
+              weekly_limit: null,
+              degraded_mode: null,
+              fallback_model: null,
+              max_degraded_usage: null,
             };
-          }
-          return {
-            ...c,
-            weekly_limit: null,
-            degraded_mode: null,
-            fallback_model: null,
-            max_degraded_usage: null,
-          };
-        });
+          });
         await saveCycles(sanitizedCycles)
       } catch (err) {
         console.error('Failed to save cycles:', err)

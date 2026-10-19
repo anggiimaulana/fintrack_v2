@@ -3,12 +3,18 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil, Trash2, Clock, Eye } from "lucide-react";
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header";
+import { formatOriginal } from "@/lib/currency";
 
 /** A transaction row as returned by GET /transactions. */
 export interface TransactionItem {
   id: string;
   type: "income" | "expense" | "savings";
   amount: number;
+  /** IDR base value (server-computed); use for display-currency rendering. */
+  amount_base?: number;
+  /** Currency the amount was recorded in (IDR unless changed). */
+  currency_code?: string;
+  exchange_rate?: number;
   category_name?: string;
   category?: string;
   subcategory_name?: string;
@@ -39,11 +45,10 @@ export function getCategoryName(
   return "Pengeluaran";
 }
 function formatAmount(tx: TransactionItem): string {
-  const formatted = new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(tx.amount);
+  // Show the amount as recorded, in its own currency: the value is immutable and
+  // must not be re-quoted by a later exchange rate. Aggregates elsewhere are
+  // shown in the user's display currency.
+  const formatted = formatOriginal(tx.amount, tx.currency_code || "IDR");
   const prefix = tx.type === "savings" ? "→" : tx.type === "income" ? "+" : "-";
   return `${prefix}${formatted}`;
 }
@@ -181,7 +186,9 @@ export function transactionColumns({
     },
     {
       id: "amount",
-      accessorFn: (tx) => tx.amount,
+      // Sort by the IDR base value so mixed-currency rows order consistently
+      // (the server sorts by amount_base too).
+      accessorFn: (tx) => tx.amount_base ?? tx.amount,
       header: (ctx) => (
         <DataTableColumnHeader
           title="Jumlah"
