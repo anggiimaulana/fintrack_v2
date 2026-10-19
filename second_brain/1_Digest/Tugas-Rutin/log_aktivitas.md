@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-10-20 — Implementasi Mesin Multi-Currency & Periode Dunning Berjenjang (Fase 1-9)
+- **Konteks**: Implementasi penuh arsitektur multi-mata uang pada FinTrack v2 untuk mendukung transaksi dalam berbagai valuta asing (USD, EUR, SGD, JPY, MYR, GBP, AUD, CNY, SAR, dll.) dengan normalisasi otomatis ke IDR (`amount_idr` & `exchange_rate`), panel manajemen kurs super-admin, pembaruan laporan & visualisasi grafik, serta penyempurnaan toleransi dunning pembayaran langganan.
+- **Aksi**:
+  - **Database (`1ebb121`)**:
+    - `0038_dunning_subscription_period.sql`: Kolom toleransi periode dunning pada subscriptions.
+    - `0039_currency_catalog.sql`: Tabel master `currencies` dan riwayat kurs harian `exchange_rates`.
+    - `0040_currency_columns.sql`: Kolom `currency_code`, `amount_original`, dan `exchange_rate` pada tabel transaksi.
+    - `0041_currency_backfill.sql`: Backfill data lama dengan default `IDR` dan kurs 1.0.
+    - `0042_currency_constraints.sql`: Foreign key & not-null constraints untuk integritas relasional data.
+    - `0002_subscription_token_seeds.sql`: Pembaruan data seed paket langganan.
+  - **Backend (`a9b1e32`, `33f080b`, `0955e34`)**:
+    - Paket baru `backend/internal/currency`: Rate service, kalkulator konversi presisi desimal, dan validasi kode ISO.
+    - Repositori & Usecase: Dukungan query multi-mata uang pada `transaction_repo`, `report_repo`, dan `currency_repo`.
+    - Handler & Router: Endpoint `/api/v1/currencies` (publik) dan `/api/v1/admin/currencies` (manajemen kurs super-admin).
+    - AI Tools: Adaptasi agent tools agar mengenali kode mata uang pada pencatatan otomatis & analitik pengeluaran.
+    - PDF & Ekspor: Kolom valuta asli dan ekuivalen IDR pada berkas laporan PDF dan CSV.
+  - **Frontend (`b4b149a`, `88d8dda`)**:
+    - Core: `CurrencyProvider`, hook `useCurrencies`, modul pemformat format `formatCurrency` dan `Money.tsx`.
+    - Transaksi & Laporan: Filter mata uang dinamis, input modal multi-valuta dengan lookup kurs otomatis, dan normalisasi visual grafik.
+    - Super Admin: Portal `/super-admin/currency` untuk monitoring kurs, aktivasi/deaktivasi valuta, dan pembaruan rate manual.
+    - Pengarsipan Dokumen: Merapikan arsip spesifikasi yang telah selesai (`admin-superadmin-parity`, `marketing-seo`, `weekly-monthly-quota`) ke `second_brain/5_Archives/ide/`.
+- **Hasil Verifikasi**:
+  - `go test ./...` lulus 100% (38 paket PASS).
+  - `pnpm vitest run lib/currency.test.ts components/shared/RupiahInput.dom.test.tsx` lulus 100% (10 tests PASS).
+  - `pnpm build` sukses (54 static & dynamic routes compiled bersih).
+
+---
+
 ## 2026-10-17 — Kontrol AI Reasoning Dinamis, Batas Token CoT & Migrasi 0037
 - **Konteks**: Optimalisasi mode penalaran (thinking/reasoning) pada AI FinTrack v2 untuk mencegah konsumsi kuota berlebih dari Chain-of-Thought (CoT), menyediakan kontrol batas token, serta sakelar aktivasi global yang dapat dikonfigurasi langsung oleh Super Admin.
 - **Aksi**:
