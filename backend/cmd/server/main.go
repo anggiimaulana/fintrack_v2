@@ -425,6 +425,9 @@ func main() {
 	currencyProviderFactory := currency.NewProviderFactory(runtimeResolver, nil)
 	currencyUC := usecase.NewCurrencyUsecase(currencySvc, currencyRepo, currencyProviderFactory)
 	currencyHandler := handler.NewCurrencyHandler(currencyUC)
+	rateSyncWorker := currency.NewRateSyncWorker(currencyRepo, currencyProviderFactory, runtimeResolver)
+	rateSyncWorker.Start(bgCtx)
+	defer rateSyncWorker.Stop()
 	displayCurrency := func(ctx context.Context, userID uuid.UUID) string {
 		p, err := userRepo.GetByID(ctx, userID)
 		if err != nil || p == nil || p.DisplayCurrency == "" {

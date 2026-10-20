@@ -43,6 +43,7 @@ interface CurrencyForm {
   decimal_digits: string;
   sort_order: string;
   is_active: boolean;
+  rate_source: string;
 }
 
 const EMPTY_FORM: CurrencyForm = {
@@ -52,7 +53,8 @@ const EMPTY_FORM: CurrencyForm = {
   locale: "id-ID",
   decimal_digits: "0",
   sort_order: "100",
-  is_active: false,
+  is_active: true,
+  rate_source: "provider",
 };
 
 function toForm(c: AdminCurrency): CurrencyForm {
@@ -64,6 +66,7 @@ function toForm(c: AdminCurrency): CurrencyForm {
     decimal_digits: String(c.decimal_digits ?? 0),
     sort_order: String(c.sort_order ?? 0),
     is_active: c.is_active,
+    rate_source: c.rate_source || "provider",
   };
 }
 
@@ -112,6 +115,7 @@ export default function CurrencyPage() {
       decimal_digits: Number(form.decimal_digits) || 0,
       sort_order: Number(form.sort_order) || 0,
       is_active: form.is_active,
+      rate_source: form.rate_source,
     };
     try {
       await upsert.mutateAsync(payload);
@@ -202,7 +206,9 @@ export default function CurrencyPage() {
           <DialogHeader>
             <DialogTitle>{editing ? "Ubah Mata Uang" : "Mata Uang Baru"}</DialogTitle>
             <DialogDescription>
-              Mata uang baru hanya bisa diaktifkan setelah memiliki minimal satu kurs.
+              {form.rate_source === "provider"
+                ? "Kurs pasar ditarik otomatis dari provider dan disinkronkan berkala."
+                : "Mata uang manual memerlukan pengisian kurs awal melalui tombol Kurs."}
             </DialogDescription>
           </DialogHeader>
 
@@ -268,6 +274,36 @@ export default function CurrencyPage() {
                   onChange={(e) => setForm((s) => ({ ...s, sort_order: e.target.value }))}
                 />
               </div>
+            </div>
+            <div className="space-y-1.5 pt-1">
+              <Label>Sumber Kurs</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className={`flex items-center gap-2 p-2.5 rounded-md border-2 cursor-pointer font-bold text-xs transition-colors ${form.rate_source === "provider" ? "border-primary bg-primary/10" : "border-foreground/30 hover:border-foreground"}`}>
+                  <input
+                    type="radio"
+                    name="rate_source"
+                    value="provider"
+                    checked={form.rate_source === "provider"}
+                    onChange={() => setForm((s) => ({ ...s, rate_source: "provider" }))}
+                  />
+                  <span>Otomatis (Provider)</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2.5 rounded-md border-2 cursor-pointer font-bold text-xs transition-colors ${form.rate_source === "manual" ? "border-primary bg-primary/10" : "border-foreground/30 hover:border-foreground"}`}>
+                  <input
+                    type="radio"
+                    name="rate_source"
+                    value="manual"
+                    checked={form.rate_source === "manual"}
+                    onChange={() => setForm((s) => ({ ...s, rate_source: "manual" }))}
+                  />
+                  <span>Manual</span>
+                </label>
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium">
+                {form.rate_source === "provider"
+                  ? "Sistem langsung mengambil kurs pasar terkini saat disimpan tanpa perlu input manual."
+                  : "Kurs diisi manual oleh Super Admin melalui tombol Kurs."}
+              </p>
             </div>
             <label className="flex items-center gap-2 text-sm font-bold">
               <input

@@ -2536,3 +2536,41 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - `cd backend && go vet ./... && go build ./...` -> bersih tanpa error/warning.
   - `cd frontend && pnpm test` -> 103 test files passed, 741 tests passed.
   - `cd frontend && pnpm build` -> 54 routes compiled cleanly (0 type error).
+## 2026-10-20 (Multi-Currency Dynamic Rate Provider & Auto-Fetch: Wave 4, 5, 6) — Background Worker, Frontend UI & Verifikasi Penuh
+- **Konteks & Masalah**:
+  - Melanjutkan implementasi sinkronisasi kurs otomatis: background sync periodik dan antarmuka Super Admin untuk pemilihan sumber kurs (Otomatis vs Manual).
+  - Memastikan seluruh parameter (interval sync, sakelar aktif, deduplikasi) beroperasi secara dinamis dari `runtimeconfig.Resolver`.
+- **Perubahan yang Diterapkan**:
+  1. **Wave 4 (Dynamic Scheduled Sync Worker)**:
+     - Membuat background worker `RateSyncWorker` di `backend/internal/currency/rate_sync_worker.go`.
+     - Worker membaca `currency_auto_sync_enabled` (toggle on/off) dan `currency_sync_interval_hours` (interval dinamis) pada setiap siklus tidur tanpa perlu restart server.
+     - Mengimplementasikan deduplikasi kurs (`currency_dedup_hours`): jika nilai kurs sama persis dengan yang ada di DB, insert dilewati untuk mencegah bloat tabel.
+     - Penanganan error resilient: jika provider eksternal offline, worker mencatat log warning dan sistem tetap menggunakan kurs terakhir (`RateAsOf`).
+     - Mendaftarkan dan menjalankan lifecycle worker di `backend/cmd/server/main.go` dengan start dan stop teratur.
+     - Membuat unit test worker di `backend/internal/currency/rate_sync_worker_test.go` (3 tests passed).
+  2. **Wave 5 (Frontend Super Admin UI)**:
+     - Memperbarui modal tambah/ubah mata uang di `frontend/app/(dashboard)/super-admin/currency/page.tsx` dengan field pilihan `Sumber Kurs`: `Otomatis (Provider)` vs `Manual`.
+     - Memberikan deskripsi dinamis pada modal dan memperbarui payload `rate_source` di `handleSave`.
+  3. **Wave 6 (Verifikasi Penuh & Finalisasi)**:
+     - Menjalankan uji menyeluruh backend dan frontend:
+       - Backend: `go vet ./...`, `go test ./...` (39 packages passed), `go build ./...` (sukses).
+       - Frontend: `pnpm test` (103 test files passed, 741 tests passed), `pnpm build` (54 static/dynamic routes compiled cleanly).
+## 2026-10-20 (Bank & E-Wallet Integration Spec: BCA, Mandiri, Jago, SeaBank, GoPay, DANA, ShopeePay) — Spesifikasi Arsitektur Universal Statement Ingestion, Core Account, & RAG
+- **Konteks & Masalah**:
+  - Pengguna FinTrack v2 membutuhkan pencatatan otomatis transaksi multi-rekening dari bank digital dan e-wallet di Indonesia untuk visualisasi cashflow, analitik merchant, dan RAG AI tanpa entri manual.
+  - Adanya kendala regulasi SNAP BI (tertutup bagi personal/non-PJP) dan risiko legalitas UU ITE pada web scraping memerlukan solusi yang legal, patuh UU PDP, aman, dan zero-cost vendor di awal.
+  - Fitur harus eksklusif untuk paket "Business" di awal rilis, namun dapat dipindahkan atau diubah kuotanya secara dinamis oleh Super Admin kapan saja tanpa downtime.
+- **Perubahan yang Diterapkan**:
+  - Menyusun 10 berkas spesifikasi teknis lengkap dan komprehensif di `second_brain/0_Inbox/ide/bank-ewallet-integration-spec/`:
+    1. `README.md`: Ringkasan eksekutif, indeks spesifikasi, dan diagram alur kerja utama.
+    2. `01-audit-kondisi-saat-ini-dan-kelayakan.md`: Audit codebase FinTrack v2, tinjauan regulasi SNAP BI, risiko scraping, keunggulan universal statement ingestion, dan prinsip UU PDP.
+    3. `02-kebutuhan-bisnis-dan-ruang-lingkup.md`: Persona pengguna, target 7 institusi (BCA, Mandiri, Jago, SeaBank, GoPay, DANA, ShopeePay), dan batasan fungsional.
+    4. `03-model-domain-dan-skema-database.md`: DDL migrasi SQL (`financial_accounts`, `import_batches`, alter `transactions`), tipe enum, indeks unik fingerprint, dan invariant saldo berjalan.
+    5. `04-arsitektur-backend-dan-ingestion-pipeline.md`: Go adapter pattern `StatementParser`, Two-Stage Normalizer (Regex + AI fallback), SHA-256 fingerprint deduplication, smart transfer pairing, dan batch rollback.
+    6. `05-rag-embedding-dan-analisis-keuangan.md`: Format teks embedding pgvector kaya konteks, metadata terstruktur, hybrid SQL retrieval, use-case AI advisor, dan visualisasi Sankey cashflow.
+    7. `06-admin-entitlement-dan-monetisasi-paket.md`: Dynamic entitlement `bank_integration`, limit numerik `max_financial_accounts` & `monthly_statement_imports`, zero-downtime admin switch, dan konsumsi shared token pool.
+    8. `07-arsitektur-frontend-dan-desain-ux.md`: Halaman `/accounts`, modal drag-and-drop wizard impor, review pre-commit, kartu Net Worth, dan view paywall promosi paket Business.
+    9. `08-rencana-implementasi-dan-roadmap-rollout.md`: Breakdown 7 Wave pengerjaan Fase 1, Definition of Done, dan rencana transisi Fase 2 ke agregator berlisensi (Brick/Ayoconnect).
+    10. `09-strategi-pengujian-keamanan-dan-mitigasi-risiko.md`: Test matrix unit/integrasi/konkurensi saldo, standar kepatuhan UU PDP, sanitasi berkas, dan penanganan risiko format bank berubah.
+- **Verifikasi Hasil**:
+  - Seluruh dokumen spesifikasi tersimpan rapi, konsisten dengan standar `multi-currency-spec`, dan siap dieksekusi pada fase implementasi.
