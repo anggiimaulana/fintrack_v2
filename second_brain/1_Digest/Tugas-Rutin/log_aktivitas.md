@@ -2574,3 +2574,26 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
     10. `09-strategi-pengujian-keamanan-dan-mitigasi-risiko.md`: Test matrix unit/integrasi/konkurensi saldo, standar kepatuhan UU PDP, sanitasi berkas, dan penanganan risiko format bank berubah.
 - **Verifikasi Hasil**:
   - Seluruh dokumen spesifikasi tersimpan rapi, konsisten dengan standar `multi-currency-spec`, dan siap dieksekusi pada fase implementasi.
+## 2026-10-20 (Multi-Currency Hardening & Future-Proofing) — Perbaikan String Parsing FloatRates, Responsive Worker Ticker & Endpoint Manual Sync
+- **Konteks & Masalah**:
+  - Analisis mendalam menemukan 3 potensi celah/masalah:
+    1. API FloatRates asli mengembalikan angka dalam bentuk string berkuotasi (`"inverseRate": "105.26"`), yang akan gagal jika di-unmarshal ke `float64` biasa.
+    2. Worker sleep loop sebelumnya menggunakan `time.After(interval)` statis, menyebabkan jeda lama (hingga 6 jam) sebelum perubahan interval atau enabled flag oleh Super Admin diterapkan.
+    3. Belum ada tombol dan endpoint sinkronisasi manual (`POST /admin/currency-sync`) bagi Super Admin untuk memicu pembaruan kurs instan dari dashboard.
+    4. Mata uang baru ber-`rate_source = 'provider'` yang disimpan dalam status nonaktif belum otomatis menarik kurs awal, sehingga masih menampilkan *"belum ada kurs"* di kartu antarmuka.
+- **Perubahan yang Diterapkan**:
+  1. **Provider Hardening (`backend/internal/currency/provider.go`)**:
+     - Menambahkan fungsi pembantu `parseFloatValue` yang mendukung float, int, `json.Number`, dan string numerik.
+     - Menambahkan pengecekan pengaman `math.IsNaN` dan `math.IsInf`.
+     - Mengekspos `Resolver()` pada `ProviderFactory`.
+  2. **Worker Loop Responsif (`backend/internal/currency/rate_sync_worker.go`)**:
+     - Mengganti timer blok statis dengan ticker 1 menit dan tracking `lastRun`. Setiap perubahan setting interval oleh Super Admin kini langsung terdeteksi dalam waktu maksimal 60 detik.
+  3. **Auto-Fetch Lebih Dini & Sync Endpoint (`backend/internal/usecase/currency_usecase.go`, `currency_handler.go`, `router.go`)**:
+     - Pada `UpsertCurrency`, kurs awal langsung ditarik begitu mata uang bermode provider dibuat, sehingga data kurs langsung tersedia di database meskipun disimpan nonaktif.
+     - Menambahkan method `SyncRates` di usecase dan mendaftarkan route `POST /api/v1/admin/currency-sync`.
+  4. **Frontend UI Sync Now (`frontend/app/(dashboard)/super-admin/currency/page.tsx`, `useSuperAdminCurrency.ts`)**:
+     - Menambahkan hook `useSyncCurrencyRates` dan tombol **"Sinkronkan Kurs"** di header antarmuka Super Admin Mata Uang dengan status loading interaktif.
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go test ./...` -> 41 packages passed (termasuk test FloatRates string format dan usecase SyncRates).
+  - `cd backend && go vet ./... && go build ./...` -> bersih tanpa error/warning.
+  - `cd frontend && pnpm build` -> 54 routes compiled successfully (0 type error).

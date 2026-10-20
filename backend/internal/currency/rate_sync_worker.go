@@ -49,23 +49,28 @@ func (w *RateSyncWorker) Start(ctx context.Context) {
 			return
 		}
 
-		for {
-			intervalHours := 6
-			if w.resolver != nil {
-				intervalHours = w.resolver.Int(ctx, "currency_sync_interval_hours", "CURRENCY_SYNC_INTERVAL_HOURS", 6)
-			}
-			if intervalHours <= 0 {
-				intervalHours = 6
-			}
-			interval := time.Duration(intervalHours) * time.Hour
+		lastRun := time.Now()
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
 
+		for {
 			select {
-			case <-time.After(interval):
-				w.SyncOnce(ctx)
 			case <-ctx.Done():
 				return
 			case <-w.stop:
 				return
+			case now := <-ticker.C:
+				intervalHours := 6
+				if w.resolver != nil {
+					intervalHours = w.resolver.Int(ctx, "currency_sync_interval_hours", "CURRENCY_SYNC_INTERVAL_HOURS", 6)
+				}
+				if intervalHours <= 0 {
+					intervalHours = 6
+				}
+				if now.Sub(lastRun) >= time.Duration(intervalHours)*time.Hour {
+					w.SyncOnce(ctx)
+					lastRun = now
+				}
 			}
 		}
 	}()

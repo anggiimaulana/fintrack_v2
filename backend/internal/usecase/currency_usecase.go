@@ -76,6 +76,15 @@ func (u *CurrencyUsecase) Rates(ctx context.Context, code string, limit int) ([]
 	return u.repo.ListRates(ctx, strings.ToUpper(strings.TrimSpace(code)), limit)
 }
 
+// SyncRates triggers an on-demand synchronization pass for all provider-backed currencies.
+func (u *CurrencyUsecase) SyncRates(ctx context.Context) (int, error) {
+	if u.factory == nil {
+		return 0, errors.New("provider factory belum terkonfigurasi")
+	}
+	worker := currency.NewRateSyncWorker(u.repo, u.factory, u.factory.Resolver())
+	return worker.SyncOnce(ctx)
+}
+
 // RateAsOf returns the rate applicable at a moment (for the frontend catalog).
 func (u *CurrencyUsecase) RateAsOf(ctx context.Context, code string, at time.Time) (*currency.Rate, error) {
 	return u.svc.RateAsOf(ctx, strings.ToUpper(strings.TrimSpace(code)), at)
@@ -152,43 +161,42 @@ func (u *CurrencyUsecase) UpsertCurrency(ctx context.Context, in CurrencyInput) 
 		return nil, fmt.Errorf("%w: sumber kurs harus manual atau provider", ErrCurrencyInvalid)
 	}
 
+	// Ensure provider-backed currencies have an initial rate row even if initially inactive.
+	if m.RateSource == "provider" && u.factory != nil {
+		r, _ := u.svc.RateAsOf(ctx, code, time.Now())
+		if r == nil {
+			provider, perr := u.factory.ResolveProvider(ctx)
+			if perr != nil {
+				return nil, fmt.Errorf("%w: gagal menyiapkan provider kurs: %v", ErrCurrencyInvalid, perr)
+			}
+			fetchedRate, ferr := provider.FetchRate(ctx, code, currency.BaseCode)
+			if ferr != nil {
+				return nil, fmt.Errorf("%w: gagal mengambil kurs otomatis dari provider (%s): %v", ErrCurrencyInvalid, provider.Name(), ferr)
+			}
+			if fetchedRate <= 0 || math.IsNaN(fetchedRate) || math.IsInf(fetchedRate, 0) {
+				return nil, fmt.Errorf("%w: nilai kurs dari provider tidak valid (<= 0)", ErrCurrencyInvalid)
+			}
+			note := "auto-fetch initial"
+			initialRate := currency.Rate{
+				CurrencyCode: code,
+				RateToBase:   fetchedRate,
+				EffectiveAt:  time.Now(),
+				Source:       "provider",
+				Note:         &note,
+			}
+			if err := u.repo.InsertRate(ctx, initialRate); err != nil {
+				return nil, fmt.Errorf("%w: gagal menyimpan kurs awal: %v", ErrCurrencyInvalid, err)
+			}
+		}
+	}
+
 	if m.IsActive {
-		// Activation requires a rate that applies right now, not merely the
-		// existence of rows (future-dated rates would leave the currency
-		// unusable and break writes for users who select it).
 		r, rerr := u.svc.RateAsOf(ctx, code, time.Now())
 		if rerr != nil {
 			return nil, rerr
 		}
 		if r == nil {
-			if m.RateSource == "provider" && u.factory != nil {
-				provider, perr := u.factory.ResolveProvider(ctx)
-				if perr != nil {
-					return nil, fmt.Errorf("%w: gagal menyiapkan provider kurs: %v", ErrCurrencyInvalid, perr)
-				}
-				fetchedRate, ferr := provider.FetchRate(ctx, code, currency.BaseCode)
-				if ferr != nil {
-					return nil, fmt.Errorf("%w: gagal mengambil kurs otomatis dari provider (%s): %v", ErrCurrencyInvalid, provider.Name(), ferr)
-				}
-				if fetchedRate <= 0 {
-					return nil, fmt.Errorf("%w: nilai kurs dari provider tidak valid (<= 0)", ErrCurrencyInvalid)
-				}
-				note := "auto-fetch initial"
-				initialRate := currency.Rate{
-					CurrencyCode: code,
-					RateToBase:   fetchedRate,
-					EffectiveAt:  time.Now(),
-					Source:       "provider",
-					Note:         &note,
-				}
-				if err := u.repo.InsertRate(ctx, initialRate); err != nil {
-					return nil, fmt.Errorf("%w: gagal menyimpan kurs awal: %v", ErrCurrencyInvalid, err)
-				}
-				r, _ = u.svc.RateAsOf(ctx, code, time.Now())
-			}
-			if r == nil {
-				return nil, ErrCurrencyActivation
-			}
+			return nil, ErrCurrencyActivation
 		}
 	}
 	if err := u.repo.UpsertCurrency(ctx, m); err != nil {

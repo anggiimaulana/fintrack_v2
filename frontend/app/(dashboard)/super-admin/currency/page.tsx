@@ -23,6 +23,7 @@ import {
   useCurrencyRates,
   useUpsertCurrency,
   useAddCurrencyRate,
+  useSyncCurrencyRates,
   type AdminCurrency,
   type CurrencyPayload,
   type RateRow,
@@ -73,6 +74,17 @@ function toForm(c: AdminCurrency): CurrencyForm {
 export default function CurrencyPage() {
   const { data: currencies, isLoading, isError, refetch } = useAdminCurrencies();
   const upsert = useUpsertCurrency();
+  const syncRates = useSyncCurrencyRates();
+
+  const handleSyncAll = async () => {
+    try {
+      const res = await syncRates.mutateAsync();
+      toast.success(res?.message || "Kurs berhasil disinkronkan.");
+      refetch();
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || "Gagal menyinkronkan kurs.");
+    }
+  };
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<AdminCurrency | null>(null);
@@ -139,6 +151,15 @@ export default function CurrencyPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSyncAll}
+            disabled={syncRates.isPending}
+            aria-label="Sinkronkan kurs otomatis"
+          >
+            <RotateCw className={`w-4 h-4 mr-2 ${syncRates.isPending ? "animate-spin" : ""}`} />
+            Sinkronkan Kurs
+          </Button>
           <Button variant="outline" onClick={() => refetch()} aria-label="Muat ulang">
             <RotateCw className="w-4 h-4" />
           </Button>

@@ -78,3 +78,17 @@ export function useAddCurrencyRate() {
     },
   });
 }
+
+export function useSyncCurrencyRates() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/admin/currency-sync");
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.currency.admin });
+      queryClient.invalidateQueries({ queryKey: queryKeys.currency.all });
+    },
+  });
+}

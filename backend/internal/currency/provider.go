@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +41,11 @@ func NewProviderFactory(resolver *runtimeconfig.Resolver, client *http.Client) *
 		resolver: resolver,
 		client:   client,
 	}
+}
+
+// Resolver exposes the runtime configuration resolver.
+func (f *ProviderFactory) Resolver() *runtimeconfig.Resolver {
+	return f.resolver
 }
 
 // ResolveProvider returns the active RateProvider matching dynamic admin settings.
@@ -145,6 +152,28 @@ func (p *OpenERProvider) FetchRate(ctx context.Context, fromCode string, toCode 
 
 	return 1.0 / rateFrom, nil
 }
+func parseFloatValue(v any) (float64, error) {
+	switch val := v.(type) {
+	case float64:
+		return val, nil
+	case float32:
+		return float64(val), nil
+	case int:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	case json.Number:
+		return val.Float64()
+	case string:
+		clean := strings.TrimSpace(val)
+		if clean == "" {
+			return 0, errors.New("empty string")
+		}
+		return strconv.ParseFloat(clean, 64)
+	default:
+		return 0, fmt.Errorf("unexpected value type %T", v)
+	}
+}
 
 // ─── FloatRates Provider (floatrates.com) ───────────────────────
 
@@ -180,9 +209,9 @@ func (p *FloatRatesProvider) FetchRate(ctx context.Context, fromCode string, toC
 	}
 
 	type floatItem struct {
-		Code        string  `json:"code"`
-		Rate        float64 `json:"rate"`
-		InverseRate float64 `json:"inverseRate"`
+		Code        string `json:"code"`
+		Rate        any    `json:"rate"`
+		InverseRate any    `json:"inverseRate"`
 	}
 	var data map[string]floatItem
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -190,11 +219,16 @@ func (p *FloatRatesProvider) FetchRate(ctx context.Context, fromCode string, toC
 	}
 
 	item, ok := data[from]
-	if !ok || item.InverseRate <= 0 {
+	if !ok {
 		return 0, fmt.Errorf("%w: %s", ErrCurrencyUnsupported, fromCode)
 	}
 
-	return item.InverseRate, nil
+	invRate, err := parseFloatValue(item.InverseRate)
+	if err != nil || invRate <= 0 || math.IsNaN(invRate) || math.IsInf(invRate, 0) {
+		return 0, fmt.Errorf("%w: %s (invalid rate %v)", ErrCurrencyUnsupported, fromCode, item.InverseRate)
+	}
+
+	return invRate, nil
 }
 
 // ─── Frankfurter Provider (frankfurter.dev) ─────────────────────
@@ -288,19 +322,22 @@ func (p *CustomProvider) FetchRate(ctx context.Context, fromCode string, toCode 
 	}
 
 	var data struct {
-		Rate  float64            `json:"rate"`
-		Rates map[string]float64 `json:"rates"`
+		Rate  any            `json:"rate"`
+		Rates map[string]any `json:"rates"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return 0, fmt.Errorf("%w: invalid json response: %v", ErrProviderUnavailable, err)
 	}
 
-	if data.Rate > 0 {
-		return data.Rate, nil
+	if data.Rate != nil {
+		if r, err := parseFloatValue(data.Rate); err == nil && r > 0 && !math.IsNaN(r) && !math.IsInf(r, 0) {
+			return r, nil
+		}
 	}
-	if rate, ok := data.Rates[to]; ok && rate > 0 {
-		return rate, nil
+	if data.Rates != nil && data.Rates[to] != nil {
+		if r, err := parseFloatValue(data.Rates[to]); err == nil && r > 0 && !math.IsNaN(r) && !math.IsInf(r, 0) {
+			return r, nil
+		}
 	}
-
 	return 0, fmt.Errorf("%w: %s to %s", ErrCurrencyUnsupported, from, to)
 }

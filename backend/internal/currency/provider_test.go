@@ -80,7 +80,8 @@ func TestFloatRatesProvider_Success(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"jpy":{"code":"JPY","rate":0.0095,"inverseRate":105.26}}`)
+		// Real FloatRates API returns numbers as quoted strings
+		fmt.Fprintln(w, `{"jpy":{"code":"JPY","rate":"0.0095","inverseRate":"105.26"}}`)
 	}))
 	defer server.Close()
 

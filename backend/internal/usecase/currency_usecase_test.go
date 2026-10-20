@@ -213,3 +213,41 @@ func TestUpsertCurrency_ProviderAutoFetch_Failure(t *testing.T) {
 		t.Errorf("expected ErrCurrencyInvalid wrapper, got %v", err)
 	}
 }
+
+func TestCurrencyUsecase_SyncRates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"result":"success","base_code":"IDR","rates":{"JPY":0.0095}}`)
+	}))
+	defer server.Close()
+
+	settings := &staticSettings{
+		data: map[string]string{
+			"currency_auto_sync_enabled": "true",
+			"currency_rate_provider":     "open_er_api",
+			"currency_provider_base_url": server.URL,
+			"currency_dedup_hours":       "24",
+		},
+	}
+	resolver := runtimeconfig.New(settings, nil)
+	factory := currency.NewProviderFactory(resolver, server.Client())
+
+	repo := newMemoryCurrencyRepo()
+	repo.currencies["JPY"] = currency.Meta{
+		Code:       "JPY",
+		Name:       "Yen",
+		IsActive:   true,
+		IsBase:     false,
+		RateSource: "provider",
+	}
+	svc := currency.NewService(repo)
+	uc := NewCurrencyUsecase(svc, repo, factory)
+
+	updated, err := uc.SyncRates(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 1 {
+		t.Errorf("expected 1 currency updated, got %d", updated)
+	}
+}

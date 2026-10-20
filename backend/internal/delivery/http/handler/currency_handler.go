@@ -2,9 +2,9 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -177,6 +177,18 @@ func (h *CurrencyHandler) AddRate(c *gin.Context) {
 		return
 	}
 	response.OK(c, "Kurs berhasil ditambahkan", nil)
+}
+
+// SyncRates handles POST /admin/currency-sync (Super Admin).
+func (h *CurrencyHandler) SyncRates(c *gin.Context) {
+	updated, err := h.uc.SyncRates(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Gagal menyinkronkan kurs: "+err.Error(), "currency_sync_failed")
+		return
+	}
+	response.OK(c, fmt.Sprintf("Berhasil menyinkronkan %d mata uang", updated), gin.H{
+		"updated_count": updated,
+	})
 }
 
 // parseTimeFlexible accepts RFC3339 or a plain date (YYYY-MM-DD).

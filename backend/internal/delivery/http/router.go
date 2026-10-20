@@ -548,6 +548,7 @@ func SetupRouter(
 					sa.POST("/currencies", config.Currency.Upsert)
 					sa.GET("/currency-rates", config.Currency.ListRates)
 					sa.POST("/currency-rates", config.Currency.AddRate)
+					sa.POST("/currency-sync", config.Currency.SyncRates)
 				}
 			}
 		}
