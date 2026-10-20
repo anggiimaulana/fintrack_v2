@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-10-20 — Perbaikan Tata Letak & Spasi Bagian Mata Uang Pencatatan di Halaman Profil
+- **Konteks**: Label "Mata Uang Pencatatan" dan elemen select box di `/user/profile` (komponen `AppearanceSettings`) berada pada baris horizontal yang sama (mepet/bertumpuk) karena tag `<label>` berstatus `inline` dan `<select>` memiliki `w-full md:w-1/2` tanpa deklarasi `block`.
+- **Aksi**:
+  - `frontend/components/profile/AppearanceSettings.tsx`:
+    - Menambahkan utilitas `block` pada `<label>` Bahasa & Regional dan Mata Uang Pencatatan agar label berada tepat di atas kontrol input.
+    - Menambahkan pemisah visual `pt-6 border-t-2 border-foreground/10` dan `space-y-2` pada kontainer Mata Uang Pencatatan untuk memberi ruang dan pemisahan yang proporsional sesuai bahasa desain neobrutalisme FinTrack.
+    - Menambahkan utilitas `block` eksplisit pada elemen `<select>` Mata Uang Pencatatan.
+- **Hasil Verifikasi**:
+  - Vitest test suite lulus bersih (`pnpm vitest run components/marketing/LandingSections.a11y.test.tsx` PASS).
+
+---
+
 ## 2026-10-20 — Implementasi Mesin Multi-Currency & Periode Dunning Berjenjang (Fase 1-9)
 - **Konteks**: Implementasi penuh arsitektur multi-mata uang pada FinTrack v2 untuk mendukung transaksi dalam berbagai valuta asing (USD, EUR, SGD, JPY, MYR, GBP, AUD, CNY, SAR, dll.) dengan normalisasi otomatis ke IDR (`amount_idr` & `exchange_rate`), panel manajemen kurs super-admin, pembaruan laporan & visualisasi grafik, serta penyempurnaan toleransi dunning pembayaran langganan.
 - **Aksi**:
@@ -2493,3 +2505,12 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   - `pnpm --filter frontend build` -> 36 static/dynamic routes compiled cleanly (0 type error).
   - `pnpm --filter frontend test` -> 70 test files, 460 tests passed.
   - `cd backend && go test ./...` -> 38 packages passed.
+## 2026-10-20 (Multi-Currency Rate Provider & Auto-Fetch Sync Spec) — Desain Auto-Fetch Kurs & Background Worker
+- **Konteks & Masalah**:
+  - Penambahan mata uang non-base (seperti JPY) sebelumnya mengharuskan Super Admin memasukkan kurs secara manual sebelum mata uang dapat diaktifkan.
+  - Pengguna membutuhkan alur otomatis di mana Super Admin cukup memasukkan kode mata uang dan memilih mode provider, lalu kurs otomatis ditarik dan disinkronkan berkala tanpa polling frontend.
+- **Perubahan yang Diterapkan**:
+  1. Membuat dokumen spesifikasi desain teknis di `docs/superpowers/specs/2026-10-20-rate-provider-auto-fetch-design.md` dan ringkasan di `second_brain/0_Inbox/ide/multi-currency-spec/10-rate-provider-auto-fetch-design.md`.
+  2. Merancang interface adapter `RateProvider` (default implementasi OpenER / FloatRates).
+  3. Merancang on-demand auto-fetch saat `UpsertCurrency` (`rate_source = 'provider'`).
+  4. Merancang background worker `RateSyncWorker` dengan interval 6 jam, fallback graceful, dan deduplikasi kurs identik.
