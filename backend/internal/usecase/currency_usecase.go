@@ -43,12 +43,22 @@ type CurrencyInput struct {
 // layer and enforces the activation invariant (no active currency without a
 // currently-effective rate).
 type CurrencyUsecase struct {
-	svc  *currency.Service
-	repo currency.AdminRepo
+	svc     *currency.Service
+	repo    currency.AdminRepo
+	factory *currency.ProviderFactory
 }
 
-func NewCurrencyUsecase(svc *currency.Service, repo currency.AdminRepo) *CurrencyUsecase {
-	return &CurrencyUsecase{svc: svc, repo: repo}
+func NewCurrencyUsecase(svc *currency.Service, repo currency.AdminRepo, factory ...*currency.ProviderFactory) *CurrencyUsecase {
+	uc := &CurrencyUsecase{svc: svc, repo: repo}
+	if len(factory) > 0 {
+		uc.factory = factory[0]
+	}
+	return uc
+}
+
+func (u *CurrencyUsecase) WithProviderFactory(f *currency.ProviderFactory) *CurrencyUsecase {
+	u.factory = f
+	return u
 }
 
 // Catalog returns the selectable (active) currencies.
@@ -151,10 +161,36 @@ func (u *CurrencyUsecase) UpsertCurrency(ctx context.Context, in CurrencyInput) 
 			return nil, rerr
 		}
 		if r == nil {
-			return nil, ErrCurrencyActivation
+			if m.RateSource == "provider" && u.factory != nil {
+				provider, perr := u.factory.ResolveProvider(ctx)
+				if perr != nil {
+					return nil, fmt.Errorf("%w: gagal menyiapkan provider kurs: %v", ErrCurrencyInvalid, perr)
+				}
+				fetchedRate, ferr := provider.FetchRate(ctx, code, currency.BaseCode)
+				if ferr != nil {
+					return nil, fmt.Errorf("%w: gagal mengambil kurs otomatis dari provider (%s): %v", ErrCurrencyInvalid, provider.Name(), ferr)
+				}
+				if fetchedRate <= 0 {
+					return nil, fmt.Errorf("%w: nilai kurs dari provider tidak valid (<= 0)", ErrCurrencyInvalid)
+				}
+				note := "auto-fetch initial"
+				initialRate := currency.Rate{
+					CurrencyCode: code,
+					RateToBase:   fetchedRate,
+					EffectiveAt:  time.Now(),
+					Source:       "provider",
+					Note:         &note,
+				}
+				if err := u.repo.InsertRate(ctx, initialRate); err != nil {
+					return nil, fmt.Errorf("%w: gagal menyimpan kurs awal: %v", ErrCurrencyInvalid, err)
+				}
+				r, _ = u.svc.RateAsOf(ctx, code, time.Now())
+			}
+			if r == nil {
+				return nil, ErrCurrencyActivation
+			}
 		}
 	}
-
 	if err := u.repo.UpsertCurrency(ctx, m); err != nil {
 		return nil, err
 	}

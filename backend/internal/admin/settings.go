@@ -217,6 +217,14 @@ var writableSettings = map[string]settingSpec{
 	"ai_estimate_vision_output_headroom":  {kind: "int", min: 50, max: 5000},
 	"ai_estimate_vision_large_file_bytes": {kind: "int", min: 100000, max: 5000000},
 	"ai_estimate_vision_large_file_extra": {kind: "int", min: 0, max: 5000},
+	// Currency rate provider and background worker (0043_currency_provider_settings).
+	"currency_auto_sync_enabled":    {kind: "bool"},
+	"currency_sync_interval_hours":  {kind: "int", min: 1, max: 168},
+	"currency_rate_provider":        {kind: "enum", enum: []string{"open_er_api", "floatrates", "frankfurter", "custom"}},
+	"currency_provider_base_url":    {kind: "string", maxLen: 256},
+	"currency_provider_api_key":     {kind: "secret"},
+	"currency_sync_timeout_seconds": {kind: "int", min: 2, max: 60},
+	"currency_dedup_hours":          {kind: "int", min: 1, max: 72},
 }
 
 type updateSettingsRequest struct {

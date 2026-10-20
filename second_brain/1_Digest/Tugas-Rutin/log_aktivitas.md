@@ -2514,3 +2514,25 @@ Folder baru `second_brain/0_Inbox/ide/2026-10-14_Audit-Kuota-Biaya-Dinamis/`:
   2. Merancang interface adapter `RateProvider` (default implementasi OpenER / FloatRates).
   3. Merancang on-demand auto-fetch saat `UpsertCurrency` (`rate_source = 'provider'`).
   4. Merancang background worker `RateSyncWorker` dengan interval 6 jam, fallback graceful, dan deduplikasi kurs identik.
+## 2026-10-20 (Multi-Currency Dynamic Rate Provider & Auto-Fetch: Wave 1, 2, 3) — Implementasi Migrasi, Multi-Driver Provider & On-Demand Auto-Fetch
+- **Konteks & Masalah**:
+  - Memperbaiki alur penambahan mata uang agar Super Admin tidak perlu lagi memasukkan kurs secara manual untuk mengaktifkan mata uang baru (`currency_no_rate`).
+  - Menerapkan arsitektur dinamis 100% tanpa hardcoding: konfigurasi provider, URL, API key, timeout, dan interval tersimpan di tabel `settings` dan dikelola via Super Admin.
+- **Perubahan yang Diterapkan**:
+  1. **Wave 1 (Database Migration & Dynamic Settings)**:
+     - Membuat migrasi `database/migrations/0043_currency_provider_settings.sql` untuk menyemai 7 setting kontrol kurs (`currency_auto_sync_enabled`, `currency_sync_interval_hours`, `currency_rate_provider`, `currency_provider_base_url`, `currency_provider_api_key`, `currency_sync_timeout_seconds`, `currency_dedup_hours`).
+     - Mendaftarkan validasi setting di `backend/internal/admin/settings.go` (`writableSettings`).
+     - Menjalankan migrasi via `migrate.sh` dan me-regenerate dump database di `database/dump/fintrack_v2.*` via `dump.sh`.
+  2. **Wave 2 (Interface Adapter & Multi-Driver Provider)**:
+     - Membuat `backend/internal/currency/provider.go` yang berisi interface `RateProvider` dan `ProviderFactory` dengan integrasi `runtimeconfig.Resolver`.
+     - Mengimplementasikan 4 driver: `OpenERProvider`, `FloatRatesProvider`, `FrankfurterProvider`, dan `CustomProvider`.
+     - Membuat unit test komprehensif di `backend/internal/currency/provider_test.go` menggunakan `httptest.Server` (8 tests passed).
+  3. **Wave 3 (On-Demand Auto-Fetch saat Create Mata Uang)**:
+     - Mengintegrasikan `ProviderFactory` ke `CurrencyUsecase` (`backend/internal/usecase/currency_usecase.go`) dan `cmd/server/main.go`.
+     - Pada `UpsertCurrency`: jika `rate_source = 'provider'` dan belum ada kurs aktif, otomatis fetch kurs terbaru dari provider aktif dan simpan ke `currency_rates`, sehingga mata uang langsung aktif tanpa tolak aktivasi.
+     - Membuat unit test usecase di `backend/internal/usecase/currency_usecase_test.go` (4 tests passed).
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go test ./...` -> 39 packages passed.
+  - `cd backend && go vet ./... && go build ./...` -> bersih tanpa error/warning.
+  - `cd frontend && pnpm test` -> 103 test files passed, 741 tests passed.
+  - `cd frontend && pnpm build` -> 54 routes compiled cleanly (0 type error).

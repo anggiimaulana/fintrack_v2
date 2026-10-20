@@ -422,7 +422,8 @@ func main() {
 	// snapshots rates for non-IDR records.
 	currencyRepo := postgres.NewCurrencyRepo(pool)
 	currencySvc := currency.NewService(currencyRepo)
-	currencyUC := usecase.NewCurrencyUsecase(currencySvc, currencyRepo)
+	currencyProviderFactory := currency.NewProviderFactory(runtimeResolver, nil)
+	currencyUC := usecase.NewCurrencyUsecase(currencySvc, currencyRepo, currencyProviderFactory)
 	currencyHandler := handler.NewCurrencyHandler(currencyUC)
 	displayCurrency := func(ctx context.Context, userID uuid.UUID) string {
 		p, err := userRepo.GetByID(ctx, userID)
