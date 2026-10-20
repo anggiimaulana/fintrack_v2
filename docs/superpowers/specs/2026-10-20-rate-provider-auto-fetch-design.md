@@ -1,8 +1,8 @@
-# Multi-Currency Rate Provider & Auto-Fetch Sync Design
+# Multi-Currency Rate Provider & Auto-Fetch Sync Design (Fully Dynamic & Admin-Configured)
 
 **Date:** 2026-10-20  
 **Status:** In Review  
-**Target Subsystem:** `backend/internal/currency`, `backend/internal/delivery/http/handler`, `frontend/app/(dashboard)/super-admin/currency`  
+**Target Subsystem:** `backend/internal/currency`, `backend/internal/admin`, `backend/internal/runtimeconfig`, `backend/internal/delivery/http/handler`, `frontend/app/(dashboard)/super-admin`  
 **Related Specs:** `second_brain/0_Inbox/ide/multi-currency-spec/` (Decision D5: provider auto-fetch)
 
 ---
@@ -12,141 +12,171 @@
 Saat ini FinTrack v2 mendukung multi-currency (IDR sebagai base currency, JPY sebagai target rilis pertama). Namun:
 1. Penambahan mata uang baru mengharuskan Super Admin memasukkan kurs secara manual sebelum mata uang dapat diaktifkan (`ErrCurrencyActivation` / `422 currency_no_rate`).
 2. Belum ada mekanisme pembaruan kurs otomatis berkala dari provider pasar.
-3. Skema database sudah menyiapkan kolom `currencies.rate_source` (`manual` | `provider`) dan `currency_rates.source` (`manual` | `provider`), tetapi implementasi adapter provider dan scheduler sinkronisasi belum tersedia.
+3. **Prinsip Utama FinTrack**: Tidak boleh ada nilai operasional yang di-hardcode (URL provider, interval sync, timeout, status aktif/nonaktif worker, maupun API key). Seluruh parameter harus dinamis dan dapat diatur langsung oleh Super Admin melalui antarmuka admin dan tabel `settings`.
 
-Tujuan: Mengotomatisasi penarikan kurs saat mata uang dibuat dan menyediakan sinkronisasi berkala di latar belakang (background sync) tanpa membebani frontend dengan polling.
+Tujuan: Mengotomatisasi penarikan kurs saat mata uang dibuat dan menyediakan background sync periodik dengan arsitektur 100% dinamis berbasis runtime configuration (DB-over-env).
 
 ---
 
 ## 2. Goals & Non-Goals
 
 ### Goals
-1. **On-Demand Auto-Fetch saat Create**: Ketika Super Admin menambahkan mata uang dengan `rate_source: "provider"`, sistem secara otomatis mengambil kurs pasar terkini dari provider eksternal, menyimpan baris kurs awal ke `currency_rates`, dan langsung mengaktifkan mata uang tanpa input manual.
-2. **Scheduled Sync Worker**: Background worker di Go backend yang berjalan secara periodik (setiap 6 jam) untuk mengambil kurs terbaru bagi semua mata uang aktif ber-`rate_source = 'provider'`.
-3. **Append-Only History Preservation**: Setiap penarikan kurs baru disimpan sebagai baris baru di `currency_rates` untuk menjaga keutuhan riwayat transaksi masa lalu (as-of audit trail).
-4. **Resilience & Fallback**: Jika provider eksternal down atau timeout saat worker berjalan, sistem mencatat log peringatan dan transaksi pengguna tetap berjalan aman menggunakan kurs terakhir yang valid di database (`RateAsOf`).
-5. **Deduplication**: Jika nilai kurs yang diambil dari provider bernilai sama persis dengan kurs terakhir pada hari yang sama, worker melewati insert baru untuk mencegah bloat database.
-6. **Pluggable Adapter**: Menghadirkan interface `RateProvider` yang bersih di Go sehingga provider dapat diganti atau ditambahkan (mis. Open Exchange Rates, FloatRates, Frankfurter, Bank Indonesia) tanpa mengubah logika usecase.
+1. **Zero Hardcoded Parameters**:
+   - Provider URL, provider aktif, interval sinkronisasi, timeout HTTP, toleransi deduplikasi, dan sakelar worker dapat diubah langsung oleh Super Admin tanpa deploy ulang.
+2. **On-Demand Auto-Fetch saat Create**:
+   - Ketika Super Admin menambahkan mata uang dengan `rate_source: "provider"`, sistem secara otomatis mengambil kurs pasar terkini dari provider yang sedang aktif, menyimpan baris kurs awal ke `currency_rates`, dan langsung mengaktifkan mata uang tanpa input manual.
+3. **Dynamic Scheduled Sync Worker**:
+   - Background worker membaca `currency_auto_sync_enabled` dan `currency_sync_interval_hours` secara dinamis melalui `runtimeconfig.Resolver`. Jika dinonaktifkan oleh Super Admin, worker berhenti melakukan fetch. Jika interval diubah, ritme eksekusi menyesuaikan tanpa restart server.
+4. **Append-Only History Preservation**:
+   - Setiap kurs baru yang ditarik dicatat sebagai baris baru di tabel `currency_rates` untuk menjaga audit trail historis.
+5. **Multi-Provider Adapter (Pluggable)**:
+   - Mendukung pemilihan provider dinamis (`open_er_api`, `floatrates`, `frankfurter`, atau `custom` via base URL & API key).
+6. **Graceful Fallback & Deduplication**:
+   - Jika provider eksternal offline saat worker berjalan, sistem mencatat log warning dan transaksi pengguna tetap aman menggunakan kurs terakhir yang valid di database (`RateAsOf`).
+   - Melewati insert jika nilai kurs belum berubah signifikan pada hari yang sama.
 
 ### Non-Goals
 1. Tidak ada client-side polling dari frontend.
 2. Tidak mengubah base accounting currency (tetap `IDR`).
 3. Tidak mendukung override kurs manual per transaksi oleh pengguna reguler.
-4. Tidak membuat UI admin baru yang rumit; cukup menggunakan kontrol yang ada di halaman Super Admin Currency.
 
 ---
 
-## 3. Architecture & Data Flow
+## 3. Dynamic Configuration Registry (Super Admin Settings)
+
+Parameter baru didaftarkan ke tabel `settings` dan `backend/internal/admin/settings.go` (`writableSettings`):
+
+| Key Setting | Tipe | Default | Batasan / Enum | Deskripsi |
+|---|---|---|---|---|
+| `currency_auto_sync_enabled` | `bool` | `true` | boolean | Sakelar global untuk mengaktifkan/menonaktifkan background sync worker |
+| `currency_sync_interval_hours` | `int` | `6` | min: 1, max: 168 (1 minggu) | Frekuensi sinkronisasi kurs otomatis (jam) |
+| `currency_rate_provider` | `enum` | `"open_er_api"` | `open_er_api`, `floatrates`, `frankfurter`, `custom` | Driver provider kurs pasar aktif |
+| `currency_provider_base_url` | `string` | `""` | maxLen: 256 | URL kustom jika menggunakan proxy/provider mandiri (override default) |
+| `currency_provider_api_key` | `secret` | `""` | maxLen: 256 | Kunci API jika provider yang dipilih membutuhkan autentikasi |
+| `currency_sync_timeout_seconds` | `int` | `10` | min: 2, max: 60 | Batas waktu timeout HTTP request saat menghubungi provider |
+| `currency_dedup_hours` | `int` | `24` | min: 1, max: 72 | Jendela waktu pengecekan deduplikasi kurs identik |
+
+Pengaturan ini otomatis muncul di panel Super Admin Settings (di bawah tab Keuangan/Mata Uang) dan didukung oleh endpoint `GET /admin/settings` serta `PUT /admin/settings`.
+
+---
+
+## 4. Architecture & Data Flow
 
 ```
-[Super Admin UI]
+[Super Admin Panel / Settings UI]
        │
-       │ POST /admin/currencies (code="JPY", rate_source="provider", is_active=true)
+       │ Update setting (e.g. interval=4h, provider="floatrates")
        ▼
-[CurrencyHandler / CurrencyUsecase]
+[Database: settings table]
        │
-       ├─► [RateProvider (FloatRates/OpenER)] ──(HTTP GET)──► External Exchange API
-       │        │
-       │        ▼ (Rate: 105.42)
-       ├─► [CurrencyRepo.InsertRate] ──────► PostgreSQL (currency_rates: source='provider')
+       ▼ (Cached via runtimeconfig.Resolver TTL 5s)
+[Runtime Config Resolver]
        │
-       └─► [CurrencyRepo.UpsertCurrency] ──► PostgreSQL (currencies: is_active=true)
-
-[Background RateSyncWorker] (Every 6h via time.NewTicker)
-       │
-       ├─► [CurrencyRepo.List(active=true)] (Filter: rate_source='provider' AND !is_base)
-       │
-       ├─► For each currency:
-       │        ├─► [RateProvider.FetchRate]
-       │        └─► Compare with newest rate in DB (dedup)
-       │             └─► [CurrencyRepo.InsertRate] (if changed / new day)
-       ▼
-[Log & Metrics]
+       ├────────────────────────────────────────┬──────────────────────────────────────┐
+       ▼                                        ▼                                      ▼
+[RateProvider Factory]              [RateSyncWorker]                     [CurrencyUsecase]
+  - resolves provider driver          - reads enabled flag                 - on-demand fetch on create
+  - resolves base URL & secret        - respects dynamic interval          - uses active provider
+  - configures dynamic timeout        - skips if disabled
 ```
 
 ---
 
-## 4. Detailed Component Design
+## 5. Detailed Component Design
 
-### 4.1 Interface `RateProvider` (`backend/internal/currency/provider.go`)
+### 5.1 Dynamic Provider Interface & Factory (`backend/internal/currency/`)
 
 ```go
-package currency
-
-import (
-	"context"
-	"errors"
-)
-
-var (
-	ErrProviderUnavailable = errors.New("rate provider unavailable")
-	ErrCurrencyUnsupported = errors.New("currency not supported by provider")
-)
-
+// RateProvider abstracts external rate lookups.
 type RateProvider interface {
-	// FetchRate returns the amount of base currency (IDR) for 1 unit of fromCode.
-	// Example: FetchRate(ctx, "JPY", "IDR") returns ~105.5
-	FetchRate(ctx context.Context, fromCode string, toCode string) (float64, error)
+    Name() string
+    FetchRate(ctx context.Context, fromCode string, toCode string) (float64, error)
+}
+
+// ProviderConfig represents dynamic knobs resolved from runtimeconfig.
+type ProviderConfig struct {
+    Driver         string        // "open_er_api" | "floatrates" | "frankfurter" | "custom"
+    BaseURL        string        // Optional custom URL
+    APIKey         string        // Optional secret
+    Timeout        time.Duration // Dynamic timeout
+}
+
+// ProviderFactory builds or resolves the active RateProvider based on dynamic settings.
+type ProviderFactory interface {
+    ResolveProvider(ctx context.Context) (RateProvider, error)
 }
 ```
 
-### 4.2 Default HTTP Provider Adapter (`backend/internal/currency/open_provider.go`)
+Implementasi driver:
+1. `OpenERProvider`: `https://open.er-api.com/v6/latest/IDR` (default open fiat).
+2. `FloatRatesProvider`: `https://www.floatrates.com/daily/idr.json`.
+3. `FrankfurterProvider`: `https://api.frankfurter.app/latest?from=...&to=IDR`.
+4. `CustomProvider`: Menggunakan URL dan API Key yang diinputkan Super Admin pada setting.
 
-Menggunakan open exchange rate endpoint tanpa API key yang stabil untuk target fiat (IDR base).
-- Pilihan endpoint: `https://open.er-api.com/v6/latest/IDR` (atau FloatRates fallback `https://www.floatrates.com/daily/idr.json`).
-- Respon diparsing ke struktur struct Go dengan HTTP Client yang memiliki timeout maksimal 8 detik.
-- Menghitung kurs direct/inverse: bila data kurs berbasis target, konversi secara presisi ke `1 fromCode = X IDR`.
+### 5.2 Dynamic Background Worker (`backend/internal/currency/rate_sync_worker.go`)
 
-### 4.3 Integrasi ke `CurrencyUsecase` (`backend/internal/usecase/currency_usecase.go`)
+- Worker tidak memakai konstanta kaku. Pada setiap iterasi loop (atau saat bangun dari sleep):
+  1. Cek `runtimeconfig`: apakah `currency_auto_sync_enabled == true`? Jika `false`, log debug dan tunggu siklus berikutnya.
+  2. Baca `currency_sync_interval_hours` dinamis. Jika admin mengubah interval dari 6 jam menjadi 2 jam, worker langsung memperbarui interval sleep berikutnya.
+  3. Baca `currency_sync_timeout_seconds` untuk membuat `context.WithTimeout`.
+  4. Ambil provider aktif dari `ProviderFactory`.
+  5. Jalankan sinkronisasi untuk semua mata uang aktif (`rate_source = 'provider' AND is_base = false`).
+  6. Deduplikasi: Cek apakah kurs terbaru di DB dalam `currency_dedup_hours` memiliki nilai yang sama. Jika identik, lewati insert untuk mencegah penumpukan baris.
+  7. Jika nilai berbeda: Insert baris baru ke `currency_rates` (`source: "provider"`, `note: "scheduled-sync"`).
+
+### 5.3 On-Demand Auto-Fetch saat Create Mata Uang (`backend/internal/usecase/currency_usecase.go`)
 
 Modifikasi pada `UpsertCurrency`:
-1. Jika `m.IsActive` bernilai `true` dan `m.RateSource == "provider"`:
-2. Cek apakah sudah ada kurs aktif via `u.svc.RateAsOf(ctx, code, time.Now())`.
-3. Jika belum ada:
-   - Panggil `u.provider.FetchRate(ctx, code, currency.BaseCode)`.
-   - Jika gagal, return error terbungkus `ErrCurrencyInvalid` dengan pesan deskriptif.
-   - Jika sukses, panggil `u.repo.InsertRate(ctx, currency.Rate{...})` dengan `source: "provider"`, `note: "auto-fetch initial"`.
-4. Lolos validasi kurs, dilanjutkan dengan `u.repo.UpsertCurrency(ctx, m)`.
-
-### 4.4 Background Worker (`backend/internal/currency/rate_sync_worker.go`)
-
-- Mengikuti standar worker background FinTrack (menggunakan interface lister/service minimal dan `time.NewTicker`).
-- Siklus:
-  1. `time.NewTicker(interval)` (default 6 jam, di-inject dari config/main.go).
-  2. Ambil semua mata uang aktif dari repository.
-  3. Filter: `c.IsActive && c.RateSource == "provider" && !c.IsBase`.
-  4. Untuk tiap mata uang:
-     - Ambil kurs terbaru di DB via `RateAsOf`.
-     - Fetch kurs terbaru dari provider.
-     - Jika kurs sama persis dengan kurs hari ini (toleransi selisih 0.0001 dan tanggal efektif hari ini), skip insert.
-     - Jika berbeda, insert baris kurs baru:
-       `RateToBase: fetchedRate`, `EffectiveAt: time.Now()`, `Source: "provider"`, `Note: "scheduled-sync"`.
-  5. Jika ada error jaringan/provider pada salah satu mata uang, catat dengan `logger.Warn` dan lanjutkan ke mata uang berikutnya. Jangan panik atau menghentikan server.
+1. Jika mata uang baru dibuat atau diubah dengan `m.RateSource == "provider"`:
+2. Cek apakah mata uang sudah memiliki rate aktif untuk waktu sekarang (`RateAsOf`).
+3. Jika belum ada rate:
+   - Ambil provider aktif melalui `ProviderFactory`.
+   - Lakukan `FetchRate(ctx, code, "IDR")`.
+   - Jika gagal, tolak dengan error ramah: *"Gagal mengambil kurs otomatis dari provider [%s]: %v. Periksa konfigurasi provider di Pengaturan Admin atau gunakan kurs manual."*
+   - Jika berhasil, simpan kurs awal ke tabel `currency_rates` (`source: "provider"`, `note: "auto-fetch initial"`).
+4. Setelah kurs tersimpan, validasi aktivasi mata uang lolos dan mata uang langsung berstatus **Aktif** (`is_active = true`).
 
 ---
 
-## 5. Error Handling & Edge Cases
+## 6. Frontend Super Admin Enhancements
 
-| Skenario | Penanganan |
+1. **Halaman Super Admin Mata Uang (`frontend/app/(dashboard)/super-admin/currency/page.tsx`)**:
+   - Di modal "Mata Uang Baru" / "Ubah Mata Uang", tambahkan opsi pilihan sumber kurs:
+     - `Sumber Kurs`: Dropdown / Radio (`Otomatis dari Provider` vs `Manual`).
+     - Jika memilih `Otomatis dari Provider`, form tidak mewajibkan admin mengisi kurs awal secara manual.
+   - Tambahkan tombol pintasan **"Sinkronkan Semua Kurs Sekarang"** (opsional trigger manual untuk Super Admin).
+2. **Halaman Super Admin Pengaturan (`frontend/components/super-admin/settings/`)**:
+   - Tambahkan grup pengaturan mata uang untuk mengedit:
+     - Toggle Sinkronisasi Otomatis.
+     - Interval Sinkronisasi (jam).
+     - Pilihan Driver Provider Kurs.
+     - Kunci API / Custom Endpoint URL.
+     - Batas Waktu Request (detik).
+
+---
+
+## 7. Error Handling & Resilience Matrix
+
+| Skenario | Mekanisme Dinamis |
 |---|---|
-| Admin input kode salah/tidak terdaftar (mis. `XYZ`) | Provider return 404 / unsupported -> Usecase tolak dengan 422: "Kode mata uang tidak didukung provider kurs". |
-| Provider eksternal down saat admin simpan mata uang | Usecase tolak dengan 422: "Gagal mengambil kurs otomatis dari provider. Periksa koneksi atau masukkan kurs manual." |
-| Provider down saat worker sinkronisasi berkala | Worker log `WARN`, lewati siklus. Transaksi pengguna tetap menggunakan kurs terakhir (`RateAsOf`). |
-| Perbedaan time zone / jam trading bursa valas | Kurs menggunakan timestamp UTC standar pada kolom `effective_at`. |
-| Nilai kurs tidak berubah | Dilewati (deduplikasi) agar tidak membebani kapasitas tabel `currency_rates`. |
+| Provider eksternal sedang gangguan (HTTP 5xx / timeout) | Worker log `WARN`, lewati siklus. Transaksi pengguna tetap menggunakan kurs terakhir (`RateAsOf`). Admin dapat mengganti provider ke driver cadangan dari dashboard secara instan tanpa deploy. |
+| Kuota API provider habis | Super Admin dapat memasukkan API Key baru atau mengganti provider langsung di panel Settings tanpa restart backend. |
+| Admin ingin menghentikan sinkronisasi sementara | Cukup matikan toggle `currency_auto_sync_enabled` di admin settings; worker langsung berhenti fetch pada siklus berikutnya. |
+| Kode mata uang tidak dikenal provider | Usecase tolak saat `UpsertCurrency` dengan pesan `422`: *"Mata uang tidak didukung oleh provider aktif"*. |
 
 ---
 
-## 6. Testing Plan
+## 8. Verification & Testing
 
-1. **Unit Test Provider (`open_provider_test.go`)**:
-   - `httptest.Server` menyimulasikan respon 200 JSON valid.
-   - `httptest.Server` menyimulasikan respon 404 mata uang tidak ditemukan.
-   - Pengujian timeout context.
-2. **Unit Test Worker (`rate_sync_worker_test.go`)**:
-   - Mock repository & mock provider.
-   - Uji pemanggilan `FetchRate` untuk mata uang `provider`.
-   - Pastikan mata uang `manual` diabaikan oleh worker.
-   - Pastikan deduplikasi bekerja jika rate identik.
-3. **Integration Test Usecase (`currency_usecase_test.go`)**:
-   - Uji create mata uang baru dengan `rate_source = "provider"`, pastikan rate langsung tercipta di database dan mata uang langsung berstatus aktif.
+1. **Unit Test Dynamic Resolver**:
+   - Memastikan perubahan setting di database langsung tercermin pada provider yang di-resolve tanpa restart proses.
+2. **Unit Test Pluggable Provider Adapter**:
+   - `httptest.Server` lokal untuk masing-masing driver (`open_er_api`, `floatrates`, `frankfurter`, `custom`).
+3. **Unit Test Worker**:
+   - Uji worker saat enabled vs disabled.
+   - Uji penyesuaian interval dinamis.
+   - Uji penanganan error jaringan tanpa panic.
+   - Uji deduplikasi kurs identik.
+4. **Integration Test End-to-End**:
+   - `POST /admin/currencies` dengan `rate_source = 'provider'` langsung meng-insert rate dan mengaktifkan mata uang.
+   - `PUT /admin/settings` untuk mengubah interval dan provider berhasil diterapkan.
