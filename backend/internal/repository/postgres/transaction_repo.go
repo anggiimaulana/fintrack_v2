@@ -613,3 +613,107 @@ func (r *TransactionRepo) GetTimeSeries(ctx context.Context, userID uuid.UUID, s
 	}
 	return points, nil
 }
+
+func (r *TransactionRepo) BatchInsert(ctx context.Context, txs []domain.Transaction) error {
+	if len(txs) == 0 {
+		return nil
+	}
+	query := `
+		INSERT INTO transactions (
+			user_id, account_id, import_batch_id, fingerprint_hash, clean_merchant,
+			type, amount, currency_code, exchange_rate, rate_at,
+			income_category_id, expense_category_id, savings_category_id,
+			subcategory_id, description, notes, tags, transaction_date,
+			is_recurring, recurring_interval, source
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+		) RETURNING id, amount_base, created_at, updated_at`
+
+	for i := range txs {
+		tx := &txs[i]
+		tx.Tags = emptyTags(tx.Tags)
+		tx.Source = defaultSource(tx.Source)
+		err := q(ctx, r.pool).QueryRow(
+			ctx, query,
+			tx.UserID, tx.AccountID, tx.ImportBatchID, tx.FingerprintHash, tx.CleanMerchant,
+			tx.Type, tx.Amount, currencyOrBase(tx.CurrencyCode), rateOrOne(tx.ExchangeRate), tx.RateAt,
+			tx.IncomeCategoryID, tx.ExpenseCategoryID, tx.SavingsCategoryID, tx.SubcategoryID, tx.Description,
+			tx.Notes, tx.Tags, tx.TransactionDate, tx.IsRecurring, tx.RecurringInterval, tx.Source,
+		).Scan(&tx.ID, &tx.AmountBase, &tx.CreatedAt, &tx.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("batch insert tx row %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (r *TransactionRepo) ListExistingFingerprints(ctx context.Context, userID uuid.UUID, hashes []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(hashes) == 0 {
+		return out, nil
+	}
+	query := `SELECT fingerprint_hash FROM transactions WHERE user_id = $1 AND fingerprint_hash = ANY($2) AND is_deleted = false`
+	rows, err := q(ctx, r.pool).Query(ctx, query, userID, hashes)
+	if err != nil {
+		return nil, fmt.Errorf("list existing fingerprints: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err == nil {
+			out[h] = true
+		}
+	}
+	return out, rows.Err()
+}
+
+func (r *TransactionRepo) ListByBatchID(ctx context.Context, batchID, userID uuid.UUID) ([]domain.Transaction, error) {
+	query := `SELECT id, user_id, account_id, import_batch_id, fingerprint_hash, clean_merchant, transfer_pair_id,
+		type, amount, currency_code, exchange_rate, amount_base, rate_at,
+		income_category_id, expense_category_id, savings_category_id, subcategory_id,
+		description, notes, tags, transaction_date, is_recurring, recurring_interval, source,
+		is_deleted, deleted_at, created_at, updated_at
+	FROM transactions
+	WHERE import_batch_id = $1 AND user_id = $2 AND is_deleted = false
+	ORDER BY transaction_date ASC`
+
+	rows, err := q(ctx, r.pool).Query(ctx, query, batchID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list by batch id: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Transaction
+	for rows.Next() {
+		var tx domain.Transaction
+		err := rows.Scan(
+			&tx.ID, &tx.UserID, &tx.AccountID, &tx.ImportBatchID, &tx.FingerprintHash, &tx.CleanMerchant, &tx.TransferPairID,
+			&tx.Type, &tx.Amount, &tx.CurrencyCode, &tx.ExchangeRate, &tx.AmountBase, &tx.RateAt,
+			&tx.IncomeCategoryID, &tx.ExpenseCategoryID, &tx.SavingsCategoryID, &tx.SubcategoryID,
+			&tx.Description, &tx.Notes, &tx.Tags, &tx.TransactionDate, &tx.IsRecurring, &tx.RecurringInterval, &tx.Source,
+			&tx.IsDeleted, &tx.DeletedAt, &tx.CreatedAt, &tx.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tx)
+	}
+	return out, rows.Err()
+}
+
+func (r *TransactionRepo) SoftDeleteByBatchID(ctx context.Context, batchID, userID uuid.UUID) (int64, error) {
+	query := `UPDATE transactions SET is_deleted = true, deleted_at = now(), updated_at = now()
+		WHERE import_batch_id = $1 AND user_id = $2 AND is_deleted = false`
+	cmd, err := q(ctx, r.pool).Exec(ctx, query, batchID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("soft delete by batch id: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+func (r *TransactionRepo) UpdateTransferPair(ctx context.Context, txID, pairID uuid.UUID, txType domain.TransactionType) error {
+	query := `UPDATE transactions SET type = $1, transfer_pair_id = $2, updated_at = now() WHERE id = $3`
+	_, err := q(ctx, r.pool).Exec(ctx, query, txType, pairID, txID)
+	return err
+}

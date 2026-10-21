@@ -3,6 +3,35 @@
 > Audit trail operasional. Setiap aksi teknis signifikan dicatat di sini (urutan terbaru di atas).
 
 ---
+## 2026-10-20 (Bank & E-Wallet Integration: Wave 1, 2, 3) — Fondasi Database, Multi-Adapter Parser & Ingestion Engine
+- **Konteks & Masalah**:
+  - Mengimplementasikan tahap awal integrasi multi-rekening perbankan dan e-wallet di FinTrack v2 untuk mendukung pencatatan otomatis dari mutasi BCA, Mandiri, Bank Jago, SeaBank, GoPay, DANA, ShopeePay, dan format generic.
+  - Menjamin konsistensi saldo berjalan, deduplikasi idempoten tanpa duplikasi transaksi, dan deteksi otomatis transfer antar-rekening sendiri.
+- **Perubahan yang Diterapkan**:
+  1. **Wave 1 (Database Migration & Core Domain)**:
+     - Membuat migrasi `database/migrations/0044_bank_ewallet_accounts.sql`: tabel `financial_accounts` (rekening bank & e-wallet), tabel `import_batches` (audit batch impor file), penambahan kolom relasi pada `transactions` (`account_id`, `import_batch_id`, `fingerprint_hash`, `clean_merchant`, `transfer_pair_id`), penambahan tipe `transfer` pada check constraint, dan seeding entitlement `bank_integration` pada paket Business.
+     - Menerapkan migrasi via `migrate.sh` dan meregenerasi dump database di `database/dump/fintrack_v2.*` via `dump.sh`.
+     - Membuat model domain `backend/internal/domain/financial_account.go` dan memperbarui `backend/internal/domain/transaction.go`.
+     - Membuat unit test domain di `backend/internal/domain/financial_account_test.go` (100% pass).
+  2. **Wave 2 (Parser Factory & Native Bank Adapters)**:
+     - Membuat interface `StatementParser` dan `ParserRegistry` di `backend/internal/ingestion/parser.go`.
+     - Mengimplementasikan 8 adapter perbankan/e-wallet di `backend/internal/ingestion/adapters/`: `bca_parser.go`, `mandiri_parser.go`, `jago_parser.go`, `seabank_parser.go`, `gopay_parser.go`, `dana_parser.go`, `shopeepay_parser.go`, dan `generic_csv_parser.go`.
+     - Mengimplementasikan `helpers.go` untuk parsing format angka Indonesia (`50.000,00` / `50,000.00`) dan format tanggal fleksibel.
+     - Menulis unit test komprehensif di `backend/internal/ingestion/adapters/adapters_test.go` (9 test passed).
+  3. **Wave 3 (Ingestion Pipeline, Deduplikasi & Smart Transfer Pairing)**:
+     - Mengimplementasikan deduplikasi SHA-256 fingerprint di `backend/internal/ingestion/dedup.go` (`GenerateFingerprint`).
+     - Mengimplementasikan Two-Stage Normalizer di `backend/internal/ingestion/normalizer.go` (Stage 1 pembersihan noise mesin & ekstraksi merchant QRIS/Transfer; Stage 2 fallback AI).
+     - Mengimplementasikan Smart Transfer Pairing Engine di `backend/internal/ingestion/pairing.go` (mencocokkan transfer internal antar-akun pengguna dalam jendela <= 36 jam).
+     - Mengimplementasikan repository Postgres `financial_account_repo.go`, `import_batch_repo.go`, dan memperluas `transaction_repo.go` dengan batch insertion, fingerprint listing, batch listing, dan rollback soft-delete.
+     - Mengimplementasikan `AccountUsecase` di `backend/internal/usecase/account_usecase.go` yang menangani CRUD akun, impor berkas mutasi atomik dengan row lock (`FOR UPDATE`), dan rollback batch dengan pemulihan saldo otomatis.
+     - Menulis unit test di `backend/internal/usecase/account_usecase_test.go` dan `backend/internal/ingestion/pipeline_test.go` (100% pass).
+- **Verifikasi Hasil Uji**:
+  - `cd backend && go test ./...` -> 41 packages passed.
+  - `cd backend && go vet ./... && go build ./...` -> bersih tanpa error/warning.
+  - `cd frontend && pnpm test` -> 103 test files passed, 741 tests passed.
+
+---
+
 
 ## 2026-10-20 — Perbaikan Tata Letak & Spasi Bagian Mata Uang Pencatatan di Halaman Profil
 - **Konteks**: Label "Mata Uang Pencatatan" dan elemen select box di `/user/profile` (komponen `AppearanceSettings`) berada pada baris horizontal yang sama (mepet/bertumpuk) karena tag `<label>` berstatus `inline` dan `<select>` memiliki `w-full md:w-1/2` tanpa deklarasi `block`.

@@ -21,11 +21,11 @@ type TxRunner interface {
 type TransactionType string
 
 const (
-	TransactionIncome  TransactionType = "income"
-	TransactionExpense TransactionType = "expense"
-	TransactionSavings TransactionType = "savings"
+	TransactionIncome   TransactionType = "income"
+	TransactionExpense  TransactionType = "expense"
+	TransactionSavings  TransactionType = "savings"
+	TransactionTransfer TransactionType = "transfer"
 )
-
 type RecurringInterval string
 
 const (
@@ -37,10 +37,11 @@ const (
 type TransactionSource string
 
 const (
-	SourceManual  TransactionSource = "manual"
-	SourceAI      TransactionSource = "ai"
-	SourceVoice   TransactionSource = "voice"
-	SourceReceipt TransactionSource = "receipt"
+	SourceManual    TransactionSource = "manual"
+	SourceAI        TransactionSource = "ai"
+	SourceVoice     TransactionSource = "voice"
+	SourceReceipt   TransactionSource = "receipt"
+	SourceStatement TransactionSource = "statement"
 )
 
 type Transaction struct {
@@ -61,6 +62,11 @@ type Transaction struct {
 	SavingsCategoryID *uuid.UUID         `json:"savings_category_id,omitempty" db:"savings_category_id"`
 	SubcategoryID     *uuid.UUID         `json:"subcategory_id,omitempty" db:"subcategory_id"`
 	Description       *string            `json:"description,omitempty" db:"description"`
+	AccountID         *uuid.UUID         `json:"account_id,omitempty" db:"account_id"`
+	ImportBatchID     *uuid.UUID         `json:"import_batch_id,omitempty" db:"import_batch_id"`
+	FingerprintHash   *string            `json:"fingerprint_hash,omitempty" db:"fingerprint_hash"`
+	CleanMerchant     *string            `json:"clean_merchant,omitempty" db:"clean_merchant"`
+	TransferPairID    *uuid.UUID         `json:"transfer_pair_id,omitempty" db:"transfer_pair_id"`
 	Notes             *string            `json:"notes,omitempty" db:"notes"`
 	Tags              []string           `json:"tags,omitempty" db:"tags"`
 	TransactionDate   time.Time          `json:"transaction_date" db:"transaction_date"`
@@ -108,6 +114,11 @@ type TransactionRepository interface {
 	GetTimeSeries(ctx context.Context, userID uuid.UUID, start, end time.Time, granularity string) ([]TimeSeriesPoint, error)
 	GetCategoryTimeSeries(ctx context.Context, userID uuid.UUID, start, end time.Time) ([]CategoryTimeSeriesRow, error)
 	HasTransactions(ctx context.Context, userID uuid.UUID) (bool, error)
+	BatchInsert(ctx context.Context, txs []Transaction) error
+	ListExistingFingerprints(ctx context.Context, userID uuid.UUID, hashes []string) (map[string]bool, error)
+	ListByBatchID(ctx context.Context, batchID, userID uuid.UUID) ([]Transaction, error)
+	SoftDeleteByBatchID(ctx context.Context, batchID, userID uuid.UUID) (int64, error)
+	UpdateTransferPair(ctx context.Context, txID, pairID uuid.UUID, txType TransactionType) error
 }
 
 type TransactionFilter struct {
@@ -116,6 +127,7 @@ type TransactionFilter struct {
 	Type       *TransactionType
 	CategoryID *uuid.UUID
 	DateFrom   *time.Time
+	AccountID  *uuid.UUID
 	DateTo     *time.Time
 	Search     string
 	SortBy     string
@@ -153,6 +165,7 @@ type CreateTransactionRequest struct {
 	IsRecurring       bool               `json:"is_recurring"`
 	RecurringInterval *RecurringInterval `json:"recurring_interval"`
 	Source            TransactionSource  `json:"source"`
+	AccountID         *uuid.UUID         `json:"account_id"`
 }
 
 type UpdateTransactionRequest struct {
@@ -171,5 +184,6 @@ type UpdateTransactionRequest struct {
 	Source            *TransactionSource `json:"source"`
 	// UpdatedAt enables optimistic locking: when set, the update only applies
 	// if the row's updated_at matches, otherwise ErrConflict is returned.
+	AccountID         *uuid.UUID         `json:"account_id"`
 	UpdatedAt *time.Time `json:"updated_at"`
 }
