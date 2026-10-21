@@ -84,7 +84,7 @@ export function AppearanceSettings() {
         </div>
 
         <div className="space-y-3">
-          <label htmlFor="settings-language" className="text-xs font-bold uppercase tracking-wide text-foreground">
+          <label htmlFor="settings-language" className="block text-xs font-bold uppercase tracking-wide text-foreground">
             Bahasa &amp; Regional
           </label>
           {/* Only Indonesian ships today, so the field is a fixed, disabled value
@@ -103,8 +103,8 @@ export function AppearanceSettings() {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <label htmlFor="settings-currency" className="text-xs font-bold uppercase tracking-wide text-foreground">
+      <div className="pt-6 border-t-2 border-foreground/10 space-y-2">
+        <label htmlFor="settings-currency" className="block text-xs font-bold uppercase tracking-wide text-foreground">
           Mata Uang Pencatatan
         </label>
         <select
@@ -112,7 +112,7 @@ export function AppearanceSettings() {
           value={displayCurrency.code}
           disabled={currencyLoading || savingCurrency}
           onChange={(e) => onCurrencyChange(e.target.value)}
-          className="w-full md:w-1/2 border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full md:w-1/2 block border-2 rounded-md border-foreground bg-background px-4 py-2.5 text-sm font-bold text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         >
           {selectableCurrencies.map((c) => (
             <option key={c.code} value={c.code}>
